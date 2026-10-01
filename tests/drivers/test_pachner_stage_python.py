@@ -47,8 +47,10 @@ def test_the_stage_runs_as_the_emergence_driver_runs_its_stage_1():
     config = R.default_config()
     assert config["pachner_updates"] == 1 and config["pachner_depth"] == 1
     assert "pachner_candidates" not in config and "pachner_seed" not in config
-    assert "no cone-out, cone-in or disposition move" in config["pachner_moves"]
-    assert "no sample and no seed" in config["pachner_moves"]
+    assert "no cone-out, cone-in or disposition move" in config["pachner_stage"]
+    # the drive of every relaxation scores Pachner moves as well
+    assert config["pachner_moves"] is True
+    assert "no sample and no seed" in config["pachner_stage"]
     args = R.build_parser().parse_args(
         ["run", "--pachner-updates", "0", "--pachner-depth", "2"])
     assert (args.pachner_updates, args.pachner_depth) == (0, 2)

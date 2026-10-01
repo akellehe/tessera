@@ -137,7 +137,7 @@ def test_the_declared_defaults():
         ["run", "--rank-tolerance", "1e-10", "--tie-tolerance", "1e-8"])
     assert bp.tolerances_from(tight)["rank_tolerance"] == 1e-10
     assert bp.tolerances_from(tight)["tie_tolerance"] == 1e-8
-    assert bp.tolerances_from(tight)["newton_tolerance"] == 1e-15
+    assert bp.tolerances_from(tight)["step_tolerance"] == 1e-15
     # the Villain weight is governed by an order, not by a tolerance
     assert "villain_tolerance" not in dict(bp.TOLERANCES)
     assert args.villain_order == bp.DECLARED_VILLAIN_ORDER == 10
@@ -145,7 +145,7 @@ def test_the_declared_defaults():
 
 #: Every tolerance of the stack, in the registry's order.
 TOLERANCE_KEYS = [
-    "rank_tolerance", "newton_tolerance", "mean_field_tolerance",
+    "rank_tolerance", "step_tolerance", "mean_field_tolerance",
     "band_tolerance", "certificate_tolerance", "allowability_tolerance",
     "tie_tolerance", "degeneracy_tolerance", "pole_rank_tolerance",
     "fluctuation_tolerance", "recursion_tolerance",
@@ -556,14 +556,18 @@ def test_solve_state_reads_the_solve_or_the_missing_value_of_each_record():
         "state": "converged", "reason": None, "iterations": 6}
     assert bp.solve_state(_solved(
         record, converged=False, iterations=12,
-        stop_reason="no damped step reduced the residual")) == {
+        stop_reason="no move and no scaled step lowers the residual "
+                    "norm")) == {
         "state": "not converged", "reason": "no descent", "iterations": 12}
-    # every stop reason the library names has a short name
-    for reason in dir(cob.RelaxationStop):
-        if reason[0].isupper() and reason not in ("Converged", "Continued"):
-            name = cob.relaxation_stop_name(getattr(cob.RelaxationStop,
-                                                    reason))
-            assert name in bp.STOP_SHORT, name
+    # every stop a drive names, and every reason a read has no value, has a
+    # short name
+    assert bp.STOP_SHORT == {
+        "no move and no scaled step lowers the residual norm": "no descent",
+        "the step has no value at the point reached": "no step",
+        "a declared limit was reached": "declared limit",
+        "the squared lengths overflowed the double": "lengths overflowed",
+        "the cell is not a tetrahedron after its Pachner moves": "cell moved",
+    }
     # a stop reason without a short name is shown whole
     assert bp.solve_state(_solved(record, converged=False, iterations=2,
                                   stop_reason="new reason"))["reason"] == \
@@ -632,7 +636,7 @@ def test_the_drawn_frame_marks_each_content_by_its_solve(point):
     point = dict(point)
     point["contents"] = [_solved(
         point["contents"][0], converged=False, iterations=12,
-        stop_reason="no damped step reduced the residual")]
+        stop_reason="no move and no scaled step lowers the residual norm")]
     data = bp.frame_data([point], 0)
     assert data["groups"][0]["solve"] == {
         "state": "not converged", "reason": "no descent", "iterations": 12}
@@ -781,27 +785,27 @@ def test_the_pure_gauge_directions_leave_every_face_holonomy_unchanged():
 
 def test_a_limit_is_carried_only_when_the_user_declares_it():
     """The limits a user may declare on a solve (`LIMITS`: a number of
-    accepted steps, a number of halvings of one step, a wall-clock time) are
-    options of the command line that default to None, are recorded in the
-    config, and reach the solve's declaration only when given."""
+    iterations of the drive, a number of relaxation updates per iteration, a
+    wall-clock time) are options of the command line that default to None,
+    are recorded in the config, and reach the solve's drive only when
+    given."""
     assert [key for key, _, _ in bp.LIMITS] == [
-        "iteration_limit", "halving_limit", "time_limit_seconds"]
+        "iteration_limit", "update_limit", "time_limit_seconds"]
     args = bp.build_parser().parse_args(["run"])
     assert bp.limits_from(args) == {
-        "iteration_limit": None, "halving_limit": None,
+        "iteration_limit": None, "update_limit": None,
         "time_limit_seconds": None}
     args = bp.build_parser().parse_args(
-        ["run", "--iteration-limit", "40", "--halving-limit", "16",
+        ["run", "--iteration-limit", "40", "--update-limit", "16",
          "--time-limit-seconds", "2.5"])
     limits = bp.limits_from(args)
-    assert limits == {"iteration_limit": 40, "halving_limit": 16,
+    assert limits == {"iteration_limit": 40, "update_limit": 16,
                       "time_limit_seconds": 2.5}
     config = bp.default_config([1.0], [1.0], limits=limits)
-    config["held_sectors"] = []
-    geometry = bp.relaxation_declaration(config)
-    assert geometry.iteration_limit == 40
-    assert geometry.halving_limit == 16
-    assert geometry.time_limit_seconds == 2.5
+    arguments = bp.solve_arguments(config)
+    assert arguments["iteration_limit"] == 40
+    assert arguments["update_limit"] == 16
+    assert arguments["time_limit_seconds"] == 2.5
     with pytest.raises(ValueError, match="unknown limits"):
         bp.default_config([1.0], [1.0], limits={"newton_iterations": 3})
 
@@ -897,12 +901,13 @@ def test_the_declarations_carry_the_config():
     geometry = bp.relaxation_declaration(config)
     assert geometry.relax_lengths and geometry.relax_links
     assert not geometry.relax_multipliers
-    # a solve ends when it converges or stops by name; no limit is declared
+    # a solve ends when its drive ends; no limit is declared
     assert "newton_iterations" not in config
     assert "mean_field_iterations" not in config
     for key, _, _ in bp.LIMITS:
-        assert config[key] is None and getattr(geometry, key) is None
-    assert geometry.tolerance == bp.DECLARED_TOLERANCE == 1e-15
+        assert config[key] is None
+    assert bp.solve_arguments(config)["tolerance"] == \
+        bp.DECLARED_TOLERANCE == 1e-15
     assert geometry.rank_tolerance == bp.DECLARED_TOLERANCE
     assert "jacobian_radius" not in config
     mean_field = bp.mean_field_declaration((2, 1, 0), config)

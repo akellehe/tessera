@@ -29,6 +29,9 @@ for a matched left/right frame pair: idempotent, commuting with the operator it
 was built from, and Hermitian only when that operator happens to be normal. A
 covariance that is only transported forgets which modes of the current operator
 it is supposed to fill, and the solve here re-occupies at every step.
+
+The solves are drives of `MultiCobordism` on the complex as it stands
+(`tessera.drivers.cell_solve.relax`), at the declared tolerances (1e-15).
 """
 
 import os
@@ -38,6 +41,7 @@ import unittest
 import numpy as np
 
 import tessera as T
+from tessera.drivers import cell_solve as cs
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -64,17 +68,19 @@ def _declaration(**overrides):
 
 
 def _mean_field(**overrides):
-    """A mean-field declaration with the named fields overridden.
+    """A mean-field declaration with the named fields overridden: the
+    squared lengths are the system's variables, the links are held, and the
+    tolerances are the declared ones.
 
-    The inner relaxation is built as its own object and assigned whole, rather
-    than mutated through the outer declaration's member, so the configuration a
-    test asks for is the configuration the solve runs with.
+    The geometry declaration is built as its own object and assigned whole,
+    rather than mutated through the outer declaration's member, so the
+    configuration a test asks for is the configuration the system is posed
+    with.
     """
     geometry = cob.HolomorphicRelaxationDeclaration()
     geometry.relax_lengths = True
     geometry.relax_links = False
     geometry.relax_multipliers = False
-    geometry.tolerance = 1e-12
     # The geometric term of these solves is the dual Regge action, whose exact
     # gradient and Hessian are analytic on each side of the real axis in the
     # squared lengths and not across it: the deficit angle is taken on the
@@ -83,7 +89,6 @@ def _mean_field(**overrides):
     # point lies on.
     declaration = cob.SelfConsistentMeanFieldDeclaration()
     declaration.occupied_modes = 1
-    declaration.tolerance = 1e-9
     declaration.geometry = geometry
     for name, value in overrides.items():
         setattr(declaration, name, value)
@@ -259,6 +264,13 @@ class TheSelfConsistentPairTest(unittest.TestCase):
         return -(force[0] / regge[0]).real
 
     def test_the_solve_reaches_a_fixed_point_of_the_pair(self):
+        """From the sphere with its squared lengths moved by up to 0.015 the
+        drive accepts four steps (residual norm 6.4, 0.17, 5.1e-4, 2.5e-8,
+        8.0e-14) and stops when no trial of its line search lowers the
+        residual norm by the tolerance. The force it stops at, 8.0e-14, is
+        the rounding of terms of size one hundred, above the declared
+        tolerance 1e-15, so the read there says not converged; the fixed
+        point's properties hold to rounding."""
         reference = sphere3()
         modes = cob.ChainComplex.fromSpacetime(reference).numSimplices(1)
         weight = self._balanced_weight(reference, modes)
@@ -266,7 +278,6 @@ class TheSelfConsistentPairTest(unittest.TestCase):
         spacetime = sphere3(squared=lambda index: 1.0 + 0.015 * ((index % 3) - 1))
         declaration = _declaration(gravitational_weight=weight,
                                    matter_weight=1.0)
-        action = cob.JointAction(spacetime, declaration)
         seeded = _declaration(gravitational_weight=weight, matter_weight=1.0)
         seeded.covariance = cob.JointAction(
             spacetime, _declaration()).occupation_projector(modes, True)
@@ -276,25 +287,31 @@ class TheSelfConsistentPairTest(unittest.TestCase):
             1e-6,
             "the perturbed geometry must not already be stationary")
 
-        solver = cob.SelfConsistentMeanField(
-            action, _mean_field(occupied_modes=modes))
-        report = solver.solve()
+        drive = cs.relax(spacetime, declaration,
+                         mean_field=_mean_field(occupied_modes=modes))
+        report = drive["report"]
+        self.assertEqual(drive["stop_reason"], cs.STOP_STATIONARY)
+        self.assertEqual(drive["accepted_updates"], 4)
+        self.assertEqual(drive["moves_committed"], 0)
+        self.assertEqual(drive["objective"].undefined, [])
+        self.assertLess(drive["trace"][-1], 1e-12)
 
-        self.assertTrue(report.converged,
-                        (report.force_norm, report.covariance_change))
-        self.assertLess(report.force_norm, 1e-9)
-        self.assertLess(report.covariance_change, 1e-9)
-        self.assertLess(report.purity_defect, 1e-9)
+        self.assertFalse(report.converged, report.stop_detail)
+        self.assertLess(report.force_norm, 1e-12)
+        self.assertGreater(report.force_norm, 1e-15)
+        last = drive["objective"].updates[-1]["measured"]
+        self.assertLess(last.covariance_change, 1e-13)
+        self.assertLess(report.purity_defect, 1e-14)
 
         # Gamma* projects onto modes of h(z*).
-        final = solver.action
+        final = drive["action"]
         projector = _matrix(report.covariance)
         carrier = _matrix(final.carrier_operator())
         self.assertLess(np.max(np.abs(projector @ projector - projector)),
-                        1e-9)
+                        1e-14)
         self.assertLess(np.max(np.abs(projector @ carrier
                                       - carrier @ projector)),
-                        1e-7 * (1.0 + np.max(np.abs(carrier))))
+                        1e-14 * (1.0 + np.max(np.abs(carrier))))
 
         # The force balances the geometric action, edge by edge.
         regge = cob.JointAction(
@@ -303,20 +320,21 @@ class TheSelfConsistentPairTest(unittest.TestCase):
         force = final.hellmann_feynman_length_force()
         for geometric, carried in zip(regge, force):
             self.assertLess(abs(geometric + carried),
-                            1e-9 * (1.0 + abs(geometric)))
+                            1e-13 * (1.0 + abs(geometric)))
 
     def test_every_step_leaves_the_covariance_a_projector(self):
-        """The loop stays inside the Gaussian class, and the step says so."""
+        """The drive stays inside the Gaussian class: at every point a step
+        is proposed from, fifteen of them, the covariance is a projector."""
         spacetime = sphere3(squared=lambda index: 1.0 + 0.02 * (index % 4))
-        action = cob.JointAction(
+        drive = cs.relax(
             spacetime, _declaration(gravitational_weight=90.0,
-                                    matter_weight=1.0))
-        solver = cob.SelfConsistentMeanField(
-            action, _mean_field(occupied_modes=2))
-        report = solver.solve()
-        self.assertGreater(len(report.steps), 0)
-        for step in report.steps:
-            self.assertLess(step.purity_defect, 1e-9)
+                                    matter_weight=1.0),
+            mean_field=_mean_field(occupied_modes=2))
+        steps = [update["measured"] for update in drive["objective"].updates]
+        self.assertEqual(len(steps), 15)
+        self.assertEqual(drive["accepted_updates"], 14)
+        for step in steps:
+            self.assertLess(step.purity_defect, 1e-14)
             self.assertEqual(len(step.occupied_eigenvalues), 2)
 
     def test_the_covariance_is_re_occupied_at_every_step(self):
@@ -335,23 +353,24 @@ class TheSelfConsistentPairTest(unittest.TestCase):
         start = cob.JointAction(spacetime, _declaration())
         initial = np.array(start.occupation_projector(2, True), dtype=complex)
 
-        action = cob.JointAction(
+        drive = cs.relax(
             spacetime, _declaration(gravitational_weight=90.0,
-                                    matter_weight=1.0))
-        solver = cob.SelfConsistentMeanField(
-            action, _mean_field(occupied_modes=2))
-        report = solver.solve()
+                                    matter_weight=1.0),
+            mean_field=_mean_field(occupied_modes=2))
+        report = drive["report"]
+        self.assertEqual(drive["stop_reason"], cs.STOP_STATIONARY)
+        self.assertLess(report.force_norm, 1e-11)
 
         final = np.array(report.covariance, dtype=complex)
-        self.assertGreater(np.max(np.abs(final - initial)), 1e-9)
+        self.assertGreater(np.max(np.abs(final - initial)), 0.1)
         order = int(round(np.sqrt(final.size)))
         gamma = final.reshape(order, order)
-        operator = np.array(solver.action.carrier_operator(),
+        operator = np.array(drive["action"].carrier_operator(),
                             dtype=complex).reshape(order, order)
         scale = np.max(np.abs(operator))
-        self.assertLess(np.max(np.abs(gamma @ gamma - gamma)), 1e-9)
+        self.assertLess(np.max(np.abs(gamma @ gamma - gamma)), 1e-14)
         self.assertLess(np.max(np.abs(gamma @ operator - operator @ gamma)),
-                        1e-9 * scale)
+                        1e-14 * scale)
         self.assertAlmostEqual(np.trace(gamma).real, 2.0, places=9)
         # the two modes it fills are eigenmodes of the operator at the end
         # point: the nonzero eigenvalues of Gamma h are eigenvalues of h
@@ -360,13 +379,15 @@ class TheSelfConsistentPairTest(unittest.TestCase):
         spectrum = np.linalg.eigvals(operator)
         for value in filled:
             self.assertLess(np.min(np.abs(spectrum - value)),
-                            1e-8 * abs(value))
-        # the followed pair crossed other modes, so a sort at the end point
-        # fills another pair
-        self.assertGreater(report.band_crossing_iterates, 0)
+                            1e-13 * abs(value))
+        # the followed pair crossed other modes, from the fifth point a step
+        # is proposed from on, so a sort at the end point fills another pair
+        crossed = [bool(update["measured"].band_crossing)
+                   for update in drive["objective"].updates]
+        self.assertEqual(crossed, [False] * 4 + [True] * 11)
         reread = np.array(
-            solver.action.occupation_projector(2, True), dtype=complex)
-        self.assertGreater(np.max(np.abs(final - reread)), 1e-3)
+            drive["action"].occupation_projector(2, True), dtype=complex)
+        self.assertGreater(np.max(np.abs(final - reread)), 0.3)
 
 
 class TheSection7TetrahedronSplitTest(unittest.TestCase):
@@ -486,8 +507,8 @@ class TheDeclaredControlsAreCheckedTest(unittest.TestCase):
     """The configuration a caller may not silently get wrong."""
 
     def test_the_declared_solver_is_named_and_mixes_nothing(self):
-        """The fixed point is solved by Newton's method on the joint system,
-        the one method, so the declaration names none; the bands are chosen
+        """The declaration names no method: the fixed point is found by a
+        drive of `MultiCobordism` over the joint system. The bands are chosen
         once and followed by continuation, and the re-sort stays available
         by name. The covariance is never mixed: a mixed Gamma is not a band
         filling of h."""
@@ -508,22 +529,20 @@ class TheDeclaredControlsAreCheckedTest(unittest.TestCase):
 
 
 class TheStepAndReportFieldsTest(unittest.TestCase):
-    """What each step and the report carry beside the convergence numbers:
-    the step index, the occupied energy as the sum of the occupied
-    eigenvalues, the spectral gap to the first empty mode, and the inner
-    geometry solve's own verdict."""
+    """What the measurements of each point and the read of the end point
+    carry beside the force: the occupied energy as the sum of the occupied
+    eigenvalues, and the spectral gap to the first empty mode."""
 
-    def test_every_step_reports_its_energy_gap_and_geometry(self):
+    def test_every_point_reports_its_energy_and_gap(self):
         spacetime = sphere3(squared=lambda index: 1.0 + 0.02 * (index % 4))
-        action = cob.JointAction(
+        drive = cs.relax(
             spacetime, _declaration(gravitational_weight=90.0,
-                                    matter_weight=1.0))
-        solver = cob.SelfConsistentMeanField(
-            action, _mean_field(occupied_modes=2))
-        report = solver.solve()
-        self.assertEqual([step.iteration for step in report.steps],
-                         list(range(len(report.steps))))
-        for step in report.steps:
+                                    matter_weight=1.0),
+            mean_field=_mean_field(occupied_modes=2))
+        report = drive["report"]
+        steps = [update["measured"] for update in drive["objective"].updates]
+        self.assertEqual(len(steps), 15)
+        for step in steps:
             # the occupied energy is the sum over the eigenvalues of the
             # bands the covariance fills, the followed ones; the occupied
             # span of a sort (`occupied_eigenvalues`) is the same set until
@@ -539,12 +558,13 @@ class TheStepAndReportFieldsTest(unittest.TestCase):
                         - sum(step.occupied_eigenvalues)),
                     0.0, delta=1e-10 * abs(step.occupied_energy))
             self.assertGreater(step.spectral_gap, 0.0)
-            self.assertIsInstance(step.geometry_converged, bool)
-            self.assertGreaterEqual(step.geometry_residual_norm, 0.0)
-        last = report.steps[-1]
+        # the last step was proposed from the point the drive ended on, which
+        # is the point the report reads
+        last = steps[-1]
         self.assertEqual(report.occupied_energy, last.occupied_energy)
         self.assertEqual(report.spectral_gap, last.spectral_gap)
-        values = sorted(solver.action.carrier_eigenvalues(),
+        self.assertEqual(len(report.steps), 1)
+        values = sorted(drive["action"].carrier_eigenvalues(),
                         key=lambda v: (v.real, v.imag))
         self.assertAlmostEqual(report.spectral_gap,
                                abs(values[2] - values[1]), places=8)

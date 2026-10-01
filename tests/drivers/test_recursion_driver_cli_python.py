@@ -152,7 +152,7 @@ def test_the_declared_config():
                for key, _ in bp.TOLERANCES)
     tight = R.default_config(ticks=2, tolerances={"rank_tolerance": 1e-10})
     assert tight["rank_tolerance"] == 1e-10
-    assert tight["newton_tolerance"] == bp.DECLARED_TOLERANCE
+    assert tight["step_tolerance"] == bp.DECLARED_TOLERANCE
 
 
 def test_every_tolerance_is_an_option_of_the_run():
@@ -192,7 +192,7 @@ def test_every_tolerance_and_limit_is_carried_into_every_cell(monkeypatch):
     R.cell_reads(cells, z, links, declared)
     chosen = {key: 10.0 ** -(3 + k) for k, (key, _) in
               enumerate(bp.TOLERANCES)}
-    limits = {"iteration_limit": 7, "halving_limit": 5,
+    limits = {"iteration_limit": 7, "update_limit": 5,
               "time_limit_seconds": 2.5}
     run = R.default_config(tetrahedra=2, tolerances=chosen, limits=limits)
     R.cell_reads(cells, z, links, run)
@@ -261,8 +261,9 @@ def test_the_villain_order_is_an_option_carried_into_every_cell(monkeypatch):
     The cell read is taken on the recorded tick-0 level
     (`_recursion_run_2026_09_23`) with the scan point replaced by a recorder
     of the config it is given. The level relaxation is run at the recorded
-    run's tolerances with one accepted step and one halving declared as its
-    limits, so that the read of the declaration does not wait on a solve."""
+    run's tolerances with one iteration of the drive and one relaxation
+    update declared as its limits, so that the read of the declaration does
+    not wait on a solve."""
     assert R.build_parser().parse_args(["run"]).villain_order == 10
     args = R.build_parser().parse_args(["run", "--villain-order", "6"])
     assert args.villain_order == 6
@@ -270,7 +271,7 @@ def test_the_villain_order_is_an_option_carried_into_every_cell(monkeypatch):
     config = R.default_config(
         villain_order=6, selected_contents=[(1, 1, 1)],
         tolerances=RUN.TOLERANCES,
-        limits={"iteration_limit": 1, "halving_limit": 1})
+        limits={"iteration_limit": 1, "update_limit": 1})
     assert config["villain_order"] == 6
     with pytest.raises(ValueError, match="integer from 1 to 10"):
         R.default_config(villain_order=11)
@@ -304,7 +305,8 @@ def test_the_villain_order_is_an_option_carried_into_every_cell(monkeypatch):
     R.relax_level(spacetime, config, R.cut_sectors(
         cut, R.cut_monopole_number(cut, RUN.LEVEL_ZERO_LINKS), count),
         count=count)
-    assert declared == [6]
+    # every complex the drive scores declares its action at the order
+    assert declared and set(declared) == {6}
 
 
 @pytest.mark.parametrize("text", ["0", "11", "1.5", "many"])

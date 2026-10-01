@@ -10,9 +10,12 @@ Four things carry that here and each is asserted rather than argued.
 
 THE ACTION IS HOLOMORPHIC AND ITS EQUATIONS ARE COMPLEX. ``value`` is the sum of
 four complex terms and ``stationarity_residual`` is a vector of complex
-equations. The solve drives every component of it to zero, real part and
-imaginary part together, and the tests below start from points where both parts
-are large so that driving only one of them would be visible.
+equations. The relaxation (the `MultiCobordism` drive of
+`tessera.drivers.cell_solve`, whose scalar is the norm of that residual and
+whose direction is the Newton step of the system) drives every component of
+it to zero, real part and imaginary part together, and the tests below start
+from points where both parts are large so that driving only one of them would
+be visible.
 
 THE FACE-HOLONOMY TERM IS BRANCH-FREE AND GAUGE INVARIANT. F_tau is an ordered
 product of links and their inverses, so it asks for no argument and no
@@ -28,9 +31,9 @@ the Maurer-Cartan coordinate is ``delta = i theta`` for a real angle theta, so
 the delta-Hessian is minus the theta-Hessian.
 
 THE MULTIPLIERS IMPOSE THE MOMENT EQUATION EXACTLY. With a target declared, the
-solve returns p_j(h) equal to p_j* to rounding and the multiplier at the value
-the stationarity equations force, and it is the equation that is solved, not a
-residual norm that is made small.
+stationary point of the system has p_j(h) equal to p_j* and the multiplier at
+the value the stationarity equations force, and the Newton step of the system
+moves both toward it.
 """
 
 import cmath
@@ -41,6 +44,7 @@ import unittest
 import numpy as np
 
 import tessera as T
+from tessera.drivers import cell_solve as cs
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -71,7 +75,6 @@ def _relaxation(**overrides):
     declaration.relax_lengths = False
     declaration.relax_links = False
     declaration.relax_multipliers = False
-    declaration.tolerance = 1e-11
     for name, value in overrides.items():
         setattr(declaration, name, value)
     return declaration
@@ -344,22 +347,34 @@ class TheHolomorphicSolveReachesAStationaryPointTest(unittest.TestCase):
     """#1188's acceptance, on the connection."""
 
     def test_the_connection_relaxes_to_a_stationary_point_to_rounding(self):
+        """From a flux with both parts of the link equations large, the
+        drive accepts two steps (residual norm 3.72, 5.0e-5, 1.8e-15) and
+        ends where no scaled step lowers the norm by the tolerance 1e-15:
+        every component of the residual is below 1e-14, real part and
+        imaginary part."""
         spacetime = sphere3(squared=_metric, phase=_flux)
-        action = cob.JointAction(spacetime, _declaration(holonomy_weight=1.0))
+        declaration = _declaration(holonomy_weight=1.0)
+        action = cob.JointAction(spacetime, declaration)
 
         start = action.link_stationarity()
         self.assertGreater(max(abs(value.real) for value in start), 1e-3)
         self.assertGreater(max(abs(value.imag) for value in start), 1e-3)
+        initial = action.stationarity_residual_norm()
 
-        relaxation = cob.HolomorphicRelaxation(action,
-                                               _relaxation(relax_links=True))
-        report = relaxation.solve()
-        self.assertTrue(report.converged, report.residual_norm)
-        self.assertLess(report.residual_norm, 1e-11)
+        record = cs.relax(spacetime, declaration,
+                          geometry=_relaxation(relax_links=True))
+        self.assertEqual(record["stop_reason"], cs.STOP_STATIONARY)
+        self.assertEqual(record["accepted_updates"], 2)
+        self.assertEqual(record["moves_committed"], 0)
+        self.assertAlmostEqual(record["trace"][0], initial, places=12)
+        self.assertLess(record["trace"][1], 1e-4)
+        self.assertLess(record["trace"][2], 1e-14)
+        relaxation = record["point"].relaxation
+        self.assertLess(np.linalg.norm(relaxation.residual()), 1e-14)
 
         for component in relaxation.action.stationarity_residual():
-            self.assertLess(abs(component.real), 1e-11)
-            self.assertLess(abs(component.imag), 1e-11)
+            self.assertLess(abs(component.real), 1e-14)
+            self.assertLess(abs(component.imag), 1e-14)
 
     def test_the_connection_moves_multiplicatively_and_the_geometry_does_not(
             self):
@@ -367,17 +382,19 @@ class TheHolomorphicSolveReachesAStationaryPointTest(unittest.TestCase):
         spacetime = sphere3(squared=_metric, phase=_flux)
         before = [complex(edge.getLength())
                   for edge in spacetime.getEdgeList().toVector()]
-        action = cob.JointAction(spacetime, _declaration(holonomy_weight=1.0))
-        cob.HolomorphicRelaxation(action, _relaxation(relax_links=True)).solve()
+        declaration = _declaration(holonomy_weight=1.0)
+        record = cs.relax(spacetime, declaration,
+                          geometry=_relaxation(relax_links=True))
+        self.assertIs(record["spacetime"], spacetime)
         after = [complex(edge.getLength())
                  for edge in spacetime.getEdgeList().toVector()]
         self.assertEqual(before, after)
-        moved = cob.JointAction(spacetime, _declaration(holonomy_weight=1.0))
+        moved = cob.JointAction(spacetime, declaration)
         for holonomy in moved.face_holonomies():
-            self.assertAlmostEqual(abs(holonomy - 1.0), 0.0, places=9)
+            self.assertLess(abs(holonomy - 1.0), 1e-14)
 
     def test_the_jacobian_is_rank_deficient_by_the_gauge_directions(self):
-        """Gauge invariance is visible in the rank the solve reports.
+        """Gauge invariance is visible in the rank the Newton step reports.
 
         A connected complex on ``V`` vertices has ``V - 1`` independent gauge
         directions, and the action is constant along every one of them, so the
@@ -387,11 +404,12 @@ class TheHolomorphicSolveReachesAStationaryPointTest(unittest.TestCase):
         action = cob.JointAction(spacetime, _declaration(holonomy_weight=1.0))
         relaxation = cob.HolomorphicRelaxation(action,
                                                _relaxation(relax_links=True))
-        report = relaxation.solve()
         vertices = len(spacetime.getVertexList().toVector())
-        self.assertGreater(len(report.steps), 0)
-        self.assertEqual(report.steps[0].jacobian_rank,
+        step = relaxation.newton_step()
+        self.assertEqual(step.jacobian_rank,
                          relaxation.variable_count() - (vertices - 1))
+        self.assertEqual(step.jacobian_rank, 6)
+        self.assertFalse(step.constrained)
 
     def test_the_present_objective_is_a_real_residual_at_the_same_point(self):
         """The contrast the ticket draws, stated as two measurements.
@@ -400,7 +418,8 @@ class TheHolomorphicSolveReachesAStationaryPointTest(unittest.TestCase):
         of its terms is the squared norm of the gradient of a real functional,
         so what it reports is how nearly two real functionals are stationary. The
         joint action's residual is a vector of complex equations, and at the
-        point the solve reaches every one of them vanishes.
+        point the relaxation reaches every one of them vanishes and the action
+        is a complex number.
         """
         spacetime = sphere3(squared=_metric, phase=_flux)
         node = cob.MultiCobordism(spacetime, [], [], degrees=[1], gamma=0.0,
@@ -411,12 +430,11 @@ class TheHolomorphicSolveReachesAStationaryPointTest(unittest.TestCase):
         self.assertIsInstance(objective, float)
         self.assertGreaterEqual(objective, 0.0)
 
-        action = cob.JointAction(spacetime, _declaration(holonomy_weight=1.0))
-        relaxation = cob.HolomorphicRelaxation(action,
-                                               _relaxation(relax_links=True))
-        report = relaxation.solve()
-        self.assertTrue(report.converged)
-        self.assertIsInstance(report.action, complex)
+        record = cs.relax(spacetime, _declaration(holonomy_weight=1.0),
+                          geometry=_relaxation(relax_links=True))
+        relaxation = record["point"].relaxation
+        self.assertLess(np.linalg.norm(relaxation.residual()), 1e-14)
+        self.assertIsInstance(relaxation.action.value(), complex)
 
 
 class TheMultipliersImposeTheMomentEquationTest(unittest.TestCase):
@@ -431,29 +449,78 @@ class TheMultipliersImposeTheMomentEquationTest(unittest.TestCase):
             cob.SpectralMomentConstraint(1, target, 0j)]
         return cob.JointAction(spacetime, declaration)
 
-    def test_the_solve_returns_the_target_moment_exactly(self):
-        """p_1(h) is driven to p_1*, and xi to the value the equations force.
+    def test_a_drive_solves_the_constrained_system_with_its_least_squares_multiplier(
+            self):
+        """The drive of the constrained system from the geometry scaled by
+        1.08: the multiplier of a constraint declared on the action is the
+        least-squares one at every point (`cell_solve.GeometricSystem`),
+        which here is ``xi = -w_M = -1`` exactly, since the length equations
+        are ``(w_M + xi) d p_1/d z``. Five accepted updates take the residual
+        norm from 30.4 to exactly zero, and the moment holds exactly."""
+        reference = sphere3(squared=_metric)
+        target = self._constrained(reference, 0j).power_sums()[0]
+        spacetime = sphere3(squared=lambda index: _metric(index) * 1.08)
+        action = self._constrained(spacetime, target)
+        record = cs.relax(
+            spacetime, action.declaration,
+            geometry=_relaxation(relax_lengths=True, relax_multipliers=True))
+        self.assertEqual(record["stop_reason"], cs.STOP_STATIONARY)
+        self.assertEqual(record["accepted_updates"], 5)
+        self.assertAlmostEqual(record["trace"][0], 30.40, places=2)
+        self.assertEqual(record["trace"][-1], 0.0)
+        end = record["point"].relaxation.action
+        self.assertEqual(list(end.multipliers()), [-1.0 + 0j])
+        self.assertEqual(list(end.moment_residuals()), [0j])
+
+    def test_the_stationary_point_has_the_target_moment_and_the_forced_multiplier(
+            self):
+        """The stationary point has p_1(h) = p_1* and xi at the value the
+        equations force, and the Newton step moves toward it.
 
         With Gamma the identity the matter term is itself p_1(h), so the length
         equations read ``(w_M + xi) d p_1/d z_e = 0`` and the stationary point
         has ``xi = -w_M`` with the moment equation left to fix the geometry.
-        The multiplier's value is therefore known in closed form and is asserted
-        beside the constraint it imposes.
+        At the geometry the target is read on, the system's eleven equations
+        (ten lengths and the moment) vanish exactly with ``xi = -1``, and with
+        ``xi = 0`` the length equations are ``d p_1/d z`` (norm 123.09) beside
+        a moment equation that holds.
+
+        From the geometry scaled by 1.08 the Newton step is known in closed
+        form, because ``p_1`` is homogeneous of degree -1 in the squared
+        lengths (``p_1 = p_1* / 1.08`` there): Euler's identity gives
+        ``g^T H^{-1} g = p_1 / 2`` for the gradient ``g`` and the Hessian
+        ``H`` of ``p_1``, so the step is ``d xi = -1 + 2 (1 - 1.08) = -1.16``
+        and ``d z = -0.08 z``, back toward the target's geometry.
         """
         reference = sphere3(squared=_metric)
         target = self._constrained(reference, 0j).power_sums()[0]
+        solved = _relaxation(relax_lengths=True, relax_multipliers=True)
+
+        at_rest = self._constrained(reference, target)
+        at_rest.set_multipliers([-1.0 + 0j])
+        residual = np.asarray(cob.HolomorphicRelaxation(
+            at_rest, solved).residual())
+        self.assertEqual(len(residual), 11)
+        self.assertEqual(np.linalg.norm(residual), 0.0)
+        unforced = np.asarray(cob.HolomorphicRelaxation(
+            self._constrained(reference, target), solved).residual())
+        self.assertEqual(abs(unforced[10]), 0.0)
+        self.assertAlmostEqual(np.linalg.norm(unforced[:10]),
+                               123.09176072937633, places=9)
 
         spacetime = sphere3(squared=lambda index: _metric(index) * 1.08)
         action = self._constrained(spacetime, target)
         self.assertGreater(abs(action.moment_residuals()[0]), 1e-3)
-
-        relaxation = cob.HolomorphicRelaxation(
-            action, _relaxation(relax_lengths=True, relax_multipliers=True,
-                                tolerance=1e-11))
-        report = relaxation.solve()
-        self.assertTrue(report.converged, report.residual_norm)
-        self.assertLess(abs(report.moment_residuals[0]), 1e-10)
-        self.assertAlmostEqual(abs(report.multipliers[0] + 1.0), 0.0, places=8)
+        self.assertAlmostEqual(abs(action.power_sums()[0] * 1.08 - target),
+                               0.0, places=10)
+        step = cob.HolomorphicRelaxation(action, solved).newton_step()
+        self.assertEqual(step.jacobian_rank, 11)
+        self.assertLess(step.linear_residual, 1e-13)
+        squared = np.array([complex(edge.getLength()) ** 2 for edge
+                            in spacetime.getEdgeList().toVector()])
+        moved = np.asarray(step.step)
+        self.assertLess(abs(moved[10] + 1.16), 1e-12)
+        self.assertLess(np.abs(moved[:10] + 0.08 * squared).max(), 1e-12)
 
     def test_the_moment_row_and_column_are_the_analytic_gradient(self):
         """The multiplier's column and the moment equation's row are one
@@ -525,10 +592,11 @@ class TheDeclaredControlsAreCheckedTest(unittest.TestCase):
 
 
 class TheRemainingReadsTest(unittest.TestCase):
-    """The reads of the action and of the solve that the tests above do not
-    assert: the constraint count and the multipliers, the residual norm, the
-    carrier eigenvalues, the analytic Jacobian against a difference of the
-    residual, the rank threshold and the per-step record."""
+    """The reads of the action, of the system and of the drive that the tests
+    above do not assert: the constraint count and the multipliers, the
+    residual norm, the carrier eigenvalues, the analytic Jacobian against a
+    difference of the residual, the rank threshold and the record of every
+    step proposal."""
 
     def test_the_multipliers_are_variables_of_the_action(self):
         spacetime = sphere3(squared=_metric)
@@ -587,20 +655,33 @@ class TheRemainingReadsTest(unittest.TestCase):
         scale = np.abs(jacobian).max()
         self.assertLess(np.abs(jacobian - oracle).max(), 1e-7 * scale)
 
-    def test_every_step_records_its_norm_and_its_dampings(self):
+    def test_every_step_proposal_records_its_residual_and_its_step(self):
+        """The drive records one entry per step proposal: three here, the
+        two that were accepted and the last, which no scale of the line
+        search improved. Each carries the residual norm where the step was
+        formed (the drive's trace, entry for entry), the norm of the step
+        (0.744, 1.0e-5, 3.6e-16) and the Jacobian's rank (six)."""
         spacetime = sphere3(squared=_metric, phase=_flux)
-        action = cob.JointAction(spacetime, _declaration(holonomy_weight=1.0))
-        initial = action.stationarity_residual_norm()
-        report = cob.HolomorphicRelaxation(
-            action, _relaxation(relax_links=True)).solve()
-        self.assertAlmostEqual(report.initial_residual_norm, initial,
-                               places=12)
-        self.assertLess(report.residual_norm, report.initial_residual_norm)
-        for step in report.steps:
-            self.assertGreater(step.step_norm, 0.0)
-            self.assertEqual(step.sector_guard_dampings, 0)
-        norms = [step.step_norm for step in report.steps]
-        self.assertLess(norms[-1], norms[0])
+        declaration = _declaration(holonomy_weight=1.0)
+        initial = cob.JointAction(
+            spacetime, declaration).stationarity_residual_norm()
+        record = cs.relax(spacetime, declaration,
+                          geometry=_relaxation(relax_links=True))
+        updates = record["objective"].updates
+        self.assertEqual(len(updates), 3)
+        self.assertEqual([update["residual_norm"] for update in updates],
+                         record["trace"])
+        self.assertAlmostEqual(record["trace"][0], initial, places=12)
+        self.assertLess(record["trace"][-1], record["trace"][0])
+        self.assertEqual(record["objective"].undefined, [])
+        for update in updates:
+            self.assertGreater(update["step_norm"], 0.0)
+            self.assertEqual(update["jacobian_rank"], 6)
+            self.assertFalse(update["constrained_step"])
+        norms = [update["step_norm"] for update in updates]
+        self.assertAlmostEqual(norms[0], 0.7438, places=3)
+        self.assertLess(norms[1], 2e-5)
+        self.assertLess(norms[2], 1e-14)
 
     def test_a_larger_rank_threshold_drops_singular_directions(self):
         """The rank threshold decides which singular values of the Jacobian
@@ -610,7 +691,7 @@ class TheRemainingReadsTest(unittest.TestCase):
         1 + 2 e^{-5/2} cos theta and the face curvature varies with the
         cosine of the flux, the six nonzero singular values lie between 0.81
         and 1 of the largest and four are at rounding, so a threshold of
-        1e-12 keeps six and a threshold of 0.93 keeps three; the step record
+        1e-12 keeps six and a threshold of 0.93 keeps three; the Newton step
         reports the gap at the decision. The declared default of the
         threshold is 1e-15."""
         self.assertEqual(cob.HolomorphicRelaxationDeclaration().rank_tolerance,
@@ -626,7 +707,7 @@ class TheRemainingReadsTest(unittest.TestCase):
             n = relaxation.variable_count()
             singular = np.linalg.svd(np.asarray(relaxation.jacobian())
                                      .reshape(n, n), compute_uv=False)
-            step = relaxation.solve().steps[0]
+            step = relaxation.newton_step()
             self.assertEqual(step.jacobian_rank,
                              int(np.sum(singular > threshold * singular[0])))
             ranks.append(step.jacobian_rank)

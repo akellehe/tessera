@@ -1739,6 +1739,7 @@ MultiCobordism::ObjectiveTerms MultiCobordism::objectiveTermsFor(
     terms.registerResidual += pinned.registerResidual;
     terms.actionMagnitude += pinned.actionMagnitude;
     terms.carriedStateEnergy += pinned.carriedStateEnergy;
+    terms.jointActionStationarity += pinned.jointActionStationarity;
   }
   return terms;
 }
@@ -3406,12 +3407,13 @@ std::vector<int> MultiCobordism::depthSchedule(int maxLookahead,
   return schedule;
 }
 
-std::vector<double> MultiCobordism::runStage1(int maxSteps, int nCandidateMoves,
-                                                 bool growBoundaries,
-                                                 int maxLookahead,
-                                                 int combinatorialBreadth) {
+std::vector<double> MultiCobordism::runStage1(std::optional<int> maxSteps,
+                                              int nCandidateMoves,
+                                              bool growBoundaries,
+                                              int maxLookahead,
+                                              int combinatorialBreadth) {
   std::vector<double> objectiveTrace = {objective()};
-  for (int stepIndex = 0; stepIndex < maxSteps; ++stepIndex)
+  for (int stepIndex = 0; !maxSteps || stepIndex < *maxSteps; ++stepIndex)
     if (!stage1Update(nCandidateMoves, growBoundaries, objectiveTrace,
                       maxLookahead, combinatorialBreadth))
       break;
@@ -3574,22 +3576,25 @@ void MultiCobordism::seedInputs(const std::vector<std::vector<std::uint64_t>> &r
   seedBlockRegions(regionSets, inputTargets_, inputBlocks_, /*surface=*/true);
 }
 
-std::vector<double> MultiCobordism::runStage2(double beta, int maxIters,
-                                                 double alpha0, double tolerance) {
+std::vector<double> MultiCobordism::runStage2(double beta,
+                                              std::optional<int> maxIters,
+                                              double alpha0, double tolerance) {
   setReggeWeight(beta);
   std::vector<double> objectiveTrace = {objective()};
   double stepScale = alpha0;
   lastStage2Stationary_ = false;  // for maxIters == 0; each update reports its own
-  for (int iterationIndex = 0; iterationIndex < maxIters; ++iterationIndex)
+  for (int iterationIndex = 0; !maxIters || iterationIndex < *maxIters;
+       ++iterationIndex)
     if (!stage2Update(beta, tolerance, objectiveTrace, stepScale)) break;
   return objectiveTrace;
 }
 
-std::vector<double> MultiCobordism::run(int maxIters, int nCandidateMoves,
+std::vector<double> MultiCobordism::run(std::optional<int> maxIters,
+                                        int nCandidateMoves,
                                         bool growBoundaries, double beta,
                                         double alpha0, double tolerance,
                                         int maxLookahead,
-                                        int relaxBudgetPerMove,
+                                        std::optional<int> relaxBudgetPerMove,
                                         int combinatorialBreadth) {
   setReggeWeight(beta);
   std::vector<double> objectiveTrace = {objective()};
@@ -3601,7 +3606,11 @@ std::vector<double> MultiCobordism::run(int maxIters, int nCandidateMoves,
   // many consecutive no-effect iterations.
   constexpr int kConsecutiveNoEffectLimit = 3;
   int consecutiveNoEffect = 0;
-  for (int iterationIndex = 0; iterationIndex < maxIters; ++iterationIndex) {
+  const auto withinRelaxBudget = [&](int relaxIndex) {
+    return !relaxBudgetPerMove || relaxIndex < *relaxBudgetPerMove;
+  };
+  for (int iterationIndex = 0; !maxIters || iterationIndex < *maxIters;
+       ++iterationIndex) {
     // One combinatorial move (or lookahead sequence), then a full geometric
     // relaxation: stage-2 updates repeat until the absolute-improvement test
     // reports diminishing returns. Every committed move is therefore scored
@@ -3617,7 +3626,7 @@ std::vector<double> MultiCobordism::run(int maxIters, int nCandidateMoves,
     // does not bound the loop in practice. Caller-tunable; the
     // stationarity test remains the real terminator.
     bool geometryRelaxed = false;
-    for (int relaxIndex = 0; relaxIndex < relaxBudgetPerMove; ++relaxIndex) {
+    for (int relaxIndex = 0; withinRelaxBudget(relaxIndex); ++relaxIndex) {
       if (!stage2Update(beta, tolerance, objectiveTrace, stepScale)) break;
       geometryRelaxed = true;
     }
@@ -3639,7 +3648,7 @@ std::vector<double> MultiCobordism::run(int maxIters, int nCandidateMoves,
       // also enable new moves). Exit only once stationary at 1e-12 too.
       constexpr double kExitRelTol = 1e-12;
       bool tighterPassFoundDescent = false;
-      for (int relaxIndex = 0; relaxIndex < relaxBudgetPerMove; ++relaxIndex) {
+      for (int relaxIndex = 0; withinRelaxBudget(relaxIndex); ++relaxIndex) {
         if (!stage2Update(beta, kExitRelTol, objectiveTrace, stepScale)) break;
         tighterPassFoundDescent = true;
       }

@@ -56,6 +56,14 @@ struct ObjectiveTerms {
   /// (`HodgeLaplacian::spectralMomentStiffness`), exactly 0.0 when its weight is
   /// zero, the default.
   double momentStiffness = 0.0;
+  /// \f$ \lVert R\rVert_2 \f$, the Euclidean norm of the stationarity
+  /// residual \f$ R \f$ of the joint action (`cobordism::JointAction`: the
+  /// Regge term, the face-holonomy term and the matter term with the
+  /// covariance rebuilt at the point) over the squared lengths and the links.
+  /// It vanishes exactly at the stationary points of that complex action,
+  /// and a drive's tolerance is then a tolerance on the residual norm itself.
+  /// Exactly 0.0 for an objective that does not score the joint action.
+  double jointActionStationarity = 0.0;
 };
 
 /// # ObjectiveContext
@@ -338,6 +346,8 @@ class ObjectiveTermName {
   static constexpr const char *kActionMagnitude = "action_magnitude";
   static constexpr const char *kCarriedStateEnergy = "carried_state_energy";
   static constexpr const char *kMomentStiffness = "moment_stiffness";
+  static constexpr const char *kJointActionStationarity =
+      "joint_action_stationarity";
 };
 
 /// # CobordismObjective

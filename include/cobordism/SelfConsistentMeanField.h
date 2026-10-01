@@ -47,7 +47,7 @@ enum class CovarianceRule { OccupiedProjector, BandFilling };
 /// Where the occupied bands are chosen.
 ///
 /// * `Continuation` (the default) — the bands are chosen once, at the point
-///   the solve starts from, by the declared `OccupationOrder` (occupation
+///   a drive starts from, by the declared `OccupationOrder` (occupation
 ///   \f$ n_b \f$ goes to the \f$ b \f$-th band in that order), and at every
 ///   later point each occupied band is followed from its projector at the
 ///   previous point: it takes the \f$ r_b \f$ eigenvectors of the operator
@@ -68,20 +68,19 @@ enum class CovarianceRule { OccupiedProjector, BandFilling };
 ///   declared order, so a band that crosses another in the declared order
 ///   exchanges its occupation with it. The overlaps with the previous point's
 ///   bands are still reported, and an exchange shows as an overlap far below
-///   one. The residual is discontinuous across an exchange, and a solve whose
-///   Newton steps cross one need not end: the residual test cuts each step
-///   short of the exchange, the cut step lowers the residual a little, and
-///   the next step is cut the same way.
+///   one. The residual is discontinuous across an exchange.
 enum class BandSelection { Continuation, SortEveryIterate };
 
 /// # The method
 ///
-/// The fixed point is solved by Newton's method on the joint system,
-/// written as \f$ F_{\rm sc}(z,U)=F(z,U,\Gamma(z,U))=0 \f$: the covariance
-/// equation is solved exactly at every point the solve evaluates (the
-/// covariance is rebuilt there), and the geometric equations are solved by
-/// damped Newton steps with the Jacobian of \f$ F_{\rm sc} \f$
-/// (`HolomorphicRelaxation` with a `CovarianceRebuild`). By the
+/// The fixed point is a zero of the joint system, written as
+/// \f$ F_{\rm sc}(z,U)=F(z,U,\Gamma(z,U))=0 \f$: the covariance equation is
+/// solved exactly at every point the system is evaluated at (the covariance
+/// is rebuilt there), and the geometric equations are posed with the
+/// Jacobian of \f$ F_{\rm sc} \f$ (`jointSystem`: a `HolomorphicRelaxation`
+/// with a `CovarianceRebuild`). The search for the zero is a drive of
+/// `MultiCobordism` with that system as its objective
+/// (`tessera.drivers.cell_solve`). By the
 /// Hellmann-Feynman identity \f$ F_{\rm sc} \f$ is the gradient of the
 /// geometric action plus the occupied energy, and its Jacobian is their
 /// Hessian.
@@ -108,7 +107,7 @@ enum class FiberConstraintForm {
 
 /// # SelfConsistentMeanFieldDeclaration
 ///
-/// The configuration of a self-consistent backreaction solve.
+/// The declaration of a self-consistent backreaction system.
 struct SelfConsistentMeanFieldDeclaration {
   /// How many modes of the carrier operator are filled under
   /// `CovarianceRule::OccupiedProjector`.
@@ -176,6 +175,15 @@ struct SelfConsistentMeanFieldDeclaration {
   /// carrier as it was declared.
   std::vector<std::complex<double>> fiberMomentTargets;
 
+  /// The targets of the pinned constraints in the unit they are solved in
+  /// (\f$ p_j(h_{\mathcal C}/s) \f$ with \f$ s \f$ the declared
+  /// `fiberMomentScale`, or the band eigenvalue over \f$ s \f$), one per
+  /// constraint. Empty by default. When given they are the constraints'
+  /// targets as they stand, with no conversion, and `fiberMomentTargets` must
+  /// be empty: this is how targets read on one complex are carried to
+  /// another without a round trip through the operator's unit.
+  std::vector<std::complex<double>> fiberMomentUnitTargets;
+
   /// The unit \f$ s \f$ the pinned power sums are solved in
   /// (`JointActionDeclaration::momentScale`): the constraints are
   /// \f$ p_j(h_{\mathcal C}/s)=p_j^{\star}s^{-j} \f$, the same constraints,
@@ -199,14 +207,9 @@ struct SelfConsistentMeanFieldDeclaration {
   /// measures the last step rather than a residual.
   double tolerance = 1e-15;
 
-  /// The Newton solve of the geometry.
-  ///
-  /// Under `JointNewton` it declares the joint solve's step control: the
-  /// Jacobian rule, the rank tolerance, the dampings, the guards (the zeros of
-  /// \f$ W \f$, the held monopole sectors, the domain of the action), the
-  /// shared coordinates. The joint solve steps until its residual is at or
-  /// below the smaller of this declaration's `tolerance` and the mean
-  /// field's own `tolerance`, or until it stops by name.
+  /// The geometric part of the joint system: which fields are its variables,
+  /// the coordinates they share, the held monopole sectors and the rank
+  /// tolerance of its linear solves.
   HolomorphicRelaxationDeclaration geometry;
 };
 
@@ -295,6 +298,25 @@ struct BandRead {
   std::vector<std::complex<double>> leftEigenvectors;
 };
 
+/// # BandReference
+///
+/// One occupied band as the reference a `BandFollower` follows: the band's
+/// occupation, its rank, where it sat in the declared order when it was
+/// chosen, and its Riesz projector over the operator's modes. At a later
+/// point the band takes the eigenvectors of largest weight in this projector.
+struct BandReference {
+  /// \f$ n_b \f$, the number of particles the band carries.
+  double occupation = 0.0;
+  /// \f$ r_b \f$, the number of modes of the band.
+  std::size_t rank = 0;
+  /// The band's index in the declared order where it was chosen.
+  std::size_t declaredIndex = 0;
+  /// The places in the declared order its modes held where it was chosen.
+  std::vector<std::size_t> declaredPositions;
+  /// \f$ P_b \f$, flat row-major over the operator's modes.
+  std::vector<std::complex<double>> projector;
+};
+
 /// # BandFollower
 ///
 /// The declared covariance rule together with its band selection. It builds
@@ -334,14 +356,21 @@ class BandFollower {
   /// Whether a reference is set.
   [[nodiscard]] bool following() const noexcept { return !reference_.empty(); }
 
+  /// The reference the next `read` follows, one entry per occupied band;
+  /// empty when none is set.
+  [[nodiscard]] const std::vector<BandReference> &reference() const noexcept {
+    return reference_;
+  }
+
+  /// Set the reference from stored bands, so that a read is followed from
+  /// bands chosen elsewhere (at a host, on the modes that host shares with
+  /// the operator read) and not from the declared order at the point.
+  void setReference(std::vector<BandReference> reference) {
+    reference_ = std::move(reference);
+  }
+
  private:
-  struct Reference {
-    double occupation = 0.0;
-    std::size_t rank = 0;
-    std::size_t declaredIndex = 0;
-    std::vector<std::size_t> declaredPositions;
-    std::vector<std::complex<double>> projector;
-  };
+  using Reference = BandReference;
 
   CovarianceRule rule_;
   std::size_t occupiedModes_;
@@ -354,11 +383,9 @@ class BandFollower {
 
 /// # SelfConsistentMeanFieldStep
 ///
-/// One iterate of a solve, recorded so a run can be read back. Iterate zero is
-/// the point the solve starts from; each later iterate is the point one
-/// Newton step of the joint system reached.
+/// The measurements of one point (`SelfConsistentMeanField::iterate`).
 struct SelfConsistentMeanFieldStep {
-  /// The iterate's index, counting from zero at the starting point.
+  /// The index the caller numbers the point by; zero from `iterate`.
   std::size_t iteration = 0;
   /// The Euclidean norm of the joint stationarity force, over the geometric
   /// fields the geometry declaration relaxes, measured with this iterate's
@@ -416,41 +443,20 @@ struct SelfConsistentMeanFieldStep {
   /// s^{-j} \f$, the equations the solve drives to zero); zero when none is
   /// pinned.
   double momentResidualNorm = 0.0;
-  /// Whether the joint residual at this iterate is at or below the joint
-  /// solve's tolerance.
-  bool geometryConverged = false;
-  /// The joint residual norm at this iterate.
-  double geometryResidualNorm = 0.0;
-  /// `RelaxationStop::Continued` at an iterate the solve stepped on from, and
-  /// the reason the joint solve stopped at its last iterate.
-  RelaxationStop geometryStopReason = RelaxationStop::Continued;
-  /// The stop reason in words, with the numbers that decided it; empty for
-  /// `Continued`.
-  std::string geometryStopDetail;
-  /// Whether a Newton iteration was taken from this iterate (a Jacobian
-  /// formed and trial steps tried); its record is `newton`.
-  bool newtonIterated = false;
-  /// The Newton iteration taken from this iterate: the
-  /// rank and the rank gap of the joint Jacobian, the damping and the length
-  /// of the step, the guards that halved it, and whether a step was accepted.
-  HolomorphicStep newton;
 };
 
 /// # SelfConsistentMeanFieldReport
 ///
-/// What a self-consistent solve reached.
+/// The read of one point (`SelfConsistentMeanField::read`): where the
+/// self-consistent system stands there.
 struct SelfConsistentMeanFieldReport {
-  /// The band selection that ran.
+  /// The declared band selection.
   BandSelection bandSelection = BandSelection::Continuation;
-  /// Every iterate, in order, from the starting point.
+  /// The point's measurements, one entry.
   std::vector<SelfConsistentMeanFieldStep> steps;
-  /// The number of accepted Newton steps of the joint system.
-  std::size_t iterations = 0;
-  /// Whether the fixed-point conditions held at the declared tolerance.
+  /// Whether the fixed-point conditions hold at the declared tolerance.
   bool converged = false;
-  /// Why the solve stopped (`relaxationStopName` gives its name).
-  RelaxationStop stopReason = RelaxationStop::NoDescent;
-  /// The stop reason in words, with the numbers that decided it.
+  /// `converged` in words, with the numbers that decided it.
   std::string stopDetail;
   /// The stationarity force norm at the point the solve stopped at.
   double forceNorm = 0.0;
@@ -570,9 +576,6 @@ struct SelfConsistentMeanFieldReport {
 /// Reference: Bach, Lieb and Solovej, "Generalized Hartree-Fock theory and the
 /// Hubbard model", Journal of Statistical Physics 76, 3 (1994), for the
 /// quasi-free closure of a covariance coupled to its own mean field.
-/// Reference: Ortega and Rheinboldt, "Iterative Solution of Nonlinear Equations
-/// in Several Variables", SIAM Classics in Applied Mathematics 30, for the
-/// damped Newton method the joint system is solved by.
 ///
 /// The only channel from the carried state to the geometry is the bilinear
 /// action density \f$ \tilde\psi^{\mathsf T}h(z,U)\psi \f$ evaluated on
@@ -589,18 +592,12 @@ struct SelfConsistentMeanFieldReport {
 /// \f$ h(z^{*}) \f$, and the state's force balances the geometric action edge
 /// by edge. It is a stationary point of a complex action rather than a
 /// minimum of a real one, and the report carries the residuals that certify
-/// it as such. It is solved for by Newton's method on the joint system, and
-/// the declared `BandSelection` fixes which bands the covariance fills
-/// (chosen once and followed, by default), which changes no equation.
-///
-/// A solve that finds no fixed point says why, by name
-/// (`SelfConsistentMeanFieldReport::stopReason`): no damped step reduced the
-/// residual; the smallest damped step changed a held monopole number ("no
-/// stationary point in the declared monopole sector"); the smallest damped
-/// step left the domain of the action; the residual reached its floor on the
-/// held set; or the squared lengths overflowed the double. The report also
-/// carries the Kontsevich-Segal margin of the geometry the solve stopped at,
-/// and the joint Jacobian's rank and rank gap there.
+/// it as such. This class poses the joint system at a point (`jointSystem`)
+/// and reads the point (`iterate`, `read`); it moves nothing. The declared
+/// `BandSelection` fixes which bands the covariance fills (chosen once and
+/// followed, by default), which changes no equation. A read carries the
+/// Kontsevich-Segal margin of the geometry and the joint Jacobian's rank and
+/// rank gap there.
 ///
 /// Under `OccupiedProjector` the covariance is idempotent at every iterate by
 /// construction, and `purityDefect` measures that closure rather than
@@ -609,14 +606,13 @@ struct SelfConsistentMeanFieldReport {
 /// projector.
 class SelfConsistentMeanField {
  public:
-  /// Build a solve over an action.
+  /// Pose the self-consistent system of an action at its current point.
   ///
-  /// @param action The joint action. The complex it refers to is the object
-  ///   the solve writes. The covariance is rebuilt from the carrier operator
-  ///   at every point, starting from the bands chosen at the initial
-  ///   geometry, so a covariance declared on the action is replaced.
-  /// @param declaration The occupation rule, the band selection and the
-  ///   convergence controls.
+  /// @param action The joint action. The complex it refers to is read and
+  ///   not written. The covariance is rebuilt from the carrier operator at
+  ///   the point, so a covariance declared on the action is replaced.
+  /// @param declaration The occupation rule, the band selection, the pinned
+  ///   fiber and the tolerance of the fixed-point conditions.
   /// @throws std::invalid_argument when no mode is declared occupied (under
   ///   `BandFilling`, when the band occupations are empty, negative, or sum
   ///   to zero), which leaves the matter term identically zero and the
@@ -624,15 +620,11 @@ class SelfConsistentMeanField {
   SelfConsistentMeanField(JointAction action,
                           SelfConsistentMeanFieldDeclaration declaration);
 
-  /// Run the solve, writing the relaxed geometry into the complex as it goes.
-  [[nodiscard]] SelfConsistentMeanFieldReport solve();
-
-  /// The action, carrying the covariance and the multipliers as the solve left
-  /// them.
+  /// The action the system is posed on, as it was declared.
   [[nodiscard]] const JointAction &action() const noexcept { return action_; }
 
-  /// The joint Newton system at the action's current point, as `solve`
-  /// builds it there: the bands chosen at the point by the declared rule and
+  /// The joint system at the action's current point: the bands chosen at
+  /// the point by the declared rule and
   /// followed from it, the covariance their density, the pinned fiber
   /// constraints installed with their targets and the multipliers' starting
   /// estimate, and the covariance and the fiber rebuilt at every point the
@@ -642,12 +634,45 @@ class SelfConsistentMeanField {
   /// system refers to the complex the action does, so the geometry may be
   /// moved between reads, with the reference bands and the constraints held,
   /// for an independent check of the Jacobian against the residual.
-  /// @throws std::invalid_argument as `solve` does at its starting point.
-  [[nodiscard]] HolomorphicRelaxation jointSystem() const;
+  /// With a \p reference, the bands are followed from it at the point and at
+  /// every point the system is evaluated at, and are not chosen by the
+  /// declared order: the system of a complex is then the one whose bands
+  /// continue the reference's.
+  /// @throws std::invalid_argument when the pinned fiber's declaration does
+  ///   not fit the bands read at the point (`fiberMoments`), and when a
+  ///   reference projector is not over the operator's modes.
+  [[nodiscard]] HolomorphicRelaxation jointSystem(
+      const std::vector<BandReference> &reference = {}) const;
+
+  /// The measurements of one point, the action's current one, with nothing
+  /// moved: the bands read there (followed from \p reference when one is
+  /// given, chosen by the declared order otherwise), the covariance their
+  /// density, the pinned fiber constraints installed with their targets and
+  /// their least-squares multipliers, and the self-consistent force, the
+  /// occupied energy, the bands, the multipliers and the constraints'
+  /// residual there (`SelfConsistentMeanFieldStep`). \p previous is the
+  /// covariance the change of the
+  /// covariance is measured from; empty leaves the change zero.
+  /// @throws std::invalid_argument as `jointSystem` does.
+  [[nodiscard]] SelfConsistentMeanFieldStep iterate(
+      const std::vector<BandReference> &reference = {},
+      const std::vector<std::complex<double>> &previous = {}) const;
+
+  /// The report of the action's current point, with nothing moved: what
+  /// `iterate` measures there as its one iterate, and the measurements a
+  /// report takes once at its end point (the joint Jacobian's rank decision,
+  /// the Hessian along the Hellmann-Feynman force, the Kontsevich-Segal
+  /// margin, the pinned constraints in the operator's own unit). `converged`
+  /// says whether the force and the constraints' residual are at or below
+  /// the declared tolerance there. \p startScale is the largest squared-length
+  /// modulus `largestLengthRatio` is taken against; zero takes the point's
+  /// own, so the ratio is one.
+  /// @throws std::invalid_argument as `jointSystem` does.
+  [[nodiscard]] SelfConsistentMeanFieldReport read(
+      const std::vector<BandReference> &reference = {},
+      double startScale = 0.0) const;
 
  private:
-  [[nodiscard]] SelfConsistentMeanFieldReport solveJointNewton();
-
   JointAction action_;
   SelfConsistentMeanFieldDeclaration declaration_;
 };

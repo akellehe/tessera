@@ -1,7 +1,8 @@
 # Copyright (c) 2026 Twin Vector Labs LLC.
 # All rights reserved.
 """The sheet-isomorphism failure of quark condition 2 in the per-cell reads of
-the recursion driver, pinned from the certificate down to the Newton solve.
+the recursion driver, pinned from the certificate down to the step of the
+solve.
 
 Whitepaper v17 §8, "Sheet convention (adopted)" (line 355): a k-sheeted
 support is k isomorphic copies of a base complex "with equal squared lengths
@@ -11,9 +12,11 @@ stationary configurations by symmetric criticality", and in the literal case of
 disjoint copies the sheet number is "conserved under relaxation".
 
 The per-cell read (`recursion.cell_reads` -> `baryon_poles.scan_point` ->
-`evaluate_content` -> `relax_content`) builds three disjoint copies of the cell
-(`baryon_poles.build_host`) and relaxes them with `SelfConsistentMeanField`
-around `HolomorphicRelaxation`. The certificate
+`evaluate_content` -> `relax_content`) drives the cell as a base tetrahedron
+with `MultiCobordism` (`cell_solve.solve`), scoring the self-consistent system
+of its three-sheeted support (`cell_solve.sheeted_support`, three disjoint
+copies of the base), and returns that support of the base the drive ended
+on. The certificate
 (`SheetedSupport.certifyIsomorphism`) then compares the sheets' squared lengths
 and connection values. The tests below establish, on the run's own host cells
 (`_recursion_run_2026_09_23`):
@@ -22,14 +25,13 @@ and connection values. The tests below establish, on the run's own host cells
   exactly the injected disagreement;
 * the host is built exactly isomorphic, and the seeded covariance and the
   geometric Jacobian respect the sheet permutation;
-* the relaxation carries the sheets as one shared base field
-  (`baryon_poles.share_sheet_geometry`: six squared lengths and six links,
-  written to every sheet, each driven by the sum of its three edges'
-  equations), so identical sheets stay identical to the bit for every
-  content. Relaxed as 36 separate coordinates, rounding asymmetries amplified
-  by the ill-conditioned Newton step separated the sheets' links by O(1) in
-  one step;
-* the Newton solve decides its rank on the singular values relative to the
+* the solve carries the sheets as one shared base field (the base
+  tetrahedron's six squared lengths and six links, written to every sheet,
+  each driven by the sum of its three edges' equations), so the sheets are
+  identical to the bit for every content. Relaxed as 36 separate
+  coordinates, rounding asymmetries amplified by the ill-conditioned Newton
+  step separated the sheets' links by O(1) in one step;
+* the step decides its rank on the singular values relative to the
   largest, at the driver's declared tolerance, and reports the rank and the
   gap; a complete orthogonal decomposition deciding on its pivoted-QR
   diagonal kept rank 35 where the numerical rank is 33;
@@ -52,6 +54,7 @@ import pytest
 from tessera import cobordism as cob
 from tessera import observables as obs
 from tessera.drivers import baryon_poles as bp
+from tessera.drivers import cell_solve as cs
 from tessera.drivers import recursion as R
 
 from tests.drivers import _recursion_run_2026_09_23 as RUN
@@ -69,6 +72,16 @@ def _cell_config(cell, content):
     config = bp.default_config(kappas=[1.0], betas=[1.0],
                                selected_contents=[tuple(content)],
                                tolerances=RUN.TOLERANCES)
+    config["host_cell"] = RUN.HOST_CELLS[cell]
+    config["held_sectors"] = R.held_sectors([[0, 1, 2, 3]], [1], 4)
+    return config
+
+
+def _declared_cell_config(cell, content):
+    """`_cell_config` at the declared tolerances (1e-15), the ones a drive
+    runs at."""
+    config = bp.default_config(kappas=[1.0], betas=[1.0],
+                               selected_contents=[tuple(content)])
     config["host_cell"] = RUN.HOST_CELLS[cell]
     config["held_sectors"] = R.held_sectors([[0, 1, 2, 3]], [1], 4)
     return config
@@ -135,23 +148,23 @@ def _gauge_one_sheet(spacetime, vertex, angle):
 def _host_band_read(action, content, config):
     """The band rule of `relax_content` read at the action's point without
     solving: the bands of h_1 chosen by the declared order and their density
-    (`BandFollower.read`), which is what `SelfConsistentMeanField.solve`
-    seeds at iterate zero."""
+    (`BandFollower.read`), which is the covariance the self-consistent
+    system carries at the host."""
     return cob.BandFollower(bp.mean_field_declaration(content, config)).read(
         action.carrier_operator())
 
 
 def _occupied_energy(read, action):
     """tr(Gamma h_1) of a band read at the action's point, the occupied energy
-    the solve records at an iterate."""
+    a read of the point reports."""
     gamma = np.asarray(read.covariance).reshape(18, 18)
     return complex(np.trace(gamma @ bp.matrix(action.carrier_operator())))
 
 
 def _seeded_action(cell, content):
     """The joint action of `relax_content` with the band-filling covariance
-    seeded on the unrelaxed host, as `SelfConsistentMeanField.solve` seeds it
-    at iterate zero, without solving."""
+    seeded on the unrelaxed host, as the self-consistent system carries it
+    there, without solving."""
     config = _cell_config(cell, content)
     spacetime = bp.build_host(config["edge_squared"], config["host_cell"])
     action = cob.JointAction(spacetime, bp.action_declaration(spacetime, 1.0,
@@ -387,7 +400,7 @@ def test_the_seeded_covariance_fills_rank_three_bands_of_h(content):
     and commutes with it to rounding, it commutes with the sheet relabeling
     to rounding (1e-14), and its trace is the three quarks. The band rule is
     read at the host itself (`_host_band_read`), which is the covariance
-    `SelfConsistentMeanField.solve` seeds at iterate zero."""
+    the self-consistent system carries there."""
     spacetime, action, config = _seeded_action(FIRST_CELL, content)
     read = _host_band_read(action, content, config)
     assert list(read.ranks) == [3] * 6
@@ -408,12 +421,18 @@ def test_the_relaxed_sheets_are_bit_identical_for_every_content(cell,
                                                                 content):
     """WP v17 line 355: the shared geometry is a stationary sector of the
     sheet-permuting group and the sheet number is conserved under relaxation.
-    From the host cells of the run, exactly isomorphic as built, the full
-    mean-field solve of every content: the shared base field is written to
-    every sheet, so the squared lengths and links of the three sheets agree
-    to the bit and the certificate reports both residuals exactly zero."""
-    config = _cell_config(cell, content)
-    spacetime, _, _ = bp.relax_content(content, 1.0, 1.0, config)
+    From the host cells of the run, the full solve of every content at the
+    declared tolerances: the drive moves the base tetrahedron, whose squared
+    lengths and links are the shared base field, and the complex it returns
+    is the three-sheeted support of the base it ended on
+    (`cell_solve.sheeted_support`), every sheet a copy of it. So the squared
+    lengths and links of the three sheets agree to the bit, wherever the
+    drive ended, and the certificate reports both residuals exactly zero."""
+    config = _declared_cell_config(cell, content)
+    spacetime, _, _, drive = bp.relax_content(content, 1.0, 1.0, config)
+    assert not drive["changed"]
+    assert cs.edge_fields(spacetime) == cs.edge_fields(
+        cs.sheeted_support(drive["spacetime"], bp.SHEETS).spacetime)
     lengths, links = _sheets(spacetime)
     assert _largest_gap(lengths) == 0.0
     assert _largest_gap(links) == 0.0
@@ -443,38 +462,46 @@ def test_the_shared_field_has_six_lengths_and_six_links():
 
 
 @pytest.mark.parametrize("content", [(2, 1, 0), (0, 0, 3)])
-def test_the_newton_solve_uses_the_numerical_rank(content):
-    """The step of `HolomorphicRelaxation` is the minimum-norm least-squares
-    solution with singular values at or below rank_tolerance times the
-    largest counted as zero. The run declared 1e-10 (`RUN.TOLERANCES`; the
-    drivers' declared default is now 1e-15), a factor fifty above the
-    rounding floor of its real-axis-difference Jacobian at radius 1e-4. On the
-    seeded action of the run's first host cell the 36-coordinate Jacobian has
-    exactly three near-null directions below that threshold, so the rank the
-    solve uses is the numerical rank 33 for both contents, and the record
-    of the first iterate of the full solve (`steps[0]`) reports it with a
-    gap of more than six decades between the smallest retained and the
-    largest discarded singular value."""
-    spacetime, action, config = _seeded_action(FIRST_CELL, content)
+@pytest.mark.parametrize("tolerances", ["run", "declared"])
+def test_the_step_uses_the_numerical_rank(content, tolerances):
+    """The step of `HolomorphicRelaxation` (`newton_step`) is the
+    minimum-norm least-squares solution with singular values at or below
+    rank_tolerance times the largest counted as zero. On the seeded action of
+    the run's first host cell, every edge its own coordinate, the
+    36-coordinate closed-form Jacobian has exactly three near-null
+    directions, at 1e-16 of the largest singular value, and the next
+    singular value is eleven decades above them. The run declared the
+    threshold 1e-10 (`RUN.TOLERANCES`) and the declared default is 1e-15;
+    at both the rank the step uses is the numerical rank 33, for both
+    contents, and the step reports it with the gap between the smallest
+    retained and the largest discarded singular value."""
+    config = (_cell_config if tolerances == "run"
+              else _declared_cell_config)(FIRST_CELL, content)
+    spacetime = bp.build_host(config["edge_squared"], config["host_cell"])
+    action = cob.JointAction(spacetime, bp.action_declaration(spacetime, 1.0,
+                                                              1.0))
+    action.set_covariance(_host_band_read(action, content, config).covariance)
     declaration = bp.relaxation_declaration(config)
-    assert declaration.rank_tolerance == RUN.TOLERANCES["rank_tolerance"] \
-        == 1e-10
+    assert declaration.rank_tolerance == (
+        RUN.TOLERANCES["rank_tolerance"] if tolerances == "run"
+        else bp.DECLARED_TOLERANCE) == (1e-10 if tolerances == "run"
+                                        else 1e-15)
     relaxation = cob.HolomorphicRelaxation(action, declaration)
     n = relaxation.variable_count()
     jacobian = np.asarray(relaxation.jacobian()).reshape(n, n)
     singular = np.linalg.svd(jacobian, compute_uv=False)
     numerical_rank = int(np.sum(singular > 1e-10 * singular[0]))
     assert numerical_rank == 33
-    step = relaxation.solve().steps[0]
+    assert np.all(singular[33:] < 1e-14 * singular[0])
+    step = relaxation.newton_step()
     assert step.jacobian_rank == numerical_rank
-    assert step.rank_tolerance == 1e-10
+    assert step.rank_tolerance == declaration.rank_tolerance
     assert step.largest_singular_value == pytest.approx(singular[0],
                                                         rel=1e-12)
     assert step.smallest_retained_singular_value == pytest.approx(
         singular[32], rel=1e-9)
-    assert step.largest_discarded_singular_value == pytest.approx(
-        singular[33], rel=1e-3)
-    assert step.rank_gap > 1e6
+    assert step.largest_discarded_singular_value < 1e-14 * singular[0]
+    assert step.rank_gap > 1e10
 
 
 def test_the_near_null_directions_are_one_per_sheet():
@@ -512,20 +539,30 @@ def test_the_near_null_directions_are_one_per_sheet():
 def test_three_quarks_in_one_band_survive_the_relaxation():
     """A band of h_1 on the sheeted host has rank 3 (one simple mode per sheet
     times three sheets), so three quarks in the third band fit and stay
-    fitting while the sheets stay identical: the full mean-field solve on the
-    run's first host cell reads the band ranks [3, 3, 3, 3, 3, 3] at every
-    iterate and at its end point. (With the bands read on the T-averaged
-    operator and the sheets relaxed separately, this was the run's refusal
-    "band 2 has rank 2 and cannot hold the declared occupation 3".)"""
-    config = _cell_config(FIRST_CELL, (0, 0, 3))
-    _, _, report = bp.relax_content((0, 0, 3), 1.0, 1.0, config)
-    assert list(report.band_ranks) == [3] * 6
-    assert [list(step.band_ranks) for step in report.steps] \
-        == [[3] * 6] * len(report.steps)
+    fitting while the sheets stay identical: through the full solve on the
+    run's first host cell the occupied band is followed as one band of rank
+    three holding the three quarks, at every step proposal and at the end
+    point. The ranks of the whole spectrum are read at the declared band
+    tolerance 1e-15: [3, 3, 3, 3, 3, 3] at the host, and at other points a
+    triple whose modes agree to parts in 1e15 can read as bands of ranks 2
+    and 1, as the lowest one does at the end point, [2, 1, 3, 3, 3, 3, 3].
+    (With the bands read on the T-averaged operator and the sheets relaxed
+    separately, this was the run's refusal "band 2 has rank 2 and cannot
+    hold the declared occupation 3".)"""
+    config = _declared_cell_config(FIRST_CELL, (0, 0, 3))
+    _, _, report, drive = bp.relax_content((0, 0, 3), 1.0, 1.0, config)
+    measured = [update["measured"] for update in drive["objective"].updates]
+    assert len(measured) >= 2
+    for step in measured + [report]:
+        (band,) = step.bands
+        assert band.rank == 3 and band.occupation == 3.0
+        assert sum(step.band_ranks) == 18
+    assert list(measured[0].band_ranks) == [3] * 6
+    assert list(report.band_ranks) == [2, 1, 3, 3, 3, 3, 3]
 
 
 def _seeded_band_read(gauge_angle):
-    # the band rule read at the host itself, as the solve seeds it
+    # the band rule read at the host itself, as the system carries it
     config = _cell_config(FIRST_CELL, (2, 1, 0))
     spacetime = bp.build_host(8.0, config["host_cell"])
     if gauge_angle:

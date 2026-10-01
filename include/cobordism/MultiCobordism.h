@@ -2034,8 +2034,12 @@ class MultiCobordism {
                                               double kappa = 10.0);
   /// Stage 1 (combinatorial): greedy best-ΔF surgical moves on the complex.
   ///
-  /// \param maxSteps             Maximum stage-1 updates.
-  /// \param nCandidateMoves      Candidate moves drawn per batch.
+  /// \param maxSteps             The number of stage-1 updates after which
+  ///   the call returns, when the caller declares one. None by default: the
+  ///   updates then run until one reports that no improving move exists.
+  /// \param nCandidateMoves      Candidate moves drawn per batch. Zero, the
+  ///   default, scores every available move: the walk is exhaustive and no
+  ///   sample is drawn.
   /// \param growBoundaries       Initialization pass. While true the boundary
   ///   regions grow to track the bulk until they carry their states
   ///   (`growBlockRegions`). Run the bulk evolution with it false, so that
@@ -2052,7 +2056,8 @@ class MultiCobordism {
   ///   breadth lowers \f$ F \f$. This can find a pair, or a longer composition,
   ///   that improves the residual on a complex where every single move makes it
   ///   worse. Zero leaves the ascending \p maxLookahead schedule in place.
-  std::vector<double> runStage1(int maxSteps = 200, int nCandidateMoves = 12,
+  std::vector<double> runStage1(std::optional<int> maxSteps = std::nullopt,
+                                int nCandidateMoves = 0,
                                 bool growBoundaries = false,
                                 int maxLookahead = 1,
                                 int combinatorialBreadth = 0);
@@ -2071,8 +2076,13 @@ class MultiCobordism {
   /// evaluation error also restores and propagates. `JointStationarity` and
   /// `MediatedCorrespondence` differentiate every scalar term; `Legacy` uses a
   /// Regge search direction with exact full-objective acceptance.
-  std::vector<double> runStage2(double beta = 1.0, int maxIters = 200,
-                                  double alpha0 = 0.05, double tolerance = 1e-12);
+  ///
+  /// \p maxIters is the number of updates after which the call returns, when
+  /// the caller declares one; none by default, and the updates then run until
+  /// one finds no trial that lowers the objective by the tolerance.
+  std::vector<double> runStage2(double beta = 1.0,
+                                std::optional<int> maxIters = std::nullopt,
+                                double alpha0 = 0.05, double tolerance = 1e-15);
   /// The combined drive. Each iteration takes one combinatorial stage-1 update
   /// — a best-ΔF move, deepening to \p maxLookahead-move sequences on a stall —
   /// and then relaxes the geometry fully: stage-2 updates repeat until the
@@ -2096,12 +2106,19 @@ class MultiCobordism {
   /// stage-2 updates following each committed move and the tight exit
   /// re-check, bounding slow descent tails.
   ///
+  /// No count is imposed: \p maxIters and \p relaxBudgetPerMove take effect
+  /// only when the caller declares them, and are none by default, so the
+  /// drive runs until no move improves the objective and the geometry is
+  /// stationary at the tolerance. With \p nCandidateMoves zero, the default,
+  /// every available move is scored.
+  ///
   /// \returns the combined \f$ F \f$ trace.
-  std::vector<double> run(int maxIters = 200, int nCandidateMoves = 12,
+  std::vector<double> run(std::optional<int> maxIters = std::nullopt,
+                          int nCandidateMoves = 0,
                           bool growBoundaries = false,
                           double beta = 1.0, double alpha0 = 0.05,
-                          double tolerance = 10e-9, int maxLookahead = 1,
-                          int relaxBudgetPerMove = 10,
+                          double tolerance = 1e-15, int maxLookahead = 1,
+                          std::optional<int> relaxBudgetPerMove = std::nullopt,
                           int combinatorialBreadth = 0);
 
   /// One solve action on this node: the unit a search policy composes, so that

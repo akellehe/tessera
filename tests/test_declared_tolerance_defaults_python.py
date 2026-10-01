@@ -33,7 +33,7 @@ def _argument_defaults(method):
 
 
 @pytest.mark.parametrize("record, fields", [
-    (cob.HolomorphicRelaxationDeclaration, ("tolerance", "rank_tolerance")),
+    (cob.HolomorphicRelaxationDeclaration, ("rank_tolerance",)),
     (cob.SelfConsistentMeanFieldDeclaration, ("band_tolerance", "tolerance")),
     (cob.BoundStatePoleConfig, ("rank_tolerance",)),
     (cob.DressedFluctuationDeclaration, ("tolerance",)),

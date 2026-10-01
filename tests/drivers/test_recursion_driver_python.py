@@ -153,10 +153,13 @@ def test_the_bounding_cut_leaves_out_the_shared_face():
 
 
 def test_the_held_cut_keeps_its_monopole_number_through_relaxation():
-    """On the fan of three the relaxation with the bounding cut held stops at
-    the sector boundary unconverged, but the flux through the cut and the
-    moduli on it do not move; without the hold the same relaxation converges
-    in another sector."""
+    """On the fan of three the relaxation with the bounding cut held ends
+    unconverged inside its sector: it accepts six steps, the residual norm
+    going from 1.1474 to 1.1421, and every trial that carries a held face
+    holonomy across -1 has no value in the sector and is shortened (55 such
+    points). The flux through the cut and the moduli on it do not move.
+    Without the hold the same relaxation leaves the sector: it reaches the
+    residual norm 2.4e-15 with the flux through the cut at -1."""
     config = R.default_config(tetrahedra=3)
     cells, z, links, _ = R.level_zero(config)
     spacetime, vertices = R.build_level(cells, z, links)
@@ -165,18 +168,30 @@ def test_the_held_cut_keeps_its_monopole_number_through_relaxation():
     assert declared == 3
     report = R.relax_level(spacetime, config, R.cut_sectors(
         cut, declared, vertices))
+    assert not report["converged"]
+    assert report["stop_reason"] == \
+        "no move and no scaled step lowers the residual norm"
+    assert report["iterations"] == 6 and report["moves_committed"] == 0
+    assert report["initial_residual"] == pytest.approx(1.1474344287453948,
+                                                       rel=1e-9)
+    assert report["residual"] == pytest.approx(1.142131802188529, rel=1e-6)
+    assert report["undefined_points"] == 55
+    assert "held sector 0 is declared with monopole number 3" in \
+        report["stop_detail"]
     after = R.sheet_fields(spacetime, vertices)
     for t in range(R.SHEETS):
         assert R.cut_monopole_number(cut, after[t][1]) == declared
     assert report["sector_monopole_numbers"] == [declared] * R.SHEETS
-    assert report["held_modulus_drift"] < 1e-12
+    assert report["held_modulus_drift"] < 1e-14
     for face in cut:
-        assert abs(abs(R.face_holonomy(after[0][1], face)) - 1.0) < 1e-12
+        assert abs(abs(R.face_holonomy(after[0][1], face)) - 1.0) < 1e-14
     # without the hold the same relaxation leaves the sector
     free, _ = R.build_level(cells, z, links)
-    R.relax_level(free, config)
+    released = R.relax_level(free, config)
+    assert released["residual"] < 1e-14 and released["iterations"] == 9
+    assert released["undefined_points"] == 0
     assert R.cut_monopole_number(cut, R.sheet_fields(free, vertices)[0][1]) \
-        != declared
+        == -1
 
 
 def test_the_grown_cell_rule_returns_level_zero():

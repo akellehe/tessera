@@ -11,6 +11,7 @@ outputs with and without the flag.
 """
 
 import json
+import math
 import time
 
 import numpy as np
@@ -762,28 +763,33 @@ def test_a_content_without_a_value_is_recorded_and_the_scan_continues(
 
 
 def test_a_solve_that_overflowed_the_double_has_no_value(monkeypatch):
-    """A mean-field solve that stopped because a squared length passed the
-    largest finite double leaves no finite geometry, so there is no operator
-    to read a pole on. `evaluate_content` raises `ReadWithoutValue` with the
-    reason by name, and `scan_point` records the content with that reason,
-    the message, the solve's record and no pole; the report says "no value"
-    and the plots mark the content so, with the short name of the reason.
-    The solve is replaced by its report, since no declared host overflows."""
+    """A solve that left a squared length beyond the largest finite double
+    leaves no finite geometry, so there is no operator to read a pole on.
+    `evaluate_content` raises `ReadWithoutValue` with the reason by name,
+    and `scan_point` records the content with that reason, the message, the
+    solve's record and no pole; the report says "no value" and the plots
+    mark the content so, with the short name of the reason. The solve is
+    replaced by a host with one length set to infinity, since no declared
+    host overflows."""
     import types
 
-    report = types.SimpleNamespace(
-        stop_reason=cob.RelaxationStop.LengthRunaway,
-        stop_detail="|z| is not finite on edge 3")
+    spacetime = bp.build_host()
+    spacetime.getEdgeList().toVector()[3].setLength(complex(math.inf, 0.0))
+    report = types.SimpleNamespace(kontsevich_segal_margin=math.pi)
+    drive = {"changed": False, "moves_committed": 0}
     solve = {"converged": False, "force_norm": 1.0, "iterations": 7}
     monkeypatch.setattr(bp, "relax_content",
                         lambda content, kappa, beta, config:
-                        (None, None, report))
+                        (spacetime, None, report, drive))
     monkeypatch.setattr(bp, "relaxation_record",
-                        lambda report, hessian_reality_tolerance: dict(solve))
+                        lambda report, drive, hessian_reality_tolerance:
+                        dict(solve))
     name = "the squared lengths overflowed the double"
+    assert name == bp.NO_VALUE_OVERFLOW
     message = (name + " (|z| is not finite on edge 3), so there is no "
                "finite geometry to read a pole on")
-    assert bp.geometry_without_value(report) == (name, message)
+    assert bp.geometry_without_value(spacetime, drive) == (name, message)
+    assert bp.geometry_without_value(bp.build_host(), drive) is None
     config = bp.default_config([1.0], [1.0], selected_contents=[(2, 0, 1)])
     with pytest.raises(bp.ReadWithoutValue, match="no finite geometry"):
         bp.evaluate_content((2, 0, 1), 1.0, 1.0, config)
@@ -803,6 +809,46 @@ def test_a_solve_that_overflowed_the_double_has_no_value(monkeypatch):
         "state": "no value", "reason": "lengths overflowed", "iterations": 7}
     _, _, slots = bp.pole_marks([("201", record)])
     assert slots == [(0.0, "no value")]
+
+
+def test_a_cell_a_committed_move_changed_has_no_value(monkeypatch):
+    """The pole read is defined on the three-sheeted tetrahedron. A drive
+    that committed a Pachner move leaves a base complex that is not a
+    tetrahedron, and the three-sheeted complex of that base has no pole
+    read: `geometry_without_value` names it with the moves and the base
+    complex they left, `evaluate_content` raises `ReadWithoutValue`, and
+    `scan_point` records the content with that reason and no pole. The
+    drive is replaced by its record, a base of five vertices after one
+    committed move."""
+    import types
+
+    spacetime = bp.build_host()
+    report = types.SimpleNamespace(kontsevich_segal_margin=math.pi)
+    drive = {"changed": True, "moves_committed": 1,
+             "complex_after": {"vertices": 5, "edges": 10, "cells": 4}}
+    solve = {"converged": False, "force_norm": 1.0, "iterations": 7}
+    monkeypatch.setattr(bp, "relax_content",
+                        lambda content, kappa, beta, config:
+                        (spacetime, None, report, drive))
+    monkeypatch.setattr(bp, "relaxation_record",
+                        lambda report, drive, hessian_reality_tolerance:
+                        dict(solve))
+    name = "the cell is not a tetrahedron after its Pachner moves"
+    assert name == bp.NO_VALUE_MOVED
+    message = (name + " (1 committed move updates left a base complex of 5 "
+               "vertices, 10 edges and 4 cells), and the pole read is "
+               "defined on the three-sheeted tetrahedron")
+    assert bp.geometry_without_value(spacetime, drive) == (name, message)
+    config = bp.default_config([1.0], [1.0], selected_contents=[(2, 0, 1)])
+    with pytest.raises(bp.ReadWithoutValue, match="not a tetrahedron"):
+        bp.evaluate_content((2, 0, 1), 1.0, 1.0, config)
+    point = bp.scan_point(1.0, 1.0, config)
+    assert point["failed_contents"] == [[2, 0, 1]]
+    (record,) = point["contents"]
+    assert record["failed"] == message and record["reason"] == name
+    assert record["relaxation"] == solve and record["doublet_reads"] == []
+    assert bp.solve_state(record) == {
+        "state": "no value", "reason": "cell moved", "iterations": 7}
 
 
 def test_the_elimination_rule_is_declared_and_recorded():
@@ -1414,21 +1460,21 @@ def _poles_of(record):
 
 def test_a_relaxed_cell_without_the_tetrahedral_group_is_read_in_the_host_frame():
     """(0123, 201) of the recursion's tick-0 run with the occupied fiber
-    pinned: the joint Newton converges, and the relaxed cell has lost every
-    rotation but the identity (squared lengths that differ by two thirds of
-    the largest, a gauge-compensation residual of order one). The first
-    precondition of the cell's own spin read does not hold, so the spin is
-    read in the frame of the declared symmetric host and the content is
-    flagged "not tetrahedrally symmetric" with the numbers of the symmetry
-    read. The geometry is Kontsevich-Segal allowable, so that is the one
-    flag. The content is read like any other: it is not among the contents
-    with no value, it has the ten doublet contents (the triples of
-    occupations of 2, 2', 2'' that sum to three), each with its sectors and
-    their poles, and its line in the report lists the flag and the frame."""
+    pinned, at the declared tolerances: the drive takes the residual norm to
+    1.7e-14, and the relaxed cell has lost every rotation but the identity
+    (squared lengths that differ by two thirds of the largest, a
+    gauge-compensation residual of order one). The first precondition of the
+    cell's own spin read does not hold, so the spin is read in the frame of
+    the declared symmetric host and the content is flagged "not
+    tetrahedrally symmetric" with the numbers of the symmetry read. The
+    geometry is Kontsevich-Segal allowable, so that is the one flag. The
+    content is read like any other: it is not among the contents with no
+    value, it has the ten doublet contents (the triples of occupations of
+    2, 2', 2'' that sum to three), each with its sectors and their poles,
+    and its line in the report lists the flag and the frame."""
     from tessera.drivers import recursion as R
 
-    config = bp.default_config([1.0], [1.0], selected_contents=[(2, 0, 1)],
-                               tolerances=RUN.TOLERANCES)
+    config = bp.default_config([1.0], [1.0], selected_contents=[(2, 0, 1)])
     config["host_cell"] = RUN.HOST_CELLS[(0, 1, 2, 3)]
     config["held_sectors"] = R.held_sectors([[0, 1, 2, 3]], [1], 4)
     point = bp.scan_point(1.0, 1.0, config)
@@ -1442,21 +1488,28 @@ def test_a_relaxed_cell_without_the_tetrahedral_group_is_read_in_the_host_frame(
         "the relaxed cell has 1 of the 12 rotations of the tetrahedron as "
         "symmetries at the certificate tolerance")
     assert flag["order"] == 1 and flag["rotations"] == 12
-    assert flag["tolerance"] == RUN.TOLERANCES["certificate_tolerance"]
-    assert flag["length_departure"] > 0.5
+    assert flag["tolerance"] == bp.declared_tolerance(
+        config, "certificate_tolerance") == 1e-15
+    assert flag["length_departure"] == pytest.approx(0.6657, abs=5e-4)
     assert flag["compensation_residual"] > 1.0
     relaxation = record["relaxation"]
     assert relaxation["band_selection"] == "continuation"
-    assert relaxation["converged"]
+    # the end point is at rounding, above the declared tolerance 1e-15
+    assert 1e-15 < relaxation["force_norm"] < 1e-12
+    assert relaxation["converged"] is False
+    assert relaxation["stop_reason"] == \
+        "no move and no scaled step lowers the residual norm"
+    assert relaxation["moves_committed"] == 0
+    assert relaxation["complex_after"] == {"vertices": 4, "edges": 6,
+                                           "cells": 1}
     assert relaxation["spin_frame"] == bp.SPIN_FRAME_OF_THE_HOST == \
         "the declared symmetric host"
     symmetry = relaxation["symmetry"]
     assert symmetry["order"] == 1 and symmetry["group"] == [[0, 1, 2, 3]]
     assert symmetry["length_departure"] == flag["length_departure"]
     assert symmetry["compensation_residual"] == flag["compensation_residual"]
-    # the frames recorded are the declared host's, the same on every sheet,
-    # with the reference doublet the middle carrier
-    assert [f["reference_carrier"] for f in relaxation["frames"]] == [1] * 3
+    # the frames recorded are the declared host's, the same on every sheet
+    assert [f["reference_carrier"] for f in relaxation["frames"]] == [2] * 3
     assert len({tuple(f["trialities"]) for f in relaxation["frames"]}) == 1
     # the poles are read: ten doublet contents, each with its sectors
     assert [read["doublet_content"] for read in record["doublet_reads"]] == \
@@ -1473,27 +1526,31 @@ def test_a_relaxed_cell_without_the_tetrahedral_group_is_read_in_the_host_frame(
     text = R._content_line({"cell": [0, 1, 2, 3]}, record)
     assert "): read, flagged: not tetrahedrally symmetric (" in text
     # the plots mark a flagged content by its solve, as any other
-    assert bp.solve_state(record)["state"] == "converged"
+    assert bp.solve_state(record) == {
+        "state": "not converged", "reason": "no descent",
+        "iterations": relaxation["iterations"]}
 
 
-def test_a_read_on_lengths_that_grew_without_bound_is_flagged_by_name():
-    """(0123, 201) of the recursion's tick-0 run: the content occupies the
-    host's negative band, whose force contracts the cell, and the joint
-    Newton follows it until the residual is at its floor on the held set,
-    three decades of length beyond the host. That geometry is finite, so it
-    is read, and it is not Kontsevich-Segal allowable, so the content is
-    flagged with that name, the margin and the tolerance the margin was
-    compared with; the flags of the geometry come first in the record. The
-    record carries the solve (the band selection, the iterations, the force,
-    why it stopped, every iterate) and the ten doublet contents, and the
-    report prints the flag on the content's line."""
+def test_a_read_on_the_boundary_of_the_allowable_domain_is_flagged_by_name():
+    """(0123, 201) of the recursion's tick-0 run with no constraint of the
+    occupied fiber pinned, at the declared tolerances: nothing holds the
+    lengths against the band's force, and the drive follows the step until
+    one squared length is negative, on the boundary of the Kontsevich-Segal
+    allowable domain, past which the engine scores no trial (7 accepted
+    updates, the largest |z| 29 times the host's, residual norm 12.7). That
+    geometry is finite, so it is read; its margin, zero to rounding, is not
+    above the declared tolerance, so the content is flagged "not
+    Kontsevich-Segal allowable" with the margin and the tolerance the margin
+    was compared with, and the flags of the geometry come first in the
+    record. The record carries the solve (the band selection, the accepted
+    updates, the force, why it stopped, every step proposal) and the ten
+    doublet contents, and the report prints the flag on the content's
+    line."""
     from tessera.drivers import recursion as R
     from tests.drivers import _recursion_run_2026_09_23 as RUN
 
-    # no constraint of the occupied fiber pinned, so nothing holds the
-    # lengths against the band's force
     config = bp.default_config([1.0], [1.0], selected_contents=[(2, 0, 1)],
-                               fiber_moments=0, tolerances=RUN.TOLERANCES)
+                               fiber_moments=0)
     config["host_cell"] = RUN.HOST_CELLS[(0, 1, 2, 3)]
     config["held_sectors"] = R.held_sectors([[0, 1, 2, 3]], [1], 4)
     point = bp.scan_point(1.0, 1.0, config)
@@ -1508,8 +1565,11 @@ def test_a_read_on_lengths_that_grew_without_bound_is_flagged_by_name():
         "allowable (margin ")
     solve = record["relaxation"]
     assert flag["kontsevich_segal_margin"] == \
-        solve["kontsevich_segal_margin"] < 0
-    assert flag["tolerance"] == RUN.TOLERANCES["allowability_tolerance"]
+        solve["kontsevich_segal_margin"]
+    assert abs(flag["kontsevich_segal_margin"]) < 1e-12
+    assert flag["tolerance"] == bp.declared_tolerance(
+        config, "allowability_tolerance") == 1e-15
+    assert flag["kontsevich_segal_margin"] <= flag["tolerance"]
     # every further flag is one of the spin read's
     assert {f["name"] for f in record["flags"][1:]} <= {
         "not tetrahedrally symmetric", "no j = 1/2 doublet",
@@ -1520,11 +1580,14 @@ def test_a_read_on_lengths_that_grew_without_bound_is_flagged_by_name():
         (len(record["flags"]) == 2)
     assert solve["band_selection"] == "continuation"
     assert solve["converged"] is False
-    floor = "the residual is at its floor on the held set"
-    assert solve["stop_reason"] == floor
-    assert solve["iterations"] == len(solve["trace"]) - 1
-    assert solve["largest_length_ratio"] > 1e3
-    assert all("newton" in entry for entry in solve["trace"][:-1])
+    stationary = "no move and no scaled step lowers the residual norm"
+    assert solve["stop_reason"] == stationary
+    assert solve["iterations"] == 7 and solve["moves_committed"] == 0
+    assert len(solve["trace"]) > solve["iterations"]
+    assert solve["residual_trace"][-1] == pytest.approx(12.69, rel=1e-2)
+    assert solve["largest_length_ratio"] == pytest.approx(29.41, rel=1e-2)
+    assert all("jacobian_rank" in entry and "force_norm" in entry
+               for entry in solve["trace"])
     assert [read["doublet_content"] for read in record["doublet_reads"]] == \
         [list(c) for c in bp.contents()]
     lines = bp.point_lines(point)
@@ -1532,43 +1595,58 @@ def test_a_read_on_lengths_that_grew_without_bound_is_flagged_by_name():
         "kappa=1 beta=1: 1 contents, 0 without a value, 1 flagged; ")
     assert lines[1].startswith("  content [2, 0, 1] mean field converged "
                                "False")
-    assert "; stopped: " + floor + " (" in lines[1]
+    assert "; stopped: " + stationary + " (" in lines[1]
     assert "; flagged: not Kontsevich-Segal allowable (the geometry the " \
         "mean-field solve reached is not Kontsevich-Segal allowable" \
         in lines[1]
     text = R._content_line({"cell": [0, 1, 2, 3]}, record)
     assert "): read, flagged: not Kontsevich-Segal allowable (" in text
-    assert "; stopped: " + floor + " (" in text
+    assert "; stopped: " + stationary + " (" in text
     assert bp.solve_state(record) == {
-        "state": "not converged", "reason": "held floor",
+        "state": "not converged", "reason": "no descent",
         "iterations": solve["iterations"]}
 
 
-def test_the_declared_read_pins_every_moment_of_the_occupied_fiber():
-    """The mean field pins every power sum of the occupied fiber at the host
-    (m_c = r). On (0123, 030) of the recursion's tick-0 run the joint Newton
-    converges with the three pinned moments held, and the record carries the
-    fiber's rank, the multipliers, the residuals, the Hessian along the
-    Hellmann-Feynman force with its sign, and the role of kappa; the
-    content's line prints them."""
+def test_pinning_every_power_sum_of_a_degenerate_fiber_at_the_declared_tolerances():
+    """`--fiber-pinning power-sums` pins every power sum of the occupied
+    fiber at the host (m_c = r). On (0123, 030) of the recursion's tick-0
+    run the fiber is one eigenvalue repeated on the three sheets, so its
+    three power sums are one independent constraint stated three times. At
+    the declared rank tolerance 1e-15 the dependent rows are not read as
+    zero, their least-squares multipliers are of order 1e11 to 1e12, and
+    the drive ends after 7 accepted updates at a residual norm of 0.023
+    (9.03 at the host) with the pinned moments 0.2 % to 0.6 % off their
+    targets. With multipliers of that size the end point is decided at
+    rounding, so the residual and the moments are asserted within a factor
+    of ten. The record carries the fiber's rank, the three multipliers,
+    the residuals, the Hessian along the Hellmann-Feynman force with its
+    sign, and the content's line prints them."""
     from tessera.drivers import recursion as R
     from tests.drivers import _recursion_run_2026_09_23 as RUN
 
     config = bp.default_config([1.0], [1.0], selected_contents=[(0, 3, 0)],
-                               fiber_pinning="power-sums",
-                               tolerances=RUN.TOLERANCES)
+                               fiber_pinning="power-sums")
     assert config["fiber_moments"] == "r"
     config["host_cell"] = RUN.HOST_CELLS[(0, 1, 2, 3)]
     config["held_sectors"] = R.held_sectors([[0, 1, 2, 3]], [1], 4)
-    _, _, report = bp.relax_content((0, 3, 0), 1.0, 1.0, config)
+    _, _, report, drive = bp.relax_content((0, 3, 0), 1.0, 1.0, config)
     solve = bp.relaxation_record(
-        report, RUN.TOLERANCES["hessian_reality_tolerance"])
-    assert solve["converged"] and solve["fiber_rank"] == 3
+        report, drive, bp.declared_tolerance(config,
+                                             "hessian_reality_tolerance"))
+    assert solve["converged"] is False
+    assert solve["stop_reason"] == \
+        "no move and no scaled step lowers the residual norm"
+    assert solve["residual_trace"][0] == pytest.approx(9.0311, rel=1e-4)
+    assert 2.3e-3 < solve["residual_trace"][-1] < 0.23
+    assert solve["fiber_rank"] == 3
     assert solve["fiber_pinning"] == "power-sums"
     assert solve["fiber_moments"] == 3 and len(solve["multipliers"]) == 3
-    assert max(abs(r) / abs(t) for r, t in zip(
-        solve["moment_residuals"], solve["moment_targets"])) < 1e-9
-    assert solve["force_hessian_sign"] in ("positive", "negative")
+    assert max(abs(m) for m in solve["multipliers"]) > 1e9
+    relative = [abs(r) / abs(t) for r, t in zip(solve["moment_residuals"],
+                                                solve["moment_targets"])]
+    assert 2e-4 < min(relative) and max(relative) < 0.06
+    assert solve["joint_jacobian"]["size"] == 15
+    assert solve["force_hessian_sign"] in ("positive", "negative", "complex")
     text = bp.relaxation_text(solve)
     assert "3 of the occupied fiber's 3 power sums pinned at the host" in text
     assert "Hessian on the range of the Hellmann-Feynman force" in text
@@ -1578,28 +1656,38 @@ def test_the_declared_read_pins_every_moment_of_the_occupied_fiber():
 def test_the_declared_read_pins_the_eigenvalue_of_every_occupied_band():
     """The declared pinning: the eigenvalue of each occupied band, one
     constraint per band. (0123, 030) occupies one band of rank three, so one
-    eigenvalue is pinned with one multiplier; the joint Newton converges with
-    it held at the host's value, and the record and the content's line say
-    so."""
+    eigenvalue is pinned with one multiplier; the drive takes the residual
+    norm from 9.03 at the host to 1.4e-14 in 8 accepted updates with the
+    eigenvalue held at the host's value 0.708 to parts in 1e14 and the
+    multiplier -3, and the record and the content's line say so. At the
+    declared tolerance 1e-15 that end point is reported not converged."""
     from tessera.drivers import recursion as R
     from tests.drivers import _recursion_run_2026_09_23 as RUN
 
-    config = bp.default_config([1.0], [1.0], selected_contents=[(0, 3, 0)],
-                               tolerances=RUN.TOLERANCES)
+    config = bp.default_config([1.0], [1.0], selected_contents=[(0, 3, 0)])
     assert config["fiber_pinning"] == bp.DECLARED_FIBER_PINNING == "eigenvalues"
     config["host_cell"] = RUN.HOST_CELLS[(0, 1, 2, 3)]
     config["held_sectors"] = R.held_sectors([[0, 1, 2, 3]], [1], 4)
-    _, _, report = bp.relax_content((0, 3, 0), 1.0, 1.0, config)
+    _, _, report, drive = bp.relax_content((0, 3, 0), 1.0, 1.0, config)
     assert report.fiber_constraint_form == \
         cob.FiberConstraintForm.BandEigenvalues
-    solve = bp.relaxation_record(report)
-    assert solve["converged"] and solve["fiber_rank"] == 3
+    solve = bp.relaxation_record(report, drive)
+    assert solve["residual_trace"][0] == pytest.approx(9.0311, rel=1e-4)
+    assert solve["residual_trace"][-1] < 1e-12
+    assert 1e-15 < solve["force_norm"] < 1e-12 and solve["converged"] is False
+    assert solve["stop_reason"] == \
+        "no move and no scaled step lowers the residual norm"
+    assert solve["iterations"] == drive["accepted_updates"] == 8
+    assert solve["moves_committed"] == 0
+    assert solve["fiber_rank"] == 3
     assert solve["fiber_pinning"] == "eigenvalues"
     assert solve["fiber_moments"] == 1 and len(solve["multipliers"]) == 1
+    assert solve["multipliers"][0] == pytest.approx(-3.0, abs=1e-9)
     (band,) = report.bands
+    assert solve["moment_targets"][0] == pytest.approx(0.70797, abs=5e-5)
     assert solve["moment_targets"][0] == pytest.approx(band.eigenvalues[0],
                                                         rel=1e-9)
-    assert abs(solve["moment_residuals"][0]) < 1e-9 * abs(
+    assert abs(solve["moment_residuals"][0]) < 1e-12 * abs(
         solve["moment_targets"][0])
     text = bp.relaxation_text(solve)
     assert ("the eigenvalues of 1 occupied bands (fiber rank 3) pinned at "

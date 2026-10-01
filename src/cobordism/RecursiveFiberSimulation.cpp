@@ -1645,6 +1645,8 @@ void MultiCobordism::runRecursiveAnalysisOn(
            {"action_magnitude", Json::number(terms.actionMagnitude)},
            {"carried_state_energy", Json::number(terms.carriedStateEnergy)},
            {"moment_stiffness", Json::number(terms.momentStiffness)},
+           {"joint_action_stationarity",
+            Json::number(terms.jointActionStationarity)},
            {"regge_weight", Json::number(reggeWeight_)},
            {"hodge_entropy_weight", Json::number(hodgeEntropyWeight_)},
            {"connection_entropy_weight",

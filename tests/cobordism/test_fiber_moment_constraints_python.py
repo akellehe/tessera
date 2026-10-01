@@ -14,16 +14,20 @@ Terms used below:
   eigenvalues;
 * *pinning* m_c power sums adds sum_{j <= m_c} xi_j (p_j(h_C) - p_j*) to the
   joint action with the targets p_j* the host's values and the complex
-  multipliers xi_j solved for with the geometry; the power sums are solved in
-  a unit s, p_j(h_C / s), which describes the same constraints;
+  multipliers xi_j, which at every point are the least-squares solution of
+  the equations they enter linearly; the power sums are solved in a unit s,
+  p_j(h_C / s), which describes the same constraints;
 * the *Hessian along the Hellmann-Feynman force* is the Rayleigh quotient of
   the moment-constrained action's Hessian along the carried state's own force
   on the tangent space of the pinned constraints: the positivity condition of
   WP v17 line 265.
 
 The host cells are those of the recursion's tick-0 run
-(`_recursion_run_2026_09_23`), read with the declared action: no linear
-stiffness stand-in, kappa = 8 pi G entering only through the Regge weight.
+(`_recursion_run_2026_09_23`), read with the declared action and at that
+run's tolerances: no linear stiffness stand-in, kappa = 8 pi G entering only
+through the Regge weight. A content's solve is the drive of
+`baryon_poles.relax_content` (`tessera.drivers.cell_solve`), its Pachner
+moves included; no solve below commits one.
 """
 import cmath
 
@@ -32,6 +36,7 @@ import pytest
 
 from tessera import cobordism as cob
 from tessera.drivers import baryon_poles as bp
+from tessera.drivers import cell_solve as cs
 from tessera.drivers import recursion as R
 
 from tests.drivers import _recursion_run_2026_09_23 as RUN
@@ -61,6 +66,30 @@ def _host(cell, content):
     mean_field = bp.mean_field_declaration(content, config, spacetime)
     read = cob.BandFollower(mean_field).read(action.carrier_operator())
     return spacetime, action, mean_field, read
+
+
+def _relax(config, content, moments, scale):
+    """The solve of `baryon_poles.relax_content` for one content with the
+    number of pinned constraints and the unit they are solved in declared
+    (``scale`` zero is the fiber's spectral radius at the host): the
+    end-point report and the drive's record."""
+    base = bp.build_base(config["edge_squared"], config["host_cell"])
+    host = cs.sheeted_support(base, bp.SHEETS)
+
+    def declare(spacetime):
+        return bp.action_declaration(spacetime, 1.0, 1.0)
+
+    def mean_field_of(support):
+        declaration = bp.mean_field_declaration(content, config)
+        declaration.geometry = bp.support_geometry(config, support, host)
+        declaration.fiber_moments = moments
+        declaration.fiber_moment_scale = scale
+        return declaration
+
+    system = cs.ContentSystem(declare, mean_field_of, base, bp.SHEETS)
+    drive = cs.solve(base, system, **bp.solve_arguments(config))
+    _, _, report = system.read(drive["spacetime"])
+    return report, drive
 
 
 def _pinned(spacetime, projector, orders, scale=1.0):
@@ -229,15 +258,19 @@ def test_a_full_band_pins_its_trace_with_a_multiplier_of_minus_one():
     fills its band, so Gamma = P_C and the fiber terms of the action combine
     to (1 + xi_1) tr(P_C h_1): the length equations then need xi_1 = -1,
     since the Euler identity makes the trace's length gradient nonzero
-    wherever the trace is. The joint Newton converges there, the pinned
-    trace holds, and the geometry is Euclidean."""
+    wherever the trace is. The drive converges there in five accepted
+    updates (residual norm 9.0, 1.6, 0.032, 2.6e-4, 1.4e-8, 7.3e-13), the
+    pinned trace holds, and the geometry is Euclidean."""
     config = _config(FIRST_CELL, (0, 3, 0), "1")
-    spacetime, action, report = bp.relax_content((0, 3, 0), 1.0, 1.0, config)
+    spacetime, action, report, drive = bp.relax_content((0, 3, 0), 1.0, 1.0,
+                                                        config)
     assert report.converged
-    assert report.stop_reason == cob.RelaxationStop.Converged
+    assert drive["accepted_updates"] == 5 and drive["moves_committed"] == 0
+    assert drive["stop_reason"] == cs.STOP_STATIONARY
+    assert bp.relaxation_record(report, drive)["stop_reason"] == "converged"
     assert report.fiber_rank == 3 and len(report.multipliers) == 1
-    assert abs(report.multipliers[0] + 1.0) < 1e-9
-    assert abs(report.moment_residuals[0]) < 1e-9 * abs(
+    assert abs(report.multipliers[0] + 1.0) < 1e-13
+    assert abs(report.moment_residuals[0]) < 1e-12 * abs(
         report.moment_targets[0])
     # the target is the host's trace of the fiber, three times its eigenvalue
     _, _, _, read = _host(FIRST_CELL, (0, 3, 0))
@@ -255,17 +288,23 @@ def test_every_pinned_moment_holds_the_host_of_0134_111():
     """(0134, 111) with every power sum of its rank-nine fiber pinned
     (m_c = r). The least-squares multipliers at the host balance its whole
     stationarity force, the Villain force included, so the host is a
-    stationary point of the constrained action and the solve stops there
-    without a step. The joint Jacobian's rank deficiency is the three gauge
-    directions and the six pinned power sums that depend on the other three,
-    and on the real slice the Hessian along the Hellmann-Feynman force is
-    real."""
+    stationary point of the constrained action and the drive stops there
+    without an accepted update or a committed move (residual norm 7.9e-14).
+    The targets are declared in the operator's own unit and solved in the
+    unit s, so a pinned power sum holds to the rounding of that division.
+    The joint Jacobian's rank deficiency is the three gauge directions and
+    the six pinned power sums that depend on the other three, and on the
+    real slice the Hessian along the Hellmann-Feynman force is real."""
     config = _config(SECOND_CELL, (1, 1, 1), "r")
-    spacetime, action, report = bp.relax_content((1, 1, 1), 1.0, 1.0, config)
-    assert report.converged and report.iterations == 0
-    assert report.force_norm < 1e-9
+    spacetime, action, report, drive = bp.relax_content((1, 1, 1), 1.0, 1.0,
+                                                        config)
+    assert report.converged
+    assert drive["accepted_updates"] == 0 and drive["moves_committed"] == 0
+    assert drive["stop_reason"] == cs.STOP_STATIONARY
+    assert report.force_norm < 1e-12
     assert report.fiber_rank == 9 and len(report.multipliers) == 9
-    assert max(abs(r) for r in report.moment_residuals) == 0.0
+    assert max(abs(r) / abs(t) for r, t in zip(
+        report.moment_residuals, report.moment_targets)) < 1e-15
     assert (report.jacobian_size, report.jacobian_rank) == (21, 12)
     assert report.moment_scale == pytest.approx(19.371, abs=1e-3)
     assert bp.hessian_sign(
@@ -281,25 +320,23 @@ def test_the_unit_of_the_power_sums_changes_no_solution():
     p_j(h_C) = 3 lambda^j and the three constraints are the one constraint
     lambda = lambda*: the fiber terms of the action are
     3 lambda + sum_j xi_j 3 lambda^j, whose length equations need
-    sum_j j xi_j lambda^(j - 1) = -1. Without a length stiffness the
-    stationary points form a family, and the two units' Newton paths reach
-    different members of it; each is a solution of the same equations: the
-    pin holds and the multipliers, in the operator's own unit, satisfy the
-    same condition."""
+    sum_j j xi_j lambda^(j - 1) = -1. The three constraints are dependent,
+    so the multipliers are not unique: in each unit they are that unit's
+    least-squares ones, and they differ between the two. The drive
+    converges in five accepted updates in the fiber's unit and in six in
+    the operator's own, to a solution of the same equations: the pin holds
+    and the multipliers, in the operator's own unit, satisfy the same
+    condition."""
     _, _, _, read = _host(FIRST_CELL, (0, 3, 0))
     (band,) = read.bands
     pinned = band.eigenvalues[0]
+    multipliers = []
     for scale in (0.0, 1.0):
         config = _config(FIRST_CELL, (0, 3, 0), "r")
-        spacetime = bp.build_host(config["edge_squared"],
-                                  config["host_cell"])
-        action = cob.JointAction(spacetime, bp.action_declaration(
-            spacetime, 1.0, 1.0))
-        mean_field = bp.mean_field_declaration((0, 3, 0), config, spacetime)
-        mean_field.fiber_moments = 3
-        mean_field.fiber_moment_scale = scale
-        report = cob.SelfConsistentMeanField(action, mean_field).solve()
+        report, drive = _relax(config, (0, 3, 0), 3, scale)
         assert report.converged
+        assert drive["accepted_updates"] == (5 if scale == 0.0 else 6)
+        assert drive["moves_committed"] == 0
         assert report.moment_scale == pytest.approx(
             abs(pinned) if scale == 0.0 else 1.0, rel=1e-12)
         (followed,) = report.bands
@@ -307,14 +344,16 @@ def test_the_unit_of_the_power_sums_changes_no_solution():
         assert abs(value - pinned) < 1e-9 * abs(pinned)
         xi = np.asarray(report.multipliers)
         combination = sum((j + 1) * xi[j] * value ** j for j in range(3))
-        assert abs(combination + 1.0) < 1e-8
+        assert abs(combination + 1.0) < 1e-12
+        multipliers.append(xi)
+    assert np.max(np.abs(multipliers[0] - multipliers[1])) > 0.05
 
 
 def test_more_moments_than_the_fiber_holds_are_refused():
     spacetime, action, mean_field, _ = _host(FIRST_CELL, (0, 3, 0))
     mean_field.fiber_moments = 4
     with pytest.raises(ValueError, match="the fiber has rank 3"):
-        cob.SelfConsistentMeanField(action, mean_field).solve()
+        cob.SelfConsistentMeanField(action, mean_field).read()
 
 
 # ------------------------------------------------ the bands' eigenvalues
@@ -419,15 +458,17 @@ def test_pinning_the_band_eigenvalues_holds_the_host_of_0134_111():
     pinned (the drivers' declared pinning): three constraints in place of
     the nine power sums, whose targets are the bands' eigenvalues. The
     least-squares multipliers balance the host's whole stationarity force,
-    the solve stops there without a step, every pinned eigenvalue holds, and
-    the joint Jacobian's rank deficiency is the three gauge directions
-    alone."""
+    the drive stops there without an accepted update or a committed move
+    (residual norm 3.7e-14), every pinned eigenvalue holds, and the joint
+    Jacobian's rank deficiency is the three gauge directions alone."""
     config = _config(SECOND_CELL, (1, 1, 1), "r", "eigenvalues")
-    spacetime, action, report = bp.relax_content((1, 1, 1), 1.0, 1.0, config)
+    spacetime, action, report, drive = bp.relax_content((1, 1, 1), 1.0, 1.0,
+                                                        config)
     assert report.fiber_constraint_form == \
         cob.FiberConstraintForm.BandEigenvalues
-    assert report.converged and report.iterations == 0
-    assert report.force_norm < 1e-9
+    assert report.converged
+    assert drive["accepted_updates"] == 0 and drive["moves_committed"] == 0
+    assert report.force_norm < 1e-12
     assert report.fiber_rank == 9 and len(report.multipliers) == 3
     np.testing.assert_allclose(np.asarray(report.moment_targets).real,
                                [-19.371, 0.313, 5.000], atol=1e-3)
@@ -435,9 +476,11 @@ def test_pinning_the_band_eigenvalues_holds_the_host_of_0134_111():
     assert (report.jacobian_size, report.jacobian_rank) == (15, 12)
     assert report.moment_scale == pytest.approx(19.371, abs=1e-3)
     assert len(action.declaration.moment_band_projectors) == 3
-    record = bp.relaxation_record(report)
+    record = bp.relaxation_record(report, drive)
     assert record["fiber_pinning"] == "eigenvalues"
     assert record["fiber_moments"] == 3
+    assert record["converged"] and record["stop_reason"] == "converged"
+    assert record["iterations"] == 0 and record["moves_committed"] == 0
 
 
 def test_a_full_band_pins_its_eigenvalue_with_a_multiplier_of_minus_three():
@@ -451,22 +494,18 @@ def test_a_full_band_pins_its_eigenvalue_with_a_multiplier_of_minus_three():
     pinned = band.eigenvalues[0]
     for scale in (0.0, 1.0):
         config = _config(FIRST_CELL, (0, 3, 0), "r", "eigenvalues")
-        spacetime = bp.build_host(config["edge_squared"],
-                                  config["host_cell"])
-        action = cob.JointAction(spacetime, bp.action_declaration(
-            spacetime, 1.0, 1.0))
-        mean_field = bp.mean_field_declaration((0, 3, 0), config, spacetime)
-        assert mean_field.fiber_constraint_form == \
+        assert bp.mean_field_declaration(
+            (0, 3, 0), config).fiber_constraint_form == \
             cob.FiberConstraintForm.BandEigenvalues
-        mean_field.fiber_moments = 1
-        mean_field.fiber_moment_scale = scale
-        report = cob.SelfConsistentMeanField(action, mean_field).solve()
+        report, drive = _relax(config, (0, 3, 0), 1, scale)
         assert report.converged
-        assert report.stop_reason == cob.RelaxationStop.Converged
+        assert drive["accepted_updates"] == 5
+        assert drive["moves_committed"] == 0
+        assert drive["stop_reason"] == cs.STOP_STATIONARY
         assert report.fiber_rank == 3 and len(report.multipliers) == 1
         assert report.moment_targets[0] == pytest.approx(pinned, rel=1e-10)
-        assert abs(report.moment_residuals[0]) < 1e-9 * abs(pinned)
-        assert abs(report.multipliers[0] + 3.0) < 1e-8
+        assert abs(report.moment_residuals[0]) < 1e-12 * abs(pinned)
+        assert abs(report.multipliers[0] + 3.0) < 1e-12
         assert report.kontsevich_segal_margin == pytest.approx(np.pi,
                                                                abs=1e-6)
 
@@ -476,7 +515,7 @@ def test_more_bands_than_the_content_occupies_are_refused():
     mean_field.fiber_constraint_form = cob.FiberConstraintForm.BandEigenvalues
     mean_field.fiber_moments = 2
     with pytest.raises(ValueError, match="occupies 1 bands"):
-        cob.SelfConsistentMeanField(action, mean_field).solve()
+        cob.SelfConsistentMeanField(action, mean_field).read()
 
 
 def test_one_pinned_constraint_per_occupied_band():

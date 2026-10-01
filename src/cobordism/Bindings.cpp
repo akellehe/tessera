@@ -2338,8 +2338,9 @@ assertion. Every pairing is the transpose.)doc")
                   "walks it: ascending 1..max_lookahead by default, or "
                   "descending combinatorial_breadth..1 when a breadth is "
                   "named.")
-      .def("run_stage1", &MultiCobordism::runStage1, py::arg("max_steps") = 200,
-           py::arg("n_candidate_moves") = 12, py::arg("grow_boundaries") = false,
+      .def("run_stage1", &MultiCobordism::runStage1,
+           py::arg("max_steps") = std::optional<int>(),
+           py::arg("n_candidate_moves") = 0, py::arg("grow_boundaries") = false,
            py::arg("max_lookahead") = 1,
            py::arg("combinatorial_breadth") = 0,
            py::call_guard<py::gil_scoped_release>(),
@@ -2358,8 +2359,8 @@ assertion. Every pairing is the transpose.)doc")
            "space raised to the breadth."
            )
       .def("run_stage2", &MultiCobordism::runStage2, py::arg("beta") = 1.0,
-           py::arg("max_iters") = 200, py::arg("alpha0") = 0.05,
-           py::arg("tolerance") = 1e-12,
+           py::arg("max_iters") = std::optional<int>(),
+           py::arg("alpha0") = 0.05, py::arg("tolerance") = 1e-15,
            py::call_guard<py::gil_scoped_release>(),
            "Stage 2 (geometric): relax the full complex squared edge coordinates "
            "z=l^2 under the selected objective. Derivatives are subtracted from "
@@ -2368,12 +2369,13 @@ assertion. Every pairing is the transpose.)doc")
            "backtracking scale accepts only exact objective decreases of at least "
            "the absolute tolerance. Read last_stage2_stationary to distinguish "
            "line-search stationarity from the max_iters budget. Returns F trace.")
-      .def("run", &MultiCobordism::run, py::arg("max_iters") = 200,
-           py::arg("n_candidate_moves") = 12,
+      .def("run", &MultiCobordism::run,
+           py::arg("max_iters") = std::optional<int>(),
+           py::arg("n_candidate_moves") = 0,
            py::arg("grow_boundaries") = false, py::arg("beta") = 1.0,
-           py::arg("alpha0") = 0.05, py::arg("tolerance") = 10e-9,
+           py::arg("alpha0") = 0.05, py::arg("tolerance") = 1e-15,
            py::arg("max_lookahead") = 1,
-           py::arg("relax_budget_per_move") = 10,
+           py::arg("relax_budget_per_move") = std::optional<int>(),
            py::arg("combinatorial_breadth") = 0,
            py::call_guard<py::gil_scoped_release>(),
            "The combined drive: each iteration takes ONE combinatorial stage-1 "
@@ -2625,7 +2627,15 @@ Right -- re-read after each drive call:
       .def_readwrite("carried_state_energy",
                      &MultiCobordism::ObjectiveTerms::carriedStateEnergy)
       .def_readwrite("moment_stiffness",
-                     &MultiCobordism::ObjectiveTerms::momentStiffness);
+                     &MultiCobordism::ObjectiveTerms::momentStiffness)
+      .def_readwrite("joint_action_stationarity",
+                     &MultiCobordism::ObjectiveTerms::jointActionStationarity,
+                     "The Euclidean norm of the stationarity residual of the "
+                     "joint action (Regge, face holonomy, matter with the "
+                     "covariance rebuilt at the point) over the squared "
+                     "lengths and the links; zero exactly at its stationary "
+                     "points, and 0.0 for an objective that does not score "
+                     "the joint action.");
 
   py::class_<MultiCobordism::ObjectiveContribution>(multiCobordismClass,
       "ObjectiveContribution",
@@ -2717,7 +2727,9 @@ Right -- re-read after each drive call:
       .def_readonly_static("CARRIED_STATE_ENERGY",
                            &ObjectiveTermName::kCarriedStateEnergy)
       .def_readonly_static("MOMENT_STIFFNESS",
-                           &ObjectiveTermName::kMomentStiffness);
+                           &ObjectiveTermName::kMomentStiffness)
+      .def_readonly_static("JOINT_ACTION_STATIONARITY",
+                           &ObjectiveTermName::kJointActionStationarity);
 
   py::class_<ObjectiveContext>(m, "ObjectiveContext",
       "The COMPLETE set of inputs an objective may read -- the no-feedback "
@@ -5007,33 +5019,6 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def_static("term_names", &JointAction::termNames,
                   "The five declared terms, in the order value sums them.");
 
-  py::enum_<RelaxationStop>(m, "RelaxationStop",
-      "Why a solve stopped, reported by name. Converged; NoDescent (no damped "
-      "step reduced the residual, the shortest step the datatype resolves "
-      "included); SectorBoundary (no stationary point in the declared "
-      "monopole sector: the smallest damped step changed a held monopole "
-      "number, a held face holonomy driven across -1); DomainBoundary (the "
-      "smallest damped step left the domain of the action); HeldFloor (with "
-      "held sectors, the residual is at its floor on the held "
-      "set: the constrained step cannot reduce it by more than the "
-      "tolerance); LengthRunaway (a squared length overflowed the double); "
-      "DeclaredLimit (a limit the user declared was reached: iteration_limit, "
-      "halving_limit or time_limit_seconds; none is declared by default); "
-      "Continued (not a stop: a per-iterate trace entry the solve stepped on "
-      "from).")
-      .value("Converged", RelaxationStop::Converged)
-      .value("NoDescent", RelaxationStop::NoDescent)
-      .value("SectorBoundary", RelaxationStop::SectorBoundary)
-      .value("DomainBoundary", RelaxationStop::DomainBoundary)
-      .value("HeldFloor", RelaxationStop::HeldFloor)
-      .value("LengthRunaway", RelaxationStop::LengthRunaway)
-      .value("DeclaredLimit", RelaxationStop::DeclaredLimit)
-      .value("Continued", RelaxationStop::Continued);
-
-  m.def("relaxation_stop_name", &relaxationStopName, py::arg("reason"),
-        "The name a report prints for a stop reason, for example 'no "
-        "stationary point in the declared monopole sector'.");
-
   py::class_<HeldMonopoleSector>(m, "HeldMonopoleSector",
       "A declared cluster whose monopole sector is boundary data of a "
       "relaxation: the outward-oriented faces of its bounding cut (three "
@@ -5044,8 +5029,9 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
 
   py::class_<HolomorphicRelaxationDeclaration>(
       m, "HolomorphicRelaxationDeclaration",
-      "The numerical controls of a holomorphic Newton solve. None of them "
-      "changes which equations are solved.")
+      "The declaration of a stationarity system: which fields are its "
+      "variables, the coordinates they share, the held sectors and the rank "
+      "tolerance of its linear solves. None of them changes the action.")
       .def(py::init<>())
       .def_readwrite("relax_lengths",
                      &HolomorphicRelaxationDeclaration::relaxLengths,
@@ -5060,25 +5046,6 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      &HolomorphicRelaxationDeclaration::relaxMultipliers,
                      "Whether the multipliers are variables, under the same "
                      "rule.")
-      .def_readwrite("tolerance", &HolomorphicRelaxationDeclaration::tolerance,
-                     "The residual norm at or below which the solve is "
-                     "declared converged. 1e-15 by default.")
-      .def_readwrite("iteration_limit",
-                     &HolomorphicRelaxationDeclaration::iterationLimit,
-                     "The number of accepted Newton steps after which the "
-                     "solve stops, when the user declares one; None by "
-                     "default, and then no count ends a solve.")
-      .def_readwrite("halving_limit",
-                     &HolomorphicRelaxationDeclaration::halvingLimit,
-                     "The number of halvings of one Newton step after which "
-                     "the solve stops, when the user declares one; None by "
-                     "default, and then a step is halved down to the "
-                     "datatype's resolution.")
-      .def_readwrite("time_limit_seconds",
-                     &HolomorphicRelaxationDeclaration::timeLimitSeconds,
-                     "The wall-clock time of the solve, in seconds, after "
-                     "which it stops, when the user declares one; None by "
-                     "default.")
       .def_readwrite("rank_tolerance",
                      &HolomorphicRelaxationDeclaration::rankTolerance,
                      "The relative threshold below which a singular value of "
@@ -5141,143 +5108,75 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
         "Every term of the action with its value and gradient norm on the "
         "coordinates the declaration relaxes (ActionTermRecord).");
 
-  py::class_<HolomorphicStep>(m, "HolomorphicStep",
-      "One Newton iteration, recorded so a run can be read back rather than "
-      "only its outcome.")
+  py::class_<HolomorphicNewtonStep>(m, "HolomorphicNewtonStep",
+      "The step that solves the stationarity system to first order about a "
+      "point, J d = -R with the closed-form Jacobian, and the rank decisions "
+      "it was solved at (HolomorphicRelaxation.newton_step).")
       .def(py::init<>())
-      .def_readwrite("iteration", &HolomorphicStep::iteration)
-      .def_readwrite("residual_norm", &HolomorphicStep::residualNorm)
-      .def_readwrite("step_norm", &HolomorphicStep::stepNorm)
-      .def_readwrite("damping", &HolomorphicStep::damping,
-                     "One for a full Newton step, a negative power of two "
-                     "otherwise.")
-      .def_readwrite("jacobian_rank", &HolomorphicStep::jacobianRank,
-                     "The number of singular values above rank_tolerance "
-                     "times the largest. Below the variable count whenever the "
-                     "connection is relaxed, because the action is gauge "
-                     "invariant.")
-      .def_readwrite("rank_tolerance", &HolomorphicStep::rankTolerance,
-                     "The relative tolerance the rank was decided at.")
+      .def_readwrite("step", &HolomorphicNewtonStep::step,
+                     "d, one entry per variable in the order of the "
+                     "Jacobian's columns: squared lengths, Maurer-Cartan "
+                     "increments of the links, multipliers.")
+      .def_readwrite("residual_norm", &HolomorphicNewtonStep::residualNorm)
+      .def_readwrite("jacobian_rank", &HolomorphicNewtonStep::jacobianRank)
+      .def_readwrite("rank_tolerance", &HolomorphicNewtonStep::rankTolerance)
       .def_readwrite("largest_singular_value",
-                     &HolomorphicStep::largestSingularValue)
+                     &HolomorphicNewtonStep::largestSingularValue)
       .def_readwrite("smallest_retained_singular_value",
-                     &HolomorphicStep::smallestRetainedSingularValue,
-                     "The smallest singular value counted in the rank.")
+                     &HolomorphicNewtonStep::smallestRetainedSingularValue)
       .def_readwrite("largest_discarded_singular_value",
-                     &HolomorphicStep::largestDiscardedSingularValue,
-                     "The largest singular value counted as zero; 0 when "
-                     "none is.")
-      .def_readwrite("rank_gap", &HolomorphicStep::rankGap,
-                     "The smallest retained over the largest discarded "
-                     "singular value; inf when none is discarded.")
-      .def_readwrite("action", &HolomorphicStep::action)
-      .def_readwrite("sector_guard_dampings",
-                     &HolomorphicStep::sectorGuardDampings,
-                     "The halvings of this step the held monopole sectors "
-                     "forced.")
-      .def_readwrite("domain_guard_dampings",
-                     &HolomorphicStep::domainGuardDampings,
-                     "The halvings of this step forced by trial points at "
-                     "which the action refuses to evaluate or its residual "
-                     "is not finite.")
-      .def_readwrite("residual_test_dampings",
-                     &HolomorphicStep::residualTestDampings,
-                     "The halvings of this step the residual test forced.")
-      .def_readwrite("accepted", &HolomorphicStep::accepted,
-                     "Whether a damped step was accepted; when not, damping "
-                     "and step_norm are zero and the solve stopped here.")
-      .def_readwrite("terms", &HolomorphicStep::terms,
-                     "Every term of the action at the point the step ended "
-                     "at (ActionTermRecord), when the declaration records "
-                     "terms; empty otherwise.")
-      .def_readwrite("linear_residual", &HolomorphicStep::linearResidual,
-                     "||F + J d|| / ||F|| for the full Newton step d: what the "
-                     "linearized equations leave.")
-      .def_readwrite("constrained_step", &HolomorphicStep::constrainedStep,
-                     "Whether the step was solved on the tangent space of the "
-                     "held sectors.")
-      .def_readwrite("constrained_rank", &HolomorphicStep::constrainedRank,
-                     "The rank of the real least-squares system of a "
-                     "constrained step; zero otherwise.")
+                     &HolomorphicNewtonStep::largestDiscardedSingularValue)
+      .def_readwrite("rank_gap", &HolomorphicNewtonStep::rankGap)
+      .def_readwrite("constrained", &HolomorphicNewtonStep::constrained,
+                     "Whether the step was solved over the steps that keep "
+                     "the held sectors' face-holonomy moduli.")
+      .def_readwrite("constrained_rank",
+                     &HolomorphicNewtonStep::constrainedRank)
       .def_readwrite("constrained_rank_gap",
-                     &HolomorphicStep::constrainedRankGap,
-                     "That system's rank gap; NaN for an unconstrained step.")
-      .def_readwrite("action_available", &HolomorphicStep::actionAvailable)
-      .def_readwrite("action_unavailable",
-                     &HolomorphicStep::actionUnavailable);
+                     &HolomorphicNewtonStep::constrainedRankGap)
+      .def_readwrite("linear_residual",
+                     &HolomorphicNewtonStep::linearResidual,
+                     "||J d + R|| / ||R||: what the step leaves of the "
+                     "linearized equations.");
 
-  py::class_<HolomorphicRelaxationReport>(m, "HolomorphicRelaxationReport",
-      "What a solve reached, and the trace of how it got there.")
-      .def(py::init<>())
-      .def_readwrite("steps", &HolomorphicRelaxationReport::steps)
-      .def_readwrite("converged", &HolomorphicRelaxationReport::converged)
-      .def_readwrite("initial_terms",
-                     &HolomorphicRelaxationReport::initialTerms,
-                     "Every term of the action at the starting point "
-                     "(ActionTermRecord), when the declaration records terms.")
-      .def_readwrite("initial_residual_norm",
-                     &HolomorphicRelaxationReport::initialResidualNorm)
-      .def_readwrite("residual_norm",
-                     &HolomorphicRelaxationReport::residualNorm)
-      .def_readwrite("action", &HolomorphicRelaxationReport::action)
-      .def_readwrite("multipliers", &HolomorphicRelaxationReport::multipliers)
-      .def_readwrite("moment_residuals",
-                     &HolomorphicRelaxationReport::momentResiduals)
-      .def_readwrite("sector_guard_damped_steps",
-                     &HolomorphicRelaxationReport::sectorGuardDampedSteps)
-      .def_readwrite("sector_monopole_numbers",
-                     &HolomorphicRelaxationReport::sectorMonopoleNumbers)
-      .def_readwrite("held_modulus_drift",
-                     &HolomorphicRelaxationReport::heldModulusDrift)
-      .def_readwrite("regge_hinge_count",
-                     &HolomorphicRelaxationReport::reggeHingeCount,
-                     "The number of hinges the primal Regge sum runs over.")
-      .def_readwrite("regge_structurally_zero",
-                     &HolomorphicRelaxationReport::reggeStructurallyZero,
-                     "True when a declared primal Regge term has no hinge on "
-                     "this complex under the declared hinge rule, so it and "
-                     "its gradient were identically zero throughout the "
-                     "solve.")
-      .def_readwrite("regge_off_principal_angles",
-                     &HolomorphicRelaxationReport::reggeOffPrincipalAngles,
-                     "The number of dihedral angles whose continued sheet "
-                     "differs from the principal one at the end point.")
-      .def_readwrite("stop_reason", &HolomorphicRelaxationReport::stopReason,
-                     "Why the solve stopped (RelaxationStop).")
-      .def_readwrite("stop_detail", &HolomorphicRelaxationReport::stopDetail,
-                     "The stop reason in words, with the numbers that decided "
-                     "it.")
-      .def_readwrite("largest_length_ratio",
-                     &HolomorphicRelaxationReport::largestLengthRatio,
-                     "The largest |z_e| at the end over its value at the "
-                     "start.")
-      .def_readwrite("action_available",
-                     &HolomorphicRelaxationReport::actionAvailable)
-      .def_readwrite("action_unavailable",
-                     &HolomorphicRelaxationReport::actionUnavailable);
+  py::class_<HolomorphicLinearization>(m, "HolomorphicLinearization",
+      "The stationarity system linearized at one point "
+      "(HolomorphicRelaxation.linearization): the singular value "
+      "decomposition of its closed-form Jacobian and, with held sectors, of "
+      "the real system over the steps that keep the held moduli, kept so "
+      "that J d = b is solved in the same minimum-norm sense for every "
+      "right-hand side.")
+      .def("solve", &HolomorphicLinearization::solve,
+           py::arg("right_hand_side"),
+           "The minimum-norm least-squares solution d of J d = b at the "
+           "declared rank tolerance, over the steps that keep the held "
+           "moduli when sectors are held.")
+      .def_property_readonly("newton_step",
+                             &HolomorphicLinearization::newtonStep,
+                             "The solution for b = -R with the rank "
+                             "decisions (HolomorphicNewtonStep).")
+      .def_property_readonly("residual", &HolomorphicLinearization::residual,
+                             "R at the point, any added residual included.");
 
   py::class_<HolomorphicRelaxation>(m, "HolomorphicRelaxation",
-      "A Newton root find on the holomorphic stationarity equations of a "
-      "JointAction: dS/dz = 0, U dS/dU = 0 and p_j(h) = p_j*.\n\n"
-      "It solves the equations themselves. It does not minimize the residual "
-      "norm, a real part, or any other real projection: the norm appears only "
-      "as the quantity the damping compares and as the convergence "
-      "certificate. The connection is updated MULTIPLICATIVELY, U -> U e^delta, "
-      "which on the stored phase is the exact increment phi -> phi - i delta "
-      "and selects no logarithm branch. A new squared length is written back "
-      "through the square root taken by continuation from the edge's current "
-      "length, so a relaxation path never jumps between the two sheets.\n\n"
-      "The Newton system is solved in the minimum-norm sense, because the "
-      "action is gauge invariant and its connection block is therefore "
-      "singular along every pure-gauge direction; the minimum-norm solution is "
-      "the one orthogonal to the gauge orbit.")
+      "The holomorphic stationarity system of a JointAction at one point: "
+      "dS/dz = 0, U dS/dU = 0 and p_j(h) = p_j*, its residual, its "
+      "closed-form Jacobian and the step that solves it to first order "
+      "there. It moves nothing; the search for a stationary point is a drive "
+      "of MultiCobordism with this system as its objective "
+      "(tessera.drivers.cell_solve).\n\n"
+      "The variables are the squared lengths, the Maurer-Cartan increments "
+      "of the links (U -> U e^delta, which on the stored phase is the exact "
+      "increment phi -> phi - i delta) and the multipliers. The linearized "
+      "system is solved in the minimum-norm sense, because the action is "
+      "gauge invariant and its connection block is therefore singular along "
+      "every pure-gauge direction; the minimum-norm solution is the one "
+      "orthogonal to the gauge orbit.")
       .def(py::init<JointAction, HolomorphicRelaxationDeclaration>(),
            py::arg("action"), py::arg("declaration"))
-      .def("solve", &HolomorphicRelaxation::solve,
-           "Run the solve, writing the relaxed fields into the complex.")
       .def_property_readonly("action", &HolomorphicRelaxation::action,
-                             "The action, carrying the multipliers as the "
-                             "solve left them.")
+                             "The action the system is posed on, with its "
+                             "multipliers.")
       .def("jacobian", &HolomorphicRelaxation::jacobian,
            "The Jacobian at the current point, flat row-major. Forming it "
            "restores the complex exactly, so the geometry is unchanged.")
@@ -5285,7 +5184,29 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
            "The residual of the equations in scope at the current point, in "
            "the block order of the Jacobian's rows.")
       .def("equation_count", &HolomorphicRelaxation::equationCount)
-      .def("variable_count", &HolomorphicRelaxation::variableCount);
+      .def("variable_count", &HolomorphicRelaxation::variableCount)
+      .def("newton_step", &HolomorphicRelaxation::newtonStep,
+           "The step that solves the system to first order about the current "
+           "point (HolomorphicNewtonStep): the minimum-norm least-squares "
+           "solution of J d = -R at the declared rank tolerance, over the "
+           "steps that keep the held moduli when sectors are held. The "
+           "geometry is read and not written.")
+      .def("linearization", &HolomorphicRelaxation::linearization,
+           py::arg("added_residual") = std::vector<std::complex<double>>(),
+           py::arg("added_jacobian") = std::vector<std::complex<double>>(),
+           "The system linearized at the current point "
+           "(HolomorphicLinearization), for solves against several "
+           "right-hand sides. added_residual and added_jacobian (flat "
+           "row-major), each empty or of the system's size, are added to R "
+           "and to J first: the gradient and Hessian of a term the caller "
+           "adds to the action.")
+      .def("sector_monopole_numbers",
+           &HolomorphicRelaxation::sectorMonopoleNumbers,
+           "The monopole number of every held sector at the current point, "
+           "in the declaration's order; empty when none is held.")
+      .def("held_log_moduli", &HolomorphicRelaxation::heldLogModuli,
+           "The logarithm of the modulus of every held face holonomy at the "
+           "current point; empty when no sector is held.");
 
   py::enum_<OccupationOrder>(m, "OccupationOrder",
       "Which modes of the carrier operator the covariance projects onto. The "
@@ -5383,6 +5304,12 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      "operator's own unit; empty (the default) takes the "
                      "fiber's own values at the starting point, which pins "
                      "the carrier as declared.")
+      .def_readwrite("fiber_moment_unit_targets",
+                     &SelfConsistentMeanFieldDeclaration::fiberMomentUnitTargets,
+                     "The targets of the pinned constraints in the unit they "
+                     "are solved in, one per constraint, used as they stand; "
+                     "empty by default. They need fiber_moment_scale and "
+                     "exclude fiber_moment_targets.")
       .def_readwrite("fiber_moment_scale",
                      &SelfConsistentMeanFieldDeclaration::fiberMomentScale,
                      "The unit s the pinned power sums are solved in, "
@@ -5451,6 +5378,18 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                     "V^-1, whose rows are the left eigenvectors, flat "
                     "row-major.");
 
+  py::class_<BandReference>(m, "BandReference",
+      "One occupied band as the reference a BandFollower follows: its "
+      "occupation, its rank, where it sat in the declared order when it was "
+      "chosen, and its Riesz projector over the operator's modes (flat "
+      "row-major).")
+      .def(py::init<>())
+      .def_readwrite("occupation", &BandReference::occupation)
+      .def_readwrite("rank", &BandReference::rank)
+      .def_readwrite("declared_index", &BandReference::declaredIndex)
+      .def_readwrite("declared_positions", &BandReference::declaredPositions)
+      .def_readwrite("projector", &BandReference::projector);
+
   py::class_<BandFollower>(m, "BandFollower",
       "The declared covariance rule with its band selection: read(h) builds "
       "Gamma from an operator, choosing the occupied bands by the declared "
@@ -5463,7 +5402,15 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
            "The band read of a flat row-major operator.")
       .def("follow", &BandFollower::follow, py::arg("read"),
            "Make the read's bands the reference the next read follows.")
-      .def_property_readonly("following", &BandFollower::following);
+      .def_property_readonly("following", &BandFollower::following)
+      .def_property_readonly("reference", &BandFollower::reference,
+                             "The reference the next read follows, one "
+                             "BandReference per occupied band; empty when "
+                             "none is set.")
+      .def("set_reference", &BandFollower::setReference, py::arg("reference"),
+           "Set the reference from stored bands, so that a read is followed "
+           "from bands chosen elsewhere and not from the declared order at "
+           "the point.");
 
   py::class_<SelfConsistentMeanFieldStep>(m, "SelfConsistentMeanFieldStep",
       "One iterate of a self-consistent solve; iterate zero is the starting "
@@ -5511,31 +5458,20 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def_readwrite("moment_residual_norm",
                      &SelfConsistentMeanFieldStep::momentResidualNorm,
                      "The norm of the pinned constraints' residuals in the "
-                     "unit they are solved in; zero when none is pinned.")
-      .def_readwrite("geometry_converged",
-                     &SelfConsistentMeanFieldStep::geometryConverged)
-      .def_readwrite("geometry_residual_norm",
-                     &SelfConsistentMeanFieldStep::geometryResidualNorm)
-      .def_readwrite("geometry_stop_reason",
-                     &SelfConsistentMeanFieldStep::geometryStopReason)
-      .def_readwrite("geometry_stop_detail",
-                     &SelfConsistentMeanFieldStep::geometryStopDetail)
-      .def_readwrite("newton_iterated",
-                     &SelfConsistentMeanFieldStep::newtonIterated)
-      .def_readwrite("newton", &SelfConsistentMeanFieldStep::newton);
+                     "unit they are solved in; zero when none is pinned.");
 
   py::class_<SelfConsistentMeanFieldReport>(m, "SelfConsistentMeanFieldReport",
-      "What a self-consistent solve reached, which method and band selection "
-      "ran, and why it stopped.")
+      "The read of one point of a self-consistent system "
+      "(SelfConsistentMeanField.read).")
       .def(py::init<>())
       .def_readwrite("band_selection",
                      &SelfConsistentMeanFieldReport::bandSelection)
       .def_readwrite("steps", &SelfConsistentMeanFieldReport::steps)
-      .def_readwrite("iterations", &SelfConsistentMeanFieldReport::iterations,
-                     "Accepted Newton steps of the joint system.")
-      .def_readwrite("converged", &SelfConsistentMeanFieldReport::converged)
-      .def_readwrite("stop_reason", &SelfConsistentMeanFieldReport::stopReason)
-      .def_readwrite("stop_detail", &SelfConsistentMeanFieldReport::stopDetail)
+      .def_readwrite("converged", &SelfConsistentMeanFieldReport::converged,
+                     "Whether the force and the pinned constraints' residual "
+                     "are at or below the declared tolerance at the point.")
+      .def_readwrite("stop_detail", &SelfConsistentMeanFieldReport::stopDetail,
+                     "converged in words, with the numbers that decided it.")
       .def_readwrite("force_norm", &SelfConsistentMeanFieldReport::forceNorm)
       .def_readwrite("covariance_change",
                      &SelfConsistentMeanFieldReport::covarianceChange)
@@ -5626,8 +5562,8 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      "start.");
 
   py::class_<SelfConsistentMeanField>(m, "SelfConsistentMeanField",
-      "The certificates-blind mean-field backreaction of Section 7, solved to "
-      "self-consistency.\n\n"
+      "The certificates-blind mean-field backreaction of Section 7 as a "
+      "self-consistent system posed at a point.\n\n"
       "The only channel from the state to the geometry is the bilinear action "
       "density, so the force on an edge is tr(Gamma dh/dz_e) and the force on "
       "a link is tr(Gamma U_e dh/dU_e); both are complex and neither is "
@@ -5635,28 +5571,42 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       "polaron: Gamma* is the declared rule's density of the modes of h(z*) "
       "and the state's force balances the geometric action edge by edge. It "
       "is a stationary point of a complex action, not a minimum of a real "
-      "one, solved for by Newton's method on the joint system; the declared "
-      "band selection (Continuation by default) changes no equation. A solve "
-      "that finds no fixed point reports why, by name.")
+      "one. This class poses the joint system at a point (joint_system) and "
+      "reads the point (iterate, read); it moves nothing. The declared band "
+      "selection (Continuation by default) changes no equation.")
       .def(py::init<JointAction, SelfConsistentMeanFieldDeclaration>(),
            py::arg("action"), py::arg("declaration"))
-      .def("solve", &SelfConsistentMeanField::solve,
-           py::call_guard<py::gil_scoped_release>(),
-           "Run the solve, writing the relaxed geometry into the complex. The "
-           "interpreter lock is released for its duration, so a caller's "
-           "other threads (a live display) keep running.")
       .def_property_readonly("action", &SelfConsistentMeanField::action,
-                             "The action, carrying the covariance and the "
-                             "multipliers as the solve left them.")
+                             "The action the system is posed on, as it was "
+                             "declared.")
       .def("joint_system", &SelfConsistentMeanField::jointSystem,
-           "The joint Newton system at the action's current point, as solve "
-           "builds it there: the bands chosen at the point and followed from "
-           "it, the pinned fiber constraints installed with their targets and "
-           "the multipliers' starting estimate, the covariance and the fiber "
+           py::arg("reference") = std::vector<BandReference>(),
+           "The joint system at the action's current point: the bands "
+           "chosen at the point and followed from it (or from the reference), "
+           "the pinned fiber constraints installed with their targets and "
+           "their least-squares multipliers, the covariance and the fiber "
            "rebuilt at every point the system is evaluated at. Its residual "
            "is the self-consistent residual and its jacobian the analytic "
            "Jacobian of it; the geometry may be moved between reads for an "
-           "independent check of the one against the other.");
+           "independent check of the one against the other.")
+      .def("iterate", &SelfConsistentMeanField::iterate,
+           py::arg("reference") = std::vector<BandReference>(),
+           py::arg("previous") = std::vector<std::complex<double>>(),
+           "The measurements of the action's current point, with nothing "
+           "moved (SelfConsistentMeanFieldStep): the bands read there, "
+           "followed from the reference when one is given, the force, the "
+           "pinned constraints' multipliers and residual; previous is the "
+           "covariance the covariance change is measured from.")
+      .def("read", &SelfConsistentMeanField::read,
+           py::arg("reference") = std::vector<BandReference>(),
+           py::arg("start_scale") = 0.0,
+           "The report of the action's current point, with nothing moved: "
+           "what iterate measures there and the end-point measurements of a "
+           "report (the joint Jacobian's rank decision, the Hessian along "
+           "the Hellmann-Feynman force, the Kontsevich-Segal margin, the "
+           "pinned constraints in the operator's own unit). start_scale is "
+           "the largest squared-length modulus largest_length_ratio is taken "
+           "against; zero takes the point's own.");
 
   // ── Section 13.4/13.5: the Ward flux and the intrinsic response ────────
 

@@ -55,7 +55,8 @@ double CobordismObjective::total(const ObjectiveTerms &terms) {
   // nothing but the declared terms.
   return terms.reggeStationarity + terms.hodgeStationarity +
          terms.connectionStationarity + terms.registerResidual +
-         terms.actionMagnitude + terms.carriedStateEnergy + terms.momentStiffness;
+         terms.actionMagnitude + terms.carriedStateEnergy +
+         terms.momentStiffness + terms.jointActionStationarity;
 }
 
 std::vector<std::string> CobordismObjective::declaredTermNames() {
@@ -67,7 +68,8 @@ std::vector<std::string> CobordismObjective::declaredTermNames() {
           ObjectiveTermName::kRegisterResidual,
           ObjectiveTermName::kActionMagnitude,
           ObjectiveTermName::kCarriedStateEnergy,
-          ObjectiveTermName::kMomentStiffness};
+          ObjectiveTermName::kMomentStiffness,
+          ObjectiveTermName::kJointActionStationarity};
 }
 
 namespace {

@@ -300,6 +300,15 @@ std::size_t installFiberMoments(
         std::to_string(declaration.fiberMomentTargets.size()) +
         " fiber moment targets were declared for " +
         std::to_string(declaration.fiberMoments) + " pinned moments");
+  if (!declaration.fiberMomentUnitTargets.empty() &&
+      (declaration.fiberMomentUnitTargets.size() != declaration.fiberMoments ||
+       !declaration.fiberMomentTargets.empty() ||
+       !(declaration.fiberMomentScale > 0.0)))
+    throw std::invalid_argument(
+        "SelfConsistentMeanField: targets in the constraints' unit are "
+        "declared one per pinned constraint, with the unit "
+        "(fiberMomentScale) declared and no targets in the operator's unit "
+        "beside them");
   if (!action.declaration().momentConstraints.empty())
     throw std::invalid_argument(
         "SelfConsistentMeanField: the action already declares spectral "
@@ -336,11 +345,13 @@ std::size_t installFiberMoments(
   for (std::size_t index = 0; index < pinned.momentConstraints.size();
        ++index)
     pinned.momentConstraints[index].target =
-        declaration.fiberMomentTargets.empty()
-            ? values[index]
-            : declaration.fiberMomentTargets[index] /
-                  std::pow(scale, static_cast<double>(unitPower(
-                                      pinned.momentConstraints[index])));
+        !declaration.fiberMomentUnitTargets.empty()
+            ? declaration.fiberMomentUnitTargets[index]
+            : declaration.fiberMomentTargets.empty()
+                  ? values[index]
+                  : declaration.fiberMomentTargets[index] /
+                        std::pow(scale, static_cast<double>(unitPower(
+                                            pinned.momentConstraints[index])));
   action = JointAction(action.spacetime(), std::move(pinned));
 
   // The least-squares multipliers: the force with every multiplier zero and
@@ -813,6 +824,13 @@ BandRead BandFollower::read(const std::vector<complexd> &operatorMatrix) const {
     // of largest weight in its previous projector that no earlier band took.
     std::vector<bool> taken(static_cast<std::size_t>(n), false);
     for (const Reference &reference : reference_) {
+      if (reference.projector.size() !=
+          static_cast<std::size_t>(n) * static_cast<std::size_t>(n))
+        throw std::invalid_argument(
+            "BandFollower: a reference projector has " +
+            std::to_string(reference.projector.size()) +
+            " entries, but the operator read has " + std::to_string(n) +
+            " modes");
       const Eigen::MatrixXcd previous = toMatrix(reference.projector);
       const Eigen::MatrixXcd weight = inverse * previous * vectors;
       std::vector<Eigen::Index> candidates;
@@ -956,117 +974,67 @@ SelfConsistentMeanField::SelfConsistentMeanField(
   (void)check;
 }
 
-SelfConsistentMeanFieldReport SelfConsistentMeanField::solve() {
-  return solveJointNewton();
-}
-
-HolomorphicRelaxation SelfConsistentMeanField::jointSystem() const {
+HolomorphicRelaxation SelfConsistentMeanField::jointSystem(
+    const std::vector<BandReference> &reference) const {
   auto follower = std::make_shared<BandFollower>(declaration_);
   JointAction action = action_;
+  if (!reference.empty()) follower->setReference(reference);
   const BandRead start = follower->read(bandOperatorFlat(action, declaration_));
-  follower->follow(start);
+  if (reference.empty()) follower->follow(start);
   action.setCovariance(start.covariance);
   (void)installFiberMoments(action, declaration_, start);
-  HolomorphicRelaxationDeclaration newton = declaration_.geometry;
-  newton.tolerance = std::min(declaration_.geometry.tolerance,
-                              declaration_.tolerance);
-  if (declaration_.fiberMoments > 0) newton.relaxMultipliers = true;
+  HolomorphicRelaxationDeclaration geometry = declaration_.geometry;
+  if (declaration_.fiberMoments > 0) geometry.relaxMultipliers = true;
   CovarianceRebuild rebuild;
   rebuild.at = [follower, declaration = declaration_](const JointAction &point) {
     return rebuiltStateOf(
         follower->read(bandOperatorFlat(point, declaration)), declaration);
   };
-  return HolomorphicRelaxation(action, newton, rebuild);
+  return HolomorphicRelaxation(action, geometry, rebuild);
 }
 
-SelfConsistentMeanFieldReport SelfConsistentMeanField::solveJointNewton() {
+SelfConsistentMeanFieldStep SelfConsistentMeanField::iterate(
+    const std::vector<BandReference> &reference,
+    const std::vector<complexd> &previous) const {
+  BandFollower follower(declaration_);
+  JointAction action = action_;
+  if (!reference.empty()) follower.setReference(reference);
+  const BandRead point = follower.read(bandOperatorFlat(action, declaration_));
+  action.setCovariance(point.covariance);
+  (void)installFiberMoments(action, declaration_, point);
+  return measure(0, action, point, point.covariance, previous,
+                 declaration_.geometry);
+}
+
+SelfConsistentMeanFieldReport SelfConsistentMeanField::read(
+    const std::vector<BandReference> &reference, double startScale) const {
   SelfConsistentMeanFieldReport report;
   report.bandSelection = declaration_.bandSelection;
   BandFollower follower(declaration_);
-  const double startScale = largestSquaredLengthOf(action_);
-  const std::vector<complexd> declared = action_.declaration().covariance;
-
-  // Iterate zero: the bands are chosen at the starting point by the declared
-  // order, and the covariance is their density there; the declared power sums
-  // of the fiber they make up are pinned there.
-  const BandRead start = follower.read(bandOperatorFlat(action_, declaration_));
-  follower.follow(start);
-  action_.setCovariance(start.covariance);
-  report.fiberRank = installFiberMoments(action_, declaration_, start);
+  JointAction action = action_;
+  if (!reference.empty()) follower.setReference(reference);
+  const BandRead point = follower.read(bandOperatorFlat(action, declaration_));
+  if (reference.empty()) follower.follow(point);
+  action.setCovariance(point.covariance);
+  report.fiberRank = installFiberMoments(action, declaration_, point);
   report.fiberConstraintForm = declaration_.fiberConstraintForm;
-  const bool fiber = declaration_.fiberMoments > 0;
   std::vector<SelfConsistentMeanFieldStep> steps;
-  steps.push_back(measure(0, action_, start, start.covariance, declared,
+  steps.push_back(measure(0, action, point, point.covariance, {},
                           declaration_.geometry));
-  std::vector<complexd> previous = start.covariance;
-
-  // Newton's method on the joint system: every residual, Jacobian column and
-  // trial point reads the covariance rebuilt there from the bands followed
-  // from the last accepted iterate, and every accepted iterate moves the
-  // reference to its own bands.
-  HolomorphicRelaxationDeclaration newton = declaration_.geometry;
-  newton.tolerance = std::min(declaration_.geometry.tolerance,
-                              declaration_.tolerance);
-  // the pinned moments' multipliers are unknowns beside the geometry
-  if (fiber) newton.relaxMultipliers = true;
-  CovarianceRebuild rebuild;
-  rebuild.at = [&follower, this](const JointAction &point) {
-    return rebuiltStateOf(
-        follower.read(bandOperatorFlat(point, declaration_)), declaration_);
-  };
-  rebuild.accepted = [&](const JointAction &point) {
-    const BandRead read = follower.read(bandOperatorFlat(point, declaration_));
-    follower.follow(read);
-    steps.push_back(measure(steps.size(), point, read, read.covariance,
-                            previous, declaration_.geometry));
-    previous = read.covariance;
-  };
-  HolomorphicRelaxation relaxation(action_, newton, rebuild);
-  const HolomorphicRelaxationReport joint = relaxation.solve();
-  action_ = relaxation.action();
-
-  // The Newton iteration taken from each iterate, and the joint residual
-  // there.
-  for (std::size_t k = 0; k < steps.size(); ++k) {
-    SelfConsistentMeanFieldStep &step = steps[k];
-    if (k < joint.steps.size()) {
-      step.newtonIterated = true;
-      step.newton = joint.steps[k];
-      step.geometryResidualNorm = joint.steps[k].residualNorm;
-    } else {
-      step.geometryResidualNorm = joint.residualNorm;
-    }
-    step.geometryConverged = step.geometryResidualNorm <= newton.tolerance;
-    if (k + 1 < steps.size()) {
-      step.geometryStopReason = RelaxationStop::Continued;
-    } else {
-      step.geometryStopReason = joint.stopReason;
-      step.geometryStopDetail = joint.stopDetail;
-    }
-  }
-  report.iterations = steps.size() - 1;
   const double momentResidual = steps.back().momentResidualNorm;
-  finishReport(report, std::move(steps), action_, declaration_, follower,
-               startScale);
+  finishReport(report, std::move(steps), action, declaration_, follower,
+               startScale > 0.0 ? startScale : largestSquaredLengthOf(action));
   report.converged = report.forceNorm <= declaration_.tolerance &&
                      momentResidual <= declaration_.tolerance;
-  if (report.converged) {
-    report.stopReason = RelaxationStop::Converged;
-    report.stopDetail =
-        "the self-consistent force " + threeDigits(report.forceNorm) +
-        (fiber ? " and the pinned moments' residual " +
-                     threeDigits(momentResidual) + " are"
-               : std::string{" is"}) +
-        " at or below the tolerance " + threeDigits(declaration_.tolerance) +
-        " after " + std::to_string(report.iterations) + " Newton steps";
-    if (joint.stopReason != RelaxationStop::Converged)
-      report.stopDetail += "; the Newton solve then stopped: " +
-                           relaxationStopName(joint.stopReason) + ", " +
-                           joint.stopDetail;
-  } else {
-    report.stopReason = joint.stopReason;
-    report.stopDetail = joint.stopDetail;
-  }
+  const bool fiber = declaration_.fiberMoments > 0;
+  report.stopDetail =
+      "the self-consistent force " + threeDigits(report.forceNorm) +
+      (fiber ? " and the pinned moments' residual " +
+                   threeDigits(momentResidual) + " are"
+             : std::string{" is"}) +
+      (report.converged ? " at or below" : " not at or below") +
+      " the tolerance " + threeDigits(declaration_.tolerance) +
+      " at the point read";
   return report;
 }
 

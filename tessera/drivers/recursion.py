@@ -123,10 +123,11 @@ At level l (a complex K_l of three sheets of a base complex):
    monopole host are one simple mode per sheet, not spin doublets
    (``baryon_poles``, "What a content names"); the poles are read for every
    doublet content of the T-averaged operator and labelled by it. Each
-   content's mean field is solved by Newton's method on the joint system,
-   its bands chosen at the host and followed by continuation
-   (``--band-selection``); the solve's iterations, final force, stop reason
-   and joint-Jacobian rank gap are reported with the content. A read whose
+   content's mean field is solved by the `MultiCobordism` drive of the joint
+   system (`cell_solve`), its bands chosen at the host and followed by
+   continuation (``--band-selection``); the solve's accepted updates,
+   committed moves, final force, stop reason and joint-Jacobian rank gap
+   are reported with the content. A read whose
    precondition does not hold at its declared tolerance is made and flagged:
    a geometry that is not Kontsevich-Segal allowable is read with that flag
    and its margin, and a relaxed cell that does not meet the preconditions
@@ -184,6 +185,7 @@ from tessera import chainhodge as ch
 from tessera import cobordism as cob
 from tessera import observables as obs
 from tessera.drivers import baryon_poles as bp
+from tessera.drivers import cell_solve
 
 #: Declared inputs, recorded with every run.
 DECLARED_TETRAHEDRA = 2
@@ -456,52 +458,148 @@ def level_edge_classes(spacetime, count):
     return classes, orientations
 
 
+def sheet_base(spacetime, count):
+    """Sheet 0 of a level built by `build_level` as a complex of its own:
+    the base cells on vertices 0..count-1, every edge carrying the length and
+    the phase the level's sheet 0 stores for it."""
+    cells = [cell for cell in cell_solve.top_cells(spacetime)
+             if max(cell) < count]
+    stored = {}
+    for a, b, length, phase in cell_solve.edge_fields(spacetime):
+        if a < count and b < count:
+            stored[(a, b)] = (length, phase)
+            stored[(b, a)] = (length, -phase)
+    base = T.Spacetime.fromVertexTuples(3, [list(c) for c in cells], 1.0, 0.0)
+    for edge in base.getEdgeList().toVector():
+        length, phase = stored[(int(edge.getSource().getId()),
+                                int(edge.getTarget().getId()))]
+        edge.setLength(length)
+        edge.setPhase(phase)
+    return base
+
+
+def base_fields(spacetime):
+    """A base complex as a level's base: its cells, squared lengths and
+    links (dicts on ascending edges) with its vertices relabeled 0..n-1 in
+    ascending order, and the relabeling."""
+    raw = cell_solve.top_cells(spacetime)
+    used = sorted({v for c in raw for v in c})
+    relabel = {v: i for i, v in enumerate(used)}
+    cells = sorted([relabel[v] for v in c] for c in raw)
+    z, links = {}, {}
+    for a, b, length, phase in cell_solve.edge_fields(spacetime):
+        x, y = relabel[a], relabel[b]
+        # the inverse of `build_level`'s writing of the fields
+        link = cmath.exp(1j * phase)
+        if x > y:
+            link = 1.0 / link
+        key = (min(x, y), max(x, y))
+        z[key] = length ** 2
+        links[key] = link
+    return cells, z, links, relabel
+
+
 def relax_level(spacetime, config, sectors=None, count=None):
-    """Step 1: both edge fields relax to holomorphic stationarity of the joint
-    action, strict emergence, with the level's lengths as built as l0, and
-    with the declared monopole sectors held as boundary data. With ``count``,
-    the base vertex count of a level built by `build_level`, the sheets are
-    relaxed as one shared base field (`level_edge_classes`), so they stay
-    identical exactly."""
-    declaration = bp.action_declaration(
-        spacetime, config["kappa"], config["beta"], config["regge_hinges"],
-        villain_order=bp.declared_villain_order(config))
-    action = cob.JointAction(spacetime, declaration)
+    """Step 1: the level driven to holomorphic stationarity of the joint
+    action by `MultiCobordism` (`cell_solve.solve`), its Pachner moves
+    included, strict emergence, with the level's lengths as built as l0, and
+    with the declared monopole sectors held as boundary data. With
+    ``count``, the base vertex count of a level built by `build_level`, the
+    sheets are one shared base field: the drive runs on the base complex
+    (`sheet_base`) and scores the system of all the sheets, so they stay
+    identical exactly. Without it the drive runs on ``spacetime`` itself,
+    every edge its own coordinate.
+
+    The relaxed fields are written to ``spacetime`` when the drive committed
+    no move. When it committed one, the cells changed and ``spacetime`` is
+    left as it was; the record's ``moved_base`` is then the base the drive
+    ended on (`base_fields`: cells, squared lengths, links, relabeling), and
+    None otherwise."""
+    shared = count is not None
+    sheets = SHEETS if shared else 1
+    base = sheet_base(spacetime, count) if shared else spacetime
+    host = cell_solve.sheeted_support(base, sheets)
     held = dict(config)
     held["held_sectors"] = list(sectors or [])
-    geometry = bp.relaxation_declaration(held)
-    if count is not None:
-        classes, orientations = level_edge_classes(spacetime, count)
-        geometry.edge_classes = classes
-        geometry.edge_class_orientations = orientations
-    relaxation = cob.HolomorphicRelaxation(action, geometry)
-    started = time.time()
-    report = relaxation.solve()
+    villain_order = bp.declared_villain_order(config)
+
+    def declare(complex_):
+        return bp.action_declaration(
+            complex_, config["kappa"], config["beta"],
+            config["regge_hinges"], villain_order=villain_order)
+
+    def geometry_of(support):
+        return bp.support_geometry(held, support, host)
+
+    system = cell_solve.GeometricSystem(declare, geometry_of, sheets)
+    start = system.point(base)
+    start_moduli = start.relaxation.held_log_moduli()
+    initial = float(np.linalg.norm(start.relaxation.residual()))
+    regge_hinge_count = int(start.relaxation.action.regge_hinge_count())
+    regge_structurally_zero = bool(
+        start.relaxation.action.regge_structurally_zero())
+    drive = cell_solve.solve(base, system, **bp.solve_arguments(held))
+    final = drive["spacetime"]
+    end = system.point(final)
+    residual = float(np.linalg.norm(end.relaxation.residual()))
+    end_moduli = end.relaxation.held_log_moduli()
+    drift = (max((abs(a - b) for a, b in zip(end_moduli, start_moduli)),
+                 default=0.0)
+             if len(end_moduli) == len(start_moduli) else math.nan)
+    action = end.relaxation.action
+    reported = action.reported_value()
+    updates = drive["objective"].updates
+    converged = residual <= bp.declared_tolerance(held, "step_tolerance")
+    moved_base = None
+    if drive["changed"]:
+        moved_base = base_fields(final)
+    elif shared:
+        stored = {}
+        for a, b, length, phase in cell_solve.edge_fields(final):
+            stored[(a, b)] = (length, phase)
+            stored[(b, a)] = (length, -phase)
+        for edge in spacetime.getEdgeList().toVector():
+            a = int(edge.getSource().getId())
+            b = int(edge.getTarget().getId())
+            sheet = a // count
+            length, phase = stored[(a - sheet * count, b - sheet * count)]
+            edge.setLength(length)
+            edge.setPhase(phase)
     return {
-        "converged": bool(report.converged),
-        "stop_reason": cob.relaxation_stop_name(report.stop_reason),
-        "stop_detail": str(report.stop_detail),
-        "initial_residual": float(report.initial_residual_norm),
-        "residual": float(report.residual_norm),
-        "iterations": len(report.steps),
-        "sector_guard_damped_steps": int(report.sector_guard_damped_steps),
-        "sector_monopole_numbers": list(report.sector_monopole_numbers),
-        "held_modulus_drift": float(report.held_modulus_drift),
-        "shared_sheet_geometry": count is not None,
-        "rank_tolerance": float(geometry.rank_tolerance),
-        "jacobian_ranks": [int(st.jacobian_rank) for st in report.steps],
-        "rank_gaps": [float(st.rank_gap) for st in report.steps],
-        # every term of the action at the starting point and at every step
+        "method": "MultiCobordism drive of the joint action's stationarity",
+        "converged": bool(converged),
+        "stop_reason": "converged" if converged else drive["stop_reason"],
+        "stop_detail": str(drive["stop_detail"]),
+        "initial_residual": initial,
+        "residual": residual,
+        "iterations": int(drive["accepted_updates"]),
+        "moves_committed": int(drive["moves_committed"]),
+        "complex_before": drive["complex_before"],
+        "complex_after": drive["complex_after"],
+        "changed": bool(drive["changed"]),
+        "moved_base": moved_base,
+        "residual_trace": list(drive["trace"]),
+        "undefined_points": len(drive["objective"].undefined),
+        "sector_monopole_numbers": list(
+            end.relaxation.sector_monopole_numbers()),
+        "held_modulus_drift": float(drift),
+        "shared_sheet_geometry": shared,
+        "rank_tolerance": float(bp.declared_tolerance(held,
+                                                      "rank_tolerance")),
+        "jacobian_ranks": [int(u["jacobian_rank"]) for u in updates],
+        "rank_gaps": [float(u["rank_gap"]) for u in updates],
+        # every term of the action at every point a step was proposed from
         # (--trace-terms); empty otherwise
-        "term_trace": ([bp.term_records(report.initial_terms)]
-                       + [bp.term_records(st.terms) for st in report.steps]
-                       if report.initial_terms else []),
+        "term_trace": [bp.term_records(u["measured"]) for u in updates
+                       if u.get("measured")],
         "regge_hinges": config["regge_hinges"],
-        "regge_hinge_count": int(report.regge_hinge_count),
-        "regge_structurally_zero": bool(report.regge_structurally_zero),
-        "regge_off_principal_angles": int(report.regge_off_principal_angles),
-        "action": complex(report.action),
-        "seconds": time.time() - started,
+        "regge_hinge_count": regge_hinge_count,
+        "regge_structurally_zero": regge_structurally_zero,
+        "regge_off_principal_angles": int(
+            action.regge_off_principal_angles()),
+        "action": complex(reported.value),
+        "action_available": bool(reported.available),
+        "seconds": float(drive["seconds"]),
     }
 
 
@@ -919,7 +1017,8 @@ def cell_reads(cells, z, links, config):
         for key in ("villain_order", "band_selection", "fiber_moments",
                     "fiber_pinning", "kappa_role", "trace_terms") + tuple(
                         key for key, _ in bp.TOLERANCES) + tuple(
-                            key for key, _, _ in bp.LIMITS):
+                            key for key, _, _ in bp.LIMITS) + tuple(
+                                key for key, _, _ in bp.SOLVE_OPTIONS):
             if key in config:
                 cell_config[key] = config[key]
         number = monopole_numbers(
@@ -1113,25 +1212,10 @@ def pachner_stage(cells, z, links, config):
         max_steps=updates, n_candidate_moves=0,
         grow_boundaries=False, max_lookahead=depth, combinatorial_breadth=0)]
     record["objective_after"] = float(node.objective())
-    moved = node.spacetime()
-    raw = [sorted(int(v.getId()) for v in cell.getVertices())
-           for cell in moved.getTopSimplices() if cell is not None]
-    used = sorted({v for c in raw for v in c})
-    relabel = {v: i for i, v in enumerate(used)}
-    cells_out = sorted([relabel[v] for v in c] for c in raw)
-    z_out, links_out = {}, {}
-    for edge in moved.getEdgeList().toVector():
-        x = relabel[int(edge.getSource().getId())]
-        y = relabel[int(edge.getTarget().getId())]
-        # the inverse of `build_level`'s writing of the fields
-        link = cmath.exp(1j * complex(edge.getPhase()))
-        if x > y:
-            link = 1.0 / link
-        key = (min(x, y), max(x, y))
-        z_out[key] = complex(edge.getLength()) ** 2
-        links_out[key] = link
-    record["vertex_relabeling"] = {str(v): relabel[v] for v in used}
-    record["after"] = {"vertices": len(used), "edges": len(z_out),
+    cells_out, z_out, links_out, relabel = base_fields(node.spacetime())
+    record["vertex_relabeling"] = {str(v): relabel[v]
+                                   for v in sorted(relabel)}
+    record["after"] = {"vertices": len(relabel), "edges": len(z_out),
                        "cells": len(cells_out)}
     record["changed"] = cells_out != sorted(sorted(c) for c in cells)
     return cells_out, z_out, links_out, record
@@ -1193,6 +1277,18 @@ def tick(index, cells, z, links, config):
             "seconds": time.time() - started,
         }
         return record, None
+    moved_base = relaxation.pop("moved_base", None)
+    if moved_base is not None:
+        # a committed Pachner move changed the base: the level is the one
+        # the drive ended on, every sheet a copy of it, and the held cut is
+        # named by the vertices' new labels where they are still there
+        cells, moved_z, moved_links, relabel = moved_base
+        spacetime, count = build_level(cells, moved_z, moved_links)
+        relaxation["vertex_relabeling"] = {str(v): relabel[v]
+                                           for v in sorted(relabel)}
+        cut = [tuple(relabel[v] for v in face) for face in cut
+               if all(v in relabel for v in face)]
+        held["faces_after"] = [list(f) for f in cut]
     fields = sheet_fields(spacetime, count)
     base_z, base_links = fields[0]
     if declared:
@@ -1384,7 +1480,7 @@ def default_config(ticks=DECLARED_TICKS, tetrahedra=DECLARED_TETRAHEDRA,
                    trace_terms=False,
                    pachner_updates=DECLARED_PACHNER_UPDATES,
                    pachner_depth=DECLARED_PACHNER_DEPTH, limits=None,
-                   villain_order=bp.DECLARED_VILLAIN_ORDER):
+                   villain_order=bp.DECLARED_VILLAIN_ORDER, solve=None):
     """The declared configuration, recorded with every run. ``max_cells``
     limits how many tetrahedra per tick are read as hosts, for quick checks;
     it changes no number of the cells it keeps. ``persistence_required`` is
@@ -1397,7 +1493,9 @@ def default_config(ticks=DECLARED_TICKS, tetrahedra=DECLARED_TETRAHEDRA,
     limit is carried into every solve of the run. ``villain_order`` is the
     order the Villain weight of the holonomy term is summed to
     (`baryon_poles.DECLARED_VILLAIN_ORDER`); it is carried into every level's
-    action and every cell's config."""
+    action and every cell's config. ``solve`` sets any of
+    `baryon_poles.SOLVE_OPTIONS` by key, for the drive of every level's
+    relaxation and of every cell's solve."""
     config = bp.default_config(kappas=[kappa], betas=[beta],
                                edge_squared=edge_squared,
                                elimination=elimination,
@@ -1406,7 +1504,8 @@ def default_config(ticks=DECLARED_TICKS, tetrahedra=DECLARED_TETRAHEDRA,
                                fiber_moments=fiber_moments,
                                fiber_pinning=fiber_pinning,
                                tolerances=tolerances, trace_terms=trace_terms,
-                               limits=limits, villain_order=villain_order)
+                               limits=limits, villain_order=villain_order,
+                               solve=solve)
     config.update({
         "mode": "controlled synthesis",
         "ticks": ticks,
@@ -1438,7 +1537,7 @@ def default_config(ticks=DECLARED_TICKS, tetrahedra=DECLARED_TETRAHEDRA,
                    "only if the complex stays a manifold with boundary"),
         "pachner_updates": int(pachner_updates),
         "pachner_depth": int(pachner_depth),
-        "pachner_moves": ("stage-1 updates of MultiCobordism on each grown "
+        "pachner_stage": ("stage-1 updates of MultiCobordism on each grown "
                           "level's base (one sheet) under the joint "
                           "stationarity objective, the four Pachner kinds "
                           "alone: no cone-out, cone-in or disposition move; "
@@ -1970,6 +2069,7 @@ def build_parser():
     bp.add_mean_field_arguments(run)
     bp.add_tolerance_arguments(run)
     bp.add_limit_arguments(run)
+    bp.add_solve_arguments(run)
     run.add_argument("--quiet", action="store_true")
     return parser
 
@@ -1990,6 +2090,7 @@ def main(argv=None):
         tolerances=bp.tolerances_from(args), trace_terms=args.trace_terms,
         pachner_updates=args.pachner_updates,
         pachner_depth=args.pachner_depth, limits=bp.limits_from(args),
+        solve=bp.solve_options_from(args),
         villain_order=args.villain_order)
     points_file = points_path(args.json) if args.json else None
     result = (drive_live(config, progress=not args.quiet,
