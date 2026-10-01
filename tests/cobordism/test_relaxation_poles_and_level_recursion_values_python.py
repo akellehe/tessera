@@ -140,7 +140,7 @@ def test_the_relaxation_refusals_are_named():
     action = cob.JointAction(spacetime, _declaration(spacetime, beta=1.0))
     with pytest.raises(ValueError, match="no field is declared relaxable"):
         cob.HolomorphicRelaxation(action, _solve(False, False))
-    config = R.default_config(tolerances=RUN.TOLERANCES)
+    config = R.default_config()
     cells, z, links, _ = R.level_zero(config)
     level, count = R.build_level(cells, z, links)
     held = R.cut_sectors(R.bounding_cut(cells), 1, count)
@@ -163,7 +163,7 @@ def _band_filling(content, spacetime=None):
     spacetime = spacetime or _tetrahedron()
     action = cob.JointAction(spacetime, bp.action_declaration(spacetime, 1.0,
                                                               1.0))
-    config = bp.default_config([1.0], [1.0], tolerances=RUN.TOLERANCES)
+    config = bp.default_config([1.0], [1.0])
     return action, cob.BandFollower(bp.mean_field_declaration(content, config))
 
 
@@ -297,26 +297,28 @@ def test_an_interior_pole_is_no_zero_and_an_eigenvalue_on_it_is_flagged():
 
 
 @pytest.mark.parametrize("separation", [
-    1e-2, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8])
+    1e-2, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8, 4e-10, 1e-10, 1e-12])
 def test_a_pair_above_the_clustering_distance_is_two_poles(separation):
     """diag(2, 2 + s, 5): the clustering distance is the declared rank
-    tolerance 1e-10 times the block's largest singular value 5, that is
-    5e-10, and every s here exceeds it, so the read reports the two simple
+    tolerance 1e-15 times the block's largest singular value 5, that is
+    5e-15, and every s here exceeds it, so the read reports the two simple
     poles 2 and 2 + s exactly (the block is diagonal, so its Schur diagonal is
-    exact), separated by s to the rounding of 2 + s."""
+    exact), separated by the difference of the two stored numbers, which is
+    s to the rounding of 2 + s."""
     read = _poles(np.diag([2, 2 + separation, 5]), np.eye(3), [0, 1, 2])
     assert _reals(read.poles) == pytest.approx([2.0, 2.0 + separation, 5.0],
                                                abs=1e-15)
     assert list(read.multiplicity) == [1, 1, 1]
-    assert read.separation[0] == pytest.approx(separation, rel=1e-6)
-    assert read.separation[1] == pytest.approx(separation, rel=1e-6)
+    stored = (2.0 + separation) - 2.0
+    assert read.separation[0] == pytest.approx(stored, rel=1e-6)
+    assert read.separation[1] == pytest.approx(stored, rel=1e-6)
     assert list(read.failed_certificates) == []
 
 
-@pytest.mark.parametrize("separation", [4e-10, 1e-10, 1e-12, 0.0])
+@pytest.mark.parametrize("separation", [0.0])
 def test_a_pair_within_the_clustering_distance_is_one_pole(separation):
-    """diag(2, 2 + s, 5) with s at or below the clustering distance 5e-10
-    (the declared rank tolerance 1e-10 times the largest singular value 5):
+    """diag(2, 2 + s, 5) with s at or below the clustering distance 5e-15
+    (the declared rank tolerance 1e-15 times the largest singular value 5):
     the two eigenvalues form one pole of multiplicity 2 at the trace of the
     cluster's Schur block over its size, 2 + s / 2, with the cluster's spread
     s, not simple, of residue rank 2 and with two Jordan blocks of size one,

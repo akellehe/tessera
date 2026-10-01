@@ -190,9 +190,9 @@ class RecursiveQuotient {
       Options();  // out-of-line so Options() can be an in-class default arg
 
       /// Certificate tolerance for `holds()` on the produced certificates.
-      double tolerance{1e-10};
+      double tolerance{1e-15};
       /// Relative rank-revealing threshold for kernel/rank decisions.
-      double rankTolerance{1e-9};
+      double rankTolerance{1e-15};
       /// Dimension at and above which dense kernels refuse. Per-component
       /// interior blocks below it may use dense rank-revealing (complete
       /// orthogonal) solves; at or above it only the sparse paths run.

@@ -196,7 +196,7 @@ class SheetedSupport {
     [[nodiscard]] SheetIsomorphismRead certifyIsomorphism(
         const std::vector<Eigen::VectorXcd>& sheetSquaredLengths,
         const std::vector<Eigen::VectorXcd>& sheetConnections,
-        double tolerance = 1e-12) const;
+        double tolerance = 1e-15) const;
 
     /// The free sheeted operator h (x) I_k of a base one-particle operator
     /// `baseOperator` (which must be square with the base cell count).
@@ -440,7 +440,7 @@ class SheetAttachment {
     [[nodiscard]] static AttachmentRead attachmentMatrix(
         std::size_t sheetCount,
         const std::vector<ConnectingSimplex>& simplices,
-        double fullRankTolerance = 1e-12);
+        double fullRankTolerance = 1e-15);
 
     /// The frame law S_AB |--> g_A^{-1} S_AB g_B under independent sheet
     /// relabelings at the two ends. This is the identity the whole

@@ -168,6 +168,7 @@ LevelRecursion LevelRecursion::overSpacetime(
 RecursiveQuotient::Options LevelRecursion::quotientOptions() const {
   RecursiveQuotient::Options options;
   options.tolerance = declaration_.tolerance;
+  options.rankTolerance = declaration_.rankTolerance;
   options.denseCrossover = declaration_.denseCrossover;
   options.embeddingPolicy = FiberEmbeddingPolicy::CarryGramExactly;
   return options;

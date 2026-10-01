@@ -433,7 +433,9 @@ class MultiCobordism {
 
   /// Configuration-space admissibility of a geometry under the Whitney pencil:
   /// the closure of the Kontsevich–Segal allowable domain, i.e. margin
-  /// \f$ \ge 0 \f$. The real Lorentzian boundary, margin exactly zero, is
+  /// \f$ \ge 0 \f$ to within the declared admissibility tolerance
+  /// (`setAdmissibilityTolerance`), the rounding of the arguments the margin
+  /// is formed from. The real Lorentzian boundary, margin exactly zero, is
   /// admitted and certified as the boundary. This is not a clamp, back-off or
   /// penalty: a proposal outside the domain is not a member of the
   /// configuration space, as a non-manifold proposal is not. Always true under
@@ -754,6 +756,24 @@ class MultiCobordism {
   void setShouldProposeSurgery(bool shouldProposeSurgery) {
     shouldProposeSurgery_ = shouldProposeSurgery;
   }
+
+  /// The move tolerance of stage 1: a move, or a composition of moves, is
+  /// committed only when it lowers the objective by more than this amount.
+  /// Defaults to 1e-15.
+  [[nodiscard]] double moveTolerance() const { return convergenceTolerance_; }
+  /// @throws std::invalid_argument when \p moveTolerance is negative or not
+  ///   a number.
+  void setMoveTolerance(double moveTolerance);
+
+  /// The admissibility tolerance of the Whitney-pencil configuration space: a
+  /// geometry is a member when its Kontsevich-Segal margin is at least minus
+  /// this amount, in radians (`geometryAdmissible`). Defaults to 1e-15.
+  [[nodiscard]] double admissibilityTolerance() const {
+    return admissibilityTolerance_;
+  }
+  /// @throws std::invalid_argument when \p admissibilityTolerance is negative
+  ///   or not a number.
+  void setAdmissibilityTolerance(double admissibilityTolerance);
 
   // ---- module-level helpers (static) ----
   /// Betti numbers (combinatorial, geometry-free).
@@ -3205,7 +3225,12 @@ class MultiCobordism {
   /// could). Mutable because the readout is a const measurement that still has
   /// to be able to say why it refused.
   mutable std::string wholeHarmonicObstruction_;
-  double convergenceTolerance_ = 1e-9;
+  /// The amount by which a move must lower the objective to be committed
+  /// (`setMoveTolerance`).
+  double convergenceTolerance_ = 1e-15;
+  /// The Kontsevich-Segal margin, in radians, down to minus which a geometry
+  /// is admissible under the Whitney pencil (`setAdmissibilityTolerance`).
+  double admissibilityTolerance_ = 1e-15;
   /// Set by `runStage2`: true when its last call stopped on the
   /// absolute-tolerance stationarity test, false when it hit the iteration
   /// budget.

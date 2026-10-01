@@ -18,20 +18,29 @@ import numpy as np
 import tessera as T
 from tessera.drivers import baryon_poles as bp
 
+from tests.drivers import _recursion_run_2026_09_23 as RUN
+
 cob = T.cobordism
 
 
 def _mean_field(occupations):
     """The band-filling declaration over a geometry solve that relaxes the
     multipliers alone: the lengths and links are held, so h_1 and its band
-    filling are the host's at every iterate of the solve."""
+    filling are the host's at every iterate of the solve. The solve is
+    declared at the tolerances of the 2026-09-23 run
+    (`_recursion_run_2026_09_23.TOLERANCES`), at which the three sheet
+    copies of each base eigenvalue form one band."""
     declaration = cob.SelfConsistentMeanFieldDeclaration()
     declaration.covariance_rule = cob.CovarianceRule.BandFilling
     declaration.band_occupations = list(occupations)
+    declaration.band_tolerance = RUN.TOLERANCES["band_tolerance"]
+    declaration.tolerance = RUN.TOLERANCES["mean_field_tolerance"]
     geometry = cob.HolomorphicRelaxationDeclaration()
     geometry.relax_lengths = False
     geometry.relax_links = False
     geometry.relax_multipliers = True
+    geometry.tolerance = RUN.TOLERANCES["newton_tolerance"]
+    geometry.rank_tolerance = RUN.TOLERANCES["rank_tolerance"]
     declaration.geometry = geometry
     return declaration
 

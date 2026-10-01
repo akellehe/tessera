@@ -13,6 +13,7 @@ import json
 import numpy as np
 import pytest
 
+from tessera import observables as obs
 from tessera.drivers import baryon_poles as bp
 from tessera.drivers import isospin_doublet as iso
 
@@ -22,6 +23,62 @@ def test_the_declared_defaults():
     assert args.kappa is None and args.beta is None and args.content is None
     assert args.edge_squared == bp.DECLARED_EDGE_SQUARED
     assert args.json is None and not args.quiet
+
+
+def test_every_tolerance_and_limit_is_an_option_of_the_run():
+    """The run takes the registry's options as the baryon driver does: every
+    tolerance defaults to 1e-15, no limit is declared by default, and each
+    option sets its own key."""
+    args = iso.build_parser().parse_args(["run"])
+    assert bp.tolerances_from(args) == {
+        key: 1e-15 for key, _ in bp.TOLERANCES}
+    assert bp.limits_from(args) == {key: None for key, _, _ in bp.LIMITS}
+    for key, _ in bp.TOLERANCES:
+        option = "--" + key.replace("_", "-")
+        set_ = bp.tolerances_from(
+            iso.build_parser().parse_args(["run", option, "1e-7"]))
+        assert set_[key] == 1e-7
+        assert all(value == 1e-15 for other, value in set_.items()
+                   if other != key)
+    args = iso.build_parser().parse_args(
+        ["run", "--iteration-limit", "7", "--time-limit-seconds", "2.5"])
+    assert bp.limits_from(args) == {"iteration_limit": 7,
+                                    "halving_limit": None,
+                                    "time_limit_seconds": 2.5}
+
+
+def test_the_declared_tolerances_reach_the_detector(monkeypatch):
+    """`main` hands the detector the tolerances the command line declares
+    (`baryon_poles.ISOSPIN_TOLERANCES`), the cocycle read the certificate
+    tolerance, and records every tolerance and limit in the result."""
+    configs = []
+    observe = obs.IsospinDoublet.observe
+
+    def recording(declaration, config):
+        configs.append(config)
+        return observe(declaration, config)
+
+    monkeypatch.setattr(obs.IsospinDoublet, "observe",
+                        staticmethod(recording))
+    result = iso.main(["run", "--quiet"])
+    assert result["tolerances"] == {key: 1e-15 for key, _ in bp.TOLERANCES}
+    assert result["limits"] == {key: None for key, _, _ in bp.LIMITS}
+    assert len(configs) == 2
+    for config in configs:
+        assert all(getattr(config, field) == 1e-15
+                   for _, field in bp.ISOSPIN_TOLERANCES)
+    del configs[:]
+    result = iso.main(["run", "--quiet", "--isospin-grouping-tolerance",
+                       "1e-8", "--isospin-isotypic-tolerance", "1e-6",
+                       "--halving-limit", "3"])
+    assert result["tolerances"]["isospin_grouping_tolerance"] == 1e-8
+    assert result["tolerances"]["isospin_isotypic_tolerance"] == 1e-6
+    assert result["tolerances"]["isospin_projector_tolerance"] == 1e-15
+    assert result["limits"]["halving_limit"] == 3
+    for config in configs:
+        assert config.grouping_tolerance == 1e-8
+        assert config.isotypic_tolerance == 1e-6
+        assert config.projector_tolerance == 1e-15
 
 
 def test_contents_are_repeatable_triples():
@@ -49,7 +106,11 @@ def test_main_reads_the_declared_host_and_writes_the_json(tmp_path):
     result = iso.main(["run", "--json", str(path), "--quiet"])
     assert result["relaxed"] == [] and result["spinorial"] is True
     document = json.loads(path.read_text())
-    assert set(document) == {"declared_host", "spinorial", "relaxed"}
+    assert set(document) == {"declared_host", "spinorial", "relaxed",
+                             "tolerances", "limits"}
+    assert document["tolerances"] == {
+        key: 1e-15 for key, _ in bp.TOLERANCES}
+    assert document["limits"] == {key: None for key, _, _ in bp.LIMITS}
     for key in ("covariant", "t_averaged"):
         read = document["declared_host"][key]
         assert read["candidates"] == []
@@ -65,11 +126,17 @@ def test_main_reads_the_declared_host_and_writes_the_json(tmp_path):
 
 
 def test_main_prints_every_band_unless_quiet(capsys):
+    """Every band of both reads is printed. At the declared grouping
+    tolerance 1e-15 the covariant operator of the declared host reads seven
+    bands, not its six rank-three eigenvalues: the three eigenvalues at
+    20.6346 are computed 2.5e-14 apart, 1.1e-15 of the largest eigenvalue
+    modulus, and form two groups. The T-averaged operator reads its three
+    bands."""
     iso.main(["run"])
     out = capsys.readouterr().out
     assert out.count("declared host covariant:") == 1
     assert out.count("declared host t_averaged:") == 1
-    assert out.count("    band ") == 6 + 3
+    assert out.count("    band ") == 7 + 3
     assert out.count("emergence Failed") == 2
     iso.main(["run", "--quiet"])
     assert capsys.readouterr().out == ""

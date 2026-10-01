@@ -143,10 +143,72 @@ def test_the_declared_defaults():
     assert args.villain_order == bp.DECLARED_VILLAIN_ORDER == 10
 
 
+#: Every tolerance of the stack, in the registry's order.
+TOLERANCE_KEYS = [
+    "rank_tolerance", "newton_tolerance", "mean_field_tolerance",
+    "band_tolerance", "certificate_tolerance", "allowability_tolerance",
+    "tie_tolerance", "degeneracy_tolerance", "pole_rank_tolerance",
+    "fluctuation_tolerance", "recursion_tolerance",
+    "spin_sector_tolerance", "character_tolerance", "elimination_tolerance",
+    "pure_gauge_tolerance", "gauge_resonance_radius",
+    "hessian_reality_tolerance", "fibre_lift_tolerance", "isotypic_tolerance",
+    "attachment_rank_tolerance", "quotient_rank_tolerance", "move_tolerance",
+    "admissibility_tolerance", "isospin_grouping_tolerance",
+    "isospin_projector_tolerance", "isospin_invariance_tolerance",
+    "isospin_commutant_tolerance", "isospin_isotypic_tolerance",
+    "isospin_hermiticity_tolerance", "isospin_transport_leakage_tolerance",
+    "isospin_intertwining_tolerance",
+]
+
+
+def test_the_registry_lists_every_tolerance():
+    """The registry is the complete list of the stack's tolerances: each key
+    once, each with a one-phrase meaning, and each the detector's tolerance
+    it names where it is one of `ISOSPIN_TOLERANCES`."""
+    assert [key for key, _ in bp.TOLERANCES] == TOLERANCE_KEYS
+    assert len(set(TOLERANCE_KEYS)) == len(TOLERANCE_KEYS) == 32
+    assert all(isinstance(meaning, str) and meaning
+               for _, meaning in bp.TOLERANCES)
+    assert [key for key, _ in bp.ISOSPIN_TOLERANCES] == [
+        key for key in TOLERANCE_KEYS if key.startswith("isospin_")]
+    detector = bp.isospin_doublet_config()
+    assert all(getattr(detector, field) == 1e-15
+               for _, field in bp.ISOSPIN_TOLERANCES)
+    detector = bp.isospin_doublet_config(
+        {"isospin_grouping_tolerance": 1e-8})
+    assert detector.grouping_tolerance == 1e-8
+    assert detector.projector_tolerance == 1e-15
+    # the detector's thresholds that are not tolerances stay the library's
+    library = obs.IsospinDoubletConfig()
+    for field in ("min_relative_gap", "contour_nodes",
+                  "track_overlap_threshold", "min_frames",
+                  "condition_number_cap"):
+        assert getattr(detector, field) == getattr(library, field)
+
+
+@pytest.mark.parametrize("key", TOLERANCE_KEYS)
+def test_every_tolerance_is_an_option_defaulting_to_1e_15(key):
+    """``--<key, with dashes>`` sets the tolerance ``key`` alone; without it
+    the tolerance is 1e-15; and a value that is not positive is refused by
+    the option's name."""
+    option = "--" + key.replace("_", "-")
+    declared = bp.tolerances_from(bp.build_parser().parse_args(["run"]))
+    assert declared[key] == 1e-15
+    set_ = bp.tolerances_from(
+        bp.build_parser().parse_args(["run", option, "1e-7"]))
+    assert set_[key] == 1e-7
+    assert all(value == 1e-15 for other, value in set_.items()
+               if other != key)
+    with pytest.raises(SystemExit):
+        bp.build_parser().parse_args(["run", option, "0"])
+
+
 def test_the_config_records_every_tolerance():
     config = bp.default_config([1.0], [1.0])
     assert all(config[key] == bp.DECLARED_TOLERANCE
                for key, _ in bp.TOLERANCES)
+    assert {key: config[key] for key in TOLERANCE_KEYS} == {
+        key: 1e-15 for key in TOLERANCE_KEYS}
     config = bp.default_config([1.0], [1.0],
                                tolerances={"tie_tolerance": 1e-8})
     assert config["tie_tolerance"] == 1e-8

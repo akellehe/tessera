@@ -134,6 +134,13 @@ struct LevelRecursionDeclaration {
   /// block are equal, and whether the declared selection separates them.
   double tolerance = 1e-15;
 
+  /// The relative threshold of the rank decisions of the quotient's interior
+  /// solves (`RecursiveQuotient::Options::rankTolerance`): a pivot or a
+  /// singular value of an interior block at or below this fraction of the
+  /// block's largest counts as zero, which decides the interior nullity and
+  /// so the harmonic modes a level retains.
+  double rankTolerance = 1e-15;
+
   /// The dimension at and above which the dense paths of this class refuse. The
   /// response pencil is evaluated densely, so this is the size of the largest
   /// level it will build.

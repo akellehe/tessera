@@ -313,7 +313,7 @@ class TheZerosAreThePencilEigenvaluesTest(unittest.TestCase):
         """The read has exactly two declared parameters: the rank tolerance
         and the optional free threshold."""
         config = cob.BoundStatePoleConfig()
-        self.assertEqual(config.rank_tolerance, 1e-10)
+        self.assertEqual(config.rank_tolerance, 1e-15)
         self.assertIsNone(config.free_threshold)
         self.assertEqual(
             sorted(name for name in dir(config) if not name.startswith("_")),
@@ -409,16 +409,24 @@ class AMultiplePoleIsRetainedTest(unittest.TestCase):
         self.assertEqual([list(b) for b in read.jordan_blocks], [[2, 1], [1]])
         self.assertEqual(list(read.residue_rank), [3, 1])
 
-    def test_a_coupling_below_the_tolerance_is_no_jordan_block(self):
+    def test_a_coupling_above_the_tolerance_is_a_jordan_block(self):
         """``[[2, 1e-12], [0, 2]]`` has the largest singular value 2 to one
         part in 1e-24, so its nilpotent part scaled by that value has the one
-        singular value 5e-13, at or below the rank tolerance 1e-10: at the
-        declared tolerance the block is semisimple, with two Jordan blocks of
-        size one."""
+        singular value 5e-13, above the declared rank tolerance 1e-15: at
+        the declared tolerance the pole 2 has algebraic multiplicity two and
+        geometric multiplicity one, one Jordan block of size two. A coupling
+        of 1e-16, whose scaled singular value 5e-17 is below the tolerance,
+        leaves the block semisimple, with two Jordan blocks of size one."""
         operator = np.array([[2.0, 1e-12], [0.0, 2.0]], dtype=complex)
         read = BSP.poles(operator, np.eye(2, dtype=complex), [0, 1],
                          _config())
         self.assertEqual(read.failed_certificates, [])
+        self.assertEqual(list(read.multiplicity), [2])
+        self.assertEqual(list(read.geometric_multiplicity), [1])
+        self.assertEqual([list(b) for b in read.jordan_blocks], [[2]])
+        operator = np.array([[2.0, 1e-16], [0.0, 2.0]], dtype=complex)
+        read = BSP.poles(operator, np.eye(2, dtype=complex), [0, 1],
+                         _config())
         self.assertEqual(list(read.multiplicity), [2])
         self.assertEqual(list(read.geometric_multiplicity), [2])
         self.assertEqual([list(b) for b in read.jordan_blocks], [[1, 1]])

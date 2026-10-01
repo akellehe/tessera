@@ -279,9 +279,6 @@ DECLARED_BETAS = (0.5, 1.0, 2.0, 5.0)
 #: projected out by the Drazin inverse), or the squared lengths alone.
 DECLARED_ELIMINATION = "lengths-and-phases"
 ELIMINATIONS = ("lengths-and-phases", "lengths")
-#: The resonance disc of the Drazin inverse, relative to the spectral radius of
-#: A: an eigenvalue of A inside it is a zero-stiffness direction.
-DECLARED_GAUGE_RESONANCE_RADIUS = 1e-10
 #: The Cauchy rule for the diamagnetic term along a pure-gauge direction.
 DECLARED_WARD_CONTOUR_RADIUS = 0.1
 DECLARED_WARD_CONTOUR_NODES = 8
@@ -354,6 +351,91 @@ TOLERANCES = (
     ("recursion_tolerance",
      "the relative tolerance the level recursion's certificates hold "
      "against"),
+    ("spin_sector_tolerance",
+     "the separation at or below which an eigenvalue of J^2 on a "
+     "colour-singlet block is read as a sector's j(j + 1)"),
+    ("character_tolerance",
+     "the modulus at or below which the trace of a rotation on the reference "
+     "doublet is zero, so that a doublet's character on that rotation is one "
+     "rather than a ratio of traces"),
+    ("elimination_tolerance",
+     "the relative threshold of the rank decisions of the Drazin "
+     "elimination's Feshbach read of the bare stiffness A"),
+    ("pure_gauge_tolerance",
+     "the relative residual of the null projector of A on the pure-gauge "
+     "directions at or below which the null space of A is read as pure "
+     "gauge"),
+    ("gauge_resonance_radius",
+     "the radius of the resonance disc about zero, relative to the spectral "
+     "radius of the bare stiffness A, inside which an eigenvalue of A is a "
+     "zero-stiffness direction of the Drazin inverse"),
+    ("hessian_reality_tolerance",
+     "the imaginary part of the moment-constrained Hessian's quotient along "
+     "the Hellmann-Feynman force, relative to the Hessian's scale, at or "
+     "below which the quotient is read as real"),
+    ("fibre_lift_tolerance",
+     "the relative residual of the T-averaged h_1 from a block-scalar "
+     "operator on each doublet times the sheets at or below which the "
+     "fibre lift of quark condition 2 holds"),
+    ("isotypic_tolerance",
+     "the separation at or below which an eigenvalue of the isotypic "
+     "projector of the refined cell is one, and at or below which two "
+     "eigenvalues of the averaged operator on that isotypic component form "
+     "one refined band, in the spectral fingerprint's refinement read"),
+    ("attachment_rank_tolerance",
+     "the smallest singular value at or above which the sheet-to-sheet "
+     "attachment matrix of quark condition 5 has full rank"),
+    ("quotient_rank_tolerance",
+     "the relative threshold of the rank decisions of the level recursion's "
+     "interior solves: a pivot or a singular value of an interior block at "
+     "or below this fraction of the block's largest counts as zero"),
+    ("move_tolerance",
+     "the amount by which a Pachner move must lower the objective of the "
+     "recursion's Pachner stage to be committed"),
+    ("admissibility_tolerance",
+     "the Kontsevich-Segal margin, in radians, down to minus which a "
+     "geometry proposed by a Pachner move is admissible"),
+    ("isospin_grouping_tolerance",
+     "the relative width within which eigenvalues form one band of the "
+     "isospin-doublet detector"),
+    ("isospin_projector_tolerance",
+     "the relative idempotency defect at or below which a band's Riesz "
+     "projector is certified by the isospin-doublet detector"),
+    ("isospin_invariance_tolerance",
+     "the relative commutator at or below which a band of the "
+     "isospin-doublet detector is invariant under a symmetry element or a "
+     "sheet matrix unit"),
+    ("isospin_commutant_tolerance",
+     "the relative eigenvalue cut of the null space of the commutator map "
+     "and of the centre of the commutant in the isospin-doublet detector"),
+    ("isospin_isotypic_tolerance",
+     "the relative width within which eigenvalues of the commutant's generic "
+     "central element form one isotypic component, and the relative "
+     "singular-value cut of the rank of each isotypic block, in the "
+     "isospin-doublet detector"),
+    ("isospin_hermiticity_tolerance",
+     "the relative departure of an operator from its adjoint at or below "
+     "which the isospin-doublet detector reads it in the Hermitian regime"),
+    ("isospin_transport_leakage_tolerance",
+     "the relative leakage of a frame-to-frame transport at or below which "
+     "the isospin-doublet detector certifies the transport"),
+    ("isospin_intertwining_tolerance",
+     "the relative intertwining residual of a transport against the "
+     "rotation and colour actions at or below which the isospin-doublet "
+     "detector certifies it"),
+)
+
+#: The tolerances of the isospin-doublet detector, by config key, with the
+#: field of `observables.IsospinDoubletConfig` each one sets.
+ISOSPIN_TOLERANCES = (
+    ("isospin_grouping_tolerance", "grouping_tolerance"),
+    ("isospin_projector_tolerance", "projector_tolerance"),
+    ("isospin_invariance_tolerance", "invariance_tolerance"),
+    ("isospin_commutant_tolerance", "commutant_tolerance"),
+    ("isospin_isotypic_tolerance", "isotypic_tolerance"),
+    ("isospin_hermiticity_tolerance", "hermiticity_tolerance"),
+    ("isospin_transport_leakage_tolerance", "transport_leakage_tolerance"),
+    ("isospin_intertwining_tolerance", "intertwining_tolerance"),
 )
 
 
@@ -361,6 +443,17 @@ def declared_tolerance(config, key):
     """The tolerance ``key`` (`TOLERANCES`) of a config, or the declared
     value when the config leaves it out."""
     return float((config or {}).get(key, DECLARED_TOLERANCE))
+
+
+def isospin_doublet_config(config=None):
+    """The `observables.IsospinDoubletConfig` of a config: every tolerance of
+    the detector (`ISOSPIN_TOLERANCES`) at the config's value, or at the
+    declared value when the config leaves it out. The detector's other
+    thresholds stay at the library's values."""
+    out = obs.IsospinDoubletConfig()
+    for key, field in ISOSPIN_TOLERANCES:
+        setattr(out, field, declared_tolerance(config, key))
+    return out
 
 
 def declared_tolerances(tolerances=None):
@@ -740,16 +833,19 @@ def rotation_averaged(operator, actions):
     return sum(np.linalg.solve(d, operator @ d) for d in actions) / len(actions)
 
 
-def sheet_support(spacetime, sheet):
+def sheet_support(spacetime, sheet,
+                  tolerance=DECLARED_CERTIFICATE_TOLERANCE):
     """The `MonopoleSupport` of one sheet of the relaxed host, with its faces
     in the outward orientation of the library fixture. `MonopoleSupport`
-    refuses a connection off the unit circle; the U(1) part is taken
-    explicitly (`MonopoleSupport.u1Part`) and the departure is reported."""
+    refuses a connection whose moduli depart from one by more than
+    ``tolerance``; the U(1) part is taken explicitly
+    (`MonopoleSupport.u1Part`) and the departure is reported."""
     fixture = monopole_support()
     links = sheet_links(spacetime, sheet)
     departure = max(abs(abs(u) - 1.0) for u in links)
     support = obs.MonopoleSupport(4, fixture.edges, fixture.faces,
-                                  obs.MonopoleSupport.u1Part(links))
+                                  obs.MonopoleSupport.u1Part(links),
+                                  tolerance)
     return support, departure
 
 
@@ -817,7 +913,8 @@ class NoSpinorDoublet(RuntimeError):
 
 def aligned_doublet_frame(support, group,
                           degeneracy_tolerance=DECLARED_TOLERANCE,
-                          tolerance=DECLARED_CERTIFICATE_TOLERANCE):
+                          tolerance=DECLARED_CERTIFICATE_TOLERANCE,
+                          character_tolerance=DECLARED_TOLERANCE):
     """The edge basis in which the three doublets 2, 2', 2'' carry one common
     SU(2) action, each up to its own Z_3 character.
 
@@ -827,8 +924,9 @@ def aligned_doublet_frame(support, group,
     projective action D_1(g) and do not depend on the operator averaged. With
     R(g) the action on the reference doublet (the coexact j = 1/2 doublet
     `spinRead` names) and M_d(g) the action on doublet d, the character is
-    chi_d(g) = tr M_d(g) / tr R(g) where tr R(g) != 0 and one otherwise (the
-    Klein four-group, which is the kernel of the Z_3 character), and the
+    chi_d(g) = tr M_d(g) / tr R(g) where |tr R(g)| is above
+    ``character_tolerance`` and one otherwise (the Klein four-group, on which
+    tr R(g) = 0 and which is the kernel of the Z_3 character), and the
     intertwiner T_d = sum_g chi_d(g)^{-1} M_d(g) X R(g)^{-1} carries R to
     chi_d^{-1} M_d (Schur averaging from a fixed seed X). Columns 2 c + s of
     the returned frame are spin state s of carrier c, the order
@@ -864,7 +962,7 @@ def aligned_doublet_frame(support, group,
             for m, r in zip(actions[c], actions[reference]):
                 tr_r = np.trace(r)
                 characters.append(np.trace(m) / tr_r
-                                  if abs(tr_r) > 1e-9 else 1.0)
+                                  if abs(tr_r) > character_tolerance else 1.0)
             intertwiner = sum(
                 (1.0 / chi) * m @ seed @ np.linalg.inv(r)
                 for chi, m, r in zip(characters, actions[c],
@@ -907,7 +1005,8 @@ SPIN_FRAME_OF_THE_HOST = "the declared symmetric host"
 
 
 def spin_frame(supports, symmetry, degeneracy_tolerance=DECLARED_TOLERANCE,
-               tolerance=DECLARED_CERTIFICATE_TOLERANCE):
+               tolerance=DECLARED_CERTIFICATE_TOLERANCE,
+               character_tolerance=DECLARED_TOLERANCE):
     """The frame the spin of a relaxed cell is read in: the projective
     rotation action D_1(g) on the 18 microscopic edge cells
     (`rotation_action`) and the aligned doublet frame of every sheet
@@ -961,7 +1060,7 @@ def spin_frame(supports, symmetry, degeneracy_tolerance=DECLARED_TOLERANCE,
     else:
         try:
             own = [aligned_doublet_frame(support, group, degeneracy_tolerance,
-                                         tolerance)
+                                         tolerance, character_tolerance)
                    for support, _ in supports]
         except NoSpinorDoublet as missing:
             flags.append({
@@ -992,7 +1091,8 @@ def spin_frame(supports, symmetry, degeneracy_tolerance=DECLARED_TOLERANCE,
     return {"name": SPIN_FRAME_OF_THE_HOST,
             "actions": rotation_action([host] * SHEETS),
             "alignments": [aligned_doublet_frame(
-                host, group, degeneracy_tolerance, tolerance)] * SHEETS,
+                host, group, degeneracy_tolerance, tolerance,
+                character_tolerance)] * SHEETS,
             "flags": flags}
 
 
@@ -1123,10 +1223,11 @@ def left_inverse(columns):
     return np.linalg.solve(columns.T @ columns, columns.T)
 
 
-def spin_sectors(states):
+def spin_sectors(states, tolerance=DECLARED_TOLERANCE):
     """Split a colour-singlet space by total spin: J^2 applied to each basis
     state with `SharpSpin.applyTotalSpinSquared`, the block in the basis, and
-    its eigenvectors grouped by eigenvalue (3/4 or 15/4)."""
+    its eigenvectors grouped by eigenvalue (3/4 or 15/4), an eigenvalue
+    within ``tolerance`` of a sector's j(j + 1) belonging to that sector."""
     basis = occupation_basis()
     spins = edge_spin_matrices()
     images = []
@@ -1144,7 +1245,7 @@ def spin_sectors(states):
     sectors = {}
     for j2 in (SPIN_HALF, SPIN_THREE_HALVES):
         picked = [k for k in range(len(values))
-                  if abs(values[k] - j2) < 1e-6]
+                  if abs(values[k] - j2) <= tolerance]
         if picked:
             sectors[j2] = states @ vectors[:, picked]
     return sectors, [complex(v) for v in values]
@@ -1294,7 +1395,9 @@ def bare_stiffness(spacetime, kappa, beta, config, phases):
     }
 
 
-def drazin_elimination(stiffness, directions, radius):
+def drazin_elimination(stiffness, directions, radius,
+                       tolerance=DECLARED_TOLERANCE,
+                       pure_gauge_tolerance=DECLARED_TOLERANCE):
     """The generalized inverse the elimination uses: the Drazin inverse A^D of
     A at zero, with the Riesz projector Pi_0 onto the generalized null space
     (`chainhodge.PencilSchur.feshbach` with every coordinate interior and the
@@ -1331,10 +1434,15 @@ def drazin_elimination(stiffness, directions, radius):
     to A, the residual of the reduced form against A^D relative to A^D, the
     condition number of the reduced stiffness and, with ``directions``, how
     the null space compares with the pure-gauge directions.
+
+    ``tolerance`` is the relative threshold of the rank decisions of the
+    Feshbach read, and ``pure_gauge_tolerance`` the residual
+    ||Pi_0 G - G|| / ||G|| on the pure-gauge directions G at or below which
+    the null space is read as pure gauge.
     """
     size = stiffness.shape[0]
     read = T.chainhodge.PencilSchur.feshbach(
-        stiffness, np.zeros_like(stiffness), 0j, [], 1e-12, radius)
+        stiffness, np.zeros_like(stiffness), 0j, [], tolerance, radius)
     record = {"coordinates": int(size),
               "resonance_radius": float(read.resonanceRadius),
               "resonance_enclosure": float(read.resonanceEnclosure),
@@ -1385,7 +1493,7 @@ def drazin_elimination(stiffness, directions, radius):
             / np.linalg.norm(directions))
         record["null_space_is_pure_gauge"] = bool(
             record["null_dimension"] == gauge_rank
-            and record["gauge_projector_residual"] < 1e-8)
+            and record["gauge_projector_residual"] <= pure_gauge_tolerance)
     return drazin, basis, reduced, record
 
 
@@ -1583,7 +1691,10 @@ def eliminate_fluctuations(spacetime, action, carrier, kappa, beta, config):
                                                  config, phases)
     directions = gauge_directions(spacetime, phases)
     drazin, basis, reduced, drazin_record = drazin_elimination(
-        stiffness, directions, config["gauge_resonance_radius"])
+        stiffness, directions,
+        declared_tolerance(config, "gauge_resonance_radius"),
+        declared_tolerance(config, "elimination_tolerance"),
+        declared_tolerance(config, "pure_gauge_tolerance"))
     covariance = matrix(action.declaration.covariance)
     expectation = np.array([np.sum(covariance * o.T) for o in couplings])
     n = len(spacetime.getEdgeList().toVector())
@@ -1667,7 +1778,7 @@ def restriction(j2, triality):
     2'' (x) chi^tau, the j = 3/2 quartet being 2' + 2'' on the tetrahedron
     (WP §11.1 line 499). A tetrahedral support therefore cannot tell spin 1/2
     with triality from half of spin 3/2."""
-    if abs(j2 - SPIN_HALF) < 1e-9:
+    if j2 == SPIN_HALF:
         return [IRREP_NAMES[triality % 3]]
     return [IRREP_NAMES[(1 + triality) % 3], IRREP_NAMES[(2 + triality) % 3]]
 
@@ -1747,27 +1858,20 @@ def _band_record(band):
             "ambiguous": bool(band.ambiguous)}
 
 
-#: The imaginary part of the moment-constrained Hessian's quotient along the
-#: Hellmann-Feynman force, relative to the Hessian's own scale, below which
-#: the quotient is read as real: the difference-rule Jacobian at radius 1e-4
-#: is accurate to about 1e-8 of its entries.
-DECLARED_HESSIAN_REALITY = 1e-6
-
-
-def hessian_sign(value, scale):
+def hessian_sign(value, scale, tolerance=DECLARED_TOLERANCE):
     """The sign of the moment-constrained Hessian along the Hellmann-Feynman
     force as a word: "positive" or "negative" when the quotient is real to
-    ``DECLARED_HESSIAN_REALITY`` times the Hessian's scale (the real slice),
-    "complex" when it is not, and "unread" when it is not a number."""
+    ``tolerance`` times the Hessian's scale (the real slice), "complex" when
+    it is not, and "unread" when it is not a number."""
     value = complex(value)
     if not (math.isfinite(value.real) and math.isfinite(value.imag)):
         return "unread"
-    if abs(value.imag) > DECLARED_HESSIAN_REALITY * scale:
+    if abs(value.imag) > tolerance * scale:
         return "complex"
     return "positive" if value.real > 0 else "negative"
 
 
-def relaxation_record(report):
+def relaxation_record(report, hessian_reality_tolerance=DECLARED_TOLERANCE):
     """What a mean-field solve reached and how, as every content record
     carries it: the method and band selection that ran, whether the fixed
     point was reached, why the solve stopped (by name, with its detail), the
@@ -1860,7 +1964,8 @@ def relaxation_record(report):
         "force_hessian": complex(report.force_hessian),
         "force_hessian_scale": float(report.force_hessian_scale),
         "force_hessian_sign": hessian_sign(report.force_hessian,
-                                           report.force_hessian_scale),
+                                           report.force_hessian_scale,
+                                           hessian_reality_tolerance),
         "action": complex(report.action),
         "action_available": bool(report.action_available),
         "action_unavailable": report.action_unavailable,
@@ -2050,11 +2155,13 @@ def spin_decomposition(carrier, covariance, content, frame, dual, trialities,
 _DOUBLET_SECTORS = {}
 
 
-def doublet_sectors(doublet_content, trialities):
+def doublet_sectors(doublet_content, trialities,
+                    tolerance=DECLARED_TOLERANCE):
     """The colour-singlet, one-quark-per-sheet spin sectors of a doublet
     content (n_2, n_2', n_2''): the carrier content in the aligned frame's
-    carrier order, the total triality, and the sectors by total spin. They
-    depend on the declared frame only, so they are formed once."""
+    carrier order, the total triality, and the sectors by total spin
+    (`spin_sectors` at ``tolerance``). They depend on the declared frame and
+    the tolerance only, so they are formed once for each."""
     carrier_of = {IRREP_NAMES[t]: c for c, t in enumerate(trialities)}
     if sorted(carrier_of.values()) != [0, 1, 2]:
         raise RuntimeError("the aligned frame's trialities %s are not the "
@@ -2062,10 +2169,10 @@ def doublet_sectors(doublet_content, trialities):
     carrier_content = [0, 0, 0]
     for name, n in zip(IRREP_NAMES, doublet_content):
         carrier_content[carrier_of[name]] = int(n)
-    key = tuple(carrier_content)
+    key = (tuple(carrier_content), float(tolerance))
     if key not in _DOUBLET_SECTORS:
         states, _ = singlet_states(carrier_content)
-        _DOUBLET_SECTORS[key] = spin_sectors(states)[0]
+        _DOUBLET_SECTORS[key] = spin_sectors(states, tolerance)[0]
     triality = sum(n * t for n, t in zip(carrier_content, trialities)) % 3
     return carrier_content, triality, _DOUBLET_SECTORS[key]
 
@@ -2214,7 +2321,8 @@ def evaluate_content(content, kappa, beta, config):
     (`geometry_without_value`)."""
     started = time.time()
     spacetime, action, report = relax_content(content, kappa, beta, config)
-    solve = relaxation_record(report)
+    solve = relaxation_record(
+        report, declared_tolerance(config, "hessian_reality_tolerance"))
     missing = geometry_without_value(report)
     if missing is not None:
         raise ReadWithoutValue(missing[0], missing[1], solve)
@@ -2229,11 +2337,13 @@ def evaluate_content(content, kappa, beta, config):
     # the projective action D_1(g) of the cell itself when the cell meets
     # the preconditions of that read, and with that of the declared symmetric
     # host, flagged, when it does not (`spin_frame`).
-    supports = [sheet_support(spacetime, t) for t in range(SHEETS)]
+    supports = [sheet_support(spacetime, t, certificate_tolerance)
+                for t in range(SHEETS)]
     symmetry = cell_symmetry(spacetime, supports, certificate_tolerance)
     spin_read_frame = spin_frame(
         supports, symmetry, declared_tolerance(config, "degeneracy_tolerance"),
-        certificate_tolerance)
+        certificate_tolerance,
+        declared_tolerance(config, "character_tolerance"))
     flags = flags + spin_read_frame["flags"]
     actions = spin_read_frame["actions"]
     alignments = spin_read_frame["alignments"]
@@ -2301,8 +2411,9 @@ def evaluate_content(content, kappa, beta, config):
     doublet_reads = []
     for doublet_content in contents():
         sector_reads = {}
-        carrier_content, triality, sectors = doublet_sectors(doublet_content,
-                                                             trialities)
+        carrier_content, triality, sectors = doublet_sectors(
+            doublet_content, trialities,
+            declared_tolerance(config, "spin_sector_tolerance"))
         for j2, sector in sectors.items():
             sector_reads[j2] = sector_entry(j2, triality, sector, (
                 ("quasi_free", quasi_free), ("with_quartic", with_quartic)),
@@ -2317,9 +2428,13 @@ def evaluate_content(content, kappa, beta, config):
     recursion = recursion_read(spacetime, config)
     anchor = anchor_atlas_read(spacetime, alignments, certificate_tolerance)
     fingerprint = spectral_fingerprint_read(spacetime, kappa, beta, config)
-    quark = quark_conditions(spacetime, alignments, recursion,
-                             averaged_residual, report, anchor, fingerprint,
-                             certificate_tolerance)
+    quark = quark_conditions(
+        spacetime, alignments, recursion, averaged_residual, report, anchor,
+        fingerprint, certificate_tolerance,
+        fibre_lift_tolerance=declared_tolerance(config,
+                                                "fibre_lift_tolerance"),
+        attachment_rank_tolerance=declared_tolerance(
+            config, "attachment_rank_tolerance"))
     truncation_read = action.holonomy_truncation()
     record = {
         "content": list(content),
@@ -2359,8 +2474,9 @@ def evaluate_content(content, kappa, beta, config):
                 "averaged_eigenvalues": a["averaged_eigenvalues"],
                 "intertwining_residual": a["intertwining_residual"],
             } for a in alignments],
-            "monopole_numbers": [int(sp.monopoleNumber().monopole_number)
-                                 for sp, _ in supports],
+            "monopole_numbers": [
+                int(sp.monopoleNumber(certificate_tolerance).monopole_number)
+                for sp, _ in supports],
             "link_force_norm": float(np.linalg.norm(
                 action.link_stationarity())),
             "ward_current_divergence": float(np.max(np.abs(np.asarray(
@@ -2401,7 +2517,7 @@ def evaluate_content(content, kappa, beta, config):
         spinorial = all(bool(a["spin_read"].cocycle.nontrivial)
                         for a in alignments)
         record["isospin_doublet"] = isospin_doublet.observe_host(
-            carrier, actions, spinorial)
+            carrier, actions, spinorial, config)
     return record
 
 
@@ -2423,6 +2539,8 @@ def recursion_read(spacetime, config):
     bands.band_rank = BASE_EDGES
     declaration.bands = bands
     declaration.tolerance = declared_tolerance(config, "recursion_tolerance")
+    declaration.rank_tolerance = declared_tolerance(
+        config, "quotient_rank_tolerance")
     recursion = None
     try:
         recursion = cob.LevelRecursion.overSpacetime(
@@ -2683,15 +2801,17 @@ def refined_host(spacetime):
     return refined, data
 
 
-def refined_support(sheet_data):
+def refined_support(sheet_data, tolerance=DECLARED_CERTIFICATE_TOLERANCE):
     """The `MonopoleSupport` of one refined sheet: five vertices, the ten
     edges of `REFINED_EDGES`, the four boundary faces of the fixture in their
     outward orientation (the bounding cut, which the subdivision leaves as it
-    was), and the U(1) part of the sheet's links."""
+    was), and the U(1) part of the sheet's links, whose moduli the support
+    holds to one within ``tolerance``."""
     fixture = monopole_support()
     return obs.MonopoleSupport(
         5, [list(e) for e in REFINED_EDGES], [list(f) for f in fixture.faces],
-        obs.MonopoleSupport.u1Part([complex(u) for u in sheet_data["links"]]))
+        obs.MonopoleSupport.u1Part([complex(u) for u in sheet_data["links"]]),
+        tolerance)
 
 
 def refined_rotation_group():
@@ -2840,13 +2960,17 @@ def spectral_fingerprint_read(spacetime, kappa, beta, config,
       operator, inside the isotypic component of that type in the refined
       action (`SharpSpin.isotypicProjector`), whose column span overlaps the
       original doublet most on the six shared edges, the refinement
-      continuation. The overlap must reach ``overlap_floor`` with the rank
-      preserved, and the refined support must carry a spinor doublet; the
-      energy shift is reported beside them."""
+      continuation. The isotypic component is the span of the projector's
+      eigenvectors whose eigenvalues are within the config's
+      ``isotypic_tolerance`` of one, and two eigenvalues of the averaged
+      operator on it within that tolerance form one band. The overlap must
+      reach ``overlap_floor`` with the rank preserved, and the refined
+      support must carry a spinor doublet; the energy shift is reported
+      beside them."""
     group = rotation_group()
     if tolerance is None:
         tolerance = declared_tolerance(config, "certificate_tolerance")
-    support, _ = sheet_support(spacetime, 0)
+    support, _ = sheet_support(spacetime, 0, tolerance)
     original = _fiber_fingerprint(spacetime, support, group, BASE_EDGES,
                                   kappa, beta, config)
     result = {"sheet": 0, "spectrum": original["spectrum"],
@@ -2862,7 +2986,7 @@ def spectral_fingerprint_read(spacetime, kappa, beta, config,
     # --- relabeling
     permutation = list(FINGERPRINT_RELABELING)
     moved_host = relabeled_host(spacetime, permutation)
-    moved_support, _ = sheet_support(moved_host, 0)
+    moved_support, _ = sheet_support(moved_host, 0, tolerance)
     moved = _fiber_fingerprint(moved_host, moved_support,
                                conjugated_group(group, permutation),
                                BASE_EDGES, kappa, beta, config)
@@ -2898,7 +3022,7 @@ def spectral_fingerprint_read(spacetime, kappa, beta, config,
     result["relabeling"] = relabeling
     # --- refinement
     refined, sheet_data = refined_host(spacetime)
-    support_r = refined_support(sheet_data[0])
+    support_r = refined_support(sheet_data[0], tolerance)
     group_r = refined_rotation_group()
     edges = len(REFINED_EDGES)
     fine = _fiber_fingerprint(refined, support_r, group_r, edges, kappa, beta,
@@ -2924,7 +3048,8 @@ def spectral_fingerprint_read(spacetime, kappa, beta, config,
         isotypic = np.asarray(obs.SharpSpin.isotypicProjector(
             maps, characters, 2, 1))
         values, vectors = np.linalg.eig(isotypic)
-        span = vectors[:, np.abs(values - 1.0) < 1e-6]
+        isotypic_tolerance = declared_tolerance(config, "isotypic_tolerance")
+        span = vectors[:, np.abs(values - 1.0) <= isotypic_tolerance]
         compressed = np.linalg.pinv(span) @ fine["averaged"] @ span
         energies, mixing = np.linalg.eig(compressed)
         candidates = span @ mixing
@@ -2935,11 +3060,12 @@ def spectral_fingerprint_read(spacetime, kappa, beta, config,
             original_frame[k, :] = original["doublet_frame"][m, :]
         distinct = []
         for e in energies:
-            if not any(abs(e - f) < 1e-6 for f in distinct):
+            if not any(abs(e - f) <= isotypic_tolerance for f in distinct):
                 distinct.append(complex(e))
         best = None
         for energy in sorted(distinct, key=lambda v: (v.real, v.imag)):
-            picked = candidates[:, np.abs(energies - energy) < 1e-6]
+            picked = candidates[:, np.abs(energies - energy)
+                                <= isotypic_tolerance]
             overlap = _subspace_overlap(original_frame[shared, :],
                                         picked[shared, :])
             if best is None or overlap > best["overlap"]:
@@ -3024,7 +3150,9 @@ def fingerprint_text(fingerprint):
 
 def quark_conditions(spacetime, alignments, recursion, symmetry_residual,
                      report, anchor=None, fingerprint=None,
-                     tolerance=DECLARED_CERTIFICATE_TOLERANCE):
+                     tolerance=DECLARED_CERTIFICATE_TOLERANCE,
+                     fibre_lift_tolerance=DECLARED_TOLERANCE,
+                     attachment_rank_tolerance=DECLARED_TOLERANCE):
     """The seven v16 quark conditions by name (`QuarkConditions`), from what a
     single-level synthesis measures: condition 3 from the anchor atlas read
     (`anchor_evidence`) and condition 7 from the spectral fingerprint read
@@ -3033,18 +3161,23 @@ def quark_conditions(spacetime, alignments, recursion, symmetry_residual,
     sector; every sheet must carry them. Anything that needs several
     cobordism frames is left unmeasured and so reads "not evaluable", and so
     does every piece of evidence read from the recursion's completed turn
-    when the recursion refused to take one (`recursion_read`)."""
+    when the recursion refused to take one (`recursion_read`). The
+    certificates are graded at ``tolerance``; the fibre lift holds when
+    ``symmetry_residual`` is at or below ``fibre_lift_tolerance``, and the
+    sheet-to-sheet attachment has full rank when its smallest singular value
+    reaches ``attachment_rank_tolerance``."""
     E = obs.QuarkConditionEvidence
     spins = [a["spin_read"] for a in alignments]
-    supports = [sheet_support(spacetime, t) for t in range(SHEETS)]
-    monopoles = [s.monopoleNumber() for s, _ in supports]
+    supports = [sheet_support(spacetime, t, tolerance) for t in range(SHEETS)]
+    monopoles = [s.monopoleNumber(tolerance) for s, _ in supports]
     sheeting = obs.SheetedSupport(SHEETS, BASE_EDGES)
     isomorphism = sheeting.certifyIsomorphism(
         [np.array(sheet_squared_lengths(spacetime, t)) for t in range(SHEETS)],
         [np.array(sheet_links(spacetime, t)) for t in range(SHEETS)],
         tolerance)
     attachment = obs.SheetAttachment.attachmentMatrix(
-        SHEETS, [obs.ConnectingSimplex(t, t, 1.0) for t in range(SHEETS)])
+        SHEETS, [obs.ConnectingSimplex(t, t, 1.0) for t in range(SHEETS)],
+        attachment_rank_tolerance)
     doublets = [spin.bands[spin.doublet_index] if spin.half_integer_doublet
                 else None for spin in spins]
     produced = "refusal" not in recursion
@@ -3093,7 +3226,7 @@ def quark_conditions(spacetime, alignments, recursion, symmetry_residual,
            bool(all(d is not None and d.coexact for d in doublets)),
            "coexact residuals %s" % [d.coexact_residual if d is not None
                                      else None for d in doublets]),
-         E("fibre-lift", symmetry_residual < 1e-6,
+         E("fibre-lift", symmetry_residual <= fibre_lift_tolerance,
            "the T-averaged h_1 (WP line 497) in the aligned frame is "
            "block-scalar on each doublet times the sheets to relative "
            "residual %.3g" % symmetry_residual)],
@@ -3793,7 +3926,6 @@ def default_config(kappas=DECLARED_KAPPAS, betas=DECLARED_BETAS,
         "regge_hinges": regge_hinges,
         "villain_order": checked_villain_order(villain_order),
         "elimination": elimination,
-        "gauge_resonance_radius": DECLARED_GAUGE_RESONANCE_RADIUS,
         "ward_contour_radius": DECLARED_WARD_CONTOUR_RADIUS,
         "ward_contour_nodes": DECLARED_WARD_CONTOUR_NODES,
         **declared_tolerances(tolerances),
@@ -3841,7 +3973,8 @@ def drive(config, progress=False, on_frame=None, stop_requested=None,
     declared = aligned_doublet_frame(
         monopole_support(), rotation_group(),
         declared_tolerance(config, "degeneracy_tolerance"),
-        declared_tolerance(config, "certificate_tolerance"))
+        declared_tolerance(config, "certificate_tolerance"),
+        declared_tolerance(config, "character_tolerance"))
     frames = []
     host = {
         "monopole": _monopole_record(declared["spin_read"]),

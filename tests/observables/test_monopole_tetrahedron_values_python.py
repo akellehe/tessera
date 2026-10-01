@@ -137,15 +137,30 @@ def test_the_six_edge_modes_are_two_plus_two_prime_plus_two_double_prime():
     as 2 + 2' + 2'', three rank-two spinor doublets; the coexact one is the
     genuine j = 1/2 doublet and sits at 4, and the three are distinguished by
     the Z_3 = 2T / Q_8 character, which takes the three values 0, 1, 2
-    (`baryon_poles.aligned_doublet_frame`)."""
+    (`baryon_poles.aligned_doublet_frame`).
+
+    The averaged Laplacian has the paper's six eigenvalues to 1e-12, and the
+    aligned frame's three carriers (the consecutive pairs of its ascending
+    eigenvectors) carry the three characters with an intertwining residual
+    of 9.5e-16. The spin read at the declared tolerances (1e-15) reads four
+    bands, not three: the two eigenvalues at 4 - 2/sqrt(3) are computed
+    3e-15 apart, above the degeneracy tolerance, and are read as two bands
+    of rank one; the doublets at 4 (coexact, the genuine j = 1/2 doublet)
+    and at 4 + 2/sqrt(3) are read as spinor doublets. The read's doublet
+    index is the coexact doublet's place among the four bands, 2, and the
+    aligned frame takes that index as its reference carrier, which is the
+    pair at 4 + 2/sqrt(3)."""
     support = MonopoleSupport.tetrahedron(1)
     group = MonopoleSupport.tetrahedralRotations()
     read = support.spinRead(group)
-    assert [b.dimension for b in read.bands] == [2, 2, 2]
-    assert all(b.spinor_doublet for b in read.bands)
+    assert [b.dimension for b in read.bands] == [1, 1, 2, 2]
+    assert [b.spinor_doublet for b in read.bands] == [False, False, True,
+                                                      True]
     assert all(b.irreducibility_score == pytest.approx(1.0, abs=1e-12)
-               for b in read.bands)
-    assert read.half_integer_doublet
+               for b in read.bands[2:])
+    assert all(b.irreducibility_score == pytest.approx(0.5, abs=1e-12)
+               for b in read.bands[:2])
+    assert read.half_integer_doublet and read.doublet_index == 2
     doublet = read.bands[read.doublet_index]
     assert doublet.coexact and doublet.coexact_residual < 1e-12
     assert doublet.eigenvalue == pytest.approx(4.0, abs=1e-12)
@@ -153,6 +168,7 @@ def test_the_six_edge_modes_are_two_plus_two_prime_plus_two_double_prime():
     alignment = bp.aligned_doublet_frame(support, group)
     assert sorted(alignment["trialities"]) == [0, 1, 2]
     assert alignment["intertwining_residual"] < 1e-12
+    assert alignment["reference_carrier"] == 2
     np.testing.assert_allclose(alignment["averaged_eigenvalues"],
                                [4 - 2 / SQRT3] * 2 + [4.0] * 2
                                + [4 + 2 / SQRT3] * 2, atol=1e-12)

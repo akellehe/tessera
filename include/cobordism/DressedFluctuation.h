@@ -96,7 +96,7 @@ struct DressedFluctuationDeclaration {
   /// The relative tolerance the certificates of this instance hold against, and
   /// the threshold below which a candidate collective mode's geometric
   /// component counts as zero.
-  double tolerance = 1e-8;
+  double tolerance = 1e-15;
 };
 
 /// # CollectiveMode

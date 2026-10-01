@@ -422,7 +422,7 @@ void RecursiveQuotient::detectRegime() {
     // A pencil level (Ã, M) is regime-classified by complex symmetry of both
     // matrices (M L = (M L)^T with M complex symmetric) rather than by
     // Hermiticity. A broken symmetry is the non-normal regime.
-    const double tolP = std::max(options_.tolerance, 1e-12);
+    const double tolP = options_.tolerance;
     const Eigen::SparseMatrix<cd> opT = Eigen::SparseMatrix<cd>(op_.transpose());
     const Eigen::SparseMatrix<cd> mT = Eigen::SparseMatrix<cd>(pencilMetric_.transpose());
     const double opDefect = Eigen::SparseMatrix<cd>(op_ - opT).norm() /
@@ -441,7 +441,7 @@ void RecursiveQuotient::detectRegime() {
   const double scale = std::max(weighted.norm(), 1e-300);
   const double hermiticity =
       Eigen::SparseMatrix<cd>(weighted - adjoint).norm() / scale;
-  const double tol = std::max(options_.tolerance, 1e-12);
+  const double tol = options_.tolerance;
   if (hermiticity > tol) {
     regime_ = CertificateRegime::NonNormal;
     return;
@@ -668,7 +668,7 @@ RecursiveQuotient::computeSolve(int component, cd lambda) const {
         const Eigen::MatrixXcd candidate = fastLU.solve(loadBlock);
         const double residual =
             (shifted * candidate - loadBlock).norm() / loadScale;
-        if (residual <= std::max(options_.tolerance, 1e-12)) {
+        if (residual <= options_.tolerance) {
           solve->X = candidate;
           solve->conditioning = diagMax / diagMin;
           solve->interiorDet = fastLU.determinant();

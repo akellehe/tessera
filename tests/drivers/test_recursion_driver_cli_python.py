@@ -162,6 +162,94 @@ def test_every_tolerance_is_an_option_of_the_run():
     assert tolerances["rank_tolerance"] == 1e-12
     assert tolerances["recursion_tolerance"] == 1e-9
     assert tolerances["certificate_tolerance"] == bp.DECLARED_TOLERANCE
+    # every key of the registry, each its own option, each 1e-15 by default
+    declared = bp.tolerances_from(R.build_parser().parse_args(["run"]))
+    assert declared == {key: 1e-15 for key, _ in bp.TOLERANCES}
+    for key, _ in bp.TOLERANCES:
+        option = "--" + key.replace("_", "-")
+        set_ = bp.tolerances_from(
+            R.build_parser().parse_args(["run", option, "1e-7"]))
+        assert set_[key] == 1e-7
+        assert all(value == 1e-15 for other, value in set_.items()
+                   if other != key)
+
+
+def test_every_tolerance_and_limit_is_carried_into_every_cell(monkeypatch):
+    """`cell_reads` hands every cell's read a config that carries every
+    tolerance of the registry and every declared limit at the run's values,
+    whether the run left them at the declared 1e-15 or set them."""
+    seen = []
+
+    def scan(kappa, beta, config, on_content=None):
+        seen.append(dict(config))
+        return {"failed_contents": [], "contents": [], "ratios": {},
+                "pole_table": {}}
+
+    monkeypatch.setattr(bp, "scan_point", scan)
+    declared = R.default_config(tetrahedra=2)
+    cells, z, links, _ = R.level_zero(declared)
+    R.cell_reads(cells, z, links, declared)
+    chosen = {key: 10.0 ** -(3 + k) for k, (key, _) in
+              enumerate(bp.TOLERANCES)}
+    limits = {"iteration_limit": 7, "halving_limit": 5,
+              "time_limit_seconds": 2.5}
+    run = R.default_config(tetrahedra=2, tolerances=chosen, limits=limits)
+    R.cell_reads(cells, z, links, run)
+    assert len(seen) == 2 * len(cells)
+    for config in seen[:len(cells)]:
+        assert {key: config[key] for key, _ in bp.TOLERANCES} == {
+            key: 1e-15 for key, _ in bp.TOLERANCES}
+        assert all(config[key] is None for key, _, _ in bp.LIMITS)
+    for config in seen[len(cells):]:
+        assert {key: config[key] for key, _ in bp.TOLERANCES} == chosen
+        assert {key: config[key] for key, _, _ in bp.LIMITS} == limits
+
+
+def test_the_recursion_turn_and_the_pachner_stage_read_the_registry(
+        monkeypatch):
+    """The level recursion's declaration carries the config's recursion
+    tolerance and quotient rank tolerance, and the Pachner stage's node the
+    config's move tolerance and admissibility tolerance; each is 1e-15 when
+    the run declares nothing. The turn and the stage's search are replaced
+    by stand-ins that record what they are handed."""
+    seen = {}
+
+    class Turn:
+        def advance(self):
+            pass
+
+        def level(self, index):
+            return index
+
+    def over_pencil(operator, metric, n, declaration):
+        seen["recursion"] = (declaration.tolerance, declaration.rank_tolerance)
+        return Turn()
+
+    monkeypatch.setattr(cob.LevelRecursion, "overPencil",
+                        staticmethod(over_pencil))
+    operator = np.diag([1.0, 2.0, 3.0, 4.0]).astype(complex)
+    R.recursion_turn(operator, R.default_config())
+    assert seen["recursion"] == (1e-15, 1e-15)
+    R.recursion_turn(operator, R.default_config(
+        tolerances={"recursion_tolerance": 1e-9,
+                    "quotient_rank_tolerance": 1e-7}))
+    assert seen["recursion"] == (1e-9, 1e-7)
+    library = cob.LevelRecursionDeclaration()
+    assert library.tolerance == library.rank_tolerance == 1e-15
+
+    def run_stage1(node, *args, **kwargs):
+        seen["stage"] = (node.move_tolerance, node.admissibility_tolerance)
+        return []
+
+    monkeypatch.setattr(cob.MultiCobordism, "run_stage1", run_stage1)
+    for tolerances, expected in (
+            (None, (1e-15, 1e-15)),
+            ({"move_tolerance": 1e-9, "admissibility_tolerance": 1e-12},
+             (1e-9, 1e-12))):
+        config = R.default_config(tolerances=tolerances)
+        cells, z, links, _ = R.level_zero(config)
+        R.pachner_stage(cells, z, links, config)
+        assert seen["stage"] == expected
 
 
 def test_the_villain_order_is_an_option_carried_into_every_cell(monkeypatch):
