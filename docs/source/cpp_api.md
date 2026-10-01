@@ -297,6 +297,11 @@ internal interface as well, edit the Doxyfile and comment out its exclusions.
 ```{doxygenfile} SparseRank.h
 ```
 
+## Numerics
+
+```{doxygenfile} TruncatedSeries.h
+```
+
 ## Reinforcement learning
 
 ```{doxygenfile} CobordismObjectiveEnv.h

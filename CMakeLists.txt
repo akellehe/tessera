@@ -364,6 +364,7 @@ set(TESSERA_PYBIND_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/simulations/Bindings.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/cobordism/Bindings.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/chainhodge/Bindings.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/numerics/Bindings.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/quantum/Bindings.cpp")
 # ---- </Define source partitions> -----------------------------------------
 
