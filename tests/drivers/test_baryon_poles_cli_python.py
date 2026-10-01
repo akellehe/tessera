@@ -1012,8 +1012,9 @@ def test_the_quark_verdict_names_the_seven_conditions(declared_verdict):
         obs.QuarkConditions.condition_names()
     status = {c["name"]: c["status"] for c in declared_verdict["conditions"]}
     assert status["color-spin-fiber"] == "Passed"
-    assert status["odd-occupation"] == "Passed"
-    for name in ("anchor-atlas", "lineage", "fingerprint"):
+    # the verdict is read on the declared host with no solved state, so the
+    # occupation parity has no covariance to be measured on
+    for name in ("odd-occupation", "anchor-atlas", "lineage", "fingerprint"):
         assert status[name] == "NotEvaluable"
     assert declared_verdict["certified"] is False
 

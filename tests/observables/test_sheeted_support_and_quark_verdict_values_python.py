@@ -19,6 +19,8 @@ for it, and run the driver's own `quark_conditions` on constructed inputs.
 import numpy as np
 import pytest
 
+import tessera as T
+from tessera import cobordism as cob
 from tessera import observables as obs
 from tessera.drivers import baryon_poles as bp
 
@@ -306,12 +308,25 @@ def _recursion_record(accepted=True, transport_norms=()):
             "transport_norms": list(transport_norms)}
 
 
-def _driver_verdict(spacetime, symmetry_residual=0.0, **recursion):
+def _one_mode_per_sheet():
+    """A covariance over the 18 edge modes of the three-sheeted host that
+    occupies one mode on every sheet: the first edge of each."""
+    gamma = np.zeros((bp.SHEETS * bp.BASE_EDGES,) * 2, dtype=complex)
+    for sheet in range(bp.SHEETS):
+        gamma[sheet * bp.BASE_EDGES, sheet * bp.BASE_EDGES] = 1.0
+    return gamma
+
+
+def _driver_verdict(spacetime, symmetry_residual=0.0, covariance="one mode",
+                    **recursion):
     alignment = bp.aligned_doublet_frame(bp.monopole_support(),
                                          bp.rotation_group())
+    if isinstance(covariance, str):
+        covariance = _one_mode_per_sheet()
     return bp.quark_conditions(spacetime, [alignment] * bp.SHEETS,
                                _recursion_record(**recursion),
-                               symmetry_residual, None)
+                               symmetry_residual, None,
+                               covariance=covariance)
 
 
 def _statuses(verdict):
@@ -320,10 +335,12 @@ def _statuses(verdict):
 
 def test_the_driver_verdict_on_the_declared_host():
     """On the declared host (three exact sheets, unit monopole, WP §10
-    condition 2) with accepted bands, no inter-component transport and a
-    zero fibre-lift residual, a single-level read passes conditions 2 and 4,
-    leaves 1, 3, 5, 6 and 7 not evaluable (they need several frames, a
-    lineage, the anchor atlas or a refinement), and certifies nothing."""
+    condition 2) with accepted bands, no inter-component transport, a zero
+    fibre-lift residual and a covariance that occupies one mode on every
+    sheet, a single-level read passes conditions 2 and 4, leaves 1, 3, 5, 6
+    and 7 not evaluable (they need several frames, a lineage, the anchor
+    atlas or a refinement), and certifies nothing. The sheet number and the
+    occupations are the measured ones."""
     verdict = _driver_verdict(bp.build_host())
     assert _statuses(verdict) == {
         "persistent-cluster": "NotEvaluable",
@@ -340,6 +357,176 @@ def test_the_driver_verdict_on_the_declared_host():
     assert isomorphism["detail"] == "length residual 0, connection residual 0"
     assert verdict["conditions"][0]["missing"] == ["successor-overlap",
                                                    "multi-frame-lifetime"]
+    sheets = [e for e in two["evidence"]
+              if e["name"] == "three-sheeted-support"][0]
+    assert sheets["held"] is True
+    assert sheets["detail"] == (
+        "sheet number 3: the connected components of the complex, copies of "
+        "one base complex of [4, 6, 4, 1] cells of degrees 0 to 3 under the "
+        "ascending correspondence of their vertices")
+    (parity,) = verdict["conditions"][3]["evidence"]
+    assert parity["name"] == "odd-occupation-parity"
+    assert parity["held"] is True
+    assert parity["detail"] == (
+        "occupation per sheet ['1', '1', '1'] (the trace of the covariance "
+        "on each sheet's modes), tr Gamma = 3; parity per sheet "
+        "['(-1)^1', '(-1)^1', '(-1)^1']")
+
+
+def test_the_driver_verdict_without_a_solved_state_leaves_condition_four_open():
+    """Without the covariance of a solved state the occupation parity is not
+    read: condition 4 is not evaluable and says what was missing; the sheet
+    number of condition 2 is read from the complex all the same."""
+    verdict = _driver_verdict(bp.build_host(), covariance=None)
+    four = verdict["conditions"][3]
+    assert four["status"] == "NotEvaluable"
+    assert four["missing"] == ["odd-occupation-parity"]
+    assert four["evidence"][0]["held"] is None
+    assert four["evidence"][0]["detail"] == (
+        "the covariance of the solved state was not handed to the read")
+    assert verdict["conditions"][1]["status"] == "Passed"
+
+
+def test_the_sheets_of_a_complex_are_its_connected_components():
+    """`sheets_of` on the three-sheeted host: three connected components,
+    vertices 4 t to 4 t + 3 on sheet t, each one tetrahedron (4 vertices, 6
+    edges, 4 faces, 1 cell), copies of one another under the ascending
+    correspondence of their vertices. Vertex ids that are not consecutive
+    (9, 10, 11, 20) are the same copy."""
+    read = bp.sheets_of(bp.build_host())
+    assert read == {"count": 3,
+                    "components": [[0, 1, 2, 3], [4, 5, 6, 7],
+                                   [8, 9, 10, 11]],
+                    "cells": [[4, 6, 4, 1]] * 3,
+                    "copies": True}
+    relabelled = T.Spacetime.fromVertexTuples(
+        3, [[0, 1, 2, 3], [4, 5, 6, 7], [20, 9, 10, 11]], 1.0, 0.0)
+    read = bp.sheets_of(relabelled)
+    assert read["components"][2] == [9, 10, 11, 20] and read["copies"]
+    assert bp.sheet_count_evidence(relabelled).held is True
+
+
+def test_the_sheet_number_is_measured_on_the_complex():
+    """The evidence of condition 2 holds on three components that are copies
+    of one base complex and on nothing else: two disjoint tetrahedra are two
+    sheets; three tetrahedra glued along faces are one component (6
+    vertices, 12 edges, 10 faces, 3 cells); and three components of which
+    one is two tetrahedra glued along a face (5 vertices, 9 edges, 7 faces,
+    2 cells) are not copies of one base complex. Each detail carries the
+    measured numbers."""
+    def read(cells):
+        evidence = bp.sheet_count_evidence(
+            T.Spacetime.fromVertexTuples(3, cells, 1.0, 0.0))
+        assert evidence.name == "three-sheeted-support"
+        return evidence.held, evidence.detail
+
+    assert read([[0, 1, 2, 3], [4, 5, 6, 7]]) == (False, (
+        "sheet number 2: the connected components of the complex, copies of "
+        "one base complex of [4, 6, 4, 1] cells of degrees 0 to 3 under the "
+        "ascending correspondence of their vertices"))
+    assert read([[0, 1, 2, 3], [1, 2, 3, 4], [2, 3, 4, 5]]) == (False, (
+        "sheet number 1: the connected components of the complex, copies of "
+        "one base complex of [6, 12, 10, 3] cells of degrees 0 to 3 under "
+        "the ascending correspondence of their vertices"))
+    assert read([[0, 1, 2, 3], [4, 5, 6, 7], [8, 9, 10, 11],
+                 [9, 10, 11, 12]]) == (False, (
+        "3 connected components that are not copies of one base complex "
+        "under the ascending correspondence of their vertices: cells of "
+        "degrees 0 to 3 per component [[4, 6, 4, 1], [4, 6, 4, 1], "
+        "[5, 9, 7, 2]]"))
+
+
+def test_the_occupation_of_a_sheet_is_the_trace_of_the_covariance_on_it():
+    """`sheet_occupations` sums the diagonal of the covariance over the edge
+    modes of each sheet, in the chain complex's order of the edges (sheet 0
+    first): diagonal entries 1 to 18 give 21, 57 and 93. A covariance that
+    is not a matrix over the 18 edges is refused by shape."""
+    spacetime = bp.build_host()
+    sheets = bp.sheets_of(spacetime)
+    gamma = np.diag(np.arange(1.0, 19.0)).astype(complex)
+    gamma[0, 7] = 5.0  # off the diagonal: no part of a trace
+    assert bp.sheet_occupations(spacetime, gamma, sheets) == [21, 57, 93]
+    with pytest.raises(ValueError, match=r"shape \(5, 5\) and the carrier "
+                                         r"has 18 cells of degree 1"):
+        bp.sheet_occupations(spacetime, np.eye(5), sheets)
+
+
+def test_the_occupation_parity_is_measured_on_the_covariance():
+    """The evidence of condition 4 at the declared tolerance 1e-15. One
+    occupied mode on every sheet is odd on every sheet and holds. Two modes
+    on sheet 0, one on sheet 1 and none on sheet 2 (tr Gamma = 3) do not:
+    the parities are (-1)^2, (-1)^1 and (-1)^0. An occupation of 2/3 on two
+    sheets and 5/3 on the third (tr Gamma = 3) is 1/3 from an integer on
+    every sheet and has no parity. A covariance of the wrong shape leaves
+    the evidence not evaluable, with the shapes."""
+    spacetime = bp.build_host()
+    odd = bp.occupation_parity_evidence(spacetime, _one_mode_per_sheet())
+    assert odd.name == "odd-occupation-parity" and odd.held is True
+
+    gamma = np.zeros((18, 18), dtype=complex)
+    gamma[0, 0] = gamma[1, 1] = gamma[6, 6] = 1.0
+    uneven = bp.occupation_parity_evidence(spacetime, gamma)
+    assert uneven.held is False
+    assert uneven.detail == (
+        "occupation per sheet ['2', '1', '0'] (the trace of the covariance "
+        "on each sheet's modes), tr Gamma = 3; parity per sheet "
+        "['(-1)^2', '(-1)^1', '(-1)^0']")
+
+    gamma = np.zeros((18, 18), dtype=complex)
+    gamma[0, 0] = gamma[6, 6] = 2.0 / 3.0
+    gamma[12, 12] = 1.0
+    gamma[13, 13] = 2.0 / 3.0
+    fractional = bp.occupation_parity_evidence(spacetime, gamma)
+    assert fractional.held is False
+    assert fractional.detail.startswith(
+        "occupation per sheet ['0.6666666666666666', '0.6666666666666666', "
+        "'1.666666666666667'] (the trace of the covariance on each sheet's "
+        "modes), tr Gamma = 3; parity per sheet ['0.6666666666666666 is "
+        "0.333 from the integer 1, above the tolerance 1e-15', ")
+
+    shape = bp.occupation_parity_evidence(spacetime, np.eye(5))
+    assert shape.held is None
+    assert shape.detail == ("the covariance has shape (5, 5) and the carrier "
+                            "has 18 cells of degree 1")
+
+
+def test_a_complex_occupation_is_reported_with_its_imaginary_part():
+    """An occupation 1 + 1e-3 i is 1e-3 from the integer 1: above the
+    declared tolerance it has no parity, and within a tolerance of 1e-2 it
+    is odd. The detail carries the imaginary part."""
+    spacetime = bp.build_host()
+    gamma = _one_mode_per_sheet()
+    gamma[0, 0] = 1.0 + 1e-3j
+    strict = bp.occupation_parity_evidence(spacetime, gamma)
+    assert strict.held is False
+    assert "'1+0.001i is 0.001 from the integer 1, above the tolerance " \
+        "1e-15'" in strict.detail
+    assert "tr Gamma = 3+0.001i" in strict.detail
+    assert bp.occupation_parity_evidence(spacetime, gamma, 1e-2).held is True
+
+
+def test_the_filled_band_of_the_declared_host_is_one_mode_per_sheet():
+    """The declared host with content (0, 0, 3) at the default tolerances:
+    the band the content fills has rank three, its covariance is the band's
+    projector, and the trace of the covariance on every sheet is 1 to
+    rounding (measured: 2.2e-16 from 1 at most), an odd occupation at the
+    declared tolerance 1e-15."""
+    spacetime = bp.build_host()
+    config = bp.default_config([1.0], [1.0])
+    action = cob.JointAction(spacetime, bp.action_declaration(
+        spacetime, 1.0, 1.0, config["regge_hinges"],
+        villain_order=bp.declared_villain_order(config)))
+    read = cob.BandFollower(bp.mean_field_declaration(
+        (0, 0, 3), config, spacetime)).read(action.carrier_operator())
+    assert [int(band.rank) for band in read.bands] == [3]
+    gamma = bp.matrix(read.covariance)
+    occupations = bp.sheet_occupations(spacetime, gamma,
+                                       bp.sheets_of(spacetime))
+    assert max(abs(n - 1.0) for n in occupations) < 1e-15
+    evidence = bp.occupation_parity_evidence(spacetime, gamma)
+    assert evidence.held is True
+    assert evidence.detail.endswith(
+        "parity per sheet ['(-1)^1', '(-1)^1', '(-1)^1']")
 
 
 def test_the_driver_verdict_fails_condition_two_on_a_separated_sheet():
