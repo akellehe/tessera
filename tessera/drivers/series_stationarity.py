@@ -59,13 +59,11 @@ from tessera import mesh
 from tessera import numerics as nm
 
 #: The largest turn about its branch point a root may make in one step of
-#: the Regge continuation, the largest distance an angle may move, and the
-#: shortest step the continuation refines to: the constants of
-#: `JointAction`'s own walk of the Regge sheets, which this module repeats to
-#: read the sheets the action carries.
+#: the Regge continuation and the largest distance an angle may move: the
+#: constants of `JointAction`'s own walk of the Regge sheets, which this
+#: module repeats to read the sheets the action carries.
 REGGE_MAXIMUM_ROOT_TURN = math.pi / 4.0
 REGGE_MAXIMUM_ANGLE_STEP = 0.25
-REGGE_SHORTEST_STEP = 1.0 / (1 << 30)
 
 
 # ------------------------------------------------------------------- series
@@ -575,19 +573,20 @@ class SeriesStationarity:
 
         def walk(state, advance, copy, what):
             """Walk ``state`` along a segment, refining every step by
-            bisection until it is fine."""
+            bisection until it is fine, down to the step that leaves the
+            parameter the number it was, as `JointAction`'s walk does."""
             t, step = 0.0, 1.0
             while t < 1.0:
                 following = min(1.0, t + step)
-                trial = copy(state)
-                if advance(trial, following):
-                    state, t, step = trial, following, min(1.0, 2.0 * step)
-                elif step <= REGGE_SHORTEST_STEP:
+                if following == t:
                     raise ValueError(
                         "SeriesStationarity: the continued Regge sheets "
                         "cannot be followed: %s makes no fine step from "
-                        "parameter %g of the segment at the shortest step, "
-                        "2^-30 of it" % (what, t))
+                        "parameter %g of the segment at any step the "
+                        "parameter resolves" % (what, t))
+                trial = copy(state)
+                if advance(trial, following):
+                    state, t, step = trial, following, min(1.0, 2.0 * step)
                 else:
                     step *= 0.5
             return state
