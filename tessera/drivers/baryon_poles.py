@@ -316,7 +316,9 @@ TOLERANCES = (
     ("rank_tolerance",
      "tau, the relative singular-value threshold of the Newton solve's rank "
      "decision: a singular value of the Jacobian below this fraction of the "
-     "largest counts as zero in the minimum-norm step"),
+     "largest counts as zero in the minimum-norm step; and the same threshold "
+     "on the singular values of the face coboundary in the minimum-norm "
+     "solve for the declared monopole connection's edge phases"),
     ("newton_tolerance",
      "the residual norm at or below which the holomorphic Newton solve of "
      "the geometry is converged"),
@@ -360,7 +362,9 @@ TOLERANCES = (
      "rather than a ratio of traces"),
     ("elimination_tolerance",
      "the relative threshold of the rank decisions of the Drazin "
-     "elimination's Feshbach read of the bare stiffness A"),
+     "elimination's Feshbach read of the bare stiffness A, and the fraction "
+     "of the largest singular value of the pure-gauge directions at or below "
+     "which a singular value counts as zero in their rank"),
     ("pure_gauge_tolerance",
      "the relative residual of the null projector of A on the pure-gauge "
      "directions at or below which the null space of A is read as pure "
@@ -381,7 +385,10 @@ TOLERANCES = (
      "the separation at or below which an eigenvalue of the isotypic "
      "projector of the refined cell is one, and at or below which two "
      "eigenvalues of the averaged operator on that isotypic component form "
-     "one refined band, in the spectral fingerprint's refinement read"),
+     "one refined band, in the spectral fingerprint's refinement read; and "
+     "the fraction of the largest singular value of that isotypic "
+     "component's basis at or below which a singular value counts as zero "
+     "in its pseudo-inverse"),
     ("attachment_rank_tolerance",
      "the smallest singular value at or above which the sheet-to-sheet "
      "attachment matrix of quark condition 5 has full rank"),
@@ -389,6 +396,11 @@ TOLERANCES = (
      "the relative threshold of the rank decisions of the level recursion's "
      "interior solves: a pivot or a singular value of an interior block at "
      "or below this fraction of the block's largest counts as zero"),
+    ("grown_cell_rank_tolerance",
+     "the fraction of the largest pivot of a grown cell's metric block (the "
+     "inherited pairing on the vertices other than the first) at or below "
+     "which a pivot counts as zero, so that the block has no inverse and the "
+     "grown-cell rule reads no lengths from it"),
     ("move_tolerance",
      "the amount by which a Pachner move must lower the objective of the "
      "recursion's Pachner stage to be committed"),
@@ -1436,7 +1448,9 @@ def drazin_elimination(stiffness, directions, radius,
     the null space compares with the pure-gauge directions.
 
     ``tolerance`` is the relative threshold of the rank decisions of the
-    Feshbach read, and ``pure_gauge_tolerance`` the residual
+    Feshbach read and of the rank of the pure-gauge directions (the number
+    of their singular values above that fraction of the largest), and
+    ``pure_gauge_tolerance`` the residual
     ||Pi_0 G - G|| / ||G|| on the pure-gauge directions G at or below which
     the null space is read as pure gauge.
     """
@@ -1486,7 +1500,9 @@ def drazin_elimination(stiffness, directions, radius,
     if directions is not None:
         # the pure-gauge directions lie in ran(Pi_0), and Pi_0 has no more
         # rank than they span
-        gauge_rank = int(np.linalg.matrix_rank(directions))
+        singular = np.linalg.svd(directions, compute_uv=False)
+        gauge_rank = (int(np.sum(singular > tolerance * singular[0]))
+                      if singular.size and singular[0] > 0.0 else 0)
         record["gauge_dimension"] = gauge_rank
         record["gauge_projector_residual"] = float(
             np.linalg.norm(null @ directions - directions)
@@ -3050,7 +3066,10 @@ def spectral_fingerprint_read(spacetime, kappa, beta, config,
         values, vectors = np.linalg.eig(isotypic)
         isotypic_tolerance = declared_tolerance(config, "isotypic_tolerance")
         span = vectors[:, np.abs(values - 1.0) <= isotypic_tolerance]
-        compressed = np.linalg.pinv(span) @ fine["averaged"] @ span
+        # the pseudo-inverse of the span counts a singular value at or below
+        # the declared tolerance times the largest as zero
+        compressed = (np.linalg.pinv(span, rcond=isotypic_tolerance)
+                      @ fine["averaged"] @ span)
         energies, mixing = np.linalg.eig(compressed)
         candidates = span @ mixing
         shared = [k for k, e in enumerate(REFINED_EDGES)

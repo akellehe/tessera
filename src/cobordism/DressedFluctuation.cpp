@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <numeric>
 #include <stdexcept>
 #include <string>
@@ -155,7 +156,10 @@ DressedFluctuation::DressedFluctuation(DressedFluctuationDeclaration declaration
         solver.eigenvectors().col(order[column]);
     eigenvalues_[column] = values(order[column]);
   }
-  const Eigen::FullPivLU<Eigen::MatrixXcd> factor(right);
+  // The rank of the frame of right modes at the declared tolerance: a pivot
+  // at or below that fraction of the largest is zero.
+  Eigen::FullPivLU<Eigen::MatrixXcd> factor(right);
+  factor.setThreshold(declaration_.tolerance);
   if (!factor.isInvertible())
     throw std::invalid_argument(
         "DressedFluctuation: the carrier operator is defective, so it carries "
@@ -396,13 +400,17 @@ std::vector<CollectiveMode> DressedFluctuation::collectiveModes() const {
   const std::vector<complexd> candidateShifts{
       complexd{0.3719, 0.2341}, complexd{-0.6131, 0.4517},
       complexd{1.2837, -0.7193}, complexd{-1.9043, -1.1287}};
-  // A shift is accepted on the measured quality of its solve rather than on a
+  // The shift is chosen on the measured quality of its solve rather than on a
   // pivot threshold: the pencil mixes the scale of the stiffness with that of
   // the particle-hole energies, and a rank decision taken against its largest
-  // pivot refuses matrices the solve handles to rounding.
+  // pivot refuses matrices the solve handles to rounding. Every shift that is
+  // not an eigenvalue gives the same finite eigenvalues, so the one whose
+  // solve leaves the smallest residual is the one used, and every mode read
+  // from it carries its own measured residual against the dressed stiffness.
   Eigen::MatrixXcd resolvent;
   complexd shift{0.0, 0.0};
   bool shifted = false;
+  double smallestResidual = std::numeric_limits<double>::infinity();
   for (const complexd &candidate : candidateShifts) {
     const complexd trial = candidate * scale;
     const Eigen::MatrixXcd shiftedPencil = pencil - trial * mass;
@@ -410,12 +418,14 @@ std::vector<CollectiveMode> DressedFluctuation::collectiveModes() const {
     const Eigen::MatrixXcd solved = factor.solve(mass);
     const double solveResidual =
         (shiftedPencil * solved - mass).norm() / mass.norm();
-    if (!(solveResidual <= 1e-8)) continue;
+    if (!(solveResidual < smallestResidual)) continue;
+    smallestResidual = solveResidual;
     resolvent = solved;
     shift = trial;
     shifted = true;
-    break;
   }
+  // No candidate shift has a solve with a finite residual: the resolvent has
+  // no value at any of them, and there is nothing to read modes from.
   if (!shifted) return modes;
 
   const Eigen::ComplexEigenSolver<Eigen::MatrixXcd> solver(resolvent);
@@ -424,8 +434,10 @@ std::vector<CollectiveMode> DressedFluctuation::collectiveModes() const {
   for (Eigen::Index index = 0; index < solver.eigenvalues().size(); ++index) {
     const complexd reciprocal = solver.eigenvalues()(index);
     // A vanishing reciprocal is an infinite eigenvalue of the pencil, which the
-    // deflated geometric block contributes and which is no frequency at all.
-    if (std::abs(reciprocal) * scale <= 1e-10) continue;
+    // deflated geometric block contributes and which is no frequency at all:
+    // a reciprocal at or below the declared tolerance in the unit of the
+    // pencil's scale is read as zero.
+    if (std::abs(reciprocal) * scale <= declaration_.tolerance) continue;
     const complexd frequency = shift + complexd{1.0, 0.0} / reciprocal;
     bool onParticleHoleEnergy = false;
     for (const complexd &energy : channelEnergy)
@@ -608,7 +620,10 @@ ManyBodySpaceRead DressedFluctuation::effectiveAction(
       stiffness.norm() == 0.0
           ? 0.0
           : (stiffness - stiffness.transpose()).norm() / stiffness.norm();
-  const Eigen::FullPivLU<Eigen::MatrixXcd> factor(stiffness);
+  // The rank of the bare stiffness at the declared tolerance, as the rank of
+  // the mode frame is decided.
+  Eigen::FullPivLU<Eigen::MatrixXcd> factor(stiffness);
+  factor.setThreshold(declaration_.tolerance);
   if (!factor.isInvertible())
     throw std::invalid_argument(
         "DressedFluctuation::effectiveAction: the declared bare stiffness is "

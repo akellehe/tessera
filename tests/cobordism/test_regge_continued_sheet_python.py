@@ -132,7 +132,8 @@ def test_the_continued_and_principal_values_agree_on_real_euclidean_input():
 def test_a_path_through_a_degenerate_face_is_refused_by_name():
     """The continued sheets follow every angle and content root along the
     straight path from the Euclidean reference to the current geometry,
-    refining each step until every root turns by at most a quarter turn.
+    refining each step until every root turns by at most pi/4 and every
+    angle moves by at most 0.25.
     With the squared length of the edge (0, 1) moved from 1 to 9 on a
     regular tetrahedron the faces on that edge pass through a degenerate
     triangle (l_01 = l_02 + l_12 = 2 at z = 4, three eighths of the way),
@@ -165,7 +166,7 @@ def test_a_path_through_a_degenerate_face_is_refused_by_name():
     with pytest.raises(ValueError, match="cannot be followed") as refusal:
         continued.regge_term()
     assert "makes no fine step" in str(refusal.value)
-    assert "2^-30" in str(refusal.value)
+    assert "at any step the parameter resolves" in str(refusal.value)
     # the principal sheet evaluates the geometry as it stands
     principal.regge_term()
 

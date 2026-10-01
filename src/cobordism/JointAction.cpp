@@ -1145,9 +1145,6 @@ using SquaredLengthField = std::map<EdgeKey, complexd>;
 /// half turn beyond which a continuation cannot tell two paths apart.
 constexpr double kMaximumRootTurn = std::numbers::pi / 4.0;
 constexpr double kMaximumAngleStep = 0.25;
-/// The shortest step a walk refines to; a walk that finds no fine step this
-/// short refuses by name rather than accepting a step that is not fine.
-constexpr double kShortestStep = 1.0 / (1u << 30);
 
 /// The vertex ids of a cell as text, for a refusal that names the cell.
 template <typename Ids>
@@ -1290,31 +1287,34 @@ std::vector<::tessera::mesh::Simplex *> topCellsAt(
 }
 
 /// Walk \p state along the straight segment from \p from to \p to, refining
-/// every step until it is fine enough, by bisection down to `kShortestStep`.
-/// \p advance takes the parameter and returns whether the step it made was
-/// fine; \p State is copied so that a refused step is undone. A step that is
-/// still not fine at `kShortestStep` is a refusal of the walk: the sheet
-/// cannot be followed along the segment there, and no step is accepted in
-/// its place. \p what names the quantity walked, for the refusal.
-/// @throws std::domain_error when no fine step exists at the shortest step.
+/// every step until it is fine enough, by bisection down to the resolution of
+/// the parameter. \p advance takes the parameter and returns whether the step
+/// it made was fine; \p State is copied so that a refused step is undone. The
+/// bisection ends by itself: a step that is halved until it leaves the
+/// parameter the number it was is the shortest step the datatype resolves,
+/// and no shorter one exists. When no step down to that one is fine the sheet
+/// cannot be followed along the segment there, which is a refusal of the
+/// walk, and no step is accepted in its place. \p what names the quantity
+/// walked, for the refusal.
+/// @throws std::domain_error when no step the parameter resolves is fine.
 template <typename State, typename Advance>
 void walkSegment(State &state, Advance advance, const std::string &what) {
   double t = 0.0;
   double step = 1.0;
   while (t < 1.0) {
     const double next = std::min(1.0, t + step);
+    if (next == t)
+      throw std::domain_error(
+          "JointAction: the continued Regge sheets cannot be followed: " +
+          what + " makes no fine step from parameter " +
+          std::to_string(t) + " of the segment at any step the parameter "
+          "resolves (a fine step turns every root by at most pi/4 and moves "
+          "every angle by at most 0.25)");
     State trial = state;
     if (advance(trial, next)) {
       state = std::move(trial);
       t = next;
       step = std::min(1.0, 2.0 * step);
-    } else if (step <= kShortestStep) {
-      throw std::domain_error(
-          "JointAction: the continued Regge sheets cannot be followed: " +
-          what + " makes no fine step from parameter " +
-          std::to_string(t) + " of the segment at the shortest step, 2^-30 "
-          "of it (a fine step turns every root by at most a quarter turn "
-          "and moves every angle by at most 0.25)");
     } else {
       step *= 0.5;
     }

@@ -579,6 +579,25 @@ def test_the_drazin_inverse_of_the_zero_matrix_is_the_zero_matrix():
     assert np.allclose(drazin, np.diag([0.5, 0.25]), atol=1e-15)
 
 
+def test_the_gauge_dimension_is_read_at_the_elimination_tolerance():
+    """The rank of the pure-gauge directions is the number of their singular
+    values above the elimination tolerance times the largest. Two directions
+    whose second singular value is 5e-13 of the first span two dimensions at
+    the declared 1e-15 and one at 1e-9."""
+    stiffness = np.zeros((4, 4), dtype=complex)
+    directions = np.zeros((4, 2), dtype=complex)
+    directions[2, 0] = directions[2, 1] = 1.0
+    directions[3, 1] = 1e-12
+    singular = np.linalg.svd(directions, compute_uv=False)
+    assert singular[1] / singular[0] == pytest.approx(5e-13, rel=1e-3)
+    _, _, _, record = bp.drazin_elimination(
+        stiffness, directions, bp.DECLARED_TOLERANCE)
+    assert record["gauge_dimension"] == 2
+    _, _, _, record = bp.drazin_elimination(
+        stiffness, directions, bp.DECLARED_TOLERANCE, tolerance=1e-9)
+    assert record["gauge_dimension"] == 1
+
+
 def test_a_content_without_a_value_is_recorded_and_the_scan_continues(
         monkeypatch):
     """A content at which the library names no value (here a band that

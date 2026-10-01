@@ -40,6 +40,9 @@ TOLERANCES = {
     # the library's values where the drivers passed none
     "attachment_rank_tolerance": 1e-12,
     "quotient_rank_tolerance": 1e-9,
+    # the pivot threshold of a 3 x 3 block in the library the run was made
+    # with, three times the machine epsilon
+    "grown_cell_rank_tolerance": 3 * 2.220446049250313e-16,
     "move_tolerance": 1e-9,
     "admissibility_tolerance": 1e-12,
     # the isospin-doublet detector's values (`IsospinDoubletConfig`)
