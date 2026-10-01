@@ -2489,7 +2489,8 @@ def evaluate_content(content, kappa, beta, config):
         fibre_lift_tolerance=declared_tolerance(config,
                                                 "fibre_lift_tolerance"),
         attachment_rank_tolerance=declared_tolerance(
-            config, "attachment_rank_tolerance"))
+            config, "attachment_rank_tolerance"),
+        covariance=matrix(action.declaration.covariance))
     truncation_read = action.holonomy_truncation()
     record = {
         "content": list(content),
@@ -3203,11 +3204,158 @@ def fingerprint_text(fingerprint):
         relabeling, refinement)
 
 
+def sheets_of(spacetime):
+    """The sheets of a complex as it stands, in the literal case of the sheet
+    convention (WP v18 §8, "Sheet convention (adopted)": k isomorphic copies
+    of a base complex, disjoint, the sheet number a superselection datum of
+    the complex): its connected components.
+
+    ``components`` lists the connected components, each as the ascending ids
+    of its vertices, in ascending order of their smallest vertex, and
+    ``count`` is their number. ``cells`` gives, per component, the number of
+    its cells of every degree from zero to the dimension. ``copies`` says
+    whether every component is a copy of the first under the correspondence
+    that sends the j-th smallest vertex of one to the j-th smallest vertex of
+    the other, the correspondence `build_host` labels the sheets by: the
+    cells of every degree are then the same sets of positions. The squared
+    lengths and the connection on corresponding edges are the separate read
+    of `SheetedSupport.certifyIsomorphism`."""
+    complex_ = cob.ChainComplex.fromSpacetime(spacetime)
+    dimension = int(complex_.dimension())
+    vertices = sorted(int(cell[0]) for cell in complex_.kSimplexVertices(0))
+    parent = {v: v for v in vertices}
+
+    def root(v):
+        while parent[v] != v:
+            parent[v] = parent[parent[v]]
+            v = parent[v]
+        return v
+
+    for a, b in complex_.kSimplexVertices(1):
+        low, high = sorted((root(int(a)), root(int(b))))
+        parent[high] = low
+    members = {}
+    for v in vertices:
+        members.setdefault(root(v), []).append(v)
+    components = [members[r] for r in sorted(members)]
+    sheet = {v: t for t, component in enumerate(components)
+             for v in component}
+    place = {v: j for component in components
+             for j, v in enumerate(component)}
+    shapes = [[set() for _ in range(dimension + 1)] for _ in components]
+    for degree in range(dimension + 1):
+        for cell in complex_.kSimplexVertices(degree):
+            cell = [int(v) for v in cell]
+            shapes[sheet[cell[0]]][degree].add(
+                tuple(sorted(place[v] for v in cell)))
+    return {"count": len(components),
+            "components": components,
+            "cells": [[len(cells) for cells in shape] for shape in shapes],
+            "copies": all(shape == shapes[0] for shape in shapes)}
+
+
+def sheet_occupations(spacetime, covariance, sheets, degree=1):
+    """n_t, the occupation every sheet of ``sheets`` (`sheets_of`) carries:
+    the trace of the covariance Gamma over the carrier's cells on that sheet
+    (WP v18 §7: tr Gamma = N, the number of occupied modes). The carrier's
+    cells are the degree-``degree`` cells of the complex in the chain
+    complex's order, which is the order of the modes of h_degree and so of
+    Gamma. Raises `ValueError` when the covariance is not a matrix over those
+    cells."""
+    cells = cob.ChainComplex.fromSpacetime(spacetime).kSimplexVertices(degree)
+    gamma = np.asarray(covariance, dtype=complex)
+    if gamma.shape != (len(cells), len(cells)):
+        raise ValueError(
+            "the covariance has shape %s and the carrier has %d cells of "
+            "degree %d" % (gamma.shape, len(cells), degree))
+    sheet = {v: t for t, component in enumerate(sheets["components"])
+             for v in component}
+    occupations = [0j] * sheets["count"]
+    for index, cell in enumerate(cells):
+        occupations[sheet[int(cell[0])]] += gamma[index, index]
+    return occupations
+
+
+def sheet_count_evidence(spacetime):
+    """The evidence "three-sheeted-support" of quark condition 2 (WP v18 §10:
+    the colour-spin fibre is on a three-sheeted support), measured on the
+    complex (`sheets_of`): it holds when the complex has `SHEETS` connected
+    components and they are copies of one base complex. The detail carries
+    the measured number of components and the cells of each."""
+    sheets = sheets_of(spacetime)
+    held = sheets["count"] == SHEETS and sheets["copies"]
+    degrees = len(sheets["cells"][0]) - 1
+    if sheets["copies"]:
+        detail = ("sheet number %d: the connected components of the complex, "
+                  "copies of one base complex of %s cells of degrees 0 to %d "
+                  "under the ascending correspondence of their vertices"
+                  % (sheets["count"], sheets["cells"][0], degrees))
+    else:
+        detail = ("%d connected components that are not copies of one base "
+                  "complex under the ascending correspondence of their "
+                  "vertices: cells of degrees 0 to %d per component %s"
+                  % (sheets["count"], degrees, sheets["cells"]))
+    return obs.QuarkConditionEvidence("three-sheeted-support", held, detail)
+
+
+def occupation_parity_evidence(spacetime, covariance,
+                               tolerance=DECLARED_CERTIFICATE_TOLERANCE):
+    """The evidence "odd-occupation-parity" of quark condition 4 (WP v18 §10:
+    a quark is a single occupied mode of its fibre, so its occupation parity
+    is odd; §12: a baryon carried by one three-sheeted cluster has one
+    occupied mode per sheet), measured on the solved state: the occupation
+    of every sheet is the trace of the covariance on that sheet's modes
+    (`sheet_occupations`), and its parity is that of the integer it is
+    within ``tolerance`` of. The evidence holds when every sheet's
+    occupation is an odd integer. The detail carries the occupations, their
+    sum tr Gamma and, for a sheet whose occupation is not an integer at the
+    tolerance, its distance from the nearest one. Without a covariance, or
+    with one that is not over the carrier's cells, the evidence is not
+    evaluable and says why."""
+    name = "odd-occupation-parity"
+    E = obs.QuarkConditionEvidence
+    if covariance is None:
+        return E(name, None, "the covariance of the solved state was not "
+                             "handed to the read")
+    sheets = sheets_of(spacetime)
+    try:
+        occupations = sheet_occupations(spacetime, covariance, sheets)
+    except ValueError as error:
+        return E(name, None, str(error))
+
+    def number(n):
+        return ("%.16g" % n.real if n.imag == 0.0
+                else "%.16g%+.3gi" % (n.real, n.imag))
+
+    held, parities = True, []
+    for n in occupations:
+        if not (math.isfinite(n.real) and math.isfinite(n.imag)):
+            held = False
+            parities.append("%s is not a number" % number(n))
+            continue
+        nearest = int(round(n.real))
+        distance = abs(n - nearest)
+        if distance > tolerance:
+            held = False
+            parities.append("%s is %.3g from the integer %d, above the "
+                            "tolerance %.3g"
+                            % (number(n), distance, nearest, tolerance))
+            continue
+        held = held and nearest % 2 == 1
+        parities.append("(-1)^%d" % nearest)
+    detail = ("occupation per sheet %s (the trace of the covariance on each "
+              "sheet's modes), tr Gamma = %s; parity per sheet %s"
+              % ([number(n) for n in occupations],
+                 number(sum(occupations, 0j)), parities))
+    return E(name, held, detail)
+
+
 def quark_conditions(spacetime, alignments, recursion, symmetry_residual,
                      report, anchor=None, fingerprint=None,
                      tolerance=DECLARED_CERTIFICATE_TOLERANCE,
                      fibre_lift_tolerance=DECLARED_TOLERANCE,
-                     attachment_rank_tolerance=DECLARED_TOLERANCE):
+                     attachment_rank_tolerance=DECLARED_TOLERANCE,
+                     covariance=None):
     """The seven v16 quark conditions by name (`QuarkConditions`), from what a
     single-level synthesis measures: condition 3 from the anchor atlas read
     (`anchor_evidence`) and condition 7 from the spectral fingerprint read
@@ -3216,7 +3364,12 @@ def quark_conditions(spacetime, alignments, recursion, symmetry_residual,
     sector; every sheet must carry them. Anything that needs several
     cobordism frames is left unmeasured and so reads "not evaluable", and so
     does every piece of evidence read from the recursion's completed turn
-    when the recursion refused to take one (`recursion_read`). The
+    when the recursion refused to take one (`recursion_read`). The number of
+    sheets of condition 2 is measured on the complex (`sheet_count_evidence`)
+    and the occupation parity of condition 4 on ``covariance``, the
+    covariance of the solved state as a matrix over the carrier's cells
+    (`occupation_parity_evidence`); without it that evidence is not
+    evaluable. The
     certificates are graded at ``tolerance``; the fibre lift holds when
     ``symmetry_residual`` is at or below ``fibre_lift_tolerance``, and the
     sheet-to-sheet attachment has full rank when its smallest singular value
@@ -3264,7 +3417,7 @@ def quark_conditions(spacetime, alignments, recursion, symmetry_residual,
                                 for n in recursion["transport_norms"]),
                     lambda: "inter-component transport norms %s"
                     % recursion["transport_norms"])],
-        [E("three-sheeted-support", True, "%d sheets" % SHEETS),
+        [sheet_count_evidence(spacetime),
          E("sheet-isomorphism", bool(isomorphism.isomorphic),
            "length residual %.3g, connection residual %.3g"
            % (isomorphism.squared_length_residual,
@@ -3286,8 +3439,7 @@ def quark_conditions(spacetime, alignments, recursion, symmetry_residual,
            "block-scalar on each doublet times the sheets to relative "
            "residual %.3g" % symmetry_residual)],
         anchor_evidence(anchor),
-        [E("odd-occupation-parity", True,
-           "one occupied mode of the fibre per quark: parity (-1)^1")],
+        [occupation_parity_evidence(spacetime, covariance, tolerance)],
         [E("color-transport-full-rank",
            bool(attachment.certificate.holds()),
            "det S = %s (sheet-to-sheet attachment)"
