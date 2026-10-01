@@ -449,6 +449,29 @@ class TheMultipliersImposeTheMomentEquationTest(unittest.TestCase):
             cob.SpectralMomentConstraint(1, target, 0j)]
         return cob.JointAction(spacetime, declaration)
 
+    def test_a_drive_solves_the_constrained_system_with_its_least_squares_multiplier(
+            self):
+        """The drive of the constrained system from the geometry scaled by
+        1.08: the multiplier of a constraint declared on the action is the
+        least-squares one at every point (`cell_solve.GeometricSystem`),
+        which here is ``xi = -w_M = -1`` exactly, since the length equations
+        are ``(w_M + xi) d p_1/d z``. Five accepted updates take the residual
+        norm from 30.4 to exactly zero, and the moment holds exactly."""
+        reference = sphere3(squared=_metric)
+        target = self._constrained(reference, 0j).power_sums()[0]
+        spacetime = sphere3(squared=lambda index: _metric(index) * 1.08)
+        action = self._constrained(spacetime, target)
+        record = cs.relax(
+            spacetime, action.declaration,
+            geometry=_relaxation(relax_lengths=True, relax_multipliers=True))
+        self.assertEqual(record["stop_reason"], cs.STOP_STATIONARY)
+        self.assertEqual(record["accepted_updates"], 5)
+        self.assertAlmostEqual(record["trace"][0], 30.40, places=2)
+        self.assertEqual(record["trace"][-1], 0.0)
+        end = record["point"].relaxation.action
+        self.assertEqual(list(end.multipliers()), [-1.0 + 0j])
+        self.assertEqual(list(end.moment_residuals()), [0j])
+
     def test_the_stationary_point_has_the_target_moment_and_the_forced_multiplier(
             self):
         """The stationary point has p_1(h) = p_1* and xi at the value the

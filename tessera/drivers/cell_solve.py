@@ -88,14 +88,19 @@ class DeclaredLimitReached(Exception):
     """A limit the user declared on a drive was reached."""
 
 #: One point of a system: the `HolomorphicRelaxation` posed on the sheeted
-#: support of a base complex, the number of base edges (its squared-length
-#: coordinates and its link coordinates, in the base complex's
-#: `getEdgeList()` order), which fields are relaxed, the sheeted support
-#: itself, the geometry declaration the system was posed with, and, for a
-#: self-consistent system, the mean-field declaration and the reference
-#: bands the point's bands are followed from (None otherwise).
+#: support of a base complex; the number of its squared-length coordinates,
+#: which is also the number of its link coordinates; which fields are
+#: relaxed; the sheeted support itself; the geometry declaration the system
+#: was posed with; for a self-consistent system, the mean-field declaration
+#: and the reference bands the point's bands are followed from (None
+#: otherwise); and, for every edge of the base complex in `getEdgeList()`
+#: order, the coordinate it carries and the orientation of its stored link
+#: relative to the coordinate's. On a sheeted support every base edge is its
+#: own coordinate; on one sheet the coordinates are the declared edge
+#: classes, when the geometry declares any.
 Point = namedtuple("Point", "relaxation count lengths links support "
-                            "geometry mean_field reference")
+                            "geometry mean_field reference classes "
+                            "orientations")
 
 #: The sheeted support of a base complex (`sheeted_support`): the complex,
 #: the number of base vertices, the base vertices in ascending order (base
@@ -295,9 +300,18 @@ def covariance_of(bands):
 
 def _point(relaxation, geometry, base, support, mean_field=None,
            reference=None):
-    return Point(relaxation, len(edge_fields(base)),
+    edges = len(edge_fields(base))
+    classes = list(range(edges))
+    orientations = [1] * edges
+    if support.sheets == 1 and len(geometry.edge_classes):
+        # one sheet with declared classes: the base edges share coordinates
+        classes = [int(index) for index in geometry.edge_classes]
+        declared = [int(sign) for sign in geometry.edge_class_orientations]
+        orientations = declared if declared else orientations
+    return Point(relaxation, 1 + max(classes) if classes else 0,
                  bool(geometry.relax_lengths), bool(geometry.relax_links),
-                 support, geometry, mean_field, reference)
+                 support, geometry, mean_field, reference, classes,
+                 orientations)
 
 
 def series_step(point, linearization, order):
@@ -616,18 +630,23 @@ class StationarityObjective(cob.CobordismObjective):
             step = np.asarray(self._series(point, linearization,
                                            self.direction_order),
                               dtype=complex)
+        classes = np.asarray(point.classes, dtype=int)
+        signs = np.asarray(point.orientations, dtype=float)
         out = cob.ObjectiveDirection()
         offset = 0
         # stage 2 subtracts the direction: z - a, phi - a_phi. The step moves
         # z by its length block and multiplies each link by exp(delta) on the
-        # base edge's stored orientation, that is phi by -i delta there.
+        # coordinate's orientation, that is phi by -i delta there, and every
+        # edge of the base complex takes the step of the coordinate it
+        # carries.
         if point.lengths:
-            out.ascent = -step[:point.count]
+            out.ascent = -step[:point.count][classes]
             offset = point.count
         else:
-            out.ascent = np.zeros(point.count, dtype=complex)
+            out.ascent = np.zeros(len(classes), dtype=complex)
         if point.links:
-            out.phase_ascent = 1j * step[offset:offset + point.count]
+            out.phase_ascent = 1j * signs * step[offset:offset
+                                                 + point.count][classes]
         out.baseline = float(newton.residual_norm)
         out.baseline_computed = True
         self.updates.append({
@@ -665,7 +684,7 @@ class StationarityObjective(cob.CobordismObjective):
         if weight == 0.0 or not point.lengths:
             return [], []
         spacetime = context.spacetime
-        edges = point.count
+        edges = len(point.classes)
         hodge = cob.HodgeLaplacian(spacetime)
         coefficients = list(context.moment_stiffness_coefficients)
         gradient = np.zeros(edges, dtype=complex)
@@ -683,13 +702,17 @@ class StationarityObjective(cob.CobordismObjective):
                 hessian[:, column] += weight * np.asarray(
                     hodge.spectralMomentStiffnessHessianProduct(
                         degree, reference, coefficients, unit))
+        # the equation of a coordinate is the sum of its edges' equations,
+        # and the coordinate moves every edge that carries it
+        expansion = np.zeros((edges, point.count))
+        expansion[np.arange(edges), np.asarray(point.classes, dtype=int)] = 1.0
         size = point.relaxation.variable_count()
         residual = np.zeros(size, dtype=complex)
-        residual[:edges] = gradient
+        residual[:point.count] = expansion.T @ gradient
         if not jacobian:
             return list(residual), []
         matrix = np.zeros((size, size), dtype=complex)
-        matrix[:edges, :edges] = hessian
+        matrix[:point.count, :point.count] = expansion.T @ hessian @ expansion
         return list(residual), list(matrix.reshape(-1))
 
 

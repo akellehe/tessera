@@ -906,7 +906,8 @@ def test_the_declarations_carry_the_config():
     assert "mean_field_iterations" not in config
     for key, _, _ in bp.LIMITS:
         assert config[key] is None
-    assert geometry.tolerance == bp.DECLARED_TOLERANCE == 1e-15
+    assert bp.solve_arguments(config)["tolerance"] == \
+        bp.DECLARED_TOLERANCE == 1e-15
     assert geometry.rank_tolerance == bp.DECLARED_TOLERANCE
     assert "jacobian_radius" not in config
     mean_field = bp.mean_field_declaration((2, 1, 0), config)

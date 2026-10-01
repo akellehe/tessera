@@ -322,10 +322,11 @@ def test_the_unit_of_the_power_sums_changes_no_solution():
     3 lambda + sum_j xi_j 3 lambda^j, whose length equations need
     sum_j j xi_j lambda^(j - 1) = -1. The three constraints are dependent,
     so the multipliers are not unique: in each unit they are that unit's
-    least-squares ones, and they differ between the two. Each drive
-    converges in six accepted updates to a solution of the same equations:
-    the pin holds and the multipliers, in the operator's own unit, satisfy
-    the same condition."""
+    least-squares ones, and they differ between the two. The drive
+    converges in five accepted updates in the fiber's unit and in six in
+    the operator's own, to a solution of the same equations: the pin holds
+    and the multipliers, in the operator's own unit, satisfy the same
+    condition."""
     _, _, _, read = _host(FIRST_CELL, (0, 3, 0))
     (band,) = read.bands
     pinned = band.eigenvalues[0]
@@ -334,7 +335,7 @@ def test_the_unit_of_the_power_sums_changes_no_solution():
         config = _config(FIRST_CELL, (0, 3, 0), "r")
         report, drive = _relax(config, (0, 3, 0), 3, scale)
         assert report.converged
-        assert drive["accepted_updates"] == 6
+        assert drive["accepted_updates"] == (5 if scale == 0.0 else 6)
         assert drive["moves_committed"] == 0
         assert report.moment_scale == pytest.approx(
             abs(pinned) if scale == 0.0 else 1.0, rel=1e-12)

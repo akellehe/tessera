@@ -191,6 +191,17 @@ def test_the_objective_is_the_norm_of_the_residual():
     assert objective.scored >= 1 and objective.undefined == []
 
 
+def test_the_pinned_fiber_holds_its_host_values_exactly():
+    """The targets of the pinned constraints are the host's values, carried
+    in the unit they are solved in, so at the host every constraint equation
+    is exactly zero: one equation for (0, 0, 3), three for (1, 1, 1)."""
+    for content, constraints in (((0, 0, 3), 1), ((1, 1, 1), 3)):
+        base, _, system = _content_system(content)
+        residual = np.asarray(system.point(base).relaxation.residual())
+        assert len(residual) == 12 + constraints
+        assert list(residual[12:]) == [0j] * constraints
+
+
 def test_the_direction_is_the_order_one_step_on_the_base_edges():
     """The direction handed to stage 2 is the step d of the linearization,
     J d = -R on the range of J, in the engine's conventions: stage 2
