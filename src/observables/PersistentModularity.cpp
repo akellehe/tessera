@@ -180,6 +180,8 @@ struct PersistentModularity::RunResult {
   // The aggregation levels whose sweeps ended at a partition a pass of the
   // level had already ended in, and not at a pass that moved no node.
   std::size_t sweepRecurrences = 0;
+  // The aggregation levels whose sweeps ended at the count the user declared.
+  std::size_t sweepLimitStops = 0;
 };
 
 // ───────────────────────── construction ─────────────────────────────────
@@ -882,7 +884,11 @@ PersistentModularity::RunResult PersistentModularity::runOnce(
       };
       std::set<std::vector<std::uint32_t>> visited;
       visited.insert(partition());
-      for (;;) {
+      for (int pass = 0;; ++pass) {
+        if (cfg.sweepLimit && pass >= *cfg.sweepLimit) {
+          ++out.sweepLimitStops;
+          break;
+        }
         bool movedThisPass = false;
         for (const std::uint32_t v : visit) {
           const std::uint32_t a = comm[v];
@@ -1170,6 +1176,7 @@ ResolutionSlice PersistentModularity::buildSlice(
   slice.objective = winner.objectiveUsed;
   slice.levels = winner.levelAssign.size();
   slice.sweepRecurrences = winner.sweepRecurrences;
+  slice.sweepLimitStops = winner.sweepLimitStops;
   slice.restarts = std::move(restarts);
   double qMin = std::numeric_limits<double>::infinity();
   double qMax = -std::numeric_limits<double>::infinity();

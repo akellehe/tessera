@@ -638,6 +638,11 @@ partition, while maximizing |Q| finds it.)doc")
       .def_readwrite("restarts", &PersistentModularityConfig::restarts,
                      "Deterministic restarts per resolution; best exact "
                      "score kept, spread reported.")
+      .def_readwrite("sweepLimit", &PersistentModularityConfig::sweepLimit,
+                     "The number of local-move sweeps of one aggregation "
+                     "level after which they stop, when the user declares "
+                     "one; None by default, and then the sweeps run to "
+                     "their own end.")
       .def_readwrite("overlapThreshold",
                      &PersistentModularityConfig::overlapThreshold,
                      "Minimum support overlap for a persistence track to "
@@ -703,6 +708,10 @@ search maximized; ``objective`` says which functional that was.)doc")
                     "ended at a partition an earlier pass had ended in (the "
                     "gains around the cycle were rounding), and not at a "
                     "pass that moved no node.")
+      .def_readonly("sweepLimitStops", &ResolutionSlice::sweepLimitStops,
+                    "Aggregation levels of the winning run whose sweeps "
+                    "ended at the count the user declared (sweepLimit); "
+                    "zero when none is declared.")
       .def_readonly("components", &ResolutionSlice::components,
                     "Final-level components, ordered by canonical hash.")
       .def_readonly("hierarchy", &ResolutionSlice::hierarchy,

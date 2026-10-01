@@ -341,9 +341,24 @@ class TestSweepsRunToAFixedPoint(unittest.TestCase):
     such a cycle sum to zero exactly, so each was rounding); the slice reports
     how many levels of the winning run ended the second way."""
 
-    def test_the_configuration_carries_no_sweep_count(self):
-        self.assertFalse(hasattr(tessera.PersistentModularityConfig(),
-                                 "maxSweepsPerLevel"))
+    def test_no_sweep_count_is_declared_unless_the_user_declares_one(self):
+        cfg = tessera.PersistentModularityConfig()
+        self.assertFalse(hasattr(cfg, "maxSweepsPerLevel"))
+        self.assertIsNone(cfg.sweepLimit)
+
+    def test_a_declared_sweep_count_ends_the_sweeps_and_is_reported(self):
+        # no sweep at all: every level ends at the declared count, no node
+        # moves, and every node stays its own community
+        src, tgt = _planted_modular_two_k8()
+        g = PM.fromWeightedEdges(src, tgt, [1.0] * len(src))
+        free = g.discover(1.0, _cfg())
+        self.assertEqual(free.sweepLimitStops, 0)
+        self.assertEqual(len(free.components), 2)
+        cfg = _cfg()
+        cfg.sweepLimit = 0
+        limited = g.discover(1.0, cfg)
+        self.assertGreaterEqual(limited.sweepLimitStops, 1)
+        self.assertEqual(len(limited.components), 16)
 
     def test_the_fixtures_reach_a_pass_without_a_move(self):
         fixtures = [_two_disconnected_k6(), _planted_modular_two_k8(),

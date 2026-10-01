@@ -160,6 +160,12 @@ struct PersistentModularityConfig {
   /// score is retained and the spread across restarts is reported; modularity
   /// maximization is NP-hard, so no claim of a global optimum is made.
   int restarts = 4;
+  /// The number of local-move sweeps of one aggregation level after which the
+  /// level's sweeps stop, when the user declares one. None by default: the
+  /// sweeps then run to their own end, a pass that moves no node or a
+  /// partition an earlier pass ended in. A declared count that is reached is
+  /// reported (`ResolutionSlice::sweepLimitStops`).
+  std::optional<int> sweepLimit{};
   /// Minimum support overlap (Jaccard) for a persistence track to continue
   /// across adjacent resolutions.
   double overlapThreshold = 0.5;
@@ -325,6 +331,10 @@ struct ResolutionSlice {
   /// run whose every level reached a pass without a move, and under
   /// LeadingEigenvector, which makes no sweeps.
   std::size_t sweepRecurrences = 0;
+  /// The number of aggregation levels of the winning run whose sweeps ended
+  /// at the count the user declared (`PersistentModularityConfig::sweepLimit`)
+  /// and not at their own end. Zero when no count is declared.
+  std::size_t sweepLimitStops = 0;
   /// Final-level components of the winning partition, ordered by canonical
   /// hash.
   std::vector<ComponentRead> components;
