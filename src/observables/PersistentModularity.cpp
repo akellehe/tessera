@@ -13,6 +13,7 @@
 #include <deque>
 #include <limits>
 #include <map>
+#include <set>
 #include <stdexcept>
 #include <unordered_map>
 #include <unordered_set>
@@ -176,6 +177,9 @@ struct PersistentModularity::RunResult {
   // levelHashes[k][c] = canonical hash of that community.
   std::vector<std::vector<std::string>> levelHashes;
   std::vector<std::string> sortedFinalHashes;  // equal-score tie-break key
+  // The aggregation levels whose sweeps ended at a partition a pass of the
+  // level had already ended in, and not at a pass that moved no node.
+  std::size_t sweepRecurrences = 0;
 };
 
 // ───────────────────────── construction ─────────────────────────────────
@@ -810,8 +814,11 @@ PersistentModularity::RunResult PersistentModularity::runOnce(
   }
 
   SeedStream levelSeeds(seed);
-  const int maxLevels = 200;  // termination safety; Q strictly increases
-  for (int level = 0; level < maxLevels; ++level) {
+  // The aggregation runs to its fixed point: a level at which no local move
+  // raises the score, or at which the moves merge no two nodes, ends it. A
+  // level that continues has strictly fewer nodes than the one before, so it
+  // ends.
+  for (int level = 0;; ++level) {
     const std::size_t n = g.n;
     // ── local-move sweeps with cached sufficient statistics ──────────────
     std::vector<std::uint32_t> comm(n);
@@ -857,7 +864,25 @@ PersistentModularity::RunResult PersistentModularity::runOnce(
     std::vector<std::uint32_t> touched;
     bool movedAtLevel = false;
     if (twoM > 0.0) {
-      for (int pass = 0; pass < cfg.maxSweepsPerLevel; ++pass) {
+      // Local-move sweeps to a fixed point. A pass that moves no node ends
+      // them. So does a pass that ends in a partition an earlier pass of the
+      // level ended in: the score is a function of the partition, so the
+      // gains accepted since that partition was left sum to zero exactly,
+      // and each was positive only in rounding. The partitions of a finite
+      // graph are finite, so one of the two happens.
+      const auto partition = [&]() {
+        std::vector<std::uint32_t> first(S.size(), 0xFFFFFFFFu);
+        std::vector<std::uint32_t> labels(n);
+        std::uint32_t next = 0;
+        for (std::size_t i = 0; i < n; ++i) {
+          if (first[comm[i]] == 0xFFFFFFFFu) first[comm[i]] = next++;
+          labels[i] = first[comm[i]];
+        }
+        return labels;
+      };
+      std::set<std::vector<std::uint32_t>> visited;
+      visited.insert(partition());
+      for (;;) {
         bool movedThisPass = false;
         for (const std::uint32_t v : visit) {
           const std::uint32_t a = comm[v];
@@ -976,6 +1001,10 @@ PersistentModularity::RunResult PersistentModularity::runOnce(
           for (const std::uint32_t c : touched) wTo[c] = zero;
         }
         if (!movedThisPass) break;
+        if (!visited.insert(partition()).second) {
+          ++out.sweepRecurrences;
+          break;
+        }
       }
     }
 
@@ -1140,6 +1169,7 @@ ResolutionSlice PersistentModularity::buildSlice(
   slice.objectiveValue = winner.objective;
   slice.objective = winner.objectiveUsed;
   slice.levels = winner.levelAssign.size();
+  slice.sweepRecurrences = winner.sweepRecurrences;
   slice.restarts = std::move(restarts);
   double qMin = std::numeric_limits<double>::infinity();
   double qMax = -std::numeric_limits<double>::infinity();
