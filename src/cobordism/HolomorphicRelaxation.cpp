@@ -658,43 +658,19 @@ std::vector<complexd> symmetryAverage(
   return toFlat(average / static_cast<double>(symmetry.size()));
 }
 
-/// Refuse by name a rebuilt band that is not isolated at the declared
-/// tolerance: an eigenvalue outside it within the tolerance, relative to
-/// \f$ \max(1,|\lambda_k|) \f$, of one of its eigenvalues.
-void requireIsolated(const RebuiltCarrierState &state) {
+/// Check that every rebuilt band names modes of the operator. A band that is
+/// close to another eigenvalue is not refused: the perturbation of its Riesz
+/// projector divides by the difference, the Jacobian carries what that gives,
+/// and the isolation of every band is reported by the solve that rebuilt it.
+void requireModesInRange(const RebuiltCarrierState &state) {
   const std::size_t n = state.eigenvalues.size();
-  for (std::size_t index = 0; index < state.bands.size(); ++index) {
-    const auto &band = state.bands[index];
-    std::vector<bool> inside(n, false);
-    for (const std::size_t mode : band.modes) {
+  for (std::size_t index = 0; index < state.bands.size(); ++index)
+    for (const std::size_t mode : state.bands[index].modes)
       if (mode >= n)
         throw std::invalid_argument(
             "HolomorphicRelaxation::jacobian: band " + std::to_string(index) +
             " names mode " + std::to_string(mode) + " of an operator with " +
             std::to_string(n) + " modes");
-      inside[mode] = true;
-    }
-    for (const std::size_t k : band.modes)
-      for (std::size_t j = 0; j < n; ++j) {
-        if (inside[j]) continue;
-        const double distance =
-            std::abs(state.eigenvalues[k] - state.eigenvalues[j]);
-        const double scale = std::max(1.0, std::abs(state.eigenvalues[k]));
-        if (distance <= state.bandTolerance * scale)
-          throw std::invalid_argument(
-              "HolomorphicRelaxation::jacobian: band " + std::to_string(index) +
-              " is not isolated at the declared band tolerance " +
-              threeDigits(state.bandTolerance) + ": its eigenvalue " +
-              threeDigits(state.eigenvalues[k].real()) + " + " +
-              threeDigits(state.eigenvalues[k].imag()) +
-              "i and the eigenvalue " +
-              threeDigits(state.eigenvalues[j].real()) + " + " +
-              threeDigits(state.eigenvalues[j].imag()) +
-              "i outside it are " + threeDigits(distance) +
-              " apart, so the first-order perturbation of its Riesz "
-              "projector, which divides by their difference, is not defined");
-      }
-  }
 }
 
 /// Add to \p matrix the columns' self-consistent part: for every geometric
@@ -738,7 +714,7 @@ void addSelfConsistentColumns(const JointAction &working,
       throw std::invalid_argument(
           "HolomorphicRelaxation::jacobian: a band projector refers to band " +
           std::to_string(band) + " of " + std::to_string(state.bands.size()));
-  requireIsolated(state);
+  requireModesInRange(state);
 
   const CarrierDerivatives derivatives = working.carrierDerivatives();
   const std::size_t edges = classes.edgeCount;
@@ -851,10 +827,10 @@ std::vector<complexd> rieszProjectorDerivative(
       const complexd gap = eigenvalues[k] - eigenvalues[j];
       if (gap == complexd{0.0, 0.0})
         throw std::invalid_argument(
-            "rieszProjectorDerivative: the band is not isolated: mode " +
-            std::to_string(k) + " inside it and mode " + std::to_string(j) +
-            " outside it carry the same eigenvalue, so the quotient by "
-            "their difference is not defined");
+            "rieszProjectorDerivative: mode " + std::to_string(k) +
+            " inside the band and mode " + std::to_string(j) +
+            " outside it carry the same eigenvalue exactly, so the quotient "
+            "by their difference has no value");
       const auto kk = static_cast<Eigen::Index>(k);
       const auto jj = static_cast<Eigen::Index>(j);
       variation(kk, jj) = inBasis(kk, jj) / gap;

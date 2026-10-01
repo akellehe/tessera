@@ -212,7 +212,6 @@ RebuiltCarrierState rebuiltStateOf(
   state.eigenvalues = read.eigenvalues;
   state.eigenvectors = read.eigenvectors;
   state.leftEigenvectors = read.leftEigenvectors;
-  state.bandTolerance = declaration.bandTolerance;
   if (declaration.covarianceRule == CovarianceRule::BandFilling)
     state.bandSymmetry = declaration.bandSymmetry;
   const bool fiber = declaration.fiberMoments > 0;

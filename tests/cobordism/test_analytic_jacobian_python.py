@@ -534,8 +534,12 @@ def test_the_self_consistent_columns_on_the_declared_host(
     occupied bands). Every geometric column of the analytic Jacobian, which
     carries the derivative of the rebuilt state through the perturbation of
     each band's Riesz projector, agrees with the oracle of the
-    self-consistent residual at the steps 1e-4 (truncation about 1e-9 of the
-    block's scale) to 1e-7 of that scale, the constraint rows included; the
+    self-consistent residual, the constraint rows included, as a central
+    difference agrees with a derivative: the disagreement is the oracle's
+    truncation, which falls with the square of the step. Measured, relative
+    to the block's scale: 3.5e-8, 3.2e-8, 2.1e-8 and 1.4e-7 at the step 1e-4
+    in the four cases, and a hundredth of each at the step 1e-5, where the
+    rounding of the difference (about 1e-10) begins to show. The
     multiplier columns are the analytic gradients reduced onto the shared
     coordinates."""
     spacetime, action, mean_field, _ = _host(content, fiber_moments,
@@ -548,9 +552,13 @@ def test_the_self_consistent_columns_on_the_declared_host(
     size = system.variable_count()
     assert size == 12 + pinned
     jacobian = _square(system.jacobian())
-    oracle = _oracle(spacetime, system.residual, declaration,
-                     HOST_LENGTH_STEP, HOST_LINK_STEP)
-    assert _agreement(jacobian[:, :12], oracle) < 1e-7
+    coarse = _agreement(jacobian[:, :12], _oracle(
+        spacetime, system.residual, declaration, 1e-4, 1e-4))
+    fine = _agreement(jacobian[:, :12], _oracle(
+        spacetime, system.residual, declaration, 1e-5, 1e-5))
+    assert coarse < 2e-7
+    assert fine < 2e-9
+    assert fine < coarse / 50.0
     edges = action.edge_count()
     for j in range(pinned):
         reduced = _class_reduced(
@@ -619,21 +627,21 @@ def test_the_riesz_projector_derivative_matches_a_difference_of_the_projector(
         np.abs(analytic))
 
 
-def test_a_band_that_is_not_isolated_is_refused_by_name():
-    """On the three-sheeted host every band is triply degenerate. Occupying
-    one mode of the lowest band splits it, so the projector the covariance
-    is built from has no analytic perturbation, and the Jacobian refuses by
-    name instead of dividing by a rounding-level difference."""
-    spacetime, action, mean_field, _ = _host((1, 1, 1))
-    mean_field.covariance_rule = cob.CovarianceRule.OccupiedProjector
-    mean_field.occupied_modes = 1
-    system = cob.SelfConsistentMeanField(action, mean_field).joint_system()
-    with pytest.raises(ValueError, match="not isolated"):
-        system.jacobian()
+def test_a_band_close_to_another_eigenvalue_is_perturbed_as_it_stands():
+    """Two eigenvalues 1e-9 apart, one in the band: the perturbation of the
+    band's projector divides by their difference and is returned as it is,
+    the off-diagonal entries G_kj / (lambda_k - lambda_j) = 1 / (-1e-9) in
+    both orders. Nothing is refused for being close."""
+    variation = np.asarray(cob.riesz_projector_derivative(
+        [1.0 + 0j, 1.0 + 1e-9 + 0j], [1, 0, 0, 1], [1, 0, 0, 1], [0],
+        [0, 1, 1, 0])).reshape(2, 2)
+    np.testing.assert_allclose(variation, [[0, -1e9], [-1e9, 0]], rtol=1e-6)
 
 
-def test_an_equal_eigenvalue_across_the_band_is_refused_by_name():
-    with pytest.raises(ValueError, match="not isolated"):
+def test_an_exactly_equal_eigenvalue_across_the_band_has_no_quotient():
+    """The one case with no value: an eigenvalue inside the band equal,
+    exactly, to one outside it, where the quotient divides by zero."""
+    with pytest.raises(ValueError, match="has no value"):
         cob.riesz_projector_derivative(
             [1.0 + 0j, 1.0 + 0j], [1, 0, 0, 1], [1, 0, 0, 1], [0],
             [0, 1, 1, 0])

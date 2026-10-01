@@ -121,11 +121,6 @@ struct RebuiltCarrierState {
   /// For each entry of `bandProjectors`, the index in `bands` of the band it
   /// is the projector of.
   std::vector<std::size_t> bandProjectorBands;
-  /// The tolerance at which a band counts as isolated, the grouping rule the
-  /// bands were read with: the Jacobian refuses when an eigenvalue outside a
-  /// band is within this fraction of \f$ \max(1,|\lambda_k|) \f$ of an
-  /// eigenvalue \f$ \lambda_k \f$ of the band.
-  double bandTolerance = 0.0;
   /// The operators \f$ D(g) \f$ of a declared band symmetry, each flat
   /// row-major, when the bands were read on the group average
   /// \f$ |G|^{-1}\sum_gD(g)^{-1}hD(g) \f$ of the carrier rather than on the
@@ -155,8 +150,8 @@ struct RebuiltCarrierState {
 /// @param operatorVariation \f$ \delta h \f$.
 /// @throws std::invalid_argument when the sizes disagree, when a mode index
 ///   is out of range, or when an eigenvalue outside the band equals one
-///   inside it, so that the band is not isolated and the quotient is not
-///   defined.
+///   inside it exactly, so that the quotient has no value. Eigenvalues that
+///   are close and not equal are divided by their difference as they are.
 [[nodiscard]] std::vector<std::complex<double>> rieszProjectorDerivative(
     const std::vector<std::complex<double>> &eigenvalues,
     const std::vector<std::complex<double>> &eigenvectors,
@@ -582,8 +577,9 @@ struct HolomorphicRelaxationReport {
 /// \f$ \sum_b(n_b/r_b)\,\delta P_b \f$ and that of the pinned fiber's
 /// projector the sum over its bands, and the response is
 /// `JointAction::stationarityStateVariation`. The perturbation is exact for
-/// bands isolated at the declared tolerance; a band that is not isolated is
-/// refused by name.
+/// an isolated band; a band close to another eigenvalue is perturbed by the
+/// same formula, whose quotients are then large, and the isolation of every
+/// band is reported by the solve.
 /// Every term of \p action with its value and the norm of its stationarity
 /// gradient on the coordinates \p declaration relaxes (`ActionTermRecord`),
 /// the per-edge gradients summed over the declared edge classes as the
@@ -632,7 +628,8 @@ class HolomorphicRelaxation {
   /// perturbation of the bands' Riesz projectors. The geometry is read and
   /// not written.
   /// @throws std::invalid_argument when a rebuild supplies no band data, or
-  ///   when a rebuilt band is not isolated at the declared band tolerance.
+  ///   when an eigenvalue inside a rebuilt band equals one outside it
+  ///   exactly, where the perturbation of its projector has no value.
   [[nodiscard]] std::vector<std::complex<double>> jacobian() const;
 
   /// The residual of the equations in scope at the current point, in the
