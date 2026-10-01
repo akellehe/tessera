@@ -319,6 +319,35 @@ def series_step(point, linearization, order):
                                             dtype=complex)))))
 
 
+def least_squares_multipliers(action, geometry):
+    """The multipliers of the constraints an action declares that leave the
+    least of the stationarity equations they enter: those equations are
+    linear in the multipliers, R = R_0 + G xi, so xi is the minimum-norm
+    least-squares solution of G xi = -R_0, the singular values of G at or
+    below the declared rank tolerance times the largest counted as zero. It
+    is the rule `SelfConsistentMeanField.joint_system` installs the pinned
+    fiber's multipliers by."""
+    count = int(action.constraint_count())
+
+    def geometric(multipliers):
+        action.set_multipliers(list(multipliers))
+        residual = np.asarray(
+            cob.HolomorphicRelaxation(action, geometry).residual(),
+            dtype=complex)
+        return residual[:len(residual) - count]
+
+    zero = geometric([0j] * count)
+    gradients = np.stack(
+        [geometric([1.0 + 0j if k == j else 0j for k in range(count)]) - zero
+         for j in range(count)], axis=1)
+    left, singular, right = np.linalg.svd(gradients, full_matrices=False)
+    rank = (int(np.sum(singular > geometry.rank_tolerance * singular[0]))
+            if len(singular) and singular[0] > 0.0 else 0)
+    estimate = -(right[:rank].conj().T
+                 @ ((left[:, :rank].conj().T @ zero) / singular[:rank]))
+    return [complex(x) for x in estimate]
+
+
 class GeometricSystem:
     """The stationarity system of the joint action at the carried state the
     action declares, on the sheeted support of any base complex.
@@ -327,7 +356,9 @@ class GeometricSystem:
     support's complex; ``geometry_of(support)`` returns a new
     `HolomorphicRelaxationDeclaration` for a `Sheeted` support (the relaxed
     fields, the support's edge classes and orientations, the held sectors on
-    its sheets)."""
+    its sheets). When the declaration relaxes the multipliers of constraints
+    the action declares, they are the least-squares ones at every point
+    (`least_squares_multipliers`), as a content's are."""
 
     def __init__(self, declare, geometry_of, sheets):
         self._declare = declare
@@ -339,6 +370,9 @@ class GeometricSystem:
         geometry = self._geometry_of(support)
         action = cob.JointAction(support.spacetime,
                                  self._declare(support.spacetime))
+        if geometry.relax_multipliers and action.constraint_count() > 0:
+            action.set_multipliers(least_squares_multipliers(action,
+                                                             geometry))
         return _point(cob.HolomorphicRelaxation(action, geometry), geometry,
                       base, support)
 
@@ -387,15 +421,15 @@ class ContentSystem:
         field, action, support = self._field(host)
         start = field.iterate()
         declared = self._mean_field_of(support)
-        if declared.fiber_moments and not len(declared.fiber_moment_targets):
+        if (declared.fiber_moments
+                and not len(declared.fiber_moment_targets)
+                and not len(declared.fiber_moment_unit_targets)):
             pinned = field.joint_system().action.declaration
             self._scale = float(pinned.moment_scale)
-            # the targets in the operator's own unit, as they are declared
-            self._targets = [
-                complex(constraint.target) * self._scale ** (
-                    constraint.order if constraint.form
-                    == cob.SpectralConstraintForm.PowerSum else 1)
-                for constraint in pinned.moment_constraints]
+            # the targets as the constraints carry them, in the unit they
+            # are solved in
+            self._targets = [complex(constraint.target)
+                             for constraint in pinned.moment_constraints]
         self.reference_cells = support_cells(
             support, action.declaration.carrier_degree)
         self.reference = references_of(start.bands)
@@ -406,7 +440,7 @@ class ContentSystem:
         host's targets in the host's unit."""
         declaration = self._mean_field_of(support)
         if self._targets is not None:
-            declaration.fiber_moment_targets = list(self._targets)
+            declaration.fiber_moment_unit_targets = list(self._targets)
             declaration.fiber_moment_scale = self._scale
         return declaration
 

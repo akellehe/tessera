@@ -175,6 +175,15 @@ struct SelfConsistentMeanFieldDeclaration {
   /// carrier as it was declared.
   std::vector<std::complex<double>> fiberMomentTargets;
 
+  /// The targets of the pinned constraints in the unit they are solved in
+  /// (\f$ p_j(h_{\mathcal C}/s) \f$ with \f$ s \f$ the declared
+  /// `fiberMomentScale`, or the band eigenvalue over \f$ s \f$), one per
+  /// constraint. Empty by default. When given they are the constraints'
+  /// targets as they stand, with no conversion, and `fiberMomentTargets` must
+  /// be empty: this is how targets read on one complex are carried to
+  /// another without a round trip through the operator's unit.
+  std::vector<std::complex<double>> fiberMomentUnitTargets;
+
   /// The unit \f$ s \f$ the pinned power sums are solved in
   /// (`JointActionDeclaration::momentScale`): the constraints are
   /// \f$ p_j(h_{\mathcal C}/s)=p_j^{\star}s^{-j} \f$, the same constraints,

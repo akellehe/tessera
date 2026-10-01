@@ -5304,6 +5304,12 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      "operator's own unit; empty (the default) takes the "
                      "fiber's own values at the starting point, which pins "
                      "the carrier as declared.")
+      .def_readwrite("fiber_moment_unit_targets",
+                     &SelfConsistentMeanFieldDeclaration::fiberMomentUnitTargets,
+                     "The targets of the pinned constraints in the unit they "
+                     "are solved in, one per constraint, used as they stand; "
+                     "empty by default. They need fiber_moment_scale and "
+                     "exclude fiber_moment_targets.")
       .def_readwrite("fiber_moment_scale",
                      &SelfConsistentMeanFieldDeclaration::fiberMomentScale,
                      "The unit s the pinned power sums are solved in, "

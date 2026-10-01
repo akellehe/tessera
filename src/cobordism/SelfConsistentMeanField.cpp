@@ -300,6 +300,15 @@ std::size_t installFiberMoments(
         std::to_string(declaration.fiberMomentTargets.size()) +
         " fiber moment targets were declared for " +
         std::to_string(declaration.fiberMoments) + " pinned moments");
+  if (!declaration.fiberMomentUnitTargets.empty() &&
+      (declaration.fiberMomentUnitTargets.size() != declaration.fiberMoments ||
+       !declaration.fiberMomentTargets.empty() ||
+       !(declaration.fiberMomentScale > 0.0)))
+    throw std::invalid_argument(
+        "SelfConsistentMeanField: targets in the constraints' unit are "
+        "declared one per pinned constraint, with the unit "
+        "(fiberMomentScale) declared and no targets in the operator's unit "
+        "beside them");
   if (!action.declaration().momentConstraints.empty())
     throw std::invalid_argument(
         "SelfConsistentMeanField: the action already declares spectral "
@@ -336,11 +345,13 @@ std::size_t installFiberMoments(
   for (std::size_t index = 0; index < pinned.momentConstraints.size();
        ++index)
     pinned.momentConstraints[index].target =
-        declaration.fiberMomentTargets.empty()
-            ? values[index]
-            : declaration.fiberMomentTargets[index] /
-                  std::pow(scale, static_cast<double>(unitPower(
-                                      pinned.momentConstraints[index])));
+        !declaration.fiberMomentUnitTargets.empty()
+            ? declaration.fiberMomentUnitTargets[index]
+            : declaration.fiberMomentTargets.empty()
+                  ? values[index]
+                  : declaration.fiberMomentTargets[index] /
+                        std::pow(scale, static_cast<double>(unitPower(
+                                            pinned.momentConstraints[index])));
   action = JointAction(action.spacetime(), std::move(pinned));
 
   // The least-squares multipliers: the force with every multiplier zero and
