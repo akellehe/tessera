@@ -133,10 +133,13 @@ def test_the_declared_defaults():
         key: 1e-15 for key, _ in bp.TOLERANCES}
     assert "rank_tolerance" in dict(bp.TOLERANCES)
     tight = bp.build_parser().parse_args(
-        ["run", "--rank-tolerance", "1e-10", "--villain-tolerance", "1e-18"])
+        ["run", "--rank-tolerance", "1e-10", "--tie-tolerance", "1e-8"])
     assert bp.tolerances_from(tight)["rank_tolerance"] == 1e-10
-    assert bp.tolerances_from(tight)["villain_tolerance"] == 1e-18
+    assert bp.tolerances_from(tight)["tie_tolerance"] == 1e-8
     assert bp.tolerances_from(tight)["newton_tolerance"] == 1e-15
+    # the Villain weight is governed by an order, not by a tolerance
+    assert "villain_tolerance" not in dict(bp.TOLERANCES)
+    assert args.villain_order == bp.DECLARED_VILLAIN_ORDER == 10
 
 
 def test_the_config_records_every_tolerance():
@@ -730,6 +733,83 @@ def test_a_limit_is_carried_only_when_the_user_declares_it():
         bp.default_config([1.0], [1.0], limits={"newton_iterations": 3})
 
 
+def test_the_villain_order_is_an_option_recorded_in_the_config():
+    """M, the order the Villain weight of the holonomy term is summed to
+    (`DECLARED_VILLAIN_ORDER`): an option of the command line, an integer
+    from 1 to `cob.VillainCharacter.maximum_order` = 10 that defaults to 10,
+    recorded in the config under ``villain_order`` and carried into the
+    action's declaration. The config and the declaration refuse an order
+    outside the range by name."""
+    assert cob.VillainCharacter.maximum_order == 10
+    assert bp.DECLARED_VILLAIN_ORDER == 10
+    assert bp.build_parser().parse_args(["run"]).villain_order == 10
+    args = bp.build_parser().parse_args(["run", "--villain-order", "4"])
+    assert args.villain_order == 4 and isinstance(args.villain_order, int)
+    assert bp.default_config([1.0], [1.0])["villain_order"] == 10
+    config = bp.default_config([1.0], [1.0], villain_order=args.villain_order)
+    assert config["villain_order"] == 4
+    assert bp.declared_villain_order(config) == 4
+    assert bp.declared_villain_order({}) == 10
+    assert bp.declared_villain_order(None) == 10
+    for order in (0, 11, -1, 2.5, True):
+        with pytest.raises(ValueError, match="the order of the Villain "
+                                             "weight is an integer from 1 "
+                                             "to 10"):
+            bp.default_config([1.0], [1.0], villain_order=order)
+    spacetime = bp.build_host()
+    assert bp.action_declaration(spacetime, 1.0, 1.0).villain_order == 10
+    declaration = bp.action_declaration(spacetime, 1.0, 1.0, villain_order=4)
+    assert declaration.villain_order == 4
+    assert cob.JointAction(spacetime, declaration).holonomy_truncation() \
+        .order == 4
+    declaration.villain_order = 11
+    with pytest.raises(ValueError, match="the order of the Villain weight "
+                                         "is an integer from 1 to 10; got 11"):
+        cob.JointAction(spacetime, declaration)
+    # the geometric action of the fluctuation elimination and the carrier of
+    # the fingerprint read are built at the config's order
+    assert bp._geometric_action(spacetime, 1.0, 1.0, config) \
+        .holonomy_truncation().order == 4
+
+
+@pytest.mark.parametrize("text", ["0", "11", "-3", "2.5", "ten"])
+def test_a_villain_order_outside_one_to_ten_is_refused_by_name(text, capsys):
+    with pytest.raises(SystemExit) as stop:
+        bp.build_parser().parse_args(["run", "--villain-order", text])
+    assert stop.value.code == 2
+    error = capsys.readouterr().err
+    assert "--villain-order is an integer from 1 to 10" in error
+
+
+def test_main_passes_the_villain_order_to_every_point(cheap):
+    bp.main(["run", "--kappa", "1", "--beta", "1", "--villain-order", "7",
+             "--quiet"])
+    (config,) = cheap
+    assert config["villain_order"] == 7
+
+
+def test_the_isospin_doublet_driver_takes_the_villain_order():
+    """`tessera.drivers.isospin_doublet` offers the same option, an integer
+    from 1 to 10 that defaults to 10, and declares it on the action it reads
+    the host's carrier from. The carrier operator h_1(z, U) does not depend
+    on the holonomy term, so the declared host's carrier at order three is
+    the one at order ten entry for entry."""
+    from tessera.drivers import isospin_doublet
+
+    parser = isospin_doublet.build_parser()
+    assert parser.parse_args(["run"]).villain_order == 10
+    assert parser.parse_args(["run", "--villain-order", "3"]) \
+        .villain_order == 3
+    with pytest.raises(SystemExit):
+        parser.parse_args(["run", "--villain-order", "11"])
+    ten = isospin_doublet.declared_carrier()
+    three = isospin_doublet.declared_carrier(villain_order=3)
+    assert ten.shape == (18, 18)
+    assert np.array_equal(three, ten)
+    with pytest.raises(ValueError, match="integer from 1 to 10"):
+        isospin_doublet.drive(villain_order=0)
+
+
 def test_the_fluctuation_couplings_count_and_shape():
     spacetime = bp.build_host()
     lengths = bp.fluctuation_couplings(spacetime, False)
@@ -766,7 +846,7 @@ def test_the_declarations_carry_the_config():
     assert declaration.holonomy_weight == 3.0
     assert declaration.regge_form == cob.ReggeForm.Primal
     assert declaration.matter_weight == 1.0
-    assert declaration.villain_tolerance == bp.DECLARED_TOLERANCE
+    assert declaration.villain_order == bp.DECLARED_VILLAIN_ORDER == 10
     # kappa = 8 pi G enters through the Regge weight alone, and the record
     # says so
     assert config["fiber_moments"] == "r"

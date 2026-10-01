@@ -27,8 +27,17 @@ TOLERANCES = {
     "pole_rank_tolerance": 1e-10,
     "fluctuation_tolerance": 1e-8,
     "recursion_tolerance": 1e-9,
-    "villain_tolerance": 1e-18,
 }
+
+#: The run's coupling of the holonomy term, and the relative size below which
+#: the run left a coefficient exp(-m^2 / (2 beta)) of the Villain weight out
+#: of its sum.
+BETA = 1.0
+VILLAIN_COEFFICIENT_FLOOR = 1e-18
+#: The order of the Villain weight (`baryon_poles.DECLARED_VILLAIN_ORDER`,
+#: ``--villain-order``) at which the run's numbers are read: the least m with
+#: exp(-m^2 / (2 beta)) below the floor at the run's beta.
+VILLAIN_ORDER = 10
 
 #: The tick-0 base cells.
 LEVEL_ZERO_CELLS = [[0, 1, 2, 3], [0, 1, 3, 4]]
