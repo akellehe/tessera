@@ -1,4 +1,0 @@
-
-[notice] A new release of pip is available: 25.3 -> 26.2.1
-[notice] To update, run: /home/andrew/feat/fiber-moments-bands/.venv/bin/python3 -m pip install --upgrade pip
-exit 0
