@@ -21,23 +21,31 @@ using ::tessera::spacetime::Spacetime;
 
 /// # RecursionBandSelection
 ///
-/// How the closed contour \f$ \gamma_v \f$ of a response vertex is fixed.
+/// How the band of a response vertex, the set of eigenvalues of its block whose
+/// invariant subspace is the fiber, is selected.
 ///
-/// The whitepaper selects a band by a closed contour in the complex spectral
-/// plane and never by sorting real parts or imaginary parts, so the contour is
-/// the declared object. The two options below differ only in who writes the
-/// contour down.
+/// The whitepaper selects a band by a closed contour \f$ \gamma_v \f$ in the
+/// complex spectral plane, and the band is the set of eigenvalues the contour
+/// encloses. The contour is recorded as the selection, as a centre and a
+/// radius; the projector onto the band's invariant subspace is then formed
+/// exactly from the block's eigendecomposition (`LevelRecursion::readBand`),
+/// and the two options below differ only in who writes the contour down.
 ///
 /// * `LowestModes` — the contour is derived from a declared band rank: the
 ///   block's eigenvalues are put in the declared `OccupationOrder`, the first
 ///   `bandRank` of them are the band, the centre is their mean and the radius
 ///   sits halfway between the farthest band member and the nearest excluded
-///   eigenvalue, both measured from that centre. The ordering is a rule for
-///   writing down a contour and never a substitute for one: the projector is
-///   still the contour integral, and the isolation gap it reports is the
-///   distance that makes the contour legitimate.
+///   eigenvalue, both measured from that centre. When no eigenvalue is
+///   excluded the selection encloses the whole spectrum, which the read
+///   records as such with an infinite radius. Two eigenvalues equal at the
+///   declared tolerance are one eigenvalue with multiplicity, and a band rank
+///   that would separate them is refused by name, because the invariant
+///   subspace of a part of a multiple eigenvalue is not defined.
 /// * `DeclaredContours` — the caller supplies one centre and one radius per
-///   component, and nothing is sorted at all.
+///   component, and nothing is sorted at all. The band is the set of
+///   eigenvalues strictly inside the circle; an eigenvalue on the circle at
+///   the declared tolerance is refused by name, and a circle enclosing no
+///   eigenvalue is refused by name, because neither selects a fiber.
 enum class RecursionBandSelection { LowestModes, DeclaredContours };
 
 /// # RecursionBandDeclaration
@@ -52,14 +60,14 @@ struct RecursionBandDeclaration {
   /// encloses all of them, and the band reports the rank it actually reached.
   std::size_t bandRank = 1;
 
-  /// Which eigenvalues those are under `LowestModes`.
+  /// Which eigenvalues those are under `LowestModes`. `AscendingRealPart`
+  /// orders by real part, then by imaginary part; `AscendingModulus` orders by
+  /// modulus, then by real part, then by imaginary part. Every key is compared
+  /// at the declared tolerance, relative to the block's Frobenius norm, so that
+  /// an order is never decided by rounding: two eigenvalues whose keys agree
+  /// at that tolerance are ordered by the next key, and two whose every key
+  /// agrees are one eigenvalue with multiplicity.
   OccupationOrder order = OccupationOrder::AscendingRealPart;
-
-  /// The number of quadrature nodes on each contour. The Riesz projector is
-  /// \f$ P_v=\frac{1}{2\pi i}\oint_{\gamma_v}(\zeta I-h_v)^{-1}d\zeta \f$,
-  /// evaluated by the trapezoidal rule on the circle, which converges
-  /// geometrically in the node count for a contour that separates the spectrum.
-  int contourNodes = 64;
 
   /// The contour centres under `DeclaredContours`, one per component of the
   /// level's partition, in component order.
@@ -108,8 +116,10 @@ struct LevelRecursionDeclaration {
   /// How the fibers of every level are selected.
   RecursionBandDeclaration bands;
 
-  /// The relative tolerance the certificates of every level hold against.
-  double tolerance = 1e-9;
+  /// The relative tolerance the certificates of every level hold against and
+  /// the rank decisions of the band reads are made at: which eigenvalues of a
+  /// block are equal, and whether the declared selection separates them.
+  double tolerance = 1e-15;
 
   /// The dimension at and above which the dense paths of this class refuse. The
   /// response pencil is evaluated densely, so this is the size of the largest
@@ -119,39 +129,75 @@ struct LevelRecursionDeclaration {
 
 /// # RecursionBandRead
 ///
-/// One certified fiber \f$ E_v^{\ell+1}=\operatorname{Ran}P_v^{\ell+1} \f$ and
-/// the contour that produced it.
+/// One certified fiber \f$ E_v^{\ell+1}=\operatorname{Ran}P_v^{\ell+1} \f$,
+/// the selection that named its band, and the certificates of the exact
+/// projector.
+///
+/// The projector is formed from the complex Schur form \f$ h_v=QTQ^H \f$ of
+/// the component's block: the selected eigenvalues are reordered to the leading
+/// diagonal block \f$ T_{11} \f$ by unitary swaps, the Sylvester equation
+/// \f$ T_{11}Y-YT_{22}=T_{12} \f$ is solved by back substitution, and
+/// \f$ P_v=Q\begin{pmatrix}I&Y\\0&0\end{pmatrix}Q^H=\Phi_v\tilde\Phi_v^{\mathsf T} \f$
+/// with \f$ \Phi_v \f$ the leading Schur vectors and
+/// \f$ \tilde\Phi_v^{\mathsf T}=(I\;\;Y)\,Q^H \f$. For a diagonalizable block
+/// this is \f$ V_B(V^{-1})_B \f$ over the selected eigenvalues; for a
+/// non-diagonalizable one it is the same spectral projector, formed without
+/// inverting an eigenvector matrix. A selection that encloses every eigenvalue
+/// of the block has the whole coordinate space as its invariant subspace:
+/// its projector is the identity and its two frames are the canonical basis,
+/// with nothing to reorder and no equation to solve, so its certificates are
+/// zero exactly.
 struct RecursionBandRead {
   /// The component of the level's partition this fiber belongs to: the response
   /// vertex it becomes at the next level.
   int component = 0;
 
-  /// \f$ r_v \f$, the rank the projector actually reached.
+  /// \f$ r_v \f$, the number of selected eigenvalues, counted with
+  /// multiplicity, and the rank of the projector: \f$ P_v=\Phi_v\tilde\Phi_v^{\mathsf T} \f$
+  /// through \f$ r_v \f$ columns bounds the rank above, and
+  /// \f$ \tilde\Phi_v^{\mathsf T}\Phi_v=I_{r_v} \f$ bounds it below.
   std::size_t rank = 0;
 
-  /// The centre of \f$ \gamma_v \f$.
+  /// The centre of \f$ \gamma_v \f$, the recorded selection: the mean of the
+  /// selected eigenvalues under `LowestModes`, the declared centre under
+  /// `DeclaredContours`.
   std::complex<double> contourCentre{0.0, 0.0};
-  /// The radius of \f$ \gamma_v \f$.
+  /// The radius of \f$ \gamma_v \f$: halfway between the farthest selected and
+  /// the nearest excluded eigenvalue from the centre under `LowestModes`, the
+  /// declared radius under `DeclaredContours`. Infinite when the selection
+  /// under `LowestModes` excludes no eigenvalue, where there is no nearest
+  /// excluded eigenvalue to measure to.
   double contourRadius = 0.0;
-  /// The number of quadrature nodes on \f$ \gamma_v \f$.
-  int contourNodes = 0;
+  /// Whether the selection excludes no eigenvalue of the block, so that the
+  /// fiber is the whole of the component.
+  bool enclosesEverything = false;
 
-  /// The eigenvalues of the component's block that the contour encloses.
+  /// The eigenvalues of the component's block that the selection encloses, in
+  /// the declared order under `LowestModes` and ascending by real then
+  /// imaginary part under `DeclaredContours`.
   std::vector<std::complex<double>> eigenvalues;
 
-  /// The distance from \f$ \gamma_v \f$ to the nearest eigenvalue of the
-  /// block, inside or outside: the isolation the contour rests on. Positive for
-  /// a contour that separates the spectrum, and quiet NaN when the block has no
-  /// eigenvalue off the contour to measure against.
+  /// The smallest distance between a selected and an excluded eigenvalue of
+  /// the block: the isolation of the band, which is what makes its invariant
+  /// subspace a spectral one and the Sylvester equation solvable. Infinite when
+  /// the selection excludes no eigenvalue, and larger than the declared
+  /// tolerance times the block's Frobenius norm whenever the read returns,
+  /// because a selection that separates two eigenvalues equal at that
+  /// tolerance is refused.
   double isolationGap = 0.0;
 
-  /// \f$ \lVert P_v^2-P_v\rVert_F \f$ of the quadrature's projector: the
-  /// measure of how well the node count resolved the contour integral.
+  /// \f$ \lVert P_v^2-P_v\rVert_F/\lVert P_v\rVert_F \f$: the rounding
+  /// residual of the exact projector's idempotency.
   double projectorIdempotency = 0.0;
 
   /// \f$ \lVert\tilde\Phi_v^{\mathsf T}\Phi_v-I_{r_v}\rVert_F \f$: how far the
   /// two frames are from the bilinear pairing the whitepaper asks of them.
   double pairingDefect = 0.0;
+
+  /// \f$ \lVert h_v\Phi_v-\Phi_v(\tilde\Phi_v^{\mathsf T}h_v\Phi_v)\rVert_F/
+  /// \lVert h_v\rVert_F \f$: the residual of the invariant subspace, zero for
+  /// a zero block, whose numerator vanishes identically.
+  double invariantSubspaceResidual = 0.0;
 
   /// \f$ \Phi_v \f$, the fiber's right frame over the level's coordinates, flat
   /// row-major (level dimension by \f$ r_v \f$). Its columns are supported on
@@ -163,14 +209,14 @@ struct RecursionBandRead {
   /// conjugation in the pairing.
   std::vector<std::complex<double>> leftFrame;
 
-  /// Whether the contour separated the spectrum, the projector came out
-  /// idempotent and the two frames paired to the identity, all at the declared
+  /// Whether the projector came out idempotent, the two frames paired to the
+  /// identity and the frame spanned an invariant subspace, all at the declared
   /// tolerance. An unaccepted fiber is still carried and reported; it makes the
   /// level's certificate fail to hold rather than disappearing.
   bool accepted = false;
 
-  /// The fiber's certificate, whose residual is the worst of the idempotency
-  /// and the pairing defect.
+  /// The fiber's certificate, whose residual is the worst of the idempotency,
+  /// the pairing defect and the invariant-subspace residual.
   Certificate certificate{};
 };
 
@@ -317,6 +363,10 @@ struct RecursionLevelRead {
 ///   P_v^{\ell+1}=\frac{1}{2\pi i}\oint_{\gamma_v}(\zeta I-h_v^\ell)^{-1}d\zeta,
 ///   \qquad E_v^{\ell+1}=\operatorname{Ran}P_v^{\ell+1},
 /// \f]
+/// where the Riesz projector \f$ P_v^{\ell+1} \f$ of the band the contour
+/// \f$ \gamma_v \f$ encloses is formed exactly, as the spectral projector of
+/// those eigenvalues from the complex Schur form of the block
+/// (`readBand`), the contour being recorded as the selection.
 /// \f[
 ///   \mathcal R_{\ell+1}(\lambda)=\mathrm{Feshbach}_{P_\ell}
 ///     (\mathcal R_\ell(\lambda)),\qquad
@@ -349,10 +399,10 @@ struct RecursionLevelRead {
 /// determinants the chain eliminated along the way. Every level's spectrum is
 /// therefore reproduced from the level below it, and
 /// `determinantFactorizationResidual` measures the identity at any
-/// \f$ \lambda \f$ the caller names. Nothing is linearized and no square root,
-/// polar projection or eigenvalue ordering enters the recursion: the ordering
-/// the band declaration names is a rule for writing down a contour, and the
-/// projector is still the contour integral.
+/// \f$ \lambda \f$ the caller names. Nothing is linearized and no square root
+/// or polar projection enters the recursion: the ordering the band
+/// declaration names is a rule for selecting a band, and the projector is the
+/// exact spectral projector of the band it selects.
 ///
 /// ## What the reduction does not supply
 ///
@@ -374,9 +424,9 @@ class LevelRecursion {
   /// @param dimension The number of microscopic coordinates.
   /// @param declaration How the recursion is driven.
   /// @throws std::invalid_argument when the dimension is not positive, when a
-  ///   matrix has the wrong size, when the declared resolutions are empty, when
-  ///   the declared band rank is zero, or when the contour node count is below
-  ///   three; std::length_error at or above the declared dense crossover.
+  ///   matrix has the wrong size, when the declared resolutions are empty, or
+  ///   when the declared band rank is zero; std::length_error at or above the
+  ///   declared dense crossover.
   [[nodiscard]] static LevelRecursion overPencil(
       const std::vector<std::complex<double>> &pencil,
       const std::vector<std::complex<double>> &metric, int dimension,
@@ -402,6 +452,32 @@ class LevelRecursion {
   [[nodiscard]] const LevelRecursionDeclaration &declaration() const noexcept {
     return declaration_;
   }
+
+  /// The exact band read of one block: the selection the declaration names
+  /// for component \p component, the Riesz projector onto the invariant
+  /// subspace of the selected eigenvalues from the block's complex Schur form,
+  /// its frames and its certificates (see `RecursionBandRead`). `advance`
+  /// makes this read for every component of a level; on its own it reads a
+  /// block as a level of one component, so the frames are over the block's
+  /// own coordinates.
+  /// @param block \f$ h_v \f$, flat row-major \p order by \p order.
+  /// @param order The number of coordinates of the block.
+  /// @param bands How the band is selected.
+  /// @param component Which declared contour applies under
+  ///   `DeclaredContours`; recorded on the read either way.
+  /// @param tolerance The relative tolerance the rank decisions are made at
+  ///   and the certificates hold against.
+  /// @throws std::invalid_argument when the block is not square of the given
+  ///   order, when the declared band rank is zero, when the declared contours
+  ///   do not name \p component, when the declared selection separates two
+  ///   eigenvalues equal at the tolerance, when a declared contour passes
+  ///   through an eigenvalue at the tolerance, or when a declared contour
+  ///   encloses no eigenvalue; std::runtime_error when the Schur decomposition
+  ///   of the block does not converge.
+  [[nodiscard]] static RecursionBandRead readBand(
+      const std::vector<std::complex<double>> &block, int order,
+      const RecursionBandDeclaration &bands, std::size_t component,
+      double tolerance);
 
   /// The number of coordinates of the microscopic level.
   [[nodiscard]] int baseDimension() const noexcept { return dimension_; }

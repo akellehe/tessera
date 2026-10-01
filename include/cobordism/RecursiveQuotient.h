@@ -419,32 +419,48 @@ class RecursiveQuotient {
       Certificate certificate{};
     };
 
-    /// Multiplicity report at a candidate eigenvalue (band domain).
+    /// Multiplicity report at a candidate eigenvalue (band domain): the
+    /// eigenvalues of the level's operator \f$ L \f$ inside the declared
+    /// counting disc, counted with multiplicity from the complex Schur forms
+    /// of \f$ L \f$ and of the interior block \f$ L_{II} \f$, and the
+    /// geometric multiplicity from the kernel of \f$ F_B(\lambda) \f$.
     struct MultiplicityRead {
-      /// The candidate eigenvalue the contour is centred on.
+      /// The candidate eigenvalue the counting disc is centred on.
       std::complex<double> lambda{};
-      /// Radius of the counting contour.
+      /// The radius of the counting disc: the declared selection.
       double contourRadius{0.0};
-      /// Node count of the stabilized (doubled) evaluation.
-      int nodes{0};
-      /// Winding of \f$ \det F_B \f$ around the contour: zeros minus poles of
-      /// the pencil determinant inside.
+      /// The winding number of \f$ \det F_B \f$ about the circle, the zeros
+      /// less the poles of the pencil determinant inside it: the number of
+      /// eigenvalues of \f$ L \f$ in the disc less the number of eigenvalues
+      /// of \f$ L_{II} \f$ in it, formed from the two spectra.
       int responseWinding{0};
-      /// Winding of \f$ \det(L_{II} - z) \f$ around the contour: the
-      /// interior-spectrum contribution, reported separately.
+      /// The winding number of \f$ \det(L_{II} - z) \f$ about the circle: the
+      /// number of eigenvalues of the interior block in the disc, reported
+      /// separately.
       int interiorWinding{0};
-      /// Algebraic multiplicity of \f$ \operatorname{spec} L \f$ inside the
-      /// contour: `responseWinding + interiorWinding`.
+      /// The algebraic multiplicity of \f$ \operatorname{spec} L \f$ inside
+      /// the disc, `responseWinding + interiorWinding`: the number of
+      /// eigenvalues of \f$ L \f$ in the disc, counted with multiplicity.
       int algebraic{0};
       /// \f$ \dim\ker F_B(\lambda) \f$ at `rankTolerance`.
       int geometric{0};
       /// Whether algebraic == geometric; guaranteed only in the self-adjoint
       /// or semisimple setting.
       bool semisimple{false};
-      /// Max per-step phase advance / pi over both unwrapped determinant
-      /// phases; an alias-free winding needs it well below 1.
-      double phaseStepMargin{0.0};
-      /// Certified-numerical winding certificate (stability + margin).
+      /// The distance from the circle to the nearest eigenvalue of \f$ L \f$
+      /// or of \f$ L_{II} \f$, inside or outside: the isolation the count
+      /// rests on. A circle passing through an eigenvalue at `rankTolerance`,
+      /// relative to the larger of the radius and that eigenvalue's distance
+      /// from the centre, is refused, so the gap exceeds that whenever the read
+      /// returns. Infinite when neither spectrum has an eigenvalue.
+      double isolationGap{std::numeric_limits<double>::infinity()};
+      /// The largest relative backward error
+      /// \f$ \lVert A-QTQ^H\rVert_F/\lVert A\rVert_F \f$ of the Schur
+      /// decompositions the counts were read from, over \f$ L \f$ and every
+      /// interior block: the rounding the eigenvalues carry.
+      double decompositionResidual{0.0};
+      /// The count's certified-numerical certificate, whose residual is
+      /// `decompositionResidual` against `Options::tolerance`.
       Certificate certificate{};
     };
 
@@ -804,15 +820,23 @@ class RecursiveQuotient {
                                         double windowLower,
                                         double windowUpper) const;
 
-    /// Multiplicity report at `lambda`: algebraic from the winding of the
-    /// unwrapped determinant phases of \f$ \det F_B(\cdot) \f$ and
-    /// \f$ \det(L_{II} - \cdot) \f$ around the circle of `radius`, geometric
-    /// from \f$ \dim\ker F_B(\lambda) \f$. The winding is validated by
-    /// doubling the node count until stable.
-    /// @throws std::invalid_argument on a non-positive radius or nodes < 8.
+    /// Multiplicity report at `lambda`: the algebraic multiplicity is the
+    /// number of eigenvalues of \f$ L \f$ inside the disc of `radius` about
+    /// `lambda`, counted with multiplicity from the complex Schur form of
+    /// \f$ L \f$, with the interior block's count \f$ L_{II} \f$ reported
+    /// separately and the difference being the winding number of
+    /// \f$ \det F_B \f$ about the circle; the geometric multiplicity is
+    /// \f$ \dim\ker F_B(\lambda) \f$. Whether an eigenvalue is inside is
+    /// decided at `Options::rankTolerance`.
+    /// @throws std::invalid_argument on a non-positive radius;
+    ///   std::domain_error on a pencil level, whose spectrum is the set of
+    ///   generalized eigenvalues and is not formed here, and when the circle
+    ///   passes through an eigenvalue at the rank tolerance;
+    ///   std::length_error at or above the dense crossover, where the
+    ///   eigenvalues are not formed densely; std::runtime_error when a Schur
+    ///   decomposition does not converge.
     [[nodiscard]] MultiplicityRead multiplicity(std::complex<double> lambda,
-                                                double radius,
-                                                int nodes = 64) const;
+                                                double radius) const;
 
     /// Craig--Bampton retained-mode basis over a declared window disc. The
     /// window is the closed disc \f$ |\theta - c| \le \rho \f$ in the complex
@@ -1126,11 +1150,6 @@ class RecursiveQuotient {
         int component, std::complex<double> lambda) const;
     [[nodiscard]] const std::vector<std::shared_ptr<ComponentSolve>> &
     shiftedSolves(std::complex<double> lambda) const;
-    [[nodiscard]] std::vector<std::complex<double>> contourDeterminants(
-        std::complex<double> lambda, double radius, int nodes,
-        std::vector<std::complex<double>> &interiorDets) const;
-    [[nodiscard]] static int windingFromPhases(
-        const std::vector<std::complex<double>> &values, double *maxStep);
     [[nodiscard]] std::vector<std::uint64_t> componentVertexIds(
         int component) const;
     [[nodiscard]] std::vector<long> integerKernelStack(int component,

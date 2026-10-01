@@ -185,7 +185,6 @@ DECLARED_KAPPA = 1.0
 DECLARED_BETA = 1.0
 DECLARED_RESOLUTIONS = (1.0, 1.5, 2.0, 2.5, 3.0)
 DECLARED_BAND_RANK = 1
-DECLARED_CONTOUR_NODES = 64
 #: The combinatorial moves of the growth step (`pachner_stage`): how many
 #: stage-1 updates of `MultiCobordism` run on each grown level's base and how
 #: many moves deep the search goes when no single move lowers the objective.
@@ -521,7 +520,6 @@ def recursion_turn(operator, config):
     bands = cob.RecursionBandDeclaration()
     bands.selection = cob.RecursionBandSelection.LowestModes
     bands.band_rank = config["band_rank"]
-    bands.contour_nodes = config["contour_nodes"]
     declaration.bands = bands
     n = operator.shape[0]
     recursion = cob.LevelRecursion.overPencil(list(operator.reshape(-1)), [],
@@ -530,33 +528,49 @@ def recursion_turn(operator, config):
     return recursion.level(0)
 
 
-def riesz_band(block, rank, nodes):
+def riesz_band(block, rank, tolerance):
     """The band of a component block by the rule `LevelRecursion` declares as
-    `LowestModes`: the ``rank`` eigenvalues first in ascending real part are
-    enclosed by the circle about their mean whose radius sits halfway to the
-    nearest excluded eigenvalue; the projector is the contour integral by the
-    trapezoidal rule; the right frame is the leading left singular vectors of
-    the projector and the left frame its algebraic dual."""
-    values = np.linalg.eigvals(block)
-    ordered = sorted(values, key=lambda v: (v.real, v.imag))
-    r = min(rank, len(ordered))
-    centre = np.mean(ordered[:r])
-    inside = max(abs(v - centre) for v in ordered[:r])
-    rest = [abs(v - centre) for v in ordered[r:]]
-    radius = 0.5 * (inside + min(rest)) if rest else inside + max(1.0, inside)
+    `LowestModes` in ascending real part: the ``rank`` eigenvalues first in
+    ascending real part, then imaginary part, every key compared at
+    ``tolerance`` relative to the block's Frobenius norm, are the band. The
+    selection is recorded as the circle about their mean whose radius sits
+    halfway to the nearest excluded eigenvalue, infinite when nothing is
+    excluded. The projector is the exact spectral projector onto the band's
+    invariant subspace, P = Phi PhiTilde^T from the block's complex Schur form
+    (`LevelRecursion.read_band`): the right frame Phi is an orthonormal basis
+    of the subspace, the leading Schur vectors after the selected eigenvalues
+    are reordered to the front, and the left frame PhiTilde^T is its
+    algebraic dual, PhiTilde^T Phi = I, from the Sylvester equation of the
+    reordered form. For a diagonalizable block P = V_B (V^-1)_B over the
+    selected eigenvalues. A band of the whole block has the identity as its
+    projector and the canonical basis as both frames, exactly. A selection
+    that separates two eigenvalues equal at
+    ``tolerance`` is refused by name. The read carries the projector's
+    certificates: its idempotency residual, the pairing defect of the frames,
+    the residual of the invariant subspace and the isolation gap of the band,
+    each against ``tolerance``."""
+    block = np.asarray(block, dtype=complex)
     n = block.shape[0]
-    projector = np.zeros((n, n), dtype=complex)
-    for k in range(nodes):
-        root = np.exp(2j * np.pi * k / nodes)
-        zeta = centre + radius * root
-        projector += (radius * root / nodes) * np.linalg.inv(
-            zeta * np.eye(n) - block)
-    left_singular, _, _ = np.linalg.svd(projector)
-    right = left_singular[:, :r]
-    left = np.linalg.solve(right.conj().T @ right, right.conj().T @ projector)
-    return {"frame": right, "left": left, "projector": projector,
-            "eigenvalues": list(ordered[:r]), "centre": complex(centre),
-            "radius": float(radius)}
+    bands = cob.RecursionBandDeclaration()
+    bands.selection = cob.RecursionBandSelection.LowestModes
+    bands.band_rank = int(rank)
+    bands.order = cob.OccupationOrder.AscendingRealPart
+    read = cob.LevelRecursion.read_band(
+        [complex(v) for v in block.reshape(-1)], n, bands, 0,
+        float(tolerance))
+    right = np.asarray(read.frame, dtype=complex).reshape(n, read.rank)
+    left = np.asarray(read.left_frame, dtype=complex).reshape(read.rank, n)
+    return {"frame": right, "left": left, "projector": right @ left,
+            "eigenvalues": [complex(v) for v in read.eigenvalues],
+            "centre": complex(read.contour_centre),
+            "radius": float(read.contour_radius),
+            "encloses_everything": bool(read.encloses_everything),
+            "isolation_gap": float(read.isolation_gap),
+            "projector_idempotency": float(read.projector_idempotency),
+            "pairing_defect": float(read.pairing_defect),
+            "invariant_subspace_residual": float(
+                read.invariant_subspace_residual),
+            "accepted": bool(read.accepted)}
 
 
 def normalize_image_pairing(image, dual_image,
@@ -573,13 +587,14 @@ def normalize_image_pairing(image, dual_image,
     return out, scale
 
 
-def fibers_for_partition(base, partition, rank, nodes):
+def fibers_for_partition(base, partition, rank, tolerance):
     """The fibers of every component, supported on their geometric images
     (spec Prop. 5.3).
 
     The band of a component is the Riesz band of the image pencil
     (A~_1^U, M_1^U) restricted to the component's edges, selected by the rule
-    of `riesz_band`. Its frame is the geometric image Z = G_1^U Y, which is
+    of `riesz_band` and read exactly at ``tolerance``. Its frame is the
+    geometric image Z = G_1^U Y, which is
     zero off the component. The chain frame is Y = M_1^U Z, which is zero off
     the component's one-ring. The dual band is the same for U^{-1}. The dual
     image is normalized to det((Z^vee)^T Z) = 3 (`normalize_image_pairing`).
@@ -589,7 +604,9 @@ def fibers_for_partition(base, partition, rank, nodes):
 
     Returns a dict of per-fiber lists: ``frames`` (Y), ``images`` (Z),
     ``lefts`` (Y~^T), ``duals`` (Y^vee), ``dual_images`` (Z^vee) and
-    ``reads``."""
+    ``reads``, each read carrying the band's projector and its certificates
+    (`riesz_band`), the mismatch of the dual band's eigenvalues, the
+    restriction determinant and the pairing defect of the level frames."""
     pencil, metric = base["pencil"], base["metric"]
     dual_pencil, dual_metric = base["dual_pencil"], base["dual_metric"]
     n = pencil.shape[0]
@@ -599,9 +616,10 @@ def fibers_for_partition(base, partition, rank, nodes):
         index = list(part)
         block = np.ix_(index, index)
         band = riesz_band(np.linalg.solve(metric[block], pencil[block]),
-                          rank, nodes)
+                          rank, tolerance)
         dual = riesz_band(np.linalg.solve(dual_metric[block],
-                                          dual_pencil[block]), rank, nodes)
+                                          dual_pencil[block]), rank,
+                          tolerance)
         r = band["frame"].shape[1]
         image = np.zeros((n, r), dtype=complex)
         dual_image = np.zeros((n, dual["frame"].shape[1]), dtype=complex)
@@ -625,6 +643,11 @@ def fibers_for_partition(base, partition, rank, nodes):
         out["reads"].append({
             "projector": band["projector"],
             "eigenvalues": band["eigenvalues"],
+            "isolation_gap": band["isolation_gap"],
+            "encloses_everything": band["encloses_everything"],
+            "projector_idempotency": band["projector_idempotency"],
+            "invariant_subspace_residual": band["invariant_subspace_residual"],
+            "accepted": band["accepted"],
             "dual_eigenvalue_mismatch": float(mismatch),
             "restriction_determinant": complex(np.linalg.det(restriction)),
             "pairing_defect": float(np.linalg.norm(left @ frame
@@ -650,9 +673,13 @@ def level_record(level):
         "band_ranks": [int(b.rank) for b in level.bands],
         "bands_accepted": [bool(b.accepted) for b in level.bands],
         "isolation_gaps": [float(b.isolation_gap) for b in level.bands],
+        "encloses_everything": [bool(b.encloses_everything)
+                                for b in level.bands],
         "projector_idempotency": [float(b.projector_idempotency)
                                   for b in level.bands],
         "pairing_defects": [float(b.pairing_defect) for b in level.bands],
+        "invariant_subspace_residuals": [
+            float(b.invariant_subspace_residual) for b in level.bands],
         "band_eigenvalues": [[complex(v) for v in b.eigenvalues]
                              for b in level.bands],
         "gram_defect": float(level.gram_defect),
@@ -945,8 +972,9 @@ def interaction_stage(base, partition, config):
     graph, the grown 3-simplices and the grown-cell rule on each, and the
     locality certificate: the largest pairing and transport between two
     response vertices whose image supports share no top simplex."""
-    fibers = fibers_for_partition(base, partition, config["band_rank"],
-                                  config["contour_nodes"])
+    fibers = fibers_for_partition(
+        base, partition, config["band_rank"],
+        bp.declared_tolerance(config, "recursion_tolerance"))
     frames, images = fibers["frames"], fibers["images"]
     transports = transport_matrix(base["pencil"], images, fibers["lefts"])
     pairs = interaction_graph(partition, base["edges"], base["tops"])
@@ -1163,6 +1191,12 @@ def tick(index, cells, z, links, config):
         "rejected_components": rejected,
         "fibers": {
             "pairing_defect": [f["pairing_defect"] for f in stage["fibers"]],
+            "isolation_gap": [f["isolation_gap"] for f in stage["fibers"]],
+            "projector_idempotency": [
+                f["projector_idempotency"] for f in stage["fibers"]],
+            "invariant_subspace_residual": [
+                f["invariant_subspace_residual"] for f in stage["fibers"]],
+            "accepted": [f["accepted"] for f in stage["fibers"]],
             "restriction_determinant": [
                 f["restriction_determinant"] for f in stage["fibers"]],
             "dual_eigenvalue_mismatch": [
@@ -1285,7 +1319,6 @@ def default_config(ticks=DECLARED_TICKS, tetrahedra=DECLARED_TETRAHEDRA,
         "beta": beta,
         "resolutions": list(resolutions),
         "band_rank": band_rank,
-        "contour_nodes": DECLARED_CONTOUR_NODES,
         "emergence": "strict",
         "fibers": ("Riesz bands of the image pencil (A~_1^U, M_1^U) on each "
                    "component's edges: geometric images supported on the "
