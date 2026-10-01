@@ -127,6 +127,8 @@ class JointActionObjective(cob.CobordismObjective):
         self._reference = list(reference)
         self.direction_order = direction_order
         self.rank_tolerance = float(rank_tolerance)
+        #: Why each scored point without a value had none, in the order met.
+        self.undefined = []
 
     # -- the declared interface -------------------------------------------
 
@@ -140,8 +142,18 @@ class JointActionObjective(cob.CobordismObjective):
         return False
 
     def terms(self, context):
-        residual = self.residual(context)
         terms = cob.MultiCobordism.ObjectiveTerms()
+        try:
+            residual = self.residual(context)
+        except (ValueError, RuntimeError) as error:
+            # a point at which the action or its bands have no value (a
+            # defective operator, a holonomy outside the domain of the
+            # holonomy term) has no residual: its objective is infinite, so
+            # stage 2 shortens a step that lands there, and the reason is
+            # kept for the report
+            self.undefined.append(str(error))
+            terms.joint_action_stationarity = float("inf")
+            return terms
         terms.joint_action_stationarity = float(
             np.vdot(residual, residual).real)
         return terms
