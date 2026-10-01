@@ -76,10 +76,8 @@ def test_no_isospin_doublet_on_the_host(declared, operator):
 def test_the_baryon_driver_adds_the_read_only_when_asked():
     """At the tolerances of the 2026-09-23 run the declared host with the
     content (1, 1, 1) is stationary as built and keeps its tetrahedral group,
-    so the read proceeds; at the declared 1e-15 the joint Newton's one
-    accepted step moves the six squared lengths by 1e-8 in an asymmetric
-    pattern before it finds no descent, the cell keeps only the identity,
-    and the read is refused by name (#1298)."""
+    so the three preconditions of the cell's own spin read hold: the spin is
+    read in the relaxed cell's own frame and the record carries no flag."""
     from tests.drivers import _recursion_run_2026_09_23 as RUN
 
     config = bp.default_config([1.0], [1.0], selected_contents=[(1, 1, 1)],
@@ -87,6 +85,10 @@ def test_the_baryon_driver_adds_the_read_only_when_asked():
     assert "isospin_doublet" not in config
     plain = bp.evaluate_content((1, 1, 1), 1.0, 1.0, config)
     assert "isospin_doublet" not in plain
+    assert plain["flags"] == []
+    assert plain["relaxation"]["symmetry"]["tetrahedral"]
+    assert plain["relaxation"]["spin_frame"] == bp.SPIN_FRAME_OF_THE_CELL == \
+        "the relaxed cell's own rotation group"
     config["isospin_doublet"] = True
     extended = bp.evaluate_content((1, 1, 1), 1.0, 1.0, config)
     read = extended["isospin_doublet"]

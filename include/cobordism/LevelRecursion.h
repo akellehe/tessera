@@ -38,14 +38,27 @@ using ::tessera::spacetime::Spacetime;
 ///   eigenvalue, both measured from that centre. When no eigenvalue is
 ///   excluded the selection encloses the whole spectrum, which the read
 ///   records as such with an infinite radius. Two eigenvalues equal at the
-///   declared tolerance are one eigenvalue with multiplicity, and a band rank
-///   that would separate them is refused by name, because the invariant
-///   subspace of a part of a multiple eigenvalue is not defined.
+///   declared tolerance are one eigenvalue with multiplicity. A band rank
+///   that separates them is read like any other, from the order the exact
+///   keys give, and the read reports it: its isolation gap is at or below
+///   the declared tolerance times the block's Frobenius norm and the fiber
+///   is not accepted (`RecursionBandRead::accepted`).
 /// * `DeclaredContours` — the caller supplies one centre and one radius per
 ///   component, and nothing is sorted at all. The band is the set of
-///   eigenvalues strictly inside the circle; an eigenvalue on the circle at
-///   the declared tolerance is refused by name, and a circle enclosing no
-///   eigenvalue is refused by name, because neither selects a fiber.
+///   eigenvalues strictly inside the circle: an eigenvalue \f$ \lambda \f$
+///   belongs to it exactly when \f$ |\lambda-c|<r \f$. The distance from the
+///   circle to the nearest eigenvalue is reported
+///   (`RecursionBandRead::contourGap`), and a circle that passes through an
+///   eigenvalue at the declared tolerance yields a fiber that is not
+///   accepted. A circle enclosing no eigenvalue yields the band of rank
+///   zero, whose projector is zero and whose frames have no column, and
+///   which is not accepted.
+///
+/// Under either option one selection has no projector at all: one that takes
+/// an eigenvalue into the band and leaves an eigenvalue exactly equal to it
+/// out. The projector onto a part of a multiple eigenvalue's invariant
+/// subspace is not defined, the Sylvester equation that would produce it is
+/// singular, and `LevelRecursion::readBand` says so by name.
 enum class RecursionBandSelection { LowestModes, DeclaredContours };
 
 /// # RecursionBandDeclaration
@@ -146,7 +159,13 @@ struct LevelRecursionDeclaration {
 /// of the block has the whole coordinate space as its invariant subspace:
 /// its projector is the identity and its two frames are the canonical basis,
 /// with nothing to reorder and no equation to solve, so its certificates are
-/// zero exactly.
+/// zero exactly. A selection that encloses no eigenvalue has the zero
+/// subspace as its invariant subspace: its projector is zero, its two frames
+/// have no column, and its residuals are zero exactly.
+///
+/// A read is made whatever the isolation of its band. The preconditions of a
+/// certified fiber are reported beside the result, in `isolationGap`,
+/// `contourGap` and `accepted`, and never withhold it.
 struct RecursionBandRead {
   /// The component of the level's partition this fiber belongs to: the response
   /// vertex it becomes at the next level.
@@ -180,11 +199,25 @@ struct RecursionBandRead {
   /// The smallest distance between a selected and an excluded eigenvalue of
   /// the block: the isolation of the band, which is what makes its invariant
   /// subspace a spectral one and the Sylvester equation solvable. Infinite when
-  /// the selection excludes no eigenvalue, and larger than the declared
-  /// tolerance times the block's Frobenius norm whenever the read returns,
-  /// because a selection that separates two eigenvalues equal at that
-  /// tolerance is refused.
+  /// the selection excludes no eigenvalue or selects none. A gap at or below
+  /// the declared tolerance times the block's Frobenius norm says that the
+  /// selection separates two eigenvalues equal at that tolerance; the fiber
+  /// is then read from the order the exact keys give and is not accepted.
+  /// The gap is positive whenever the read returns, because a gap of exactly
+  /// zero leaves the projector without a value.
   double isolationGap = 0.0;
+
+  /// The smallest distance between the declared circle and an eigenvalue of
+  /// the block under `DeclaredContours`,
+  /// \f$ \min_i\bigl||\lambda_i-c|-r\bigr| \f$: how far the nearest
+  /// eigenvalue is from changing sides of the circle. An eigenvalue is on the
+  /// circle at the declared tolerance when this distance is at or below the
+  /// tolerance times the larger of the radius and the eigenvalue's distance
+  /// from the centre; its membership is then the strict comparison all the
+  /// same, and the fiber is not accepted. Infinite under `LowestModes`, where
+  /// the recorded circle is derived from the selection and decides no
+  /// membership.
+  double contourGap = 0.0;
 
   /// \f$ \lVert P_v^2-P_v\rVert_F/\lVert P_v\rVert_F \f$: the rounding
   /// residual of the exact projector's idempotency.
@@ -209,14 +242,22 @@ struct RecursionBandRead {
   /// conjugation in the pairing.
   std::vector<std::complex<double>> leftFrame;
 
-  /// Whether the projector came out idempotent, the two frames paired to the
-  /// identity and the frame spanned an invariant subspace, all at the declared
-  /// tolerance. An unaccepted fiber is still carried and reported; it makes the
-  /// level's certificate fail to hold rather than disappearing.
+  /// Whether the fiber is certified at the declared tolerance. That needs the
+  /// preconditions of the read to hold: the band has at least one eigenvalue,
+  /// the selection separates no two eigenvalues equal at the tolerance
+  /// (`isolationGap` above the tolerance times the block's Frobenius norm),
+  /// and no eigenvalue is on a declared circle at the tolerance
+  /// (`contourGap`). It also needs the projector to have come out idempotent,
+  /// the two frames to pair to the identity and the frame to span an
+  /// invariant subspace, each residual a finite number at or below the
+  /// tolerance. An unaccepted fiber is still carried and reported; it makes
+  /// the level's certificate fail to hold rather than disappearing.
   bool accepted = false;
 
-  /// The fiber's certificate, whose residual is the worst of the idempotency,
-  /// the pairing defect and the invariant-subspace residual.
+  /// The fiber's certificate, which holds exactly when `accepted` is true.
+  /// Its residual is the worst of the idempotency, the pairing defect and the
+  /// invariant-subspace residual when the preconditions of the read hold, and
+  /// infinite when one of them does not.
   Certificate certificate{};
 };
 
@@ -460,6 +501,12 @@ class LevelRecursion {
   /// makes this read for every component of a level; on its own it reads a
   /// block as a level of one component, so the frames are over the block's
   /// own coordinates.
+  ///
+  /// The read is made whatever the isolation of the band: a selection that
+  /// separates two eigenvalues equal at \p tolerance, a declared circle that
+  /// passes through an eigenvalue at \p tolerance and a declared circle that
+  /// encloses no eigenvalue each return their band, with `accepted` false
+  /// and the measured gap beside it (see `RecursionBandRead`).
   /// @param block \f$ h_v \f$, flat row-major \p order by \p order.
   /// @param order The number of coordinates of the block.
   /// @param bands How the band is selected.
@@ -468,12 +515,12 @@ class LevelRecursion {
   /// @param tolerance The relative tolerance the rank decisions are made at
   ///   and the certificates hold against.
   /// @throws std::invalid_argument when the block is not square of the given
-  ///   order, when the declared band rank is zero, when the declared contours
-  ///   do not name \p component, when the declared selection separates two
-  ///   eigenvalues equal at the tolerance, when a declared contour passes
-  ///   through an eigenvalue at the tolerance, or when a declared contour
-  ///   encloses no eigenvalue; std::runtime_error when the Schur decomposition
-  ///   of the block does not converge.
+  ///   order, when the declared band rank is zero, or when the declared
+  ///   contours do not name \p component; std::domain_error when the
+  ///   selection takes an eigenvalue into the band and leaves an eigenvalue
+  ///   exactly equal to it out, where the Sylvester equation of the projector
+  ///   is singular and the projector has no value; std::runtime_error when
+  ///   the Schur decomposition of the block does not converge.
   [[nodiscard]] static RecursionBandRead readBand(
       const std::vector<std::complex<double>> &block, int order,
       const RecursionBandDeclaration &bands, std::size_t component,
@@ -488,10 +535,14 @@ class LevelRecursion {
     return levels_.size();
   }
 
-  /// Take one turn of the box.
+  /// Take one turn of the box. A fiber whose band read is not accepted is
+  /// carried into the level and makes the level's certificate fail to hold; a
+  /// band of rank zero contributes no mode and no transport.
   /// @throws std::length_error when the level to be reduced is at or above the
   ///   declared dense crossover, or when a level has been reduced to nothing
-  ///   and there is no further response pencil to partition.
+  ///   and there is no further response pencil to partition;
+  ///   std::domain_error when the band read of a component has no value (see
+  ///   `readBand`), in which case no level is recorded.
   void advance();
 
   /// Take turns until `levelCount()` reaches \p levels.

@@ -89,6 +89,7 @@ def _cheap_scan_point(kappa, beta, config, on_content=None):
     records = [_record([1, 1, 1], kappa, beta)]
     return {"kappa": kappa, "beta": beta,
             "elimination": config["elimination"], "failed_contents": [],
+            "flagged_contents": [],
             "contents": records, "ratios": bp.ratios(records),
             "pole_table": bp.pole_table(records)}
 
@@ -254,7 +255,8 @@ def test_progress_and_summary_are_printed_unless_quiet(cheap, capsys):
     (content, doublet content) pair, the labelled minima and the ratios."""
     bp.main(["run", "--kappa", "1", "--beta", "2"])
     out = capsys.readouterr().out
-    assert out.count("kappa=1 beta=2: 1 contents, 0 refused") == 2
+    assert out.count("kappa=1 beta=2: 1 contents, 0 without a value, "
+                     "0 flagged") == 2
     for pair in ("[0, 2, 1] (triality 1)", "[1, 1, 1] (triality 0)"):
         assert out.count("\n  content [1, 1, 1], doublet content %s | spin"
                          % pair) == 2
@@ -483,7 +485,7 @@ def _solved(record, **relaxation):
     return solved
 
 
-def test_solve_state_reads_the_solve_or_the_refusal_of_each_record():
+def test_solve_state_reads_the_solve_or_the_missing_value_of_each_record():
     record = {"content": [1, 1, 1], "doublet_reads": []}
     assert bp.solve_state(record) is None
     assert bp.solve_state(_solved(record, converged=True, iterations=6,
@@ -503,15 +505,23 @@ def test_solve_state_reads_the_solve_or_the_refusal_of_each_record():
     assert bp.solve_state(_solved(record, converged=False, iterations=2,
                                   stop_reason="new reason"))["reason"] == \
         "new reason"
-    # a refused read is marked refused whatever its solve reached
-    refused = _solved(record, converged=True, iterations=5)
-    refused.update(failed="the pole read is refused: ...",
-                   refusal="not Kontsevich-Segal allowable")
-    assert bp.solve_state(refused) == {
-        "state": "refused", "reason": "not KS-allowable", "iterations": 5}
+    # a read with no value is marked so whatever its solve reached, with the
+    # short name of the reason its record names
+    missing = _solved(record, converged=False, iterations=5)
+    missing.update(failed="the squared lengths overflowed the double (...), "
+                          "so there is no finite geometry to read a pole on",
+                   reason="the squared lengths overflowed the double")
+    assert bp.solve_state(missing) == {
+        "state": "no value", "reason": "lengths overflowed", "iterations": 5}
     assert bp.solve_state({"content": [0, 3, 0], "failed": "band 1 has "
                            "rank 2", "doublet_reads": []}) == {
-        "state": "refused", "reason": None, "iterations": None}
+        "state": "no value", "reason": None, "iterations": None}
+    # a flagged read is a read: it is marked by its solve, as any other
+    flagged = _solved(record, converged=True, iterations=5)
+    flagged["flags"] = [{"name": "not Kontsevich-Segal allowable",
+                         "detail": "margin -0.613"}]
+    assert bp.solve_state(flagged) == {
+        "state": "converged", "reason": None, "iterations": 5}
 
 
 def test_callout_lines():
@@ -521,8 +531,8 @@ def test_callout_lines():
     assert bp.callout_lines({"state": "not converged", "reason": "no descent",
                              "iterations": 12}) == [
         "\u2717 not converged", "no descent", "12 iterations"]
-    assert bp.callout_lines({"state": "refused", "reason": None,
-                             "iterations": None}) == ["\u2717 refused"]
+    assert bp.callout_lines({"state": "no value", "reason": None,
+                             "iterations": None}) == ["\u2717 no value"]
 
 
 def test_a_ratio_row_carries_the_solve_behind_each_pole():

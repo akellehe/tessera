@@ -272,21 +272,27 @@ def test_a_generalized_pencil_and_a_feshbach_response():
     assert list(read.failed_certificates) == []
 
 
-def test_an_interior_pole_is_no_zero_and_an_eigenvalue_on_it_is_named():
+def test_an_interior_pole_is_no_zero_and_an_eigenvalue_on_it_is_flagged():
     """The response of [[1, 1], [1, 1]] onto coordinate 0,
     F(s) = 1 - s - 1 / (1 - s), has the zeros 0 and 2 (the eigenvalues of the
     block) and a pole at the interior eigenvalue 1, which is listed as the
-    interior pole and is no zero. The response of diag(1, 1) onto coordinate
-    0 is 1 - s, whose zero sits at the interior eigenvalue 1, outside the
-    domain the response is continued on: the read names
-    'eigenvalue-at-interior-pole' and reports no pole."""
+    interior pole and is no zero; neither zero is at an interior eigenvalue.
+    The response of diag(1, 1) onto coordinate 0 is 1 - s, whose zero sits at
+    the interior eigenvalue 1, outside the domain the response is continued
+    on: the read reports the pencil's eigenvalue 1 as a pole, of multiplicity
+    two in the pencil (the two eigenvalues 1 of the diagonal block are one
+    cluster), flags it as sitting at an interior eigenvalue and names
+    'eigenvalue-at-interior-pole'."""
     read = _poles([[1, 1], [1, 1]], np.eye(2), [0])
     assert _reals(read.poles) == pytest.approx([0.0, 2.0], abs=1e-14)
+    assert list(read.at_interior_pole) == [False, False]
     assert _reals(read.interior_poles) == [1.0]
     assert list(read.failed_certificates) == []
     read = _poles(np.diag([1, 1]), np.eye(2), [0])
     assert list(read.failed_certificates) == ["eigenvalue-at-interior-pole"]
-    assert list(read.poles) == []
+    assert _reals(read.poles) == [1.0]
+    assert list(read.at_interior_pole) == [True]
+    assert list(read.multiplicity) == [2]
     assert _reals(read.interior_poles) == [1.0]
 
 

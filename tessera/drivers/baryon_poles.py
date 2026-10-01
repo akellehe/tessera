@@ -70,9 +70,12 @@ quarks in each of the three lowest bands of the covariant operator h_1, see
    of the three sheets. A solve that reaches no fixed point says why, by
    name (for example, no damped step reduced the residual, no stationary
    point in the declared monopole sector, or the
-   squared lengths overflowed the double), and the poles are not read on a
-   geometry whose squared lengths overflowed or that is not Kontsevich-Segal
-   allowable: that read is refused by name, with the margin;
+   squared lengths overflowed the double), and the poles are read on the
+   geometry the solve ended at. A geometry that is not Kontsevich-Segal
+   allowable is read like any other, and the content's record carries the
+   flag "not Kontsevich-Segal allowable" with the margin ("Flags" below).
+   A geometry whose squared lengths overflowed the double is not finite, so
+   it has no pole to read, and the content's record says so by name;
 2. runs one turn of the level recursion (`LevelRecursion`) and reads the fibre
    certificates;
 3. reads the seven v16 quark conditions by name (`QuarkConditions`);
@@ -158,16 +161,40 @@ dressed by the compensating gauge transformation of the cluster's own
 connection (WP v18 §11.1). The driver does the same on the relaxed cell
 itself: the rotations of the tetrahedron that leave the cell's squared lengths
 invariant and carry its connection to a gauge-equivalent one, on every sheet
-and at the certificate tolerance, are its rotation group (`cell_symmetry`);
-the spin read needs all twelve, so a cell with fewer is refused by name ("not
-tetrahedrally symmetric") and the rotations it lacks are recorded with their
-departures. On a tetrahedrally symmetric cell the actions D_1(g), the aligned
-doublet frame of every sheet, the isotypic projectors and the anchor atlas are
-built from that cell's own connection, and the spin decomposition of the
-occupied modes, the spin sectors and every pole are read on h-bar_1 (and, for
-the Section 7 quartic, on the eliminated three-particle operator averaged over
-the same diagonal action). The departure of h_1 itself from the symmetric form
-is reported beside every record as `symmetry_residual`.
+and at the certificate tolerance, are its rotation group (`cell_symmetry`).
+The spin read of the cell itself has three preconditions, each decided at the
+certificate tolerance: the cell has all twelve rotations, the spin read of
+every sheet names its j = 1/2 doublet, and the sheets' doublet labels agree.
+When the three hold, the actions D_1(g), the aligned doublet frame of every
+sheet, the isotypic projectors and the anchor atlas are built from that cell's
+own connection. When one does not hold, the spin is read in the frame of the
+declared symmetric host instead, with the actions D_1(g) and the aligned
+doublet frame of `monopole_support()`, and the content's record carries a
+flag that names the precondition and gives the numbers that decided it
+("Flags" below); the rotations the cell lacks are recorded with their
+departures. The record names the frame that was used
+(``relaxation.spin_frame``, `spin_frame`). In either frame the spin
+decomposition of the occupied modes, the spin sectors and every pole are read
+on h-bar_1 (and, for the Section 7 quartic, on the eliminated three-particle
+operator averaged over the same diagonal action). The departure of h_1 itself
+from the symmetric form is reported beside every record as
+`symmetry_residual`.
+
+Flags
+-----
+A flag is the record of a precondition of a read that does not hold at its
+declared tolerance. The read is made all the same, and the flag is carried
+beside its result: a dict with the precondition's ``name``, a ``detail``
+sentence and the numbers that decided it. A content's record lists its flags
+under ``flags``, an empty list when every precondition holds. The names are
+"not Kontsevich-Segal allowable" (the geometry the mean-field solve reached,
+`geometry_flags`), and "not tetrahedrally symmetric", "no j = 1/2 doublet" and
+"the sheets' doublet labels disagree" (the three preconditions of the spin
+read of the cell itself, `spin_frame`). A read with no value at all is a
+different thing: a content whose solve overflowed the double, or at which the
+library names no value (a band that cannot hold the occupation, a face
+holonomy outside the domain of the holonomy term), has a record with
+``failed`` and no pole.
 
 What a content names
 --------------------
@@ -308,7 +335,7 @@ TOLERANCES = (
      "the anchor atlas and the spectral fingerprint"),
     ("allowability_tolerance",
      "the Kontsevich-Segal margin at or below which a relaxed geometry is "
-     "read as the boundary of allowability and its pole read refused"),
+     "read as the boundary of allowability and its pole read is flagged"),
     ("tie_tolerance",
      "the relative separation of real parts within which two poles tie in "
      "the ascending-real-part order"),
@@ -437,7 +464,8 @@ FIBER_PINNINGS = {"eigenvalues": cob.FiberConstraintForm.BandEigenvalues,
 #: cell, zero on a real Lorentzian one and negative beyond. A margin within
 #: this of zero is the boundary to within the rounding of the arguments, where
 #: WP v17 line 151 reads a band only as the limit of an allowable family and
-#: never alone, so no pole is read there.
+#: never alone, so a pole read there carries the flag "not Kontsevich-Segal
+#: allowable" (`geometry_flags`).
 DECLARED_ALLOWABILITY_TOLERANCE = DECLARED_TOLERANCE
 
 #: How often the --live main thread services the GUI event loop.
@@ -737,7 +765,9 @@ def cell_symmetry(spacetime, supports, tolerance=DECLARED_CERTIFICATE_TOLERANCE)
     is implemented on k-cochains by D_k(g) = rho_k(u_g) P_g" (WP v18 §11.1),
     and refinement-stable spinor doublets are predicted on tetrahedrally
     symmetric supports and nowhere else (WP v18 §4). A relaxed cell is
-    therefore read against the group it has, not against the fixture's. The
+    therefore read against the group it has when that is the whole
+    tetrahedral group, and in the frame of the declared symmetric host, with
+    a flag, when it is not (`spin_frame`). The
     connection enters through the sheet support, that is through its U(1)
     part; the departure of the links from the unit circle is reported by
     `sheet_support` and is not part of this decision.
@@ -868,6 +898,102 @@ def aligned_doublet_frame(support, group,
         "intertwining_residual": float(residual),
         "spin_read": read,
     }
+
+
+#: The two frames a content's spin is read in (`spin_frame`), as the record
+#: names them under ``relaxation.spin_frame``.
+SPIN_FRAME_OF_THE_CELL = "the relaxed cell's own rotation group"
+SPIN_FRAME_OF_THE_HOST = "the declared symmetric host"
+
+
+def spin_frame(supports, symmetry, degeneracy_tolerance=DECLARED_TOLERANCE,
+               tolerance=DECLARED_CERTIFICATE_TOLERANCE):
+    """The frame the spin of a relaxed cell is read in: the projective
+    rotation action D_1(g) on the 18 microscopic edge cells
+    (`rotation_action`) and the aligned doublet frame of every sheet
+    (`aligned_doublet_frame`), with the flags of the read.
+
+    ``supports`` are the sheets' (`MonopoleSupport`, departure) pairs
+    (`sheet_support`) and ``symmetry`` is the cell's `cell_symmetry` at
+    ``tolerance``. The spin read of the cell itself has three preconditions,
+    each defined on the one before it:
+
+    1. the cell is tetrahedrally symmetric: all twelve rotations of the
+       tetrahedron leave its squared lengths invariant and carry its
+       connection to a gauge-equivalent one, at ``tolerance``;
+    2. the spin read of every sheet's own support names a j = 1/2 doublet, so
+       that every sheet has an aligned frame;
+    3. the aligned frames of the sheets carry the same doublet labels (the
+       Z_3 labels of the three carriers and the reference carrier).
+
+    When the three hold, the frame is the cell's own: the actions and the
+    aligned frames are built from the sheets' supports. When one does not
+    hold, the frame is that of the declared symmetric host: the actions and
+    the aligned frame of `monopole_support()`, the same on every sheet, and
+    the first precondition that does not hold is recorded as a flag, a dict
+    with its ``name`` ("not tetrahedrally symmetric", "no j = 1/2 doublet",
+    "the sheets' doublet labels disagree"), a ``detail`` sentence and the
+    numbers that decided it. The read proceeds in either frame.
+
+    Returns a dict with ``name`` (`SPIN_FRAME_OF_THE_CELL` or
+    `SPIN_FRAME_OF_THE_HOST`), ``actions``, ``alignments`` (one per sheet)
+    and ``flags``."""
+    group = rotation_group()
+    flags, own = [], None
+    if not symmetry["tetrahedral"]:
+        flags.append({
+            "name": "not tetrahedrally symmetric",
+            "detail": (
+                "the relaxed cell has %d of the %d rotations of the "
+                "tetrahedron as symmetries at the certificate tolerance %.3g "
+                "(largest length departure %.3g, largest gauge-compensation "
+                "residual %.3g)"
+                % (symmetry["order"], len(symmetry["rotations"]), tolerance,
+                   symmetry["length_departure"],
+                   symmetry["compensation_residual"])),
+            "order": int(symmetry["order"]),
+            "rotations": len(symmetry["rotations"]),
+            "tolerance": float(tolerance),
+            "length_departure": float(symmetry["length_departure"]),
+            "compensation_residual": float(
+                symmetry["compensation_residual"]),
+        })
+    else:
+        try:
+            own = [aligned_doublet_frame(support, group, degeneracy_tolerance,
+                                         tolerance)
+                   for support, _ in supports]
+        except NoSpinorDoublet as missing:
+            flags.append({
+                "name": "no j = 1/2 doublet",
+                "detail": "the spin read of the relaxed cell names no "
+                          "reference doublet: %s" % missing,
+                "degeneracy_tolerance": float(degeneracy_tolerance),
+                "tolerance": float(tolerance),
+            })
+        else:
+            labels = [[list(a["trialities"]), int(a["reference_carrier"])]
+                      for a in own]
+            if any(label != labels[0] for label in labels):
+                flags.append({
+                    "name": "the sheets' doublet labels disagree",
+                    "detail": "the aligned frames of the sheets carry the "
+                              "doublet labels (trialities, reference "
+                              "carrier) %s" % labels,
+                    "labels": labels,
+                })
+                own = None
+    if own is not None:
+        return {"name": SPIN_FRAME_OF_THE_CELL,
+                "actions": rotation_action([support
+                                            for support, _ in supports]),
+                "alignments": own, "flags": flags}
+    host = monopole_support()
+    return {"name": SPIN_FRAME_OF_THE_HOST,
+            "actions": rotation_action([host] * SHEETS),
+            "alignments": [aligned_doublet_frame(
+                host, group, degeneracy_tolerance, tolerance)] * SHEETS,
+            "flags": flags}
 
 
 def edge_spin_matrices():
@@ -1182,6 +1308,29 @@ def drazin_elimination(stiffness, directions, radius):
     A^D = R (R^T A R)^{-1} R^T exactly: the fluctuation is carried in the
     reduced coordinates f = R g, whose stiffness R^T A R is nonsingular, and
     `DressedFluctuation` eliminates g. The identity is measured, not assumed.
+
+    A stiffness that is zero by structure is eliminated like any other. The
+    length stiffness is the Regge term's, which is zero on a complex without
+    an interior hinge, so the lengths-only elimination there has A = 0. The
+    Drazin inverse of the zero matrix is the zero matrix: every coordinate
+    lies in the null space, Pi_0 is the identity, ran(I - Pi_0) is the zero
+    subspace, R has no column and the reduced stiffness is the 0 x 0 matrix.
+    The elimination then integrates out no fluctuation and contributes
+    nothing, and the record says so: ``zero_by_structure`` is whether A is
+    the zero matrix exactly, ``eliminated_dimension`` is zero, the two
+    residuals are zero exactly (A A^D A - A and R (R^T A R)^{-1} R^T - A^D
+    are both the zero matrix) and ``reduced_conditioning`` is None, because
+    a 0 x 0 matrix has no condition number. The same holds whenever every
+    eigenvalue of A is zero, where A^D is also the zero matrix; for such an
+    A other than zero, A A^D A - A = -A and the first residual is one.
+
+    Returns A^D, R, R^T A R and the record: the number of coordinates, the
+    resonance disc with its enclosure and separation, whether A is zero by
+    structure, the dimensions of the null space and of the eliminated space,
+    the idempotency residual of Pi_0, the residual of A A^D A = A relative
+    to A, the residual of the reduced form against A^D relative to A^D, the
+    condition number of the reduced stiffness and, with ``directions``, how
+    the null space compares with the pure-gauge directions.
     """
     size = stiffness.shape[0]
     read = T.chainhodge.PencilSchur.feshbach(
@@ -1199,28 +1348,32 @@ def drazin_elimination(stiffness, directions, radius):
         null = np.asarray(read.nullProjector)
         left, _, _ = np.linalg.svd(np.asarray(read.rangeProjector))
         basis = left[:, :int(read.interiorRank)]
-    if basis.shape[1] == 0:
-        raise ValueError(
-            "drazin_elimination: the bare stiffness of the retained "
-            "coordinates is zero by structure, so every coordinate lies in "
-            "the null space of A and there is no fluctuation to integrate "
-            "out; the length stiffness is the Regge term's, which is zero on "
-            "a complex without an interior hinge, so a lengths-only "
-            "elimination there has no coordinate")
+    record["zero_by_structure"] = bool(not stiffness.any())
     reduced = basis.T @ stiffness @ basis
-    rebuilt = basis @ np.linalg.solve(reduced, basis.T)
+    if basis.shape[1] == 0:
+        # every coordinate lies in the generalized null space: A^D is the
+        # zero matrix, which the empty reduced form rebuilds exactly
+        drazin = np.zeros_like(stiffness)
+        scale = float(np.linalg.norm(stiffness))
+        identity_residual = 1.0 if scale > 0.0 else 0.0
+        reduction_residual, conditioning = 0.0, None
+    else:
+        rebuilt = basis @ np.linalg.solve(reduced, basis.T)
+        identity_residual = float(
+            np.linalg.norm(stiffness @ drazin @ stiffness - stiffness)
+            / np.linalg.norm(stiffness))
+        reduction_residual = float(np.linalg.norm(rebuilt - drazin)
+                                   / np.linalg.norm(drazin))
+        conditioning = float(np.linalg.cond(reduced))
     record.update({
         "null_dimension": int(size - basis.shape[1]),
         "eliminated_dimension": int(basis.shape[1]),
         "projector_idempotency": float(
             np.linalg.norm(null @ null - null) / np.linalg.norm(null))
         if null.any() else 0.0,
-        "drazin_identity_residual": float(
-            np.linalg.norm(stiffness @ drazin @ stiffness - stiffness)
-            / np.linalg.norm(stiffness)),
-        "reduction_residual": float(np.linalg.norm(rebuilt - drazin)
-                                    / np.linalg.norm(drazin)),
-        "reduced_conditioning": float(np.linalg.cond(reduced)),
+        "drazin_identity_residual": identity_residual,
+        "reduction_residual": reduction_residual,
+        "reduced_conditioning": conditioning,
     })
     if directions is not None:
         # the pure-gauge directions lie in ran(Pi_0), and Pi_0 has no more
@@ -1561,14 +1714,15 @@ def relax_content(content, kappa, beta, config):
     return spacetime, solve.action, report
 
 
-class ReadRefused(ValueError):
-    """A content's pole read refused by name on the geometry its mean-field
-    solve reached: ``name`` is the refusal ("the squared lengths overflowed
-    the double", "not Kontsevich-Segal allowable"), the message says why with
-    the numbers that decided it, ``relaxation`` is the solve's record
-    (`relaxation_record`), and ``records`` holds any further read that
-    decided the refusal, keyed as the content record would key it (the
-    cell's `cell_symmetry` under "symmetry")."""
+class ReadWithoutValue(ValueError):
+    """A content's pole read that has no value on what its mean-field solve
+    reached: ``name`` is the reason by name ("the squared lengths overflowed
+    the double"), the message says why with the numbers that decided it,
+    ``relaxation`` is the solve's record (`relaxation_record`), and
+    ``records`` holds any further read made before the value was found
+    missing, keyed as the content record would key it. A read whose
+    precondition does not hold is not this: it is made and flagged
+    (`geometry_flags`, `spin_frame`)."""
 
     def __init__(self, name, message, relaxation, **records):
         super().__init__(message)
@@ -1715,29 +1869,62 @@ def relaxation_record(report):
     }
 
 
-def read_refusal(report, tolerance=DECLARED_ALLOWABILITY_TOLERANCE):
-    """The name and the message of the refusal of a pole read on the geometry
-    a mean-field solve reached, or None when the read may proceed. The read is
-    refused when the squared lengths overflowed the double (the only bound
-    on a length is the datatype's; the low eigenvalues there are h_1 ~ 1/z
-    at infinite length, not a bound state) and when the geometry is
-    not Kontsevich-Segal allowable (bands are read on the allowable side,
-    WP v17 line 151; a margin within ``tolerance`` of zero is the
-    boundary). A solve that stopped for another reason is read,
-    and its record says why it stopped."""
+def geometry_without_value(report):
+    """The name and the message of why the geometry a mean-field solve
+    reached has no pole to read, or None when it has. The one such geometry
+    is the one whose squared lengths overflowed the double: the only bound
+    on a length is the datatype's, and a squared length beyond the largest
+    finite double is not a number, so there is no finite geometry to read
+    an operator on. A solve that stopped for any other reason is read, and
+    its record says why it stopped."""
     if report.stop_reason == cob.RelaxationStop.LengthRunaway:
         return ("the squared lengths overflowed the double",
-                "the pole read is refused: the squared lengths overflowed "
-                "the double (%s)" % report.stop_detail)
-    margin = float(report.kontsevich_segal_margin)
-    if not margin > tolerance:
-        return ("not Kontsevich-Segal allowable",
-                "the pole read is refused: the geometry the mean-field "
-                "solve reached is not Kontsevich-Segal allowable (margin "
-                "%.3g, at or below the declared tolerance %.0e), and bands "
-                "are read on the allowable side (WP v17 line 151)"
-                % (margin, tolerance))
+                "the squared lengths overflowed the double (%s), so there is "
+                "no finite geometry to read a pole on" % report.stop_detail)
     return None
+
+
+def geometry_flags(report, tolerance=DECLARED_ALLOWABILITY_TOLERANCE):
+    """The flags of the geometry a mean-field solve reached: the
+    preconditions of the pole read that the geometry does not meet, each a
+    dict with its ``name``, a ``detail`` sentence and the numbers that
+    decided it. The poles are read on a flagged geometry, and the flags are
+    carried beside them.
+
+    The one precondition on the geometry is that it is Kontsevich-Segal
+    allowable: bands are read on the allowable side (WP v17 line 151), and a
+    margin within ``tolerance`` of zero is the boundary. A geometry whose
+    margin is not above ``tolerance`` carries the flag "not Kontsevich-Segal
+    allowable" with the margin and the tolerance. An empty list says the
+    geometry is allowable."""
+    margin = float(report.kontsevich_segal_margin)
+    if margin > tolerance:
+        return []
+    return [{
+        "name": "not Kontsevich-Segal allowable",
+        "detail": ("the geometry the mean-field solve reached is not "
+                   "Kontsevich-Segal allowable (margin %.3g, at or below "
+                   "the declared tolerance %.0e), and bands are read on the "
+                   "allowable side (WP v17 line 151)" % (margin, tolerance)),
+        "kontsevich_segal_margin": margin,
+        "tolerance": float(tolerance),
+    }]
+
+
+def flags_text(record):
+    """The flags of one content record as text (`geometry_flags`,
+    `spin_frame`): each flag's name with its detail, and the frame the spin
+    was read in when the record names it. Empty when the record carries no
+    flag."""
+    flags = record.get("flags") or []
+    if not flags:
+        return ""
+    text = "flagged: " + "; ".join("%s (%s)" % (flag["name"], flag["detail"])
+                                   for flag in flags)
+    frame = (record.get("relaxation") or {}).get("spin_frame")
+    if frame:
+        text += "; spin read in the frame of %s" % frame
+    return text
 
 
 def _term(action, name):
@@ -2015,54 +2202,41 @@ def sector_entry(j2, triality, sector, operators, projectors=None,
 
 def evaluate_content(content, kappa, beta, config):
     """One content at one scan point: relaxation, recursion, quark conditions,
-    states, spin, operators and poles."""
+    states, spin, operators and poles.
+
+    The poles are read on the geometry the mean-field solve reached, whatever
+    it is. A precondition of the read that does not hold at its declared
+    tolerance is recorded as a flag under ``flags`` (`geometry_flags` for
+    the geometry, `spin_frame` for the spin read of the cell itself), and
+    the frame the spin was read in is named under ``relaxation.spin_frame``.
+    A solve whose squared lengths overflowed the double leaves no finite
+    geometry to read, and raises `ReadWithoutValue`
+    (`geometry_without_value`)."""
     started = time.time()
     spacetime, action, report = relax_content(content, kappa, beta, config)
     solve = relaxation_record(report)
-    refusal = read_refusal(report,
-                           declared_tolerance(config, "allowability_tolerance"))
-    if refusal is not None:
-        raise ReadRefused(refusal[0], refusal[1], solve)
+    missing = geometry_without_value(report)
+    if missing is not None:
+        raise ReadWithoutValue(missing[0], missing[1], solve)
+    flags = geometry_flags(
+        report, declared_tolerance(config, "allowability_tolerance"))
     carrier = matrix(action.carrier_operator())
     certificate_tolerance = declared_tolerance(config, "certificate_tolerance")
 
-    # The spin is read with the projective action D_1(g) of the relaxed cell
-    # itself, whose rotation group is measured (`cell_symmetry`): the
-    # relaxation under h_1, which is not itself rotation-covariant, moves the
-    # fields off the symmetric configuration, and a cell that is not
-    # tetrahedrally symmetric at the certificate tolerance has no such read.
+    # The relaxation under h_1, which is not itself rotation-covariant, moves
+    # the fields off the symmetric configuration. The rotation group of the
+    # relaxed cell is measured (`cell_symmetry`), and the spin is read with
+    # the projective action D_1(g) of the cell itself when the cell meets
+    # the preconditions of that read, and with that of the declared symmetric
+    # host, flagged, when it does not (`spin_frame`).
     supports = [sheet_support(spacetime, t) for t in range(SHEETS)]
     symmetry = cell_symmetry(spacetime, supports, certificate_tolerance)
-    if not symmetry["tetrahedral"]:
-        raise ReadRefused(
-            "not tetrahedrally symmetric",
-            "the spin read is refused: the relaxed cell has %d of the %d "
-            "rotations of the tetrahedron as symmetries at the certificate "
-            "tolerance %.3g (largest length departure %.3g, largest "
-            "gauge-compensation residual %.3g)"
-            % (symmetry["order"], len(symmetry["rotations"]),
-               certificate_tolerance, symmetry["length_departure"],
-               symmetry["compensation_residual"]),
-            solve, symmetry=symmetry)
-    group = rotation_group()
-    actions = rotation_action([support for support, _ in supports])
-    try:
-        alignments = [aligned_doublet_frame(
-            support, group, declared_tolerance(config, "degeneracy_tolerance"),
-            certificate_tolerance) for support, _ in supports]
-    except NoSpinorDoublet as missing:
-        raise ReadRefused("no j = 1/2 doublet",
-                          "the spin read is refused: %s" % missing, solve,
-                          symmetry=symmetry)
-    labels = {(tuple(a["trialities"]), int(a["reference_carrier"]))
-              for a in alignments}
-    if len(labels) > 1:
-        raise ReadRefused(
-            "the sheets' doublet labels disagree",
-            "the spin read is refused: the aligned frames of the sheets carry "
-            "the doublet labels (trialities, reference carrier) %s"
-            % [(a["trialities"], a["reference_carrier"]) for a in alignments],
-            solve, symmetry=symmetry)
+    spin_read_frame = spin_frame(
+        supports, symmetry, declared_tolerance(config, "degeneracy_tolerance"),
+        certificate_tolerance)
+    flags = flags + spin_read_frame["flags"]
+    actions = spin_read_frame["actions"]
+    alignments = spin_read_frame["alignments"]
     frame = _micro_frame(alignments)
     dual = np.linalg.inv(frame)
     averaged = rotation_averaged(carrier, actions)
@@ -2152,6 +2326,7 @@ def evaluate_content(content, kappa, beta, config):
         "content_meaning": CONTENT_MEANING,
         "elimination": config["elimination"],
         "seconds": time.time() - started,
+        "flags": flags,
         "relaxation": dict(solve, **{
             "band_operator": "h_1 (the covariant operator itself)",
             "shared_sheet_geometry": True,
@@ -2177,6 +2352,7 @@ def evaluate_content(content, kappa, beta, config):
             "symmetry_departure": symmetry["compensation_residual"],
             "length_departure": symmetry["length_departure"],
             "symmetry": symmetry,
+            "spin_frame": spin_read_frame["name"],
             "frames": [{
                 "trialities": a["trialities"],
                 "reference_carrier": a["reference_carrier"],
@@ -2956,26 +3132,33 @@ def quark_conditions(spacetime, alignments, recursion, symmetry_residual,
 
 
 def scan_point(kappa, beta, config, on_content=None):
-    """Every content at one (kappa, beta), and the ratios."""
+    """Every content at one (kappa, beta), and the ratios.
+
+    A content whose read is flagged is a content like any other: its record
+    carries its poles and lists its flags (``flags``), and
+    ``flagged_contents`` names it. A content with no value has a record with
+    ``failed`` (the message) and no pole, and ``failed_contents`` names it:
+    one whose solve left no finite geometry (`ReadWithoutValue`, with
+    ``reason`` the reason by name and the solve's record), and one at which
+    the library names no value."""
     records = []
     for content in config.get("contents") or contents():
         try:
             record = evaluate_content(content, kappa, beta, config)
-        except ReadRefused as refusal:
-            # the pole read refused by name on the geometry the mean-field
-            # solve reached, or on its symmetry: recorded with its reason,
-            # the solve's record and the reads that decided it, and the
-            # content supplies no pole
+        except ReadWithoutValue as missing:
+            # the mean-field solve left no finite geometry to read: recorded
+            # with the reason by name and the solve's record, and the content
+            # supplies no pole
             record = dict({"content": list(content),
                            "elimination": config["elimination"],
-                           "failed": str(refusal), "refusal": refusal.name,
-                           "relaxation": refusal.relaxation,
-                           "doublet_reads": []}, **refusal.records)
+                           "failed": str(missing), "reason": missing.name,
+                           "relaxation": missing.relaxation,
+                           "doublet_reads": []}, **missing.records)
         except ValueError as error:
-            # a declared refusal of the library at this content (a band that
-            # cannot hold the occupation, a face holonomy outside the domain
-            # of the holonomy term): recorded with its reason, and the content
-            # supplies no pole
+            # the library names no value at this content (a band that cannot
+            # hold the occupation, a face holonomy outside the domain of the
+            # holonomy term): recorded with the library's message, and the
+            # content supplies no pole
             record = {"content": list(content),
                       "elimination": config["elimination"],
                       "failed": str(error), "doublet_reads": []}
@@ -2986,6 +3169,8 @@ def scan_point(kappa, beta, config, on_content=None):
             "elimination": config["elimination"],
             "failed_contents": [record["content"] for record in records
                                 if "failed" in record],
+            "flagged_contents": [record["content"] for record in records
+                                 if record.get("flags")],
             "contents": records,
             "ratios": ratios(records,
                              declared_tolerance(config, "tie_tolerance")),
@@ -3448,11 +3633,11 @@ def relaxation_text(relaxation):
 
 def content_pair_lines(record, prefix=""):
     """Every (content, doublet content) pair of one content record, one line
-    each (`pair_line`); a refused content is one line with its reason and,
-    for a read refused after the mean-field solve, the solve's record."""
+    each (`pair_line`); a content with no value is one line with the reason
+    and, where the mean-field solve was made, the solve's record."""
     if "failed" in record:
-        line = "%scontent %s: refused: %s" % (prefix, list(record["content"]),
-                                              record["failed"])
+        line = "%scontent %s: no value: %s" % (prefix, list(record["content"]),
+                                               record["failed"])
         if record.get("relaxation"):
             line += "; " + relaxation_text(record["relaxation"])
         return [line]
@@ -3552,23 +3737,30 @@ def ratio_lines(point_ratios, prefix=""):
 
 
 def point_lines(point):
-    """One scan point as text: every (content, doublet content) pair on its
-    own line, then the labelled minima, then the ratios with the pairs they
+    """One scan point as text: how many contents were read, how many of them
+    have no value and how many are flagged; every content's line, with its
+    mean-field solve, its anchor atlas, its spectral fingerprint and its
+    flags (`flags_text`); every (content, doublet content) pair on its own
+    line; then the labelled minima, then the ratios with the pairs they
     compare."""
     records = point["contents"]
-    lines = ["kappa=%g beta=%g: %d contents, %d refused; one line per "
-             "(content, doublet content) pair, poles s with multiplicity x"
+    lines = ["kappa=%g beta=%g: %d contents, %d without a value, %d flagged; "
+             "one line per (content, doublet content) pair, poles s with "
+             "multiplicity x"
              % (point["kappa"], point["beta"], len(records),
-                sum(1 for record in records if "failed" in record))]
+                sum(1 for record in records if "failed" in record),
+                sum(1 for record in records if record.get("flags")))]
     for record in records:
         if "failed" not in record:
-            lines.append("  content %s %s%s%s" % (
+            flagged = flags_text(record)
+            lines.append("  content %s %s%s%s%s" % (
                 list(record["content"]),
                 relaxation_text(record.get("relaxation")),
                 "; " + anchor_text(record["anchor"])
                 if "anchor" in record else "",
                 "; " + fingerprint_text(record["spectral_fingerprint"])
-                if "spectral_fingerprint" in record else ""))
+                if "spectral_fingerprint" in record else "",
+                "; " + flagged if flagged else ""))
         lines += term_trace_lines(record.get("relaxation"), "    ")
         lines += content_pair_lines(record, "  ")
     lines += lowest_lines(records, "  ")
@@ -3755,12 +3947,12 @@ SOLVE_STYLE = {
                   "label": "mean-field solve converged"},
     "not converged": {"ink": "#b3261e", "band": "#fbe6e3", "sign": "\u2717",
                       "label": "mean-field solve not converged"},
-    "refused": {"ink": INK_MUTED, "band": "#ecebe6", "sign": "\u2717",
-                "label": "pole read refused"},
+    "no value": {"ink": INK_MUTED, "band": "#ecebe6", "sign": "\u2717",
+                 "label": "pole read has no value"},
 }
 #: The short names, in a callout, of why a mean-field solve stopped
-#: (`cob.relaxation_stop_name`) and of the refusals of a pole read
-#: (`read_refusal`).
+#: (`cob.relaxation_stop_name`), which are also the names of why a pole read
+#: has no value (`geometry_without_value`).
 STOP_SHORT = {
     "no damped step reduced the residual": "no descent",
     "every damped step left the domain of the action": "left the domain",
@@ -3769,7 +3961,6 @@ STOP_SHORT = {
     "the residual is at its floor on the held set": "held floor",
     "the squared lengths overflowed the double": "lengths overflowed",
     "a declared limit was reached": "declared limit",
-    "not Kontsevich-Segal allowable": "not KS-allowable",
 }
 #: The largest font size of the callouts; they are set smaller, all to one
 #: size, when the narrowest group needs it.
@@ -3783,18 +3974,19 @@ def _digits(values):
 
 def solve_state(record):
     """The mean-field solve behind one content record, as the plots mark it:
-    ``state`` is "refused" when the content's pole read was refused (it reads
-    no pole) and otherwise "converged" or "not converged" as the solve's
-    record says; ``reason`` is the short name (`STOP_SHORT`) of why an
-    unconverged solve stopped or why the read was refused, None when there is
-    none; ``iterations`` is the solve's iteration count, None when
-    unrecorded. None when the record carries neither a refusal nor a
+    ``state`` is "no value" when the content's pole read has none (its
+    record carries ``failed`` and no pole) and otherwise "converged" or "not
+    converged" as the solve's record says, whether or not the read is
+    flagged; ``reason`` is the short name (`STOP_SHORT`) of why an
+    unconverged solve stopped or of why the read has no value, None when the
+    record names none; ``iterations`` is the solve's iteration count, None
+    when unrecorded. None when the record carries neither ``failed`` nor a
     solve."""
     relaxation = record.get("relaxation") or {}
     iterations = relaxation.get("iterations")
     if "failed" in record:
-        name = record.get("refusal")
-        return {"state": "refused", "reason": STOP_SHORT.get(name, name),
+        name = record.get("reason")
+        return {"state": "no value", "reason": STOP_SHORT.get(name, name),
                 "iterations": iterations}
     if "converged" not in relaxation:
         return None
@@ -3808,7 +4000,7 @@ def solve_state(record):
 
 def callout_lines(solve):
     """The lines of one group's callout (`solve_state`): the sign and the
-    state, then why the solve stopped or the read was refused, then the
+    state, then why the solve stopped or the read has no value, then the
     solve's iterations, each where known."""
     lines = ["%s %s" % (SOLVE_STYLE[solve["state"]]["sign"], solve["state"])]
     if solve["reason"]:
@@ -3825,8 +4017,9 @@ def pole_marks(groups):
 
     ``groups`` is a list of (label, content record). A group occupies one
     slot per doublet content its record read, in the record's order, and
-    groups are separated by `GROUP_GAP` empty slots; a refused content, which
-    reads no doublet content, occupies one slot labelled "refused". Returns
+    groups are separated by `GROUP_GAP` empty slots; a content with no value,
+    which reads no doublet content, occupies one slot labelled "no value".
+    Returns
     the marks (each with its position ``x``, its pair's slot offset by its
     spin, the group label, the content, the doublet content, the spin, the
     column, the pole and its multiplicity), the groups (label, first and
@@ -3838,7 +4031,7 @@ def pole_marks(groups):
         start = x
         reads = record.get("doublet_reads") or []
         if not reads:
-            slots.append((x, "refused" if "failed" in record else "none"))
+            slots.append((x, "no value" if "failed" in record else "none"))
             x += 1.0
         for read in reads:
             slots.append((x, _digits(read["doublet_content"])))
@@ -3971,10 +4164,10 @@ def draw_pole_panel(axis, data, name, title, group_label):
     symmetric logarithmic scale of Re s (the poles span several decades).
     Below each slot is its doublet content (quarks in 2, 2', 2'' of
     h-bar_1), and below each group its label (``group_label`` says what it
-    names). Each group whose record carries a mean-field solve or a refusal
-    (`solve_state`) has a band behind its pairs and a callout above them in
-    its state's colour (`SOLVE_STYLE`): whether the solve converged, why it
-    stopped or the read was refused, and its iterations
+    names). Each group whose record carries a mean-field solve or has no
+    value (`solve_state`) has a band behind its pairs and a callout above
+    them in its state's colour (`SOLVE_STYLE`): whether the solve converged,
+    why it stopped or the read has no value, and its iterations
     (`callout_lines`)."""
     style_axis(axis)
     named = set()

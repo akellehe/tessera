@@ -313,12 +313,14 @@ BoundStatePoleRead BoundStatePole::poles(const Eigen::MatrixXcd &A,
     }
   }
 
-  // 3. The clusters that are zeros of D_C: those no interior eigenvalue meets.
-  //    A cluster an interior eigenvalue meets lies outside the domain the
-  //    response is continued on and is named rather than reported.
+  // 3. Every cluster is reported. A cluster no interior eigenvalue meets is a
+  //    zero of D_C. A cluster an interior eigenvalue meets lies outside the
+  //    domain the response is continued on: it is reported with the others,
+  //    flagged, and the failure is named.
   struct Cluster {
     complexd value{0.0, 0.0};
     std::vector<std::size_t> members{};
+    bool atInteriorPole{false};
   };
   std::vector<Cluster> reported;
   for (const auto &members : full.clusters) {
@@ -327,11 +329,10 @@ BoundStatePoleRead BoundStatePole::poles(const Eigen::MatrixXcd &A,
       for (const complexd &pole : interior.eigenvalues)
         if (std::abs(full.eigenvalues[member] - pole) <= threshold)
           meetsInterior = true;
-    if (meetsInterior) {
+    if (meetsInterior)
       nameFailure(read.failedCertificates, "eigenvalue-at-interior-pole");
-      continue;
-    }
-    reported.push_back(Cluster{clusterValue(full, members), members});
+    reported.push_back(
+        Cluster{clusterValue(full, members), members, meetsInterior});
   }
   std::sort(reported.begin(), reported.end(),
             [](const Cluster &a, const Cluster &b) {
@@ -353,6 +354,7 @@ BoundStatePoleRead BoundStatePole::poles(const Eigen::MatrixXcd &A,
     const Eigen::MatrixXcd U11 = V.adjoint() * T * V;
 
     read.poles.push_back(cluster.value);
+    read.atInteriorPole.push_back(cluster.atInteriorPole);
     read.multiplicity.push_back(cluster.members.size());
     read.clusterSpread.push_back(clusterDiameter(full, cluster.members));
     read.simple.push_back(cluster.members.size() == 1);
