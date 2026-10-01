@@ -1,7 +1,8 @@
 # Copyright (c) 2026 Twin Vector Labs LLC.
 # All rights reserved.
 
-"""#1200 — mass as the complex bound-state pole of a Feshbach response pencil.
+"""#1200 and #1323 — mass as the complex bound-state pole of a Feshbach
+response pencil, read exactly from the pencil's spectrum.
 
 Section 13.3 of the whitepaper says that mass is not defined by an incoherent
 sum of moduli. It is the simple isolated zero ``s_C`` of
@@ -13,29 +14,33 @@ are asserted here rather than argued.
 THE ZEROS ARE THE EIGENVALUES THE INTERIOR DOES NOT CARRY. By the determinant
 factorization ``det P = det P_II det F_C``, the zeros of ``D_C`` on a finite
 complex are exactly the eigenvalues of the full pencil that are not eigenvalues
-of the interior block, with matching multiplicities. Both halves of that are
-checked against an independent eigendecomposition: a contour around a full
-eigenvalue the interior does not carry finds it, and a contour around an
-interior eigenvalue finds no zero and is refused by name, because the argument
-principle on a meromorphic function would otherwise cancel a zero against a
-pole.
+of the interior block, with matching multiplicities. The read is that statement
+computed: the eigenvalues of ``M^-1 A`` from its complex Schur form, clustered
+at the declared rank tolerance, less those the interior pencil carries. Both
+halves are checked against an independent eigendecomposition: every full
+eigenvalue the interior does not carry is a reported pole at which ``D_C``
+vanishes, the interior eigenvalues are listed as the poles of ``F_C`` and none
+of them is reported as a zero, and an eigenvalue the interior carries is named
+rather than reported, because the domain the response is continued on excludes
+it.
 
-THE DERIVATIVES ARE ANALYTIC. ``F_C'(s)`` is the closed form that
-``dP/ds = -M`` forces, and ``D_C'/D_C`` is the trace of ``F_C^-1 F_C'``. Neither
-carries a finite difference or a step size. The closed form is checked against a
-difference quotient formed in the test, which is where a difference quotient
-belongs.
+THE DERIVATIVE IS ANALYTIC. ``F_C'(s)`` is the closed form that ``dP/ds = -M``
+forces; it carries no finite difference and no step size, and it is checked
+against a difference quotient formed in the test, which is where a difference
+quotient belongs. It certifies each residue through ``tr(R F_C'(s_C)) = 1`` at
+a simple pole, the identity that defines the residue of ``F_C^-1``.
 
 A KNOWN BOUND STATE IS FOUND, AND ITS CERTIFICATE IS THE SPECIFICATION. On a
-pencil whose spectrum is declared, the pole below the free threshold is located
-to rounding, ``D_C(s_C)`` vanishes, ``D_C'(s_C)`` does not, the residue of the
-supported resolvent has rank one, the separation from the nearest other zero is
-the declared gap, the binding shift is the declared depth, and the refinement
-continuation at a second quadrature does not move the answer.
+pencil whose spectrum is declared, the pole below the free threshold is the
+declared eigenvalue to rounding, ``D_C`` vanishes there, the residue of the
+supported resolvent has rank one, the residual of the pole's invariant subspace
+is the rounding of the Schur form, the separation from the nearest other zero
+is the declared gap and the binding shift is the declared depth.
 
-A MULTIPLE ROOT IS RETAINED, NOT SPLIT. A double zero is reported once with
-algebraic multiplicity two and with the whole residue matrix its local data
-needs, rather than as two roots separated by an ordering convention.
+A MULTIPLE POLE IS RETAINED, NOT SPLIT. A repeated eigenvalue is reported once
+with its algebraic multiplicity, its Jordan structure and the whole residue
+matrix its local data needs, rather than as two roots separated by an ordering
+convention.
 """
 
 import math
@@ -87,6 +92,13 @@ def _full_spectrum(operator, metric):
     return np.linalg.eigvals(np.linalg.solve(metric, operator))
 
 
+def _config(**overrides):
+    config = cob.BoundStatePoleConfig()
+    for name, value in overrides.items():
+        setattr(config, name, value)
+    return config
+
+
 class TheDeterminantFactorizationTest(unittest.TestCase):
     """``det P = det P_II det F_C``, and ``determinant`` is the second
     factor."""
@@ -115,8 +127,9 @@ class TheDeterminantFactorizationTest(unittest.TestCase):
                                places=10)
 
 
-class TheAnalyticDerivativesTest(unittest.TestCase):
-    """The closed forms agree with difference quotients taken in the test."""
+class TheAnalyticDerivativeTest(unittest.TestCase):
+    """The closed form of ``F_C'`` agrees with a difference quotient taken in
+    the test."""
 
     def setUp(self):
         self.operator, self.metric = _pencil([-2.5, 0.5, 1.5, 3.0])
@@ -135,32 +148,10 @@ class TheAnalyticDerivativesTest(unittest.TestCase):
             self.operator, self.metric, self.interface, self.point))
         self.assertLess(np.max(np.abs(numerical - analytic)), 1e-6)
 
-    def test_the_logarithmic_derivative_is_the_solved_trace(self):
-        response = self._response(self.point)
-        derivative = np.array(BSP.response_derivative(
-            self.operator, self.metric, self.interface, self.point))
-        expected = np.trace(np.linalg.solve(response, derivative))
-        measured = BSP.logarithmic_derivative(self.operator, self.metric,
-                                              self.interface, self.point)
-        self.assertAlmostEqual(abs(measured - expected), 0.0, places=10)
-
-    def test_the_log_derivative_is_the_derivative_of_the_logarithm(self):
-        """``D'/D`` against a difference quotient of ``log D``."""
-        step = 1e-5
-        forward = BSP.determinant(self.operator, self.metric, self.interface,
-                                  self.point + step)
-        backward = BSP.determinant(self.operator, self.metric, self.interface,
-                                   self.point - step)
-        middle = BSP.determinant(self.operator, self.metric, self.interface,
-                                 self.point)
-        numerical = (forward - backward) / (2.0 * step) / middle
-        measured = BSP.logarithmic_derivative(self.operator, self.metric,
-                                              self.interface, self.point)
-        self.assertLess(abs(numerical - measured), 1e-6)
-
 
 class TheZerosAreThePencilEigenvaluesTest(unittest.TestCase):
-    """#1200's acceptance: the pole is found on a fixture with a known state."""
+    """#1200's acceptance on a fixture with a known state: the read reports
+    exactly the declared spectrum the interior does not carry."""
 
     SPECTRUM = [-2.5, 0.5, 1.5, 3.0]
 
@@ -169,14 +160,8 @@ class TheZerosAreThePencilEigenvaluesTest(unittest.TestCase):
         self.interface = [0, 1]
         self.interior = _interior_spectrum(self.operator, self.metric,
                                            self.interface)
-
-    def _config(self, **overrides):
-        config = cob.BoundStatePoleConfig()
-        config.contour_nodes = 128
-        config.refinement_nodes = 256
-        for name, value in overrides.items():
-            setattr(config, name, value)
-        return config
+        self.read = BSP.poles(self.operator, self.metric, self.interface,
+                              _config())
 
     def test_the_fixture_separates_its_zeros_from_its_interior_poles(self):
         """The fixture's own certificate, stated before it is relied on."""
@@ -187,191 +172,221 @@ class TheZerosAreThePencilEigenvaluesTest(unittest.TestCase):
             for right in self.SPECTRUM[index + 1:]:
                 self.assertGreater(abs(left - right), 0.5)
 
-    def test_every_full_eigenvalue_is_a_zero_of_the_response(self):
-        for eigenvalue in self.SPECTRUM:
-            read = BSP.poles(self.operator, self.metric, self.interface,
-                             complex(eigenvalue), 0.2, self._config())
-            self.assertEqual(read.failed_certificates, [], eigenvalue)
-            self.assertEqual(read.zeros, 1, eigenvalue)
-            self.assertEqual(len(read.poles), 1)
-            self.assertLess(abs(read.poles[0] - eigenvalue), 1e-9)
-            self.assertEqual(read.multiplicity[0], 1)
-            self.assertTrue(read.simple[0])
-            self.assertEqual(read.interior_poles_enclosed, 0)
+    def test_every_full_eigenvalue_is_a_pole_at_which_the_determinant_vanishes(
+            self):
+        """The poles are the four declared eigenvalues, ascending, each of
+        multiplicity one, and ``D_C`` vanishes at each. The exact read places
+        a pole at the computed eigenvalue of a similarity transform of a
+        diagonal matrix, whose error is the rounding of the Schur form times
+        the conditioning of the fixed mixer, far below 1e-12; ``D_C`` at a
+        point that close to a simple zero is that distance times the product
+        of the other factors of ``D_C``, which the fixture's gaps bound by
+        about 1e2, so it is below 1e-10."""
+        read = self.read
+        self.assertEqual(read.failed_certificates, [])
+        self.assertEqual(len(read.poles), 4)
+        for pole, eigenvalue in zip(read.poles, self.SPECTRUM):
+            self.assertLess(abs(pole - eigenvalue), 1e-12)
+            self.assertLess(abs(BSP.determinant(
+                self.operator, self.metric, self.interface, pole)), 1e-10)
+        self.assertEqual(list(read.multiplicity), [1, 1, 1, 1])
+        self.assertEqual(list(read.simple), [True] * 4)
+        self.assertEqual(list(read.geometric_multiplicity), [1, 1, 1, 1])
+        self.assertEqual([list(b) for b in read.jordan_blocks], [[1]] * 4)
+        self.assertEqual(list(read.cluster_spread), [0.0] * 4)
 
-    def test_an_interior_eigenvalue_is_not_a_zero_and_is_named(self):
-        for pole in self.interior:
-            read = BSP.poles(self.operator, self.metric, self.interface,
-                             complex(pole), 0.1, self._config())
-            self.assertIn("interior-pole-enclosed", read.failed_certificates)
-            self.assertEqual(read.interior_poles_enclosed, 1)
-            self.assertEqual(read.poles, [])
+    def test_the_interior_eigenvalues_are_the_poles_of_the_response(self):
+        """The interior eigenvalues are listed, with multiplicity one each,
+        as the poles of ``F_C``, and none of them is reported as a zero."""
+        read = self.read
+        listed = sorted((complex(p) for p in read.interior_poles),
+                        key=lambda value: (value.real, value.imag))
+        expected = sorted((complex(p) for p in self.interior),
+                          key=lambda value: (value.real, value.imag))
+        self.assertEqual(len(listed), 2)
+        for value, target in zip(listed, expected):
+            self.assertLess(abs(value - target), 1e-10)
+        self.assertEqual(list(read.interior_multiplicity), [1, 1])
+        for pole in read.poles:
+            for interior in read.interior_poles:
+                self.assertGreater(abs(pole - interior), 0.2)
+
+    def test_an_eigenvalue_the_interior_carries_is_named_not_reported(self):
+        """``diag(1, 1)`` onto coordinate 0 has the response ``1 - s``,
+        whose zero sits at the interior eigenvalue 1, outside the domain the
+        response is continued on: the read names it and reports no pole,
+        while the interior pole is listed."""
+        read = BSP.poles(np.diag([1.0, 1.0]).astype(complex),
+                         np.eye(2, dtype=complex), [0], _config())
+        self.assertEqual(read.failed_certificates,
+                         ["eigenvalue-at-interior-pole"])
+        self.assertEqual(read.poles, [])
+        self.assertEqual(list(read.interior_poles), [1.0])
+        self.assertEqual(list(read.interior_multiplicity), [1])
 
     def test_the_bound_state_below_the_threshold_is_certified(self):
-        config = self._config(free_threshold=complex(0.0))
+        """The lowest pole is the declared bound state -2.5 to rounding; its
+        residue has rank one, its invariant subspace's residual is the
+        rounding of the Schur form (below 1e-12 of the block's scale), its
+        separation is the declared gap 3.0 to the next eigenvalue 0.5 and
+        its binding shift below the free threshold 0 is the declared
+        depth."""
         read = BSP.poles(self.operator, self.metric, self.interface,
-                         complex(-2.5), 0.8, config)
+                         _config(free_threshold=complex(0.0)))
         self.assertEqual(read.failed_certificates, [])
-        self.assertEqual(read.zeros, 1)
-        self.assertLess(abs(read.poles[0] - (-2.5)), 1e-10)
-        self.assertLess(abs(read.zero_count - 1.0), 1e-6)
-        self.assertLess(abs(read.determinant_at_pole[0]), 1e-9)
-        self.assertGreater(abs(read.derivative_at_pole[0]), 1e-6)
+        self.assertLess(abs(read.poles[0] - (-2.5)), 1e-12)
         self.assertTrue(read.simple[0])
         self.assertEqual(read.residue_rank[0], 1)
         self.assertGreater(read.residue_norm[0], 0.0)
-        self.assertTrue(math.isinf(read.separation[0]))
-        self.assertLess(abs(read.binding_shift[0] - (-2.5)), 1e-10)
-        self.assertLess(read.continuation_movement[0], 1e-9)
-        self.assertEqual(read.centre, complex(-2.5))
-        self.assertAlmostEqual(read.radius, 0.8, places=12)
-        self.assertEqual(read.nodes, 128)
+        self.assertGreater(read.scale, 0.0)
+        self.assertLess(read.subspace_residual[0], 1e-12 * read.scale)
+        self.assertAlmostEqual(read.separation[0], 3.0, places=12)
+        self.assertLess(abs(read.binding_shift[0] - (-2.5)), 1e-12)
+        self.assertEqual(len(read.binding_shift), 4)
 
     def test_the_residue_is_the_supported_resolvent_residue(self):
-        """The residue matrix is checked against an eigen-decomposition.
+        """Each residue matrix is checked against the analytic derivative.
 
-        For a simple zero the residue of ``F_C^-1`` is the outer product of the
-        response's right and left null vectors, normalized so that the product
-        with ``F_C'`` has unit trace. The check is that the residue times
-        ``F_C'(s_C)`` has trace one, which is the residue's defining property
-        and needs no null vector to be ordered.
+        At a simple zero the residue ``R`` of ``F_C^-1`` satisfies
+        ``tr(R F_C'(s_C)) = 1``, which is the residue's defining property and
+        needs no null vector to be ordered. The residue is the interface block
+        of minus the spectral projector and the derivative is its closed form,
+        so the identity holds to rounding.
         """
-        read = BSP.poles(self.operator, self.metric, self.interface,
-                         complex(-2.5), 0.8, self._config())
+        read = self.read
         size = len(self.interface)
-        residue = np.array(read.residue[0], dtype=complex).reshape(size, size)
-        derivative = np.array(BSP.response_derivative(
-            self.operator, self.metric, self.interface, read.poles[0]))
-        self.assertAlmostEqual(abs(np.trace(residue @ derivative) - 1.0), 0.0,
-                               places=7)
+        for index, pole in enumerate(read.poles):
+            residue = np.array(read.residue[index],
+                               dtype=complex).reshape(size, size)
+            derivative = np.array(BSP.response_derivative(
+                self.operator, self.metric, self.interface, pole))
+            self.assertAlmostEqual(abs(np.trace(residue @ derivative) - 1.0),
+                                   0.0, places=10)
 
-    def test_a_contour_around_nothing_refuses(self):
-        read = BSP.poles(self.operator, self.metric, self.interface,
-                         complex(0.0, 4.0), 0.5, self._config())
-        self.assertIn("no-zero-enclosed", read.failed_certificates)
-        self.assertEqual(read.zeros, 0)
-        self.assertEqual(read.poles, [])
-
-    def test_a_contour_enclosing_two_zeros_reports_both(self):
-        centre, radius = complex(1.0), 0.6
-        for pole in self.interior:
-            self.assertGreater(abs(pole - centre), radius)
-        read = BSP.poles(self.operator, self.metric, self.interface, centre,
-                         radius, self._config())
-        self.assertEqual(read.failed_certificates, [])
-        self.assertEqual(read.zeros, 2)
-        found = sorted(value.real for value in read.poles)
-        self.assertEqual(len(found), 2)
-        self.assertLess(abs(found[0] - 0.5), 1e-9)
-        self.assertLess(abs(found[1] - 1.5), 1e-9)
-        for index in range(2):
-            self.assertAlmostEqual(read.separation[index], 1.0, places=8)
+    def test_the_separations_are_the_distances_between_distinct_poles(self):
+        """The separation of each pole is its distance to the nearest other
+        reported pole: 3.0, 1.0, 1.0 and 1.5 for the declared spectrum."""
+        for measured, expected in zip(self.read.separation,
+                                      [3.0, 1.0, 1.0, 1.5]):
+            self.assertAlmostEqual(measured, expected, places=12)
 
     def test_the_declared_defaults(self):
+        """The read has exactly two declared parameters: the rank tolerance
+        and the optional free threshold."""
         config = cob.BoundStatePoleConfig()
-        self.assertEqual(config.max_zeros, 16)
-        self.assertEqual(config.max_newton_steps, 64)
-        self.assertEqual(config.newton_tolerance, 1e-13)
-        self.assertEqual(config.zero_count_tolerance, 1e-3)
-        self.assertEqual(config.local_radius_fraction, 0.25)
         self.assertEqual(config.rank_tolerance, 1e-10)
         self.assertIsNone(config.free_threshold)
-
-    def test_the_count_and_the_continuation_are_reported(self):
-        read = BSP.poles(self.operator, self.metric, self.interface,
-                         complex(-2.5), 0.8, self._config())
-        self.assertLess(read.zero_count_defect, 1e-9)
-        self.assertAlmostEqual(read.zero_count_defect,
-                               abs(read.zero_count - read.zeros), places=15)
-        self.assertLess(abs(read.interior_pole_count), 1e-9)
-        self.assertFalse(read.interior_resonance)
-        self.assertEqual(len(read.continued_pole), 1)
-        self.assertLess(abs(read.continued_pole[0] - read.poles[0]), 1e-9)
-        self.assertAlmostEqual(read.continuation_movement[0],
-                               abs(read.continued_pole[0] - read.poles[0]),
-                               places=15)
-
-    def test_an_enclosed_interior_pole_is_counted(self):
-        pole = complex(self.interior[0])
-        read = BSP.poles(self.operator, self.metric, self.interface, pole,
-                         0.1, self._config())
-        self.assertLess(abs(read.interior_pole_count - 1.0), 1e-9)
-        self.assertEqual(read.interior_poles_enclosed, 1)
-
-    def test_the_newton_refinement_reports_its_last_step(self):
-        read = BSP.poles(self.operator, self.metric, self.interface,
-                         complex(1.0), 0.6, self._config())
-        self.assertEqual(len(read.newton_step), 2)
-        for step in read.newton_step:
-            self.assertTrue(math.isfinite(step))
-            self.assertLess(step, 1e-9)
-
-    def test_more_zeros_than_declared_are_refused_by_name(self):
-        read = BSP.poles(self.operator, self.metric, self.interface,
-                         complex(1.0), 0.6, self._config(max_zeros=1))
-        self.assertIn("too-many-zeros", read.failed_certificates)
-
-    def test_a_zero_count_tolerance_of_zero_refuses_any_rounding(self):
-        """The count is read as an integer only at or below the declared
-        tolerance; at zero, the quadrature's own rounding refuses it."""
-        read = BSP.poles(self.operator, self.metric, self.interface,
-                         complex(-2.5), 0.8,
-                         self._config(zero_count_tolerance=0.0))
-        self.assertGreater(read.zero_count_defect, 0.0)
-        self.assertIn("nonintegral-zero-count", read.failed_certificates)
-
-    def test_the_local_contour_fraction_does_not_change_a_simple_root(self):
-        for fraction in (0.1, 0.5):
-            read = BSP.poles(self.operator, self.metric, self.interface,
-                             complex(-2.5), 0.8,
-                             self._config(local_radius_fraction=fraction))
-            self.assertEqual(list(read.multiplicity), [1])
-            self.assertLess(abs(read.poles[0] + 2.5), 1e-9)
+        self.assertEqual(
+            sorted(name for name in dir(config) if not name.startswith("_")),
+            ["free_threshold", "rank_tolerance"])
 
     def test_an_empty_interface_refuses(self):
-        read = BSP.poles(self.operator, self.metric, [], complex(-2.5), 0.8,
-                         self._config())
+        read = BSP.poles(self.operator, self.metric, [], _config())
         self.assertIn("empty-interface", read.failed_certificates)
 
-    def test_a_nonpositive_radius_is_rejected(self):
-        with self.assertRaises(ValueError):
-            BSP.poles(self.operator, self.metric, self.interface,
-                      complex(-2.5), 0.0, self._config())
+    def test_a_singular_metric_is_refused_by_name(self):
+        """A pencil whose metric is singular at the declared rank tolerance
+        has a spectrum that is not the spectrum of a matrix; the read refuses
+        by name rather than reading a substitute."""
+        metric = np.diag([1.0, 0.0, 1.0, 1.0]).astype(complex)
+        with self.assertRaisesRegex(ValueError, "metric block is singular"):
+            BSP.poles(self.operator, metric, self.interface, _config())
+        # An invertible metric whose interior block, on coordinates 2 and 3,
+        # is diag(0, 1): the interior pencil then has no matrix spectrum.
+        metric = np.array([[1.0, 0.0, 0.0, 0.0],
+                           [0.0, 1.0, 1.0, 0.0],
+                           [0.0, 1.0, 0.0, 0.0],
+                           [0.0, 0.0, 0.0, 1.0]], dtype=complex)
+        self.assertGreater(abs(np.linalg.det(metric)), 0.5)
+        with self.assertRaisesRegex(ValueError,
+                                    "interior block of the metric is "
+                                    "singular"):
+            BSP.poles(self.operator, metric, self.interface, _config())
 
 
-class AMultipleRootIsRetainedTest(unittest.TestCase):
-    """A double zero keeps its multiplicity and its whole residue."""
+class AMultiplePoleIsRetainedTest(unittest.TestCase):
+    """A repeated eigenvalue keeps its multiplicity, its Jordan structure and
+    its whole residue."""
 
     def setUp(self):
-        # Diagonal, so the interface block decouples and the response is
-        # exactly diag(a - s, a - s): a zero of algebraic multiplicity two.
+        # Diagonal, with the whole block on the interface, so the response is
+        # exactly diag(1.25 - s, 1.25 - s, -3 - s, 4 - s): a zero of algebraic
+        # multiplicity two at 1.25 and two simple zeros.
         self.operator = np.diag(np.array([1.25, 1.25, -3.0, 4.0],
                                          dtype=complex))
         self.metric = np.eye(4, dtype=complex)
-        self.interface = [0, 1]
+        self.interface = [0, 1, 2, 3]
 
     def test_the_double_zero_is_reported_once_with_multiplicity_two(self):
-        config = cob.BoundStatePoleConfig()
+        """The block is diagonal, so its Schur diagonal is exact and the
+        repeated eigenvalue is exactly repeated: one pole at 1.25 of
+        multiplicity two with two Jordan blocks of size one, beside the
+        simple poles -3 and 4, ascending."""
         read = BSP.poles(self.operator, self.metric, self.interface,
-                         complex(1.25), 0.5, config)
+                         _config())
         self.assertEqual(read.failed_certificates, [])
-        self.assertEqual(read.zeros, 2)
-        self.assertEqual(len(read.poles), 1)
-        self.assertLess(abs(read.poles[0] - 1.25), 1e-9)
-        self.assertEqual(read.multiplicity[0], 2)
-        self.assertFalse(read.simple[0])
+        self.assertEqual(len(read.poles), 3)
+        self.assertLess(abs(read.poles[0] - (-3.0)), 1e-15)
+        self.assertLess(abs(read.poles[1] - 1.25), 1e-15)
+        self.assertLess(abs(read.poles[2] - 4.0), 1e-15)
+        self.assertEqual(list(read.multiplicity), [1, 2, 1])
+        self.assertEqual(list(read.geometric_multiplicity), [1, 2, 1])
+        self.assertEqual([list(b) for b in read.jordan_blocks],
+                         [[1], [1, 1], [1]])
+        self.assertEqual(list(read.simple), [True, False, True])
+        self.assertEqual(list(read.cluster_spread), [0.0, 0.0, 0.0])
 
-    def test_the_residue_of_the_double_zero_has_rank_two(self):
-        config = cob.BoundStatePoleConfig()
+    def test_the_residue_of_the_double_zero_is_minus_its_projector(self):
+        """The residue of ``F_C^-1 = (A - s)^-1`` at 1.25 is minus the
+        spectral projector onto its two-dimensional eigenspace. The
+        eigenvalue 1.25 sits on coordinates 0 and 1 of the diagonal block, so
+        the projector is ``diag(1, 1, 0, 0)`` and the residue, the second in
+        the ascending order of the poles, is ``-diag(1, 1, 0, 0)``, of rank
+        two."""
         read = BSP.poles(self.operator, self.metric, self.interface,
-                         complex(1.25), 0.5, config)
-        residue = np.array(read.residue[0], dtype=complex).reshape(2, 2)
-        self.assertEqual(read.residue_rank[0], 2)
-        self.assertLess(np.max(np.abs(residue + np.eye(2))), 1e-8)
+                         _config())
+        residue = np.array(read.residue[1], dtype=complex).reshape(4, 4)
+        self.assertEqual(read.residue_rank[1], 2)
+        self.assertLess(np.max(np.abs(residue + np.diag([1.0, 1.0, 0.0, 0.0]))),
+                        1e-14)
+
+    def test_a_jordan_block_is_read_from_the_ranks_of_the_nilpotent_part(self):
+        """An upper triangular block with the eigenvalue 2 three times, once
+        in a Jordan block of size two and once alone, and the eigenvalue 5:
+        its Schur diagonal is exact, the pole 2 has algebraic multiplicity
+        three, geometric multiplicity two and the Jordan blocks [2, 1], and
+        its residue (minus the projector onto the three-dimensional
+        generalized eigenspace) has rank three."""
+        operator = np.array([[2.0, 1.0, 0.0, 0.0],
+                             [0.0, 2.0, 0.0, 0.0],
+                             [0.0, 0.0, 2.0, 0.0],
+                             [0.0, 0.0, 0.0, 5.0]], dtype=complex)
+        read = BSP.poles(operator, self.metric, self.interface, _config())
+        self.assertEqual(read.failed_certificates, [])
+        self.assertLess(abs(read.poles[0] - 2.0), 1e-15)
+        self.assertLess(abs(read.poles[1] - 5.0), 1e-15)
+        self.assertEqual(list(read.multiplicity), [3, 1])
+        self.assertEqual(list(read.geometric_multiplicity), [2, 1])
+        self.assertEqual([list(b) for b in read.jordan_blocks], [[2, 1], [1]])
+        self.assertEqual(list(read.residue_rank), [3, 1])
+
+    def test_a_coupling_below_the_tolerance_is_no_jordan_block(self):
+        """``[[2, 1e-12], [0, 2]]`` has the largest singular value 2 to one
+        part in 1e-24, so its nilpotent part scaled by that value has the one
+        singular value 5e-13, at or below the rank tolerance 1e-10: at the
+        declared tolerance the block is semisimple, with two Jordan blocks of
+        size one."""
+        operator = np.array([[2.0, 1e-12], [0.0, 2.0]], dtype=complex)
+        read = BSP.poles(operator, np.eye(2, dtype=complex), [0, 1],
+                         _config())
+        self.assertEqual(read.failed_certificates, [])
+        self.assertEqual(list(read.multiplicity), [2])
+        self.assertEqual(list(read.geometric_multiplicity), [2])
+        self.assertEqual([list(b) for b in read.jordan_blocks], [[1, 1]])
 
 
 class TheFrameworkPencilPathTest(unittest.TestCase):
-    """The same search on the framework's own dressed pencil."""
+    """The same read on the framework's own dressed pencil."""
 
     @classmethod
     def setUpClass(cls):
@@ -380,8 +395,9 @@ class TheFrameworkPencilPathTest(unittest.TestCase):
             cob.HodgeMetricSource.WhitneyPencil)
         spacetime = T.Spacetime.fromVertexTuples(3, [[0, 1, 2, 3]], 1.0, 0.0)
         # A deliberately asymmetric metric: the regular tetrahedron's spectrum
-        # carries the threefold degeneracies of its symmetry group, and a
-        # contour cannot enclose one member of a degenerate band alone.
+        # carries the threefold degeneracies of its symmetry group, and the
+        # test below compares the read with the spectrum eigenvalue by
+        # eigenvalue.
         for index, edge in enumerate(spacetime.getEdgeList().toVector()):
             edge.setLength(math.sqrt(1.0 + 0.07 * index))
             edge.setPhase(0.0)
@@ -395,30 +411,40 @@ class TheFrameworkPencilPathTest(unittest.TestCase):
     def tearDownClass(cls):
         cob.HodgeLaplacian.setDefaultMetricSource(cls.previous)
 
-    def test_a_cluster_pole_is_an_eigenvalue_the_interior_does_not_carry(self):
+    def test_the_cluster_poles_are_the_eigenvalues_the_interior_does_not_carry(
+            self):
+        """The poles of the degree-one pencil onto three edges, counted with
+        multiplicity, are the eigenvalues of ``M^-1 A`` that the interior
+        pencil does not carry, compared with an independent
+        eigendecomposition to 1e-8 of their size. The fixture's own
+        certificate, stated first, is that no full eigenvalue lies within
+        1e-6 of an interior eigenvalue, so every full eigenvalue is a pole."""
         interface = [0, 1, 2]
         full = _full_spectrum(self.operator, self.metric)
         interior = _interior_spectrum(self.operator, self.metric, interface)
+        for value in full:
+            for pole in interior:
+                self.assertGreater(abs(value - pole), 1e-6)
 
-        # The best-separated full eigenvalue that the interior does not carry,
-        # chosen by measurement so the contour is never placed by hand.
-        best, best_gap = None, 0.0
-        for index, value in enumerate(full):
-            gap = min([abs(value - other)
-                       for position, other in enumerate(full)
-                       if position != index]
-                      + [abs(value - pole) for pole in interior])
-            if gap > best_gap:
-                best, best_gap = value, gap
-        self.assertIsNotNone(best)
-        self.assertGreater(best_gap, 1e-3)
-
-        config = cob.BoundStatePoleConfig()
-        read = BSP.cluster_poles(self.assembled, 1, interface, complex(best),
-                                 0.3 * best_gap, config)
+        read = BSP.cluster_poles(self.assembled, 1, interface, _config())
         self.assertEqual(read.failed_certificates, [])
-        self.assertEqual(read.zeros, 1)
-        self.assertLess(abs(read.poles[0] - best), 1e-8 * (1.0 + abs(best)))
+        reported = sorted(
+            (complex(pole) for pole, count in zip(read.poles,
+                                                  read.multiplicity)
+             for _ in range(count)),
+            key=lambda value: (value.real, value.imag))
+        expected = sorted((complex(v) for v in full),
+                          key=lambda value: (value.real, value.imag))
+        self.assertEqual(len(reported), len(expected))
+        for value, target in zip(reported, expected):
+            self.assertLess(abs(value - target), 1e-8 * (1.0 + abs(target)))
+        listed = sorted((complex(v) for v in read.interior_poles),
+                        key=lambda value: (value.real, value.imag))
+        targets = sorted((complex(v) for v in interior),
+                         key=lambda value: (value.real, value.imag))
+        self.assertEqual(len(listed), len(targets))
+        for value, target in zip(listed, targets):
+            self.assertLess(abs(value - target), 1e-8 * (1.0 + abs(target)))
 
     def test_the_matrix_form_and_the_pencil_form_agree(self):
         interface = [0, 1, 2]
