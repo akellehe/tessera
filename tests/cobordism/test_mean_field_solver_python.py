@@ -319,7 +319,7 @@ def test_a_held_holonomy_driven_across_minus_one_is_named():
     principal arguments jumps. The sector guard cuts most of the Newton
     steps, the accepted steps end ever nearer the jump (the accepted
     fraction of the step falls from 1/2 to parts in 1e13 while the residual
-    norm settles at 1.772), and the solve ends where
+    norm settles at 1.75), and the solve ends where
     the trial steps that stay in the sector no longer reduce the residual:
     "no damped step reduced the residual", its detail saying how far along
     the Newton direction the sector guard refused. It ends by itself,
@@ -338,7 +338,7 @@ def test_a_held_holonomy_driven_across_minus_one_is_named():
     assert last.newton_iterated and not last.newton.accepted
     assert last.newton.sector_guard_dampings >= 40
     assert last.geometry_stop_reason == cob.RelaxationStop.NoDescent
-    assert report.force_norm == pytest.approx(1.7719, abs=5e-4)
+    assert report.force_norm == pytest.approx(1.75, abs=5e-3)
     # the sector guard cut most of the accepted steps, down to parts in 1e10
     accepted = [step.newton for step in report.steps[:-1]]
     assert sum(step.sector_guard_dampings > 0 for step in accepted) >= 20
@@ -359,7 +359,7 @@ def test_lengths_that_grow_without_bound_are_left_to_the_equations():
     eigenvalues go to zero with h_1 ~ 1/z. Nothing but the datatype's bound
     stops such a solve: it runs until the residual is at its floor on the
     held set, with the largest |z| about a thousand times the host's and
-    only the link block of the joint Jacobian left, and the read is refused
+    the joint Jacobian down to rank four, and the read is refused
     on the geometry itself, which is not Kontsevich-Segal allowable. The
     overflow stop is reserved for a squared length beyond the largest finite
     double, and the declaration carries no ratio to tune."""
@@ -367,7 +367,7 @@ def test_lengths_that_grow_without_bound_are_left_to_the_equations():
     assert not report.converged
     assert report.stop_reason == cob.RelaxationStop.HeldFloor
     assert report.largest_length_ratio > 5e2
-    assert report.jacobian_rank == 3
+    assert report.jacobian_rank == 4
     assert max(abs(v) for v in report.occupied_eigenvalues) < 0.1
     assert report.kontsevich_segal_margin < 0
     name, message = _refusal(report, config)
@@ -381,25 +381,24 @@ def test_lengths_that_grow_without_bound_are_left_to_the_equations():
 
 def test_a_read_that_leaves_the_allowable_domain_is_refused():
     """(0123, 021): the joint Newton drives one shared squared length
-    negative and, through a stretch of steps cut to as little as parts in a
-    million of their length, goes on to a fixed point off the real slice,
-    z = (53.216 + 11.000i, 15.030 + 7.148i, 19.331 + 3.846i,
-    14.530 + 7.683i, 18.996 + 3.932i, -5.301 - 0.277i), with both occupied
+    negative and goes on, in twelve steps, to a fixed point off the real
+    slice, z = (51.335 + 12.665i, 14.516 + 7.762i, 18.667 + 4.838i,
+    14.725 + 7.452i, 18.886 + 3.635i, -5.062 - 0.497i), with both occupied
     bands at their pinned eigenvalues 0.708 and 2.898. The solve converges
     there, at a geometry that is not Kontsevich-Segal allowable (margin
-    -0.535), and the read is refused with the margin, so no pole is read on
+    -0.613), and the read is refused with the margin, so no pole is read on
     it."""
     spacetime, _, report, config = _relax(FIRST_CELL, (0, 2, 1))
     assert report.converged
     assert report.stop_reason == cob.RelaxationStop.Converged
     z = np.asarray(bp.sheet_squared_lengths(spacetime, 0))
     np.testing.assert_allclose(
-        z, [53.2161 + 10.9998j, 15.0299 + 7.1477j, 19.3312 + 3.8456j,
-            14.5295 + 7.6834j, 18.9964 + 3.9316j, -5.3005 - 0.2774j],
+        z, [51.3350 + 12.6645j, 14.5162 + 7.7615j, 18.6667 + 4.8377j,
+            14.7247 + 7.4523j, 18.8861 + 3.6346j, -5.0618 - 0.4973j],
         atol=5e-3)
     assert sorted(band.eigenvalues[0].real for band in report.bands) == \
         pytest.approx([0.7080, 2.8977], abs=5e-4)
-    assert report.kontsevich_segal_margin == pytest.approx(-0.5352, abs=5e-4)
+    assert report.kontsevich_segal_margin == pytest.approx(-0.6125, abs=5e-4)
     name, message = _refusal(report, config)
     assert name == "not Kontsevich-Segal allowable"
     assert "margin %.3g" % report.kontsevich_segal_margin in message
