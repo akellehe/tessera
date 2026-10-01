@@ -31,7 +31,7 @@ struct BoundStatePoleConfig {
   /// invertibility of the metric), and two eigenvalues whose distance is at or
   /// below this fraction of that scale belong to one cluster and form one
   /// pole. No decision is made at any other tolerance.
-  double rankTolerance = 1e-10;
+  double rankTolerance = 1e-15;
   /// The free threshold the binding shift is measured against: the complex
   /// spectral value at which the cluster's content is unbound. Empty leaves
   /// the binding shift unreported, since no threshold is derivable from the

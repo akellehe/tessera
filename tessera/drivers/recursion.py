@@ -334,17 +334,21 @@ def sheet_fields(spacetime, count, sheets=SHEETS):
     return fields
 
 
-def monopole_numbers(cells, links):
+def monopole_numbers(cells, links,
+                     tolerance=bp.DECLARED_CERTIFICATE_TOLERANCE):
     """The monopole number of every base tetrahedron, read with
-    `MonopoleSupport` on its ascending vertices."""
+    `MonopoleSupport` on its ascending vertices at ``tolerance`` (the
+    support's unit-modulus tolerance and the tolerance of the monopole
+    read)."""
     fixture = obs.MonopoleSupport.tetrahedron(1)
     numbers = []
     for cell in cells:
         c = sorted(cell)
         values = [links[(c[i], c[j])] for i, j in fixture.edges]
         support = obs.MonopoleSupport(4, fixture.edges, fixture.faces,
-                                      obs.MonopoleSupport.u1Part(values))
-        numbers.append(int(support.monopoleNumber().monopole_number))
+                                      obs.MonopoleSupport.u1Part(values),
+                                      tolerance)
+        numbers.append(int(support.monopoleNumber(tolerance).monopole_number))
     return numbers
 
 
@@ -517,6 +521,8 @@ def recursion_turn(operator, config):
     declaration = cob.LevelRecursionDeclaration()
     declaration.resolutions = list(config["resolutions"])
     declaration.tolerance = bp.declared_tolerance(config, "recursion_tolerance")
+    declaration.rank_tolerance = bp.declared_tolerance(
+        config, "quotient_rank_tolerance")
     bands = cob.RecursionBandDeclaration()
     bands.selection = cob.RecursionBandSelection.LowestModes
     bands.band_rank = config["band_rank"]
@@ -887,7 +893,9 @@ def cell_reads(cells, z, links, config):
                             key for key, _, _ in bp.LIMITS):
             if key in config:
                 cell_config[key] = config[key]
-        number = monopole_numbers([c], links)[0]
+        number = monopole_numbers(
+            [c], links,
+            bp.declared_tolerance(config, "certificate_tolerance"))[0]
         cell_config["held_sectors"] = (
             held_sectors([[0, 1, 2, 3]], [number], 4)
             if config.get("hold_cell_sectors", True) else [])
@@ -1029,8 +1037,11 @@ def pachner_stage(cells, z, links, config):
     manifold it is, with the boundary it has. It runs as the emergence
     driver runs its stage 1, over every candidate move of the base rather
     than a drawn sample: ``pachner_updates`` updates, each scoring every
-    move and committing the best that lowers the objective, deepening to
-    ``pachner_depth``-move sequences when no single move does. The walk is
+    move and committing the best that lowers the objective by more than the
+    config's ``move_tolerance``, deepening to ``pachner_depth``-move
+    sequences when no single move does. A proposed geometry is admissible
+    when its Kontsevich-Segal margin is at least minus the config's
+    ``admissibility_tolerance``. The walk is
     complete and reproducible, so there is no seed. The base is one sheet;
     the level is rebuilt from it
     with every sheet identical. Returns the base after the committed moves,
@@ -1062,6 +1073,9 @@ def pachner_stage(cells, z, links, config):
     node.set_simulation_mode(MC.SimulationMode.EMERGENCE,
                              MC.EmergenceSubmode.STRICT)
     node.should_propose_surgery = False
+    node.move_tolerance = bp.declared_tolerance(config, "move_tolerance")
+    node.admissibility_tolerance = bp.declared_tolerance(
+        config, "admissibility_tolerance")
     record["objective_before"] = float(node.objective())
     record["trace"] = [float(value) for value in node.run_stage1(
         max_steps=updates, n_candidate_moves=0,
@@ -1100,7 +1114,9 @@ def tick(index, cells, z, links, config):
     started = time.time()
     spacetime, count = build_level(cells, z, links)
     declared = index == 0
-    bulk_before = monopole_numbers(cells, links)
+    certificate_tolerance = bp.declared_tolerance(config,
+                                                  "certificate_tolerance")
+    bulk_before = monopole_numbers(cells, links, certificate_tolerance)
     cut = bounding_cut(cells) if declared else []
     cut_before = cut_monopole_number(cut, links) if declared else None
     held = {"faces": [list(f) for f in cut],
@@ -1181,8 +1197,8 @@ def tick(index, cells, z, links, config):
             "links": {"%d-%d" % e: v for e, v in base_links.items()},
             "held_cut": held,
             "bulk_monopole_numbers_before": bulk_before,
-            "bulk_monopole_numbers_after": monopole_numbers(cells,
-                                                            base_links),
+            "bulk_monopole_numbers_after": monopole_numbers(
+                cells, base_links, certificate_tolerance),
             "sheet_isomorphism_residual": float(isomorphism),
             "rule_shift": level_rule_shift(cells, base_z, base_links),
         },
@@ -1373,7 +1389,9 @@ def drive(config, progress=False, on_frame=None, stop_requested=None,
                                 for a in connection["face_angles"]],
         "dirac_string": [int(n) for n in connection["dirac_string"]],
         "connection_residual": connection["residual"],
-        "monopole_numbers": monopole_numbers(cells, links),
+        "monopole_numbers": monopole_numbers(
+            cells, links,
+            bp.declared_tolerance(config, "certificate_tolerance")),
     }
     if points_file is not None:
         with open(points_file, "w"):

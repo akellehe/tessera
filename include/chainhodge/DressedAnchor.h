@@ -410,7 +410,7 @@ class DressedAnchor {
                                                  const Connection &U, const DeclaredPaths &paths,
                                                  const std::vector<std::size_t> &faceIndices,
                                                  const Eigen::MatrixXcd &Phi,
-                                                 double tolerance = 1e-9,
+                                                 double tolerance = 1e-15,
                                                  std::uint64_t gaugeSeed = 7);
 
   /// The same read with the invariant coordinates \f$ \alpha_\tau \f$ of its

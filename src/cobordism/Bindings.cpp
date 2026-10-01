@@ -2407,6 +2407,18 @@ assertion. Every pairing is the transpose.)doc")
            "search at every breadth is exhaustive, which costs the move "
            "space raised to the breadth."
            )
+      .def_property("move_tolerance", &MultiCobordism::moveTolerance,
+                    &MultiCobordism::setMoveTolerance,
+                    "The move tolerance of stage 1: a move, or a composition "
+                    "of moves, is committed only when it lowers the objective "
+                    "by more than this amount. 1e-15 by default.")
+      .def_property("admissibility_tolerance",
+                    &MultiCobordism::admissibilityTolerance,
+                    &MultiCobordism::setAdmissibilityTolerance,
+                    "The admissibility tolerance of the Whitney-pencil "
+                    "configuration space: a geometry is a member when its "
+                    "Kontsevich-Segal margin is at least minus this amount, "
+                    "in radians. 1e-15 by default.")
       .def_property("should_propose_surgery",
                     &MultiCobordism::shouldProposeSurgery,
                     &MultiCobordism::setShouldProposeSurgery,
@@ -3799,8 +3811,12 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       "dense crossover, the declared FiberEmbeddingPolicy (+ epsilon), and "
       "caller-selected interior cells to retain.")
       .def(py::init<>())
-      .def_readwrite("tolerance", &RecursiveQuotient::Options::tolerance)
-      .def_readwrite("rankTolerance", &RecursiveQuotient::Options::rankTolerance)
+      .def_readwrite("tolerance", &RecursiveQuotient::Options::tolerance,
+                     "The relative tolerance the produced certificates hold "
+                     "against. 1e-15 by default.")
+      .def_readwrite("rankTolerance", &RecursiveQuotient::Options::rankTolerance,
+                     "The relative rank-revealing threshold of the kernel and "
+                     "rank decisions. 1e-15 by default.")
       .def_readwrite("denseCrossover", &RecursiveQuotient::Options::denseCrossover)
       .def_readwrite("embeddingPolicy",
                      &RecursiveQuotient::Options::embeddingPolicy)
@@ -5018,7 +5034,7 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      "rule.")
       .def_readwrite("tolerance", &HolomorphicRelaxationDeclaration::tolerance,
                      "The residual norm at or below which the solve is "
-                     "declared converged.")
+                     "declared converged. 1e-15 by default.")
       .def_readwrite("iteration_limit",
                      &HolomorphicRelaxationDeclaration::iterationLimit,
                      "The number of accepted Newton steps after which the "
@@ -5039,7 +5055,9 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      &HolomorphicRelaxationDeclaration::rankTolerance,
                      "The relative threshold below which a singular value of "
                      "the Jacobian, over the largest, counts as zero in the "
-                     "minimum-norm solve.")
+                     "minimum-norm solve, and a singular value of the held "
+                     "faces' coboundary, over its largest, counts as zero. "
+                     "1e-15 by default.")
       .def_readwrite("record_terms",
                      &HolomorphicRelaxationDeclaration::recordTerms,
                      "Whether every recorded step (and the starting point) "
@@ -5307,7 +5325,8 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def_readwrite("band_tolerance",
                      &SelfConsistentMeanFieldDeclaration::bandTolerance,
                      "The relative separation at or below which consecutive "
-                     "ordered eigenvalues belong to one band.")
+                     "ordered eigenvalues belong to one band. 1e-15 by "
+                     "default.")
       .def_readwrite("band_symmetry",
                      &SelfConsistentMeanFieldDeclaration::bandSymmetry,
                      "The operators D(g) of a declared finite symmetry, each "
@@ -5352,7 +5371,8 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      &SelfConsistentMeanFieldDeclaration::tolerance,
                      "The force norm at or below which the pair is "
                      "self-consistent. The covariance is rebuilt at every "
-                     "point, so the force is the one condition.")
+                     "point, so the force is the one condition. 1e-15 by "
+                     "default.")
       .def_readwrite("geometry",
                      &SelfConsistentMeanFieldDeclaration::geometry,
                      "The Newton solve of the geometry: the joint solve's "
@@ -5820,7 +5840,7 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      "each cluster's nilpotent part, the invertibility of "
                      "the metric, and the distance, as a fraction of the "
                      "block's largest singular value, at or below which two "
-                     "eigenvalues form one pole.")
+                     "eigenvalues form one pole. 1e-15 by default.")
       .def_readwrite("free_threshold", &BoundStatePoleConfig::freeThreshold,
                      "The complex spectral value the binding shift is measured "
                      "against. None leaves the binding shift unreported.");
@@ -5959,7 +5979,8 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      "approximation of this class and is never applied unless "
                      "asked for.")
       .def_readwrite("tolerance", &DressedFluctuationDeclaration::tolerance,
-                     "The relative tolerance the certificates hold against.");
+                     "The relative tolerance the certificates hold against. "
+                     "1e-15 by default.");
 
   py::class_<CollectiveMode>(m, "CollectiveMode",
       "One pole of the dressed fluctuation propagator A_eff(w)^-1: a frequency "
@@ -6240,7 +6261,13 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def_readwrite("tolerance", &LevelRecursionDeclaration::tolerance,
                      "The relative tolerance the certificates of every level "
                      "hold against and the rank decisions of the band reads "
-                     "are made at.")
+                     "are made at. 1e-15 by default.")
+      .def_readwrite("rank_tolerance",
+                     &LevelRecursionDeclaration::rankTolerance,
+                     "The relative threshold of the rank decisions of the "
+                     "quotient's interior solves: a pivot or a singular value "
+                     "of an interior block at or below this fraction of the "
+                     "block's largest counts as zero. 1e-15 by default.")
       .def_readwrite("dense_crossover",
                      &LevelRecursionDeclaration::denseCrossover);
 

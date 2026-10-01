@@ -210,7 +210,8 @@ struct Content {
 /// commutant basis: the centre fixes the isotypes, and f^2 is the dimension of
 /// each isotypic block of the commutant.
 Content decompose(const std::vector<Mat>& basis, Eigen::Index r,
-                  std::size_t colourFactor, double tolerance) {
+                  std::size_t colourFactor, double tolerance,
+                  double isotypicTolerance) {
   Content out;
   out.commutantDimension = basis.size();
   const auto m = static_cast<Eigen::Index>(basis.size());
@@ -259,7 +260,8 @@ Content decompose(const std::vector<Mat>& basis, Eigen::Index r,
                          ces.eigenvalues().data() + r);
   double valueScale = 0.0;
   for (const cd& v : values) valueScale = std::max(valueScale, std::abs(v));
-  const auto groups = clusters(values, 1e-6 * std::max(valueScale, 1e-300));
+  const auto groups =
+      clusters(values, isotypicTolerance * std::max(valueScale, 1e-300));
   const Mat v = ces.eigenvectors();
   const Mat vinv = v.inverse();
   for (const auto& g : groups) {
@@ -275,7 +277,7 @@ Content decompose(const std::vector<Mat>& basis, Eigen::Index r,
     const Eigen::VectorXd& s = svd.singularValues();
     std::size_t rank = 0;
     for (Eigen::Index i = 0; i < s.size(); ++i)
-      if (s(i) > 1e-6 * std::max(s(0), 1e-300)) ++rank;
+      if (s(i) > isotypicTolerance * std::max(s(0), 1e-300)) ++rank;
     const auto f = static_cast<std::size_t>(
         std::llround(std::sqrt(static_cast<double>(rank))));
     const std::size_t n = g.size();
@@ -423,7 +425,8 @@ IsospinFrameRead IsospinDoublet::bands(
   read.spectrum = values;
   std::sort(read.spectrum.begin(), read.spectrum.end(), lessComplex);
 
-  const bool hermitian = (h - h.adjoint()).norm() <= 1e-12 * std::max(h.norm(), 1.0);
+  const bool hermitian =
+      (h - h.adjoint()).norm() <= cfg.hermiticityTolerance * std::max(h.norm(), 1.0);
   const double hn = std::max(h.norm(), 1e-300);
   const auto groups = clusters(values, cfg.groupingTolerance * scale);
   for (std::size_t gi = 0; gi < groups.size(); ++gi) {
@@ -565,7 +568,8 @@ IsospinFrameRead IsospinDoublet::bands(
       band.unexplainedMultiplicity = false;
     } else {
       const std::vector<Mat> basis = commutant(generators, r, cfg.commutantTolerance);
-      const Content c = decompose(basis, r, colourFactor, cfg.commutantTolerance);
+      const Content c = decompose(basis, r, colourFactor, cfg.commutantTolerance,
+                                  cfg.isotypicTolerance);
       band.commutantDimension = c.commutantDimension;
       band.isotypeCount = c.isotypeCount;
       band.irreducibleDimensions = c.irreducibleDimensions;

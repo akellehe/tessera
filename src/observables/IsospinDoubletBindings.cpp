@@ -28,6 +28,9 @@ void register_isospin_doublet(py::module_ m) {
       .def_readwrite("projector_tolerance", &IsospinDoubletConfig::projectorTolerance)
       .def_readwrite("invariance_tolerance", &IsospinDoubletConfig::invarianceTolerance)
       .def_readwrite("commutant_tolerance", &IsospinDoubletConfig::commutantTolerance)
+      .def_readwrite("isotypic_tolerance", &IsospinDoubletConfig::isotypicTolerance)
+      .def_readwrite("hermiticity_tolerance",
+                     &IsospinDoubletConfig::hermiticityTolerance)
       .def_readwrite("track_overlap_threshold",
                      &IsospinDoubletConfig::trackOverlapThreshold)
       .def_readwrite("min_frames", &IsospinDoubletConfig::minFrames)

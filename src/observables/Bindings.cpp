@@ -2347,7 +2347,7 @@ is stored at the flat index base * k + sheet.)doc")
            "The flat index base * k + sheet of one sheeted cell.")
       .def("certifyIsomorphism", &SheetedSupport::certifyIsomorphism,
            py::arg("sheetSquaredLengths"), py::arg("sheetConnections"),
-           py::arg("tolerance") = 1e-12,
+           py::arg("tolerance") = 1e-15,
            "Certify that the per-sheet squared lengths and connection values "
            "agree across the sheets.  Empty connection vectors declare a "
            "support with no connection values to compare.")
@@ -2446,7 +2446,7 @@ retained datum is the GL(k, C) element with its determinant line: no polar
 factor is taken and no cube root of the determinant is chosen.)doc")
       .def_static("attachmentMatrix", &SheetAttachment::attachmentMatrix,
                   py::arg("sheetCount"), py::arg("simplices"),
-                  py::arg("fullRankTolerance") = 1e-12)
+                  py::arg("fullRankTolerance") = 1e-15)
       .def_static("frameChanged", &SheetAttachment::frameChanged,
                   py::arg("attachment"), py::arg("frameA"), py::arg("frameB"),
                   "S_AB -> g_A^-1 S_AB g_B.")
@@ -2824,9 +2824,9 @@ reads the symmetry-protected bands of a rotation-invariant operator.)doc")
       .def(py::init<std::size_t,
                     std::vector<std::array<std::size_t, 2>>,
                     std::vector<std::array<std::size_t, 3>>,
-                    std::vector<std::complex<double>>>(),
+                    std::vector<std::complex<double>>, double>(),
            py::arg("vertexCount"), py::arg("edges"), py::arg("faces"),
-           py::arg("connection"))
+           py::arg("connection"), py::arg("unitModulusTolerance") = 1e-15)
       .def_static("tetrahedron", &MonopoleSupport::tetrahedron,
                   py::arg("monopoleNumber"),
                   "The tetrahedron with the symmetric monopole connection "
@@ -2845,16 +2845,16 @@ reads the symmetry-protected bands of a rotation-invariant operator.)doc")
       .def("transport", &MonopoleSupport::transport, py::arg("x"),
            py::arg("y"))
       .def("monopoleNumber", &MonopoleSupport::monopoleNumber,
-           py::arg("tolerance") = 1e-9)
+           py::arg("tolerance") = 1e-15)
       .def("twistedCoboundary", &MonopoleSupport::twistedCoboundary)
       .def("twistedFaceCoboundary",
            &MonopoleSupport::twistedFaceCoboundary)
       .def("vertexLaplacian", &MonopoleSupport::vertexLaplacian)
       .def("edgeLaplacian", &MonopoleSupport::edgeLaplacian)
       .def("coexactProjector", &MonopoleSupport::coexactProjector,
-           py::arg("tolerance") = 1e-9)
+           py::arg("tolerance") = 1e-15)
       .def("gaugeCompensation", &MonopoleSupport::gaugeCompensation,
-           py::arg("rotation"), py::arg("tolerance") = 1e-9)
+           py::arg("rotation"), py::arg("tolerance") = 1e-15)
       .def("vertexRepresentation", &MonopoleSupport::vertexRepresentation,
            py::arg("rotation"), "D_0(g) on vertex cochains.")
       .def("edgeRepresentation", &MonopoleSupport::edgeRepresentation,
@@ -2863,18 +2863,18 @@ reads the symmetry-protected bands of a rotation-invariant operator.)doc")
            py::arg("rotation"),
            "||delta_0^U D_0(g) - D_1(g) delta_0^U||_max.")
       .def("cocycle", &MonopoleSupport::cocycle, py::arg("group"),
-           py::arg("cochainDegree") = 1, py::arg("tolerance") = 1e-9)
+           py::arg("cochainDegree") = 1, py::arg("tolerance") = 1e-15)
       .def("rotationAveragedEdgeOperator",
            &MonopoleSupport::rotationAveragedEdgeOperator,
            py::arg("edgeOperator"), py::arg("group"))
       .def("spinorBands", &MonopoleSupport::spinorBands,
            py::arg("operatorMatrix"), py::arg("group"),
            py::arg("nontrivialClass"),
-           py::arg("degeneracyTolerance") = 1e-7,
-           py::arg("tolerance") = 1e-9)
+           py::arg("degeneracyTolerance") = 1e-15,
+           py::arg("tolerance") = 1e-15)
       .def("spinRead", &MonopoleSupport::spinRead, py::arg("group"),
-           py::arg("degeneracyTolerance") = 1e-7,
-           py::arg("tolerance") = 1e-9,
+           py::arg("degeneracyTolerance") = 1e-15,
+           py::arg("tolerance") = 1e-15,
            "The whole spin read: monopole number, cocycle, bands and the "
            "j = 1/2 doublet among them.");
 
@@ -3006,7 +3006,7 @@ below the declared mode limit.)doc")
       .def_static("read", &SharpSpin::read, py::arg("spinMatrices"),
                   py::arg("rightState"), py::arg("leftState"),
                   py::arg("targetEigenvalue") = 0.75,
-                  py::arg("tolerance") = 1e-9)
+                  py::arg("tolerance") = 1e-15)
       .def_static("doubletSpinMatrices", &SharpSpin::doubletSpinMatrices,
                   py::arg("carrierCount"),
                   "J_a = I (x) sigma_a / 2 on carrierCount distinguishable "
@@ -3038,7 +3038,7 @@ below the declared mode limit.)doc")
       .def_static("isotypicRead", &SharpSpin::isotypicRead,
                   py::arg("projector"), py::arg("rightState"),
                   py::arg("leftState"), py::arg("type"),
-                  py::arg("tolerance") = 1e-9,
+                  py::arg("tolerance") = 1e-15,
                   "The sharp spinor certificate: (I - P)|Psi_R> = 0 and "
                   "<Psi_L|(I - P) = 0 against the declared tolerance.");
 

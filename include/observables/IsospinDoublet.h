@@ -128,7 +128,7 @@ struct IsospinDoubletConfig {
   /// eigenvalues are in one band when a chain of pairwise distances at most
   /// `groupingTolerance * scale` joins them, `scale` the largest eigenvalue
   /// modulus (1 for the zero operator).
-  double groupingTolerance = 1e-8;
+  double groupingTolerance = 1e-15;
   /// A band is isolated when its distance to the nearest eigenvalue outside it
   /// is at least `minRelativeGap * scale` and the circle drawn around it
   /// separates it from every other eigenvalue.
@@ -136,13 +136,22 @@ struct IsospinDoubletConfig {
   /// Trapezoidal node count of each band's circular Riesz contour.
   int contourNodes = 64;
   /// Cap on the Riesz projector's relative idempotency defect.
-  double projectorTolerance = 1e-9;
+  double projectorTolerance = 1e-15;
   /// Cap on the relative commutator ||[P, X]||_F / (||P||_F ||X||_F) below
   /// which a band is invariant under a symmetry element or a sheet matrix unit.
-  double invarianceTolerance = 1e-8;
-  /// Relative eigenvalue cut deciding the null space of the commutator map,
-  /// and the rank of the isotypic blocks of the commutant.
-  double commutantTolerance = 1e-9;
+  double invarianceTolerance = 1e-15;
+  /// Relative eigenvalue cut deciding the null space of the commutator map
+  /// and the centre of the commutant.
+  double commutantTolerance = 1e-15;
+  /// Relative width within which eigenvalues of the generic central element
+  /// of the commutant belong to one isotypic component (relative to the
+  /// largest eigenvalue modulus), and the relative singular-value cut of the
+  /// rank of each isotypic block of the commutant.
+  double isotypicTolerance = 1e-15;
+  /// The departure of the operator from its adjoint,
+  /// ||h - h^dagger||_F / max(||h||_F, 1), at or below which the frame is
+  /// read in the Hermitian regime.
+  double hermiticityTolerance = 1e-15;
   /// Minimum subspace overlap for a certified continuation between frames and
   /// between resolutions.
   double trackOverlapThreshold = 0.5;
@@ -151,10 +160,10 @@ struct IsospinDoubletConfig {
   std::size_t minFrames = 2;
   /// Cap on the relative leakage of one frame-to-frame transport: the part of
   /// the transfer of the band that lands outside the next frame's band.
-  double transportLeakageTolerance = 1e-1;
+  double transportLeakageTolerance = 1e-15;
   /// Cap on the relative intertwining residual of a transport against the
   /// rotation and colour actions.
-  double intertwiningTolerance = 1e-6;
+  double intertwiningTolerance = 1e-15;
   /// Cap on the condition number of a certified transport and on each band's
   /// projector norm.
   double conditionNumberCap = 1e8;

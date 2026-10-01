@@ -295,15 +295,18 @@ class MonopoleSupport {
     /// unitarity of D_k(g), the rotation average and the self-adjoint band
     /// decomposition all rest on that part alone. An unrestricted GL(1, C)
     /// connection enters through `u1Part`, which the caller applies
-    /// explicitly.
+    /// explicitly. `unitModulusTolerance` is the departure of a value's
+    /// modulus from one above which the value is refused.
     /// @throws std::invalid_argument on a size mismatch, a repeated or
     ///         self-incident edge, an undeclared boundary edge of a face, a
-    ///         vertex index out of range, a zero connection value, or a value
-    ///         whose modulus is not one.
+    ///         vertex index out of range, a zero connection value, a value
+    ///         whose modulus departs from one by more than
+    ///         `unitModulusTolerance`, or a non-positive tolerance.
     MonopoleSupport(std::size_t vertexCount,
                     std::vector<std::array<std::size_t, 2>> edges,
                     std::vector<std::array<std::size_t, 3>> faces,
-                    std::vector<Complex> connection);
+                    std::vector<Complex> connection,
+                    double unitModulusTolerance = 1e-15);
 
     /// The tetrahedron on vertices 0, 1, 2, 3 with its six edges, its four
     /// outward-oriented faces and the symmetric monopole connection whose
@@ -351,10 +354,15 @@ class MonopoleSupport {
     /// @throws std::invalid_argument when no edge joins x and y.
     [[nodiscard]] Complex transport(std::size_t x, std::size_t y) const;
 
-    /// The monopole number of the bounding cut.
+    /// The monopole number of the bounding cut. `tolerance` is the one
+    /// threshold of the read: the departure of the total flux from an integer
+    /// multiple of 2 pi and of the connection from unit modulus at or below
+    /// which the cut is a bundle, and the distance of a face flux from the
+    /// ends of the principal interval at or below which the face sits on the
+    /// branch cut (a holonomy on the negative real axis carries +pi).
     /// @throws std::invalid_argument when the tolerance is not positive.
     [[nodiscard]] MonopoleNumberRead monopoleNumber(
-        double tolerance = 1e-9) const;
+        double tolerance = 1e-15) const;
 
     /// The twisted coboundary delta_0^U as an edges x vertices matrix.
     [[nodiscard]] Eigen::MatrixXcd twistedCoboundary() const;
@@ -375,7 +383,7 @@ class MonopoleSupport {
     /// ker((delta_0^U)^dagger) of the edge cochains.
     /// @throws std::invalid_argument when the tolerance is not positive.
     [[nodiscard]] Eigen::MatrixXcd coexactProjector(
-        double tolerance = 1e-9) const;
+        double tolerance = 1e-15) const;
 
     /// The compensating gauge transformation u_g of a rotation.
     /// @throws std::invalid_argument when the permutation is not a
@@ -383,7 +391,7 @@ class MonopoleSupport {
     ///         the support is disconnected so that no spanning tree reaches
     ///         every vertex.
     [[nodiscard]] GaugeCompensationRead gaugeCompensation(
-        const Permutation& rotation, double tolerance = 1e-9) const;
+        const Permutation& rotation, double tolerance = 1e-15) const;
 
     /// D_0(g) on vertex cochains: (D_0(g) f)(g x) = u_g(g x)^{-1} f(x).
     /// @throws std::invalid_argument on the same conditions as
@@ -419,7 +427,7 @@ class MonopoleSupport {
     ///         is outside {0, 1}, or the tolerance is not positive.
     [[nodiscard]] CocycleRead cocycle(
         const std::vector<Permutation>& group, int cochainDegree = 1,
-        double tolerance = 1e-9) const;
+        double tolerance = 1e-15) const;
 
     /// The rotation average (1 / |G|) sum_g D_1(g) L D_1(g)^dagger of an edge
     /// operator: the rotation-invariant operator whose bands the projective
@@ -443,7 +451,7 @@ class MonopoleSupport {
     [[nodiscard]] std::vector<SpinorBandRead> spinorBands(
         const Eigen::MatrixXcd& operatorMatrix,
         const std::vector<Permutation>& group, bool nontrivialClass,
-        double degeneracyTolerance = 1e-7, double tolerance = 1e-9) const;
+        double degeneracyTolerance = 1e-15, double tolerance = 1e-15) const;
 
     /// The whole spin read of this support against a rotation group: the
     /// monopole number, the cocycle, the bands of the rotation-averaged edge
@@ -451,7 +459,7 @@ class MonopoleSupport {
     /// @throws std::invalid_argument on the same conditions as the parts.
     [[nodiscard]] MonopoleSpinRead spinRead(
         const std::vector<Permutation>& group,
-        double degeneracyTolerance = 1e-7, double tolerance = 1e-9) const;
+        double degeneracyTolerance = 1e-15, double tolerance = 1e-15) const;
 
   private:
     /// Index of the edge joining x and y, or the edge count when there is
@@ -667,7 +675,7 @@ class SharpSpin {
     [[nodiscard]] static SharpSpinRead read(
         const std::array<Eigen::MatrixXcd, 3>& spinMatrices,
         const Eigen::VectorXcd& rightState, const Eigen::VectorXcd& leftState,
-        double targetEigenvalue = 0.75, double tolerance = 1e-9);
+        double targetEigenvalue = 0.75, double tolerance = 1e-15);
 
     /// The one-particle spin matrices of `carrierCount` distinguishable
     /// spin-one-half carriers: J_a = I_carrierCount (x) sigma_a / 2 in the
@@ -751,7 +759,7 @@ class SharpSpin {
     [[nodiscard]] static IsotypicRead isotypicRead(
         const Eigen::MatrixXcd& projector, const Eigen::VectorXcd& rightState,
         const Eigen::VectorXcd& leftState, const std::string& type,
-        double tolerance = 1e-9);
+        double tolerance = 1e-15);
 };
 
 }  // namespace tessera::observables
