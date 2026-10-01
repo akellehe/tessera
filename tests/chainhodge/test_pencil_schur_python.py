@@ -327,7 +327,7 @@ class TestT9ReductionE5E6:
         assert not F.interiorSingular
         interior = (A - (0.4 - 0.1j) * np.eye(7))[3:, 3:]
         spectral_radius = np.max(np.abs(np.linalg.eigvals(interior)))
-        assert F.resonanceRadius == pytest.approx(1e-12 * spectral_radius,
+        assert F.resonanceRadius == pytest.approx(1e-15 * spectral_radius,
                                                   rel=1e-8)
 
     def test_e6_craig_bampton_congruence_is_symmetric_at_u_one(self):

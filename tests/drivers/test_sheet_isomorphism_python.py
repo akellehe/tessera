@@ -344,8 +344,7 @@ def test_the_level_zero_fields_are_the_recorded_ones():
     the run's recorded tick-0 links to 1e-15 and the squared length 8 on every
     edge, with monopole number 1 in each tetrahedron and 2 through the
     bounding cut, which is the six recorded outward faces."""
-    cells, z, links, connection = R.level_zero(
-        R.default_config(tolerances=RUN.TOLERANCES))
+    cells, z, links, connection = R.level_zero(R.default_config())
     assert cells == RUN.LEVEL_ZERO_CELLS
     assert connection["residual"] < 1e-14
     for edge, value in RUN.LEVEL_ZERO_LINKS.items():

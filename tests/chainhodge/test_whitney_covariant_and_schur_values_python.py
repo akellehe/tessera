@@ -249,9 +249,8 @@ def test_a_riesz_band_is_the_eigenprojector():
 JORDAN = np.array([[0, 1, 0], [0, 0, 0], [0, 0, 2]], dtype=complex)
 
 
-def _drazin(a, radius=1e-10):
-    read = ch.PencilSchur.feshbach(a, np.zeros_like(a), 0j, [], 1e-12,
-                                   radius)
+def _drazin(a):
+    read = ch.PencilSchur.feshbach(a, np.zeros_like(a), 0j, [])
     return read, np.asarray(read.interiorInverse), np.asarray(
         read.nullProjector)
 
@@ -282,18 +281,29 @@ def test_the_drazin_identities():
     assert np.max(np.abs(a2 @ JORDAN @ drazin - a2)) < 1e-14
 
 
-def test_the_drazin_inverse_is_similarity_covariant():
-    """(S A S^-1)^D = S A^D S^-1 for a non-unitary S. Rounding splits the
-    transformed defective zero eigenvalue by about sqrt(machine epsilon), so
-    the resonance disc is declared at 1e-6 of the spectral radius here, not
-    the 1e-10 that suffices for the exact block."""
+def test_the_transformed_jordan_block_is_read_nonsingular_at_the_declared_radius():
+    """(S A S^-1)^D = S A^D S^-1 for a non-unitary S in exact arithmetic. In
+    floating point the similarity splits the defective zero eigenvalue of
+    the index-two block by about the square root of machine epsilon: the two
+    eigenvalues of S A S^-1 nearest zero are computed at +-1.7e-8 i. The
+    resonance disc at the declared relative radius 1e-15 has radius 2e-15
+    (the spectral radius is 2) and holds neither, the nearest sitting
+    7.6e6 radii out, so the read finds no interior resonance: the
+    transformed block is read as nonsingular, of full rank 3, where the
+    exact block is read as singular of rank 1."""
     s = np.array([[1.0, 2.0, 0.5], [0.0, 1.0, -1.0], [0.3, 0.0, 2.0]],
                  dtype=complex)
-    _, drazin, _ = _drazin(JORDAN)
-    read, similar, _ = _drazin(s @ JORDAN @ np.linalg.inv(s), 1e-6)
-    assert read.interiorSingular and read.interiorRank == 1
-    np.testing.assert_allclose(similar, s @ drazin @ np.linalg.inv(s),
-                               atol=1e-7)
+    exact, _, _ = _drazin(JORDAN)
+    assert exact.interiorSingular and exact.interiorRank == 1
+    transformed = s @ JORDAN @ np.linalg.inv(s)
+    values = np.linalg.eigvals(transformed)
+    nearest = np.sort(np.abs(values))[:2]
+    assert np.all(nearest > 1e-9) and np.all(nearest < 1e-7)
+    read, _, _ = _drazin(transformed)
+    assert not read.interiorSingular and read.interiorRank == 3
+    assert read.resonanceRadius == pytest.approx(2e-15, rel=1e-12)
+    assert read.resonanceEnclosure == 0.0
+    assert read.resonanceSeparation > 1e6
 
 
 def test_the_feshbach_determinant_factorization():

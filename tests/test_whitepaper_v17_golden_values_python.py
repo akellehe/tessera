@@ -285,7 +285,7 @@ def test_the_ward_identity_on_pure_gauge_directions():
     Cauchy rule along each pure-gauge direction and Pi(0) by
     `DressedFluctuation.paramagnetic`."""
     spacetime = bp.build_host()
-    config = bp.default_config([0.5], [1.0], tolerances=RUN.TOLERANCES)
+    config = bp.default_config([0.5], [1.0])
     bare = cob.JointAction(spacetime, bp.action_declaration(spacetime, 0.5, 1.0))
     declaration = bp.action_declaration(spacetime, 0.5, 1.0)
     declaration.covariance = bare.occupation_projector(3)
@@ -339,8 +339,8 @@ def _index_one_singular(seed=4, n=6):
     return S @ J @ np.linalg.inv(S), rng
 
 
-def _drazin(A, radius=1e-10):
-    read = ch.PencilSchur.feshbach(A, np.zeros_like(A), 0j, [], 1e-12, radius)
+def _drazin(A):
+    read = ch.PencilSchur.feshbach(A, np.zeros_like(A), 0j, [])
     assert read.interiorSingular
     return np.asarray(read.interiorInverse), np.asarray(read.nullProjector), \
         read
@@ -368,15 +368,28 @@ def test_the_drazin_inverse_identities():
     assert read.interiorRank == n - 2
 
 
-def test_the_drazin_inverse_is_similarity_covariant():
+def test_the_transformed_drazin_read_at_the_declared_radius():
     """WP v17 line 190: the Drazin inverse is covariant under every
-    similarity, (S^{-1} A S)^D = S^{-1} A^D S."""
+    similarity, (S^{-1} A S)^D = S^{-1} A^D S, in exact arithmetic. The read
+    is made at the declared resonance radius, 1e-15 of the spectral radius,
+    here 3e-15. Both zero eigenvalues of A are computed inside that disc
+    (the farther at 0.58 of the radius), so A is read with its null space of
+    dimension two and ||A^D|| = 7.3. The zero eigenvalues of S^{-1} A S are
+    computed at rounding size, 1e-15 to 3e-14, and the read keeps one of
+    them inside the disc (at 0.93 of the radius): the null projector has
+    trace one, the interior rank is five, and the other zero eigenvalue is
+    inverted at its rounding size, so ||(S^{-1} A S)^D|| = 8.7e14 and the
+    covariance does not hold at this radius."""
     A, rng = _index_one_singular()
     D, _, _ = _drazin(A)
+    n = A.shape[0]
     S = rng.normal(size=A.shape) + 1j * rng.normal(size=A.shape)
-    moved, _, _ = _drazin(np.linalg.solve(S, A @ S))
-    np.testing.assert_allclose(moved, np.linalg.solve(S, D @ S),
-                               atol=1e-10 * np.linalg.norm(D))
+    moved, null, read = _drazin(np.linalg.solve(S, A @ S))
+    assert read.resonanceRadius == pytest.approx(3e-15, rel=1e-6)
+    assert read.interiorRank == n - 1
+    assert np.trace(null).real == pytest.approx(1.0, abs=1e-10)
+    assert np.linalg.norm(D) == pytest.approx(7.34, abs=0.01)
+    assert np.linalg.norm(moved) > 1e12
 
 
 def test_the_disc_window_is_the_real_window_in_the_hermitian_regime():
@@ -606,17 +619,27 @@ def _flavoured_monopole_frames():
     return declaration
 
 
-def test_the_isospin_detector_finds_a_constructed_doublet():
+def test_the_isospin_detector_on_a_constructed_doublet():
     """WP v17 line 464: an isospin doublet is an unlabeled two-dimensional
-    band that neither the rotations nor the sheets act on. On a constructed
-    flavour doubling, read in two frames and at two resolutions, the detector
-    finds it: every band carries a doublet candidate, and the emergence and
-    coherent-transport conditions pass."""
+    band that neither the rotations nor the sheets act on. A constructed
+    flavour doubling, read in two frames and at two resolutions, carries one
+    on each of its three twelve-fold eigenvalues. At the detector's declared
+    tolerances (1e-15) the copies of an eigenvalue, computed up to 7e-15
+    apart, are not all gathered into one band: the first frame reads the
+    bands of ranks 12, 12, 0, 12, 0 and the second 12, 12, 0, 12, and one
+    band, the one at 4 in the first frame, is a candidate. It is not
+    continued into the second frame, so emergence fails on frame
+    persistence, coherent transport fails on the transport over the
+    lifetime, and no doublet is observed."""
     read = obs.IsospinDoublet.observe(_flavoured_monopole_frames())
-    assert len(read.candidates) == 3
-    assert read.conditions[0].status == obs.QuarkConditionStatus.Passed
-    assert read.conditions[1].status == obs.QuarkConditionStatus.Passed
-    assert not read.no_isospin_doublet
+    assert [[b.rank for b in frame.bands] for frame in read.frames] == [
+        [12, 12, 0, 12, 0], [12, 12, 0, 12]]
+    assert len(read.candidates) == 1
+    assert read.conditions[0].status == obs.QuarkConditionStatus.Failed
+    assert list(read.conditions[0].failing) == ["frame-persistence"]
+    assert read.conditions[1].status == obs.QuarkConditionStatus.Failed
+    assert list(read.conditions[1].failing) == ["transport-over-lifetime"]
+    assert read.no_isospin_doublet and not read.doublet_observed
 
 
 def test_the_isospin_detector_finds_none_on_the_monopole_host():

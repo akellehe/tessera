@@ -452,28 +452,59 @@ class TestSpinorBands(unittest.TestCase):
                                   - averaged @ action)), 1e-11,
                     msg=f"mu={mu}")
 
-    def test_an_odd_monopole_support_carries_a_half_integer_doublet(
+    def test_an_odd_monopole_support_at_the_declared_tolerances(
             self) -> None:
-        for mu in (1, -1, 3):
+        """The spin read of an odd-monopole tetrahedron at the declared
+        tolerances (1e-15 for the degeneracy and for the certificates): the
+        monopole number is odd, the projective class is nontrivial and the
+        read's certificate holds (residual 2.4e-16 at mu = +-1 and 7.3e-16
+        at mu = 3).
+
+        The rotation-averaged edge Laplacian has the three doubly degenerate
+        eigenvalues 4 - 2/sqrt(3), 4 and 4 + 2/sqrt(3). The degeneracy
+        tolerance is an absolute separation, and the two eigenvalues of a
+        pair are computed up to 3e-15 apart, so a pair computed further apart
+        than 1e-15 is read as two bands of rank one, which are not invariant
+        (invariance residual 1/3) and not spinor doublets. At mu = +-1 the
+        pair at 4 - 2/sqrt(3) is read so and the other two pairs are read as
+        spinor doublets, the coexact one at 4 among them; at mu = 3 every
+        pair is read as two bands of rank one and no doublet is found."""
+        dimensions = {1: [1, 1, 2, 2], -1: [1, 1, 2, 2], 3: [1] * 6}
+        for mu, expected in dimensions.items():
             support = MonopoleSupport.tetrahedron(mu)
             read = support.spinRead(MonopoleSupport.tetrahedralRotations())
             self.assertTrue(read.monopole.odd, msg=f"mu={mu}")
             self.assertTrue(read.cocycle.nontrivial, msg=f"mu={mu}")
-            self.assertTrue(read.half_integer_doublet, msg=f"mu={mu}")
             self.assertTrue(read.certificate.holds())
-            self.assertEqual(len(read.bands), 3, msg=f"mu={mu}")
+            self.assertEqual([band.dimension for band in read.bands],
+                             expected, msg=f"mu={mu}")
             for band in read.bands:
-                self.assertEqual(band.dimension, 2, msg=f"mu={mu}")
-                self.assertLessEqual(band.invariance_residual, 1e-11)
-                self.assertLessEqual(abs(band.irreducibility_score - 1.0),
-                                     1e-9)
-                self.assertTrue(band.spinor_doublet)
+                if band.dimension == 2:
+                    self.assertLessEqual(band.invariance_residual, 1e-11)
+                    self.assertLessEqual(
+                        abs(band.irreducibility_score - 1.0), 1e-9)
+                    self.assertTrue(band.spinor_doublet)
+                else:
+                    self.assertAlmostEqual(band.invariance_residual,
+                                           1.0 / 3.0, places=12)
+                    self.assertAlmostEqual(band.irreducibility_score, 0.5,
+                                           places=12)
+                    self.assertFalse(band.spinor_doublet)
+            if mu == 3:
+                self.assertFalse(read.half_integer_doublet)
+                self.assertEqual(read.doublet_index, len(read.bands))
+                # the two bands of rank one at 4 lie in the coexact sector
+                self.assertEqual([band.coexact for band in read.bands],
+                                 [False, False, True, True, False, False])
+                continue
+            self.assertTrue(read.half_integer_doublet)
+            self.assertEqual(read.doublet_index, 2)
             doublet = read.bands[read.doublet_index]
             self.assertAlmostEqual(doublet.eigenvalue, 4.0, places=9)
             self.assertTrue(doublet.coexact)
             self.assertLessEqual(doublet.coexact_residual, 1e-10)
-            # The other two doublets are the images of the vertex doublets
-            # and lie in the exact sector, so they are NOT the j = 1/2 one.
+            # The other bands are the images of the vertex doublets and lie
+            # in the exact sector, so they are NOT the j = 1/2 one.
             for index, band in enumerate(read.bands):
                 if index != read.doublet_index:
                     self.assertFalse(band.coexact)

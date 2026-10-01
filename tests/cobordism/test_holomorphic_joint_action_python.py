@@ -607,11 +607,12 @@ class TheRemainingReadsTest(unittest.TestCase):
         largest. On this sphere at beta = 1/5, where W is dominated by
         1 + 2 e^{-5/2} cos theta and the face curvature varies with the
         cosine of the flux, the six nonzero singular values lie between 0.81
-        and 1 of the largest and four are at rounding, so the default keeps
-        six and a threshold of 0.93 keeps three; the step record reports the
-        gap at the decision."""
+        and 1 of the largest and four are at rounding, so a threshold of
+        1e-12 keeps six and a threshold of 0.93 keeps three; the step record
+        reports the gap at the decision. The declared default of the
+        threshold is 1e-15."""
         self.assertEqual(cob.HolomorphicRelaxationDeclaration().rank_tolerance,
-                         1e-12)
+                         1e-15)
         ranks, gaps = [], []
         for threshold in (1e-12, 0.93):
             spacetime = sphere3(squared=_metric, phase=_flux)
