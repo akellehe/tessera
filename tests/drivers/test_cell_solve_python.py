@@ -199,8 +199,10 @@ def test_the_direction_is_the_order_one_step_on_the_base_edges():
     base, _, system = _content_system()
     objective = cs.StationarityObjective(system)
     node = cs.cell_node(base, objective)
+    scalar = cob.ObjectiveContext()
+    scalar.spacetime = base
     context = cob.ObjectiveDirectionContext()
-    context.scalar = node.objective_context()
+    context.scalar = scalar
     context.edge_count = 6
     direction = objective.direction(context)
     point = system.point(base)
