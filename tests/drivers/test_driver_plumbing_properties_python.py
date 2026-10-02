@@ -116,9 +116,11 @@ def _first_cell_config(config, monkeypatch):
 def test_the_command_line_without_options_is_the_declared_config(
         driver, monkeypatch):
     """The parser's defaults and `default_config`'s are one set of values:
-    the config a bare ``run`` builds is `default_config()` key for key."""
-    assert _config_of(driver, ["run", "--quiet"], monkeypatch) == \
-        driver.default_config()
+    the config a bare ``run`` builds is `default_config()` key for key,
+    with the environment of the run beside it."""
+    config = _config_of(driver, ["run", "--quiet"], monkeypatch)
+    config.pop("environment", None)
+    assert config == driver.default_config()
 
 
 def test_the_two_drivers_declare_the_same_host():
@@ -311,14 +313,6 @@ def test_the_reading_by_2T_names_ties_at_the_tie_tolerance_it_is_given():
         == [[3, 0, 0]]
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "`baryon_poles.ratios` passes its tie tolerance to the reading by 2T and "
-    "not to the reading by the spin of the lift, which calls "
-    "`lowest_over_pairs` at the declared 1e-15: with --tie-tolerance 1e-3 "
-    "and two poles 1e-6 apart, by_2T_reading names the tie and by_spin_lift "
-    "names none (test(cobordism): property tests of the recursion run's "
-    "path, from the library to the drivers, "
-    "https://github.com/akellehe/tessera/issues/1372)"))
 def test_both_pairings_name_ties_at_the_tie_tolerance_they_are_given():
     """The two pairings of a ratio compare the same two sectors here, so
     they name the same tied pairs at the same tolerance."""
@@ -327,11 +321,6 @@ def test_both_pairings_name_ties_at_the_tie_tolerance_they_are_given():
         assert column["by_spin_lift"][role] == column["by_2T_reading"][role]
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "`baryon_poles.lowest_lines` has no tolerance argument and reads the "
-    "minima at the declared 1e-15, so the printed 'lowest over' lines of a "
-    "run made at another --tie-tolerance name no tie where the record does "
-    "(https://github.com/akellehe/tessera/issues/1372)"))
 def test_the_printed_minima_name_the_ties_of_the_record(monkeypatch):
     """A scan point read at a tie tolerance prints, in its 'lowest over'
     lines, the ties its record names at that tolerance."""
@@ -349,13 +338,6 @@ def test_the_printed_minima_name_the_ties_of_the_record(monkeypatch):
     assert all("tied" in line for line in printed)
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "`--contents` and `default_config(selected_contents=...)` accept any "
-    "three integers: (1, 1, 0), (0, 0, 4), (2, 2, 2) and (-1, 2, 2) are "
-    "recorded as contents and handed to every cell, although a content is "
-    "an occupation of three bands by three quarks (`baryon_poles.contents`) "
-    "and the pole read is of three-quark sectors "
-    "(https://github.com/akellehe/tessera/issues/1372)"))
 @pytest.mark.parametrize("content", [(1, 1, 0), (0, 0, 4), (2, 2, 2),
                                      (-1, 2, 2)])
 def test_a_content_that_is_not_three_quarks_is_refused_by_name(
@@ -586,18 +568,6 @@ def _strict(text):
     return json.loads(text, parse_constant=refuse)
 
 
-_NOT_JSON = (
-    "`_append_line` and `main` write with `json.dumps` at its default, which "
-    "spells a NaN and an infinity as the bare words NaN and Infinity; "
-    "neither is a JSON value, so a parser other than Python's refuses the "
-    "line. The points file of the run "
-    "~/recursion-runs/2026-10-01/v18-multicobordism-5t holds 917 NaN "
-    "(relaxation.trace[].constrained_rank_gap) and 2421 Infinity "
-    "(recursion.isolation_gaps[], sectors.*.separation[]) "
-    "(https://github.com/akellehe/tessera/issues/1372)")
-
-
-@pytest.mark.xfail(strict=True, reason=_NOT_JSON)
 def test_the_files_of_a_tick_are_json(one_tick):
     """Every line of the points file and the file written at the end are
     JSON. A tick of the stand-in run holds six infinities: the isolation gap
@@ -614,7 +584,6 @@ def test_the_files_of_a_tick_are_json(one_tick):
     _strict((directory / "run.json").read_text())
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_JSON)
 def test_a_record_with_an_unmeasured_number_is_written_as_json(tmp_path):
     """A record holds a NaN where a number is unmeasured (the rank gap of a
     constrained step that was not taken); the line written for it is
@@ -652,13 +621,6 @@ def test_a_record_survives_the_round_trip_through_json(driver):
     assert set(converted["edges"]) == {"(0, 1)", "(0, 2)"}
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "`_jsonable` of both drivers converts numpy floats, integers and "
-    "complex numbers and leaves a numpy boolean as it is, and that of "
-    "`baryon_poles` leaves a numpy array as it is; `json.dumps` raises "
-    "TypeError on either, in `_append_line`, after the tick or the scan "
-    "point is computed and before it is written "
-    "(https://github.com/akellehe/tessera/issues/1372)"))
 @pytest.mark.parametrize("driver,value", [
     (bp, np.bool_(True)), (R, np.bool_(True)), (bp, [np.bool_(False)]),
     (bp, np.array([1.0, 2.0])), (bp, np.array([1 + 1j]))],

@@ -463,9 +463,10 @@ def test_the_ward_identity_holds_on_every_pure_gauge_direction(
     coboundary of its vertex function exactly."""
     _, _, _, problem = host_problem
     ward = problem["record"]["ward_identity"]
-    assert set(ward) == {"directions", "gauge_derivative",
+    assert set(ward) == {"directions", "state", "gauge_derivative",
                          "coboundary_departure", "residual",
                          "paramagnetic_alone"}
+    assert ward["state"] == bp.WARD_STATE
     assert ward["directions"] == 9
     assert ward["coboundary_departure"] == 0.0
     assert ward["residual"] < 1e-14
@@ -636,7 +637,8 @@ def test_the_lengths_only_elimination_is_the_plain_inverse():
     assert drazin["zero_by_structure"] is False
     assert drazin["null_dimension"] == 0
     assert drazin["eliminated_dimension"] == 18
-    assert problem["record"]["ward_identity"] == {"directions": 0}
+    assert problem["record"]["ward_identity"] == {"directions": 0,
+                                                  "state": bp.WARD_STATE}
 
 
 def test_a_lengths_only_elimination_without_an_interior_hinge_eliminates_nothing():
@@ -677,7 +679,8 @@ def test_a_lengths_only_elimination_without_an_interior_hinge_eliminates_nothing
     assert problem["induced"].shape == (18,) and not problem["induced"].any()
     assert not problem["shift"].any()
     assert problem["constant"] == 0
-    assert problem["record"]["ward_identity"] == {"directions": 0}
+    assert problem["record"]["ward_identity"] == {"directions": 0,
+                                                  "state": bp.WARD_STATE}
     truncation = problem["truncation"]
     assert truncation["induced_displacement_norm"] == 0.0
     assert truncation["action_quadratic_term"] == 0

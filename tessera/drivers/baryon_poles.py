@@ -833,23 +833,36 @@ def sheet_squared_lengths(spacetime, sheet):
 # ---------------------------------------------------------------- the action
 
 
+#: The hinges the primal Regge sum runs over, by the name the configuration
+#: and the command line give them (``regge_hinges``, ``--regge-hinges``).
+REGGE_HINGES = {"interior": cob.ReggeHinges.Interior,
+                "all": cob.ReggeHinges.All}
+
+
+def checked_regge_hinges(name):
+    """The hinges of the primal Regge sum by name, one of `REGGE_HINGES`."""
+    if name not in REGGE_HINGES:
+        raise ValueError("the hinges of the Regge sum are one of %s; got %r"
+                         % (", ".join(REGGE_HINGES), name))
+    return REGGE_HINGES[name]
+
+
 def action_declaration(spacetime, kappa, beta, regge_hinges="interior",
                        matter_weight=1.0,
                        villain_order=DECLARED_VILLAIN_ORDER):
     """The joint action of the calculation (WP §3, §7): the primal Regge term
-    with weight 1/kappa, the Villain holonomy term with coupling beta and the
-    Villain weight summed to ``villain_order``, and the mean-field term;
-    kappa enters only through the Regge weight, and the spectral-moment part
-    of S_0 is imposed by the mean-field solve as the constraints of WP v17
-    §3.4 on the occupied fiber."""
+    with weight 1/kappa over the hinges ``regge_hinges`` names
+    (`REGGE_HINGES`; another name has no value), the Villain holonomy term
+    with coupling beta and the Villain weight summed to ``villain_order``,
+    and the mean-field term; kappa enters only through the Regge weight, and
+    the spectral-moment part of S_0 is imposed by the mean-field solve as
+    the constraints of WP v17 §3.4 on the occupied fiber."""
     declaration = cob.JointActionDeclaration()
     declaration.carrier_degree = 1
     declaration.metric_source = cob.HodgeMetricSource.WhitneyPencil
     declaration.gravitational_weight = 1.0 / kappa
     declaration.regge_form = cob.ReggeForm.Primal
-    declaration.regge_hinges = (cob.ReggeHinges.Interior
-                                if regge_hinges == "interior"
-                                else cob.ReggeHinges.All)
+    declaration.regge_hinges = checked_regge_hinges(regge_hinges)
     declaration.holonomy_weight = beta
     declaration.villain_order = villain_order
     declaration.matter_weight = matter_weight
@@ -1276,8 +1289,9 @@ def aligned_doublet_frame(support, group,
     blocks = [vectors[:, 2 * c:2 * c + 2] for c in range(3)]
     representations = [np.asarray(support.edgeRepresentation(g))
                        for g in group]
-    doublet = reference_doublet(symmetry_bands(
-        support, group, nontrivial, degeneracy_tolerance, tolerance))
+    bands = symmetry_bands(support, group, nontrivial, degeneracy_tolerance,
+                           tolerance)
+    doublet = reference_doublet(bands)
     coexact = np.asarray(support.coexactProjector(tolerance))
     carriers = [_band_certificates(block, representations, coexact,
                                    nontrivial, tolerance)
@@ -1360,6 +1374,9 @@ def aligned_doublet_frame(support, group,
         "half_turn_trace_residual": half_turn_trace,
         "half_turn_trace_held": bool(half_turn_trace <= character_tolerance),
         "spin_read": read,
+        # the bands the frame is read on, without their frames
+        "bands": [{key: value for key, value in band.items()
+                   if key != "frame"} for band in bands],
     }
 
 
@@ -2037,6 +2054,13 @@ def gauge_derivative(coupling, generator):
     return 1j * (coupling @ generator - generator @ coupling)
 
 
+#: The state the Ward identity of the retained fluctuations is read on
+#: (`ward_read`).
+WARD_STATE = ("the three modes of h_1 of smallest real part (the occupied "
+              "projector of DressedFluctuation), not the bands the content "
+              "fills")
+
+
 def ward_read(spacetime, carrier, couplings, directions, config):
     """The Ward identity of the retained fluctuations: (D - Pi(0)) g = 0 on
     every pure-gauge direction g.
@@ -2054,9 +2078,14 @@ def ward_read(spacetime, carrier, couplings, directions, config):
     distance of a direction's phase shift from the coboundary of the vertex
     function the generator is built on (`gauge_vertex_function`), zero to
     rounding on a pure-gauge direction, and a direction that is not pure
-    gauge is read all the same with its departure beside the residual."""
+    gauge is read all the same with its departure beside the residual.
+
+    The state is `WARD_STATE`: Pi(0) and P_occ are those of the three modes
+    of the carrier of smallest real part, the occupied projector
+    `DressedFluctuation` forms, whatever the content the cell was solved
+    for. The record names it under ``state``."""
     if directions is None:
-        return {"directions": 0}
+        return {"directions": 0, "state": WARD_STATE}
     n = carrier.shape[0]
     declaration = cob.DressedFluctuationDeclaration()
     declaration.carrier_dimension = n
@@ -2070,6 +2099,7 @@ def ward_read(spacetime, carrier, couplings, directions, config):
                                                    len(couplings))
     except ValueError as error:
         return {"directions": int(directions.shape[1]),
+                "state": WARD_STATE,
                 "unmeasured": str(error)}
     projector = occupied_projector(carrier, 3)
     edges = len(spacetime.getEdgeList().toVector())
@@ -2088,6 +2118,7 @@ def ward_read(spacetime, carrier, couplings, directions, config):
         paramagnetic_parts.append(float(np.linalg.norm(polarization)
                                         / scale))
     return {"directions": int(directions.shape[1]),
+            "state": WARD_STATE,
             "gauge_derivative": (
                 "d_g O_a = i (O_a Lambda_g - Lambda_g O_a), the commutator "
                 "with the generator of the gauge direction on the edge "
@@ -2320,6 +2351,64 @@ def eliminate_fluctuations(spacetime, action, carrier, kappa, beta, config):
     }
 
 
+def many_body_operators(carrier, couplings, stiffness, frame, dual,
+                        tolerance=DECLARED_TOLERANCE):
+    """The two operators the poles are read on, on the three-particle space
+    of a fiber's frame (the occupation basis, `occupation_basis`):
+    dGamma(Phi~^T h Phi) of the carrier h, and the same with the quartic of
+    the eliminated fluctuations, -1/2 J^T A^-1 J over the reduced couplings
+    and their stiffness (`DressedFluctuation.effective_action`). Returns the
+    one-body operator and the read of the eliminated one: the operator
+    (``effective_action``), the number of fluctuations eliminated, the
+    stiffness's asymmetry and conditioning, the frames' pairing defect
+    ||Phi~^T Phi - I|| and the read's certificate.
+
+    When the elimination integrates out no fluctuation (the reduced
+    stiffness is 0 by 0 and there is no reduced coupling: a stiffness that
+    is zero by structure, `drazin_elimination`), the quartic is the zero
+    operator and the eliminated operator is the one-body operator itself,
+    formed here as dGamma of the carrier in the frame (`second_quantized`);
+    there is no stiffness, so its asymmetry and conditioning are None."""
+    stiffness = np.asarray(stiffness, dtype=complex)
+    if len(couplings) == 0 and stiffness.size == 0:
+        in_frame = dual @ carrier @ frame
+        one_body = second_quantized(in_frame)
+        pairing = dual @ frame
+        return one_body, {
+            "effective_action": one_body,
+            "eliminated_dimension": 0,
+            "stiffness_asymmetry": None,
+            "stiffness_conditioning": None,
+            "frame_pairing_defect": float(np.linalg.norm(
+                pairing - np.eye(pairing.shape[0]))),
+            "certificate": ("no fluctuation is eliminated: the reduced "
+                            "stiffness is 0 by 0, the quartic is the zero "
+                            "operator and the operator is dGamma of the "
+                            "carrier in the frame"),
+        }
+    declaration = cob.DressedFluctuationDeclaration()
+    declaration.carrier_dimension = carrier.shape[0]
+    declaration.carrier = list(np.asarray(carrier,
+                                          dtype=complex).reshape(-1))
+    declaration.couplings = [list(np.asarray(o, dtype=complex).reshape(-1))
+                             for o in couplings]
+    declaration.bare_stiffness = list(stiffness.reshape(-1))
+    declaration.occupied_modes = 3
+    declaration.tolerance = tolerance
+    read = cob.DressedFluctuation(declaration).effective_action(
+        list(frame.reshape(-1)), list(dual.reshape(-1)), 3)
+    dimension = int(read.dimension)
+    return (np.asarray(read.one_body).reshape(dimension, dimension), {
+        "effective_action": np.asarray(read.effective_action).reshape(
+            dimension, dimension),
+        "eliminated_dimension": len(couplings),
+        "stiffness_asymmetry": float(read.stiffness_asymmetry),
+        "stiffness_conditioning": float(read.stiffness_conditioning),
+        "frame_pairing_defect": float(read.frame_pairing_defect),
+        "certificate": read.certificate.describe(),
+    })
+
+
 def sector_poles(operator, sector_states, config=None):
     """The compressed operator of a sector, its leakage, and its poles: the
     eigenvalues of the compressed block, read exactly from its complex Schur
@@ -2346,6 +2435,29 @@ def sector_poles(operator, sector_states, config=None):
 def contents():
     """All ten occupations of the three bands by three quarks."""
     return [c for c in itertools.product(range(4), repeat=3) if sum(c) == 3]
+
+
+def checked_contents(selected):
+    """Contents as declared, each one of the ten of `contents`: three
+    non-negative integers, the occupations of the three bands, that sum to
+    the three quarks. Another content has no value: the pole read is of
+    three-quark sectors."""
+    allowed = set(contents())
+    out = []
+    for content in selected:
+        try:
+            numbers = tuple(content)
+            valid = (all(int(n) == n for n in numbers)
+                     and tuple(int(n) for n in numbers) in allowed)
+        except (TypeError, ValueError):
+            valid = False
+        if not valid:
+            raise ValueError(
+                "a content is three non-negative integers that sum to three "
+                "(the occupations of three bands by three quarks); got %r"
+                % (content,))
+        out.append(tuple(int(n) for n in numbers))
+    return out
 
 
 IRREP_NAMES = ("2", "2'", "2''")
@@ -2531,14 +2643,18 @@ def eigenbasis_marks(operator):
 
 def hessian_sign(value, scale, tolerance=DECLARED_TOLERANCE):
     """The sign of the moment-constrained Hessian along the Hellmann-Feynman
-    force as a word: "positive" or "negative" when the quotient is real to
-    ``tolerance`` times the Hessian's scale (the real slice), "complex" when
-    it is not, and "unread" when it is not a number."""
+    force as a word: "positive", "negative" or "zero" when the quotient is
+    real to ``tolerance`` times the Hessian's scale (the real slice),
+    "complex" when it is not, and "unread" when the quotient or the scale is
+    not a number."""
     value = complex(value)
-    if not (math.isfinite(value.real) and math.isfinite(value.imag)):
+    if not (math.isfinite(value.real) and math.isfinite(value.imag)
+            and math.isfinite(scale)):
         return "unread"
     if abs(value.imag) > tolerance * scale:
         return "complex"
+    if value.real == 0:
+        return "zero"
     return "positive" if value.real > 0 else "negative"
 
 
@@ -2979,59 +3095,161 @@ def doublet_sector_read(doublet_content, trialities,
         _carrier_content(doublet_content, trialities), tolerance)[1]
 
 
-def pole_certificates(target, j2, sector, dual, eigen, basis, spins,
-                      projector=None, spinor_type=None,
+def sector_spin_images(sector, dual, basis, spins):
+    """What the certificates of a sector's poles are read from, formed once
+    for the sector: the Fock vectors of the sector's states (``right``,
+    one column per state) and of its bilinear dual (``left``, column k the
+    k-th row of ``dual``), the image of each right column under J^2
+    (``right_spin``) and of each left column under its transpose
+    (``left_spin``; the left eigen-equation <Psi_L|(J^2 - j(j+1)) = 0 is the
+    right one for (J^2)^T, which is J^2 of the transposed one-particle spin
+    matrices), and the image of each right column under the colour Casimir
+    (``right_casimir``)."""
+    count = sector.shape[1]
+    right = np.column_stack([to_fock(sector[:, k], basis)
+                             for k in range(count)])
+    left = np.column_stack([to_fock(dual[k, :], basis)
+                            for k in range(count)])
+    transposed = [np.asarray(j).T for j in spins]
+    apply = obs.SharpSpin.applyTotalSpinSquared
+    return {
+        "right": right,
+        "left": left,
+        "right_spin": np.column_stack([np.asarray(apply(spins, right[:, k]))
+                                       for k in range(count)]),
+        "left_spin": np.column_stack([np.asarray(apply(transposed,
+                                                       left[:, k]))
+                                      for k in range(count)]),
+        "right_casimir": np.column_stack([colour_casimir(right[:, k])
+                                          for k in range(count)]),
+    }
+
+
+def pole_projectors(read, dimension):
+    """The spectral projector of a compressed block onto the generalized
+    eigenspace of each pole of ``read`` (`sector_poles`), in the order of
+    the poles: minus the pole's residue, which `BoundStatePole` forms from
+    the block's Schur form (for the identity metric on a block with no
+    interior the residue is minus the spectral projector itself)."""
+    return [-np.asarray(residue, dtype=complex).reshape(dimension, dimension)
+            for residue in read.residue]
+
+
+def _ratio(numerator, pairing):
+    """A matrix element over its pairing as a complex number; not a number
+    when the pairing vanishes or is not finite, and never an exception."""
+    pairing = complex(pairing)
+    if pairing == 0 or not np.isfinite(pairing):
+        return complex(math.nan, math.nan)
+    return complex(numerator) / pairing
+
+
+def _worst_relative(images, states):
+    """sup over the span of the columns of ``states`` of ||A psi|| / ||psi||,
+    for ``images`` the columns' images under A: the largest singular value
+    of the images in an orthonormal basis of the span. It does not depend on
+    the basis the span is given in."""
+    orthonormal, triangular = np.linalg.qr(states)
+    in_basis = np.linalg.solve(triangular.T, images.T).T
+    return float(np.linalg.norm(in_basis, 2))
+
+
+def pole_certificates(projector, multiplicity, j2, sector, dual, images,
+                      isotypic=None, spinor_type=None,
                       tolerance=DECLARED_CERTIFICATE_TOLERANCE):
-    """The certificates of the eigenvector of a sector's compressed block
-    nearest ``target``: the right eigenvector and its left partner, as
-    vectors over the occupation basis and as Fock vectors.
+    """The certificates of one pole of a sector's compressed block, read on
+    the pole's eigenspace: ``projector`` is the block's spectral projector
+    onto it (`pole_projectors`) and ``multiplicity`` its dimension.
+
+    The right eigenspace is the range of the projector and the left one the
+    range of its transpose, both taken from the one projector, so a state
+    and its partner come from one decomposition and their pairing does not
+    vanish. Every number below is a property of the eigenspace and not of a
+    basis of it, so the certificates of a pole of multiplicity above one do
+    not depend on the vectors an eigensolver returns inside it:
 
     * the spinor certificate of WP v18 §11.1 and §14: the isotypic projector
-      equations (I - P)|Psi_R> = 0 and <Psi_L|(I - P) = 0 with ``projector``
-      the projector onto the sector's 2T types (`SharpSpin.isotypicRead`),
-      named ``spinor_type``; unmeasured when no projector is supplied;
-    * the spin-lift read: `SharpSpin.read` of the sector's j(j+1) under the
-      constructed SU(2) action, which states the continuum spin value an
-      accepted lift supplies;
-    * the relative residual of the colour Casimir on the right vector (zero
-      for a colour singlet).
+      equations (I - P)|Psi_R> = 0 and <Psi_L|(I - P) = 0 with ``isotypic``
+      the projector onto the sector's 2T types (`isotypic_projectors`),
+      named ``spinor_type``; each residual is the largest
+      ||(I - P) psi|| / ||psi|| over the eigenspace, and the weight is
+      tr(P Pi) / tr(Pi), the mean of <Psi_L|P|Psi_R> / <Psi_L|Psi_R> over a
+      biorthogonal basis; unmeasured when no projector is supplied;
+    * the spin-lift read: the two eigen-equations of J^2 at the sector's
+      j(j+1) under the constructed SU(2) action, each residual the largest
+      ||(J^2 - j(j+1)) psi|| / ||psi|| over the eigenspace, and the
+      biorthogonal expectation tr(J^2 Pi) / tr(Pi), which states the
+      continuum spin value an accepted lift supplies;
+    * the largest relative residual of the colour Casimir over the right
+      eigenspace (zero for colour singlets);
+    * ``determinant_count``: the number of determinants that carry a nonzero
+      amplitude of some state of the right eigenspace.
 
-    ``eigen`` holds the right and the left eigen-decompositions of the block,
-    ``dual`` the sector's bilinear left inverse."""
-    values, right, values_left, left = eigen
-    k = int(np.argmin(np.abs(values - target)))
-    kl = int(np.argmin(np.abs(values_left - values[k])))
-    right_sector = sector @ right[:, k]
-    left_sector = dual.T @ left[:, kl]
-    right_state = to_fock(right_sector, basis)
-    left_state = to_fock(left_sector, basis)
-    spin = obs.SharpSpin.read(spins, right_state, left_state, j2, tolerance)
-    casimir = np.linalg.norm(colour_casimir(right_state)) / \
-        np.linalg.norm(right_state)
+    A certificate is sharp when both of its residuals are at or below
+    ``tolerance`` and its expectation (or weight) is a finite number: a
+    pairing that vanishes or is not a number is never read as sharp.
+    ``images`` are the sector's `sector_spin_images` and ``dual`` its
+    bilinear left inverse."""
+    count = int(multiplicity)
+    left_vectors, _, right_h = np.linalg.svd(projector)
+    right = left_vectors[:, :count]
+    left = right_h[:count, :].T
+    states = images["right"] @ right
+    partners = images["left"] @ left
+    right_residual = _worst_relative(
+        images["right_spin"] @ right - j2 * states, states)
+    left_residual = _worst_relative(
+        images["left_spin"] @ left - j2 * partners, partners)
+    expectation = _ratio(
+        np.trace(images["left"].T @ images["right_spin"] @ projector),
+        np.trace(images["left"].T @ images["right"] @ projector))
+    finite = bool(np.isfinite(expectation))
     out = {
+        "eigenspace_dimension": count,
         "sharp_spinor": None,
         "spinor_type": spinor_type,
         "spinor_right_residual": None,
         "spinor_left_residual": None,
         "spinor_weight": None,
-        "spin_lift_sharp": bool(spin.sharp),
-        "spin_lift_right_residual": float(spin.right_residual),
-        "spin_lift_left_residual": float(spin.left_residual),
-        "spin_lift_expectation": complex(spin.expectation),
-        "determinant_count": int(spin.determinant_count),
-        "colour_casimir_residual": float(casimir),
+        "spin_lift_sharp": bool(finite and right_residual <= tolerance
+                                and left_residual <= tolerance),
+        "spin_lift_right_residual": right_residual,
+        "spin_lift_left_residual": left_residual,
+        "spin_lift_expectation": expectation,
+        "determinant_count": int(np.count_nonzero(np.any(states != 0,
+                                                         axis=1))),
+        "colour_casimir_residual": _worst_relative(
+            images["right_casimir"] @ right, states),
     }
-    if projector is not None:
-        spinor = obs.SharpSpin.isotypicRead(projector, right_sector,
-                                            left_sector, spinor_type or "",
-                                            tolerance)
+    if isotypic is not None:
+        patterns = sector @ right
+        dual_patterns = dual.T @ left
+        spinor_right = _worst_relative(patterns - isotypic @ patterns,
+                                       patterns)
+        spinor_left = _worst_relative(
+            dual_patterns - isotypic.T @ dual_patterns, dual_patterns)
+        weight = _ratio(np.trace(dual @ isotypic @ sector @ projector),
+                        np.trace(dual @ sector @ projector))
         out.update({
-            "sharp_spinor": bool(spinor.sharp),
-            "spinor_right_residual": float(spinor.right_residual),
-            "spinor_left_residual": float(spinor.left_residual),
-            "spinor_weight": complex(spinor.weight),
+            "sharp_spinor": bool(np.isfinite(weight)
+                                 and spinor_right <= tolerance
+                                 and spinor_left <= tolerance),
+            "spinor_right_residual": spinor_right,
+            "spinor_left_residual": spinor_left,
+            "spinor_weight": weight,
         })
     return out
+
+
+def lowest_pole(poles):
+    """The pole of smallest real part, then smallest imaginary part, among
+    those whose real part is a number; the first pole when none is; None
+    for no pole. The choice does not depend on where in the list a pole
+    that is not a number stands."""
+    numbers = [p for p in poles if not math.isnan(p.real)]
+    if numbers:
+        return min(numbers, key=lambda p: (p.real, p.imag))
+    return poles[0] if poles else None
 
 
 def sector_entry(j2, triality, sector, operators, projectors=None,
@@ -3045,7 +3263,7 @@ def sector_entry(j2, triality, sector, operators, projectors=None,
     multiplicities and the exact certificates of the read (the residual of
     each pole's invariant subspace, the rank of each residue, the separation
     of each pole from the others and the block's scale, `sector_poles`),
-    each pole's spinor, spin-lift and colour certificates
+    each pole's spinor, spin-lift and colour certificates on its eigenspace
     (``pole_certificates``, parallel to ``poles``), and the lowest pole's
     certificates repeated beside it. The poles and the certificates are read
     at the config's tolerances (`TOLERANCES`)."""
@@ -3065,6 +3283,7 @@ def sector_entry(j2, triality, sector, operators, projectors=None,
             "restricts to %s" % " + ".join(irreps)),
     }
     dual = left_inverse(sector)
+    images = sector_spin_images(sector, dual, basis, spins)
     spinor_type = " + ".join(irreps)
     projector = None
     if projectors is not None:
@@ -3076,22 +3295,22 @@ def sector_entry(j2, triality, sector, operators, projectors=None,
     for name, operator in operators:
         block, leakage, read = sector_poles(operator, sector, config)
         poles = [complex(p) for p in read.poles]
-        lowest = min(poles, key=lambda p: (p.real, p.imag)) if poles else None
-        # every pole's right and left eigenvectors, for its spin and colour
-        # certificates
-        values, right = np.linalg.eig(block)
-        values_left, left = np.linalg.eig(block.T)
-        eigen = (values, right, values_left, left)
-        certificates = [pole_certificates(p, j2, sector, dual, eigen, basis,
-                                          spins, projector, spinor_type,
-                                          certificate_tolerance)
-                        for p in poles]
+        lowest = lowest_pole(poles)
+        # every pole's certificates, on the eigenspace its spectral
+        # projector projects onto
+        size = block.shape[0]
+        certificates = [
+            pole_certificates(pole_projector, multiplicity, j2, sector, dual,
+                              images, projector, spinor_type,
+                              certificate_tolerance)
+            for pole_projector, multiplicity in zip(
+                pole_projectors(read, size), read.multiplicity)]
         # with no pole read, the certificates beside the lowest pole are
-        # those of the block's first eigenvector
+        # those of the whole sector
         lowest_certificates = (
             certificates[poles.index(lowest)] if lowest is not None else
-            pole_certificates(values[0], j2, sector, dual, eigen, basis,
-                              spins, projector, spinor_type,
+            pole_certificates(np.eye(size, dtype=complex), size, j2, sector,
+                              dual, images, projector, spinor_type,
                               certificate_tolerance))
         entry[name] = {
             "poles": poles,
@@ -3220,37 +3439,22 @@ def _content_reads(content, kappa, beta, config, started, spacetime, action,
     flags = flags + [flag for flag in truncation.get("flags") or []
                      if flag["name"] not in names]
 
-    def many_body(carrier_matrix, coupling_matrices):
-        declaration = cob.DressedFluctuationDeclaration()
-        declaration.carrier_dimension = SHEETS * BASE_EDGES
-        declaration.carrier = list(carrier_matrix.reshape(-1))
-        declaration.couplings = [list(o.reshape(-1))
-                                 for o in coupling_matrices]
-        declaration.bare_stiffness = list(
-            fluctuations["reduced_stiffness"].reshape(-1))
-        declaration.occupied_modes = 3
-        declaration.tolerance = declared_tolerance(config,
-                                                   "fluctuation_tolerance")
-        dressed = cob.DressedFluctuation(declaration)
-        return dressed.effective_action(list(frame.reshape(-1)),
-                                        list(dual.reshape(-1)), 3)
-
     # the reduced coordinates f = R g carry the Drazin elimination
     coupling_matrices = fluctuations["reduced_couplings"]
-    # quasi-free: dGamma of the T-averaged operator
     stage[0] = "the many-body operators"
-    quasi_free_read = many_body(averaged, coupling_matrices)
-    dimension = int(quasi_free_read.dimension)
-    quasi_free = np.asarray(quasi_free_read.one_body).reshape(dimension,
-                                                               dimension)
-    # with the quartic: the whole eliminated operator averaged over the
-    # diagonal rotation action, term by term (a rotated carrier and rotated
-    # couplings give the rotated many-body operator)
-    quartic_read = many_body(carrier + shift, coupling_matrices)
-    eliminated = np.asarray(quartic_read.effective_action).reshape(
-        dimension, dimension)
-    with_quartic = rotation_averaged_many_body(eliminated, actions, frame,
-                                               dual) + \
+    # quasi-free: dGamma of the T-averaged operator; with the quartic: the
+    # whole eliminated operator averaged over the diagonal rotation action,
+    # term by term (a rotated carrier and rotated couplings give the rotated
+    # many-body operator)
+    quasi_free, _ = many_body_operators(
+        averaged, coupling_matrices, fluctuations["reduced_stiffness"],
+        frame, dual, declared_tolerance(config, "fluctuation_tolerance"))
+    dimension = quasi_free.shape[0]
+    _, quartic = many_body_operators(
+        carrier + shift, coupling_matrices, fluctuations["reduced_stiffness"],
+        frame, dual, declared_tolerance(config, "fluctuation_tolerance"))
+    with_quartic = rotation_averaged_many_body(
+        quartic["effective_action"], actions, frame, dual) + \
         constant * np.eye(dimension)
 
     # the poles of the colour-singlet three-quark sectors of h-bar_1, for
@@ -3328,7 +3532,10 @@ def _content_reads(content, kappa, beta, config, started, spacetime, action,
                                                     "fibre_lift_tolerance"),
             attachment_rank_tolerance=declared_tolerance(
                 config, "attachment_rank_tolerance"),
-            covariance=matrix(action.declaration.covariance)))
+            covariance=matrix(action.declaration.covariance),
+            frame_name=spin_read_frame["name"],
+            degeneracy_tolerance=declared_tolerance(
+                config, "degeneracy_tolerance")))
     stage[0] = "the end-point measurements of the solve"
     truncation_read = action.holonomy_truncation()
     record = {
@@ -3394,11 +3601,11 @@ def _content_reads(content, kappa, beta, config, started, spacetime, action,
         "averaged_symmetry_residual": averaged_residual,
         "quartic": {
             "constant": complex(constant),
-            "stiffness_asymmetry": float(quartic_read.stiffness_asymmetry),
-            "stiffness_conditioning": float(
-                quartic_read.stiffness_conditioning),
-            "frame_pairing_defect": float(quartic_read.frame_pairing_defect),
-            "certificate": quartic_read.certificate.describe(),
+            "eliminated_dimension": quartic["eliminated_dimension"],
+            "stiffness_asymmetry": quartic["stiffness_asymmetry"],
+            "stiffness_conditioning": quartic["stiffness_conditioning"],
+            "frame_pairing_defect": quartic["frame_pairing_defect"],
+            "certificate": quartic["certificate"],
             "truncation": truncation,
             "fluctuations": fluctuations["record"],
         },
@@ -3470,6 +3677,10 @@ def recursion_read(spacetime, config):
         "transport_norms": [float(np.linalg.norm(np.asarray(t.block)))
                             for t in level.transports
                             if t.from_component != t.to_component],
+        # the size the leakage is measured against, in its own unit
+        "fiber_norms": [float(np.linalg.norm(np.asarray(t.block)))
+                        for t in level.transports
+                        if t.from_component == t.to_component],
         "fock_stage_dimension": float(level.fock_stage_dimension),
         "determinant_residual": float(level.determinant_residual),
         "certificate": level.certificate.describe(),
@@ -3814,6 +4025,15 @@ def multiset_distance(first, second):
     return float(thresholds[low])
 
 
+def _relative_shift(distance, scale):
+    """A distance relative to a scale of its own unit; zero for a zero
+    distance whatever the scale, and infinite for a nonzero distance on a
+    zero scale."""
+    if distance == 0.0:
+        return 0.0
+    return float(distance / scale) if scale > 0.0 else math.inf
+
+
 def _subspace_overlap(a, b):
     """(sum_i cos^2 theta_i) / max(rank a, rank b) over the principal angles
     of two frames on the same cells: one exactly when their column spans
@@ -3928,7 +4148,9 @@ def spectral_fingerprint_read(spacetime, kappa, beta, config,
               "band_certificates": original["band_certificates"],
               "tolerance": tolerance}
     if not original["doublet_found"]:
-        unread = {"held": False,
+        # the fingerprint is the reference doublet's: with none on the host
+        # there is nothing to re-read, and the two items are not evaluable
+        unread = {"held": None,
                   "unread": "no spinor doublet on the host: %s"
                   % nearest_doublet_text(original["band_certificates"],
                                          band_tolerance)}
@@ -3944,11 +4166,13 @@ def spectral_fingerprint_read(spacetime, kappa, beta, config,
     moved = _fiber_fingerprint(moved_host, moved_support,
                                conjugated_group(group, permutation),
                                BASE_EDGES, kappa, beta, config)
-    scale = max(1.0, max(abs(v) for v in original["spectrum"]))
-    spectrum_shift = multiset_distance(original["spectrum"],
-                                       moved["spectrum"]) / scale
-    averaged_shift = multiset_distance(original["averaged_spectrum"],
-                                       moved["averaged_spectrum"]) / scale
+    # every shift is relative to the size of h_1's own spectrum, so the
+    # verdict does not move with the unit the operator is expressed in
+    scale = max(abs(v) for v in original["spectrum"])
+    spectrum_shift = _relative_shift(multiset_distance(
+        original["spectrum"], moved["spectrum"]), scale)
+    averaged_shift = _relative_shift(multiset_distance(
+        original["averaged_spectrum"], moved["averaged_spectrum"]), scale)
     relabeling = {"permutation": permutation,
                   "spectrum_shift": float(spectrum_shift),
                   "averaged_spectrum_shift": float(averaged_shift),
@@ -3962,9 +4186,8 @@ def spectral_fingerprint_read(spacetime, kappa, beta, config,
             n = PAIRS.index((min(image), max(image)))
             weight_shift = max(weight_shift, abs(
                 original["doublet_weights"][m] - moved["doublet_weights"][n]))
-        energy_shift = (abs(original["doublet_energy"]
-                            - moved["doublet_energy"])
-                        / max(1.0, abs(original["doublet_energy"])))
+        energy_shift = _relative_shift(
+            abs(original["doublet_energy"] - moved["doublet_energy"]), scale)
         relabeling.update({"doublet_weight_shift": float(weight_shift),
                            "doublet_energy_shift": float(energy_shift),
                            "held": bool(spectrum_shift <= tolerance
@@ -4037,13 +4260,16 @@ def spectral_fingerprint_read(spacetime, kappa, beta, config,
         ascending = sorted(range(len(energies)),
                            key=lambda k: (energies[k].real, energies[k].imag))
         unit = 2 if len(ascending) % 2 == 0 else 1
+        # the tolerance is relative to the size of the component's energies
+        energy_scale = float(np.max(np.abs(energies))) if len(energies) \
+            else 0.0
         runs, start = [], 0
         while start < len(ascending):
             stop = start + unit
             while (stop < len(ascending)
                    and abs(energies[ascending[stop]]
                            - energies[ascending[start]])
-                   <= isotypic_tolerance):
+                   <= isotypic_tolerance * energy_scale):
                 stop += unit
             runs.append(ascending[start:stop])
             start = stop
@@ -4073,9 +4299,8 @@ def spectral_fingerprint_read(spacetime, kappa, beta, config,
                 "overlap": best["overlap"],
                 "refined_energy": best["energy"],
                 "refined_rank": best["rank"],
-                "energy_shift": float(
-                    abs(best["energy"] - original["doublet_energy"])
-                    / max(1.0, abs(original["doublet_energy"]))),
+                "energy_shift": _relative_shift(
+                    abs(best["energy"] - original["doublet_energy"]), scale),
                 "held": bool(best["overlap"] >= overlap_floor
                              and best["rank"] == 2)})
     else:
@@ -4122,8 +4347,12 @@ def fingerprint_evidence(fingerprint):
         relabeling = l["unread"]
     else:
         relabeling = "the relabeled host carries no spinor doublet"
-    return [E("refinement-stability", bool(r["held"]), refinement),
-            E("relabeling-stability", bool(l["held"]), relabeling)]
+    # a read that was not made (``held`` None: no spinor doublet on the host
+    # to take the fingerprint of) is not evaluable, with the reason
+    return [E("refinement-stability",
+              None if r["held"] is None else bool(r["held"]), refinement),
+            E("relabeling-stability",
+              None if l["held"] is None else bool(l["held"]), relabeling)]
 
 
 def fingerprint_text(fingerprint):
@@ -4132,13 +4361,17 @@ def fingerprint_text(fingerprint):
         return "spectral fingerprint unread"
     r = fingerprint["refinement"]
     l = fingerprint["relabeling"]
-    relabeling = ("stable" if l["held"] else "unstable")
+    def verdict(read):
+        return ("unread" if read["held"] is None
+                else "stable" if read["held"] else "unstable")
+
+    relabeling = verdict(l)
     if "doublet_weight_shift" in l:
         relabeling += " (spectrum shift %.2g, doublet weight shift %.2g)" % (
             l["spectrum_shift"], l["doublet_weight_shift"])
     elif l.get("unread"):
         relabeling += " (%s)" % l["unread"]
-    refinement = ("stable" if r["held"] else "unstable")
+    refinement = verdict(r)
     if "overlap" in r:
         refinement += " (overlap %.4f, energy shift %.2g)" % (
             r["overlap"], r["energy_shift"])
@@ -4296,21 +4529,67 @@ def occupation_parity_evidence(spacetime, covariance,
     return E(name, held, detail)
 
 
+def cell_base_bands(supports, degeneracy_tolerance=DECLARED_TOLERANCE,
+                    tolerance=DECLARED_CERTIFICATE_TOLERANCE):
+    """The base band of every sheet of a cell, read on the sheet's own
+    support (``supports``, the (`MonopoleSupport`, departure) pairs of
+    `sheet_support`): the projective class of the support's spin read
+    (``nontrivial``), its symmetry-protected bands (`symmetry_bands`) and
+    the band that is its reference doublet (`reference_doublet`), or, when
+    no band is a certified coexact spinor doublet, the band of least coexact
+    residual with ``certified`` false. This is the cell's own read, whatever
+    frame the spin of the cell is read in (`spin_frame`)."""
+    group = rotation_group()
+    out = []
+    for support, _ in supports:
+        read = support.spinRead(group, degeneracy_tolerance, tolerance)
+        nontrivial = bool(read.cocycle.nontrivial)
+        bands = symmetry_bands(support, group, nontrivial,
+                               degeneracy_tolerance, tolerance)
+        doublet = reference_doublet(bands)
+        band = doublet if doublet is not None else min(
+            bands, key=lambda b: b["coexact_residual"])
+        out.append({
+            "nontrivial": nontrivial,
+            "commutator_phase": complex(read.cocycle.commutator_phase),
+            "certified": doublet is not None,
+            "band": {key: value for key, value in band.items()
+                     if key != "frame"},
+        })
+    return out
+
+
+#: Why the evidence "color-transport-full-rank" of quark condition 5 is not
+#: evaluated on the read of one cell.
+COLOUR_TRANSPORT_UNREAD = (
+    "the colour transport S_AB is the attachment pattern of the simplices "
+    "that connect the sheets of two clusters A and B (WP v18 §8, §9), and "
+    "the read of one cell has one cluster and no connecting simplex; the "
+    "sheet-to-sheet attachment of the default rule, for which S is the "
+    "identity, is a declared rule and not a measurement")
+
+
 def quark_conditions(spacetime, alignments, recursion, symmetry_residual,
                      report, anchor=None, fingerprint=None,
                      tolerance=DECLARED_CERTIFICATE_TOLERANCE,
                      fibre_lift_tolerance=DECLARED_TOLERANCE,
                      attachment_rank_tolerance=DECLARED_TOLERANCE,
-                     covariance=None):
+                     covariance=None, frame_name=None,
+                     degeneracy_tolerance=DECLARED_TOLERANCE):
     """The seven v16 quark conditions by name (`QuarkConditions`), from what a
     single-level synthesis measures: condition 3 from the anchor atlas read
     (`anchor_evidence`) and condition 7 from the spectral fingerprint read
-    (`fingerprint_evidence`). The sheets' aligned frames (``alignments``,
-    one per sheet) supply the protected base band and its sector: the
-    reference doublet of each frame with its certificates
-    (`aligned_doublet_frame`, ``reference_doublet``), beside the monopole
+    (`fingerprint_evidence`). The protected base band and its sector are
+    read on the cell: the reference doublet of every sheet's own support
+    with its certificates (`cell_base_bands`), beside the support's monopole
     number and the projective class of its spin read; every sheet must
-    carry them. Anything that needs several
+    carry them. The reference doublets of the aligned frames the spin is
+    read in (``alignments``, one per sheet, `aligned_doublet_frame`) are
+    named beside them in the evidence's detail with the frame they belong
+    to (``frame_name``, `spin_frame`): when the frame is the declared
+    symmetric host's they are the host's and not the cell's. The colour
+    transport of condition 5 is not evaluated on one cell
+    (`COLOUR_TRANSPORT_UNREAD`). Anything that needs several
     cobordism frames is left unmeasured and so reads "not evaluable", and so
     does every piece of evidence read from the recursion's completed turn
     when the recursion refused to take one (`recursion_read`). The number of
@@ -4321,21 +4600,35 @@ def quark_conditions(spacetime, alignments, recursion, symmetry_residual,
     evaluable. The
     certificates are graded at ``tolerance``; the fibre lift holds when
     ``symmetry_residual`` is at or below ``fibre_lift_tolerance``, and the
-    sheet-to-sheet attachment has full rank when its smallest singular value
-    reaches ``attachment_rank_tolerance``."""
+    sheet-to-sheet attachment of the declared default rule, which is
+    reported in the detail of the colour transport's evidence, has full rank
+    when its smallest singular value reaches ``attachment_rank_tolerance``.
+    The bands of the cell's own supports are grouped at
+    ``degeneracy_tolerance``. The leakage between components holds when
+    every inter-component transport norm is at or below ``tolerance`` times
+    the largest norm of a component's own fiber operator (the read's
+    ``fiber_norms``), so it does not move with the unit of the operator."""
     E = obs.QuarkConditionEvidence
-    spins = [a["spin_read"] for a in alignments]
     supports = [sheet_support(spacetime, t, tolerance) for t in range(SHEETS)]
     monopoles = [s.monopoleNumber(tolerance) for s, _ in supports]
+    own = cell_base_bands(supports, degeneracy_tolerance, tolerance)
+    frame_doublets = [a["reference_doublet"] for a in alignments]
+    frame_text = (
+        "; the aligned frame the spin is read in (%s) has reference "
+        "doublets with spinor doublet %s, coexact residuals %s"
+        % (frame_name or "unnamed",
+           [bool(d["spinor_doublet"]) for d in frame_doublets],
+           [d["coexact_residual"] for d in frame_doublets]))
     sheeting = obs.SheetedSupport(SHEETS, BASE_EDGES)
     isomorphism = sheeting.certifyIsomorphism(
         [np.array(sheet_squared_lengths(spacetime, t)) for t in range(SHEETS)],
         [np.array(sheet_links(spacetime, t)) for t in range(SHEETS)],
         tolerance)
-    attachment = obs.SheetAttachment.attachmentMatrix(
+    # the declared default rule attaches sheet to sheet; its attachment is
+    # reported beside the evidence, which it does not decide
+    declared_rule = obs.SheetAttachment.attachmentMatrix(
         SHEETS, [obs.ConnectingSimplex(t, t, 1.0) for t in range(SHEETS)],
         attachment_rank_tolerance)
-    doublets = [a["reference_doublet"] for a in alignments]
     produced = "refusal" not in recursion
 
     def from_level(name, held, detail):
@@ -4347,6 +4640,23 @@ def quark_conditions(spacetime, alignments, recursion, symmetry_residual,
         return E(name, held(), detail())
 
     accepted = all(recursion["bands_accepted"]) if produced else None
+
+    def leakage():
+        """The inter-component transport norms relative to the largest norm
+        of a component's own fiber operator (``fiber_norms``), which is in
+        their unit; a read that carries no fiber norm gives them as they
+        are."""
+        fibers = recursion.get("fiber_norms") or []
+        scale = max(fibers) if fibers else 1.0
+        return [_relative_shift(n, scale)
+                for n in recursion["transport_norms"]]
+
+    def leakage_text():
+        fibers = recursion.get("fiber_norms") or []
+        return ("inter-component transport norms %s%s"
+                % (recursion["transport_norms"],
+                   ", %s of the largest fiber operator norm %.3g"
+                   % (leakage(), max(fibers)) if fibers else ""))
     evidence = [
         [from_level("persistent-support", lambda: accepted,
                     lambda: "partition %s" % recursion["partition"]),
@@ -4361,42 +4671,50 @@ def quark_conditions(spacetime, alignments, recursion, symmetry_residual,
          E("multi-frame-lifetime", None,
            "a single level spans one cobordism frame"),
          from_level("external-leakage",
-                    lambda: all(n < tolerance
-                                for n in recursion["transport_norms"]),
-                    lambda: "inter-component transport norms %s"
-                    % recursion["transport_norms"])],
+                    lambda: all(n <= tolerance for n in leakage()),
+                    leakage_text)],
         [sheet_count_evidence(spacetime),
          E("sheet-isomorphism", bool(isomorphism.isomorphic),
            "length residual %.3g, connection residual %.3g"
            % (isomorphism.squared_length_residual,
               isomorphism.connection_residual)),
          E("protected-base-band",
-           bool(all(d["spinor_doublet"] for d in doublets)
+           bool(all(o["band"]["spinor_doublet"] for o in own)
                 and all(m.odd for m in monopoles)
-                and all(spin.cocycle.nontrivial for spin in spins)),
-           "monopole numbers %s, cocycle nontrivial %s, commutator phases %s"
+                and all(o["nontrivial"] for o in own)),
+           "on the cell's own supports: monopole numbers %s, cocycle "
+           "nontrivial %s, commutator phases %s, base band a spinor doublet "
+           "%s (rank %s, invariance residuals %s, irreducibility scores %s)"
+           "%s"
            % ([m.monopole_number for m in monopoles],
-              [spin.cocycle.nontrivial for spin in spins],
-              [spin.cocycle.commutator_phase for spin in spins])),
+              [o["nontrivial"] for o in own],
+              [o["commutator_phase"] for o in own],
+              [o["band"]["spinor_doublet"] for o in own],
+              [o["band"]["dimension"] for o in own],
+              [o["band"]["invariance_residual"] for o in own],
+              [o["band"]["irreducibility_score"] for o in own],
+              frame_text)),
          E("base-band-sector",
-           bool(all(d["coexact"] for d in doublets)),
-           "coexact residuals %s" % [d["coexact_residual"]
-                                     for d in doublets]),
+           bool(all(o["certified"] and o["band"]["coexact"] for o in own)),
+           "on the cell's own supports: a certified coexact spinor doublet "
+           "%s, coexact residuals %s of the band nearest the coexact sector"
+           "%s"
+           % ([o["certified"] for o in own],
+              [o["band"]["coexact_residual"] for o in own], frame_text)),
          E("fibre-lift", symmetry_residual <= fibre_lift_tolerance,
            "the T-averaged h_1 (WP line 497) in the aligned frame is "
            "block-scalar on each doublet times the sheets to relative "
            "residual %.3g" % symmetry_residual)],
         anchor_evidence(anchor),
         [occupation_parity_evidence(spacetime, covariance, tolerance)],
-        [E("color-transport-full-rank",
-           bool(attachment.certificate.holds()),
-           "det S = %s (sheet-to-sheet attachment)"
-           % complex(attachment.determinant)),
+        [E("color-transport-full-rank", None,
+           "%s (det S = %s, full rank at the tolerance %.3g: %s)"
+           % (COLOUR_TRANSPORT_UNREAD, complex(declared_rule.determinant),
+              attachment_rank_tolerance,
+              bool(declared_rule.certificate.holds()))),
          from_level("base-transport-leakage",
-                    lambda: all(n < tolerance
-                                for n in recursion["transport_norms"]),
-                    lambda: "inter-component transport norms %s"
-                    % recursion["transport_norms"]),
+                    lambda: all(n <= tolerance for n in leakage()),
+                    leakage_text),
          E("transport-over-lifetime", None,
            "a single level has no lifetime")],
         [E("lineage-intersection", None,
@@ -4462,6 +4780,8 @@ def scan_point(kappa, beta, config, on_content=None):
             "flagged_contents": [record["content"] for record in records
                                  if record.get("flags")],
             "contents": records,
+            # the tolerance every lowest pole of the point is picked at
+            "tie_tolerance": declared_tolerance(config, "tie_tolerance"),
             "ratios": ratios(records,
                              declared_tolerance(config, "tie_tolerance")),
             "pole_table": pole_table(records)}
@@ -4481,8 +4801,9 @@ SPIN_NAMES = {str(SPIN_HALF): "1/2", str(SPIN_THREE_HALVES): "3/2"}
 #: (quasi-free) and the same with the Section 7 quartic.
 COLUMNS = ("quasi_free", "with_quartic")
 COLUMN_NAMES = {"quasi_free": "quasi-free", "with_quartic": "with quartic"}
-#: Two poles whose real parts agree to this relative tolerance are tied for a
-#: minimum, and every tied pair is named beside the minimum.
+#: Two poles whose real parts agree to this tolerance, relative to the
+#: larger of their moduli, are tied for a minimum, and every tied pair is
+#: named beside the minimum.
 DECLARED_TIE_TOLERANCE = DECLARED_TOLERANCE
 
 
@@ -4496,8 +4817,11 @@ def sector_rows(records):
 
 
 def _tied(a, b, tolerance=DECLARED_TIE_TOLERANCE):
-    """Whether two poles tie in the ascending-real-part order."""
-    return abs(a.real - b.real) <= tolerance * max(1.0, abs(a), abs(b))
+    """Whether two poles tie in the ascending-real-part order: their real
+    parts differ by at most ``tolerance`` times the larger of their moduli,
+    so the verdict does not move with the unit the poles are expressed in.
+    A pole that is not a number ties with nothing."""
+    return abs(a.real - b.real) <= tolerance * max(abs(a), abs(b))
 
 
 def lowest_of(candidates, tolerance=DECLARED_TIE_TOLERANCE):
@@ -4509,7 +4833,11 @@ def lowest_of(candidates, tolerance=DECLARED_TIE_TOLERANCE):
     candidates = list(candidates)
     best = None
     for candidate in candidates:
-        if best is None or candidate["pole"].real < best["pole"].real:
+        # a pole whose real part is not a number is below nothing: it is the
+        # lowest only when no candidate has a real part that is a number
+        if best is None or candidate["pole"].real < best["pole"].real \
+                or (math.isnan(best["pole"].real)
+                    and not math.isnan(candidate["pole"].real)):
             best = candidate
     if best is None:
         return None
@@ -4622,11 +4950,15 @@ def pole_table(records):
 
 
 def _pair(s_n, s_d, extra):
+    """The ratios of a nucleon pole to a Delta pole: of the complex poles,
+    of their moduli and of their real parts. A ratio whose denominator
+    vanishes (a Delta pole at zero, or on the imaginary axis for the real
+    parts) is not a number, and the pair is recorded all the same."""
     out = {
         "nucleon_pole": s_n, "delta_pole": s_d,
-        "pole_ratio": s_n / s_d,
-        "modulus_ratio": abs(s_n) / abs(s_d),
-        "real_part_ratio": s_n.real / s_d.real,
+        "pole_ratio": _ratio(s_n, s_d),
+        "modulus_ratio": _ratio(abs(s_n), abs(s_d)).real,
+        "real_part_ratio": _ratio(s_n.real, s_d.real).real,
         "target_mass_ratio": TARGET_MASS_RATIO,
     }
     out.update(extra)
@@ -4695,7 +5027,7 @@ def ratios(records, tolerance=DECLARED_TIE_TOLERANCE):
             })
         else:
             result["by_2T_reading"] = None
-        by_spin = lowest_over_pairs(records, name)
+        by_spin = lowest_over_pairs(records, name, tolerance)
         n, d = by_spin[str(SPIN_HALF)], by_spin[str(SPIN_THREE_HALVES)]
         if n is not None and d is not None:
             restriction_d = d["restriction_to_2T"] or []
@@ -4987,24 +5319,27 @@ def _lowest_text(best, name_content):
     return text
 
 
-def lowest_lines(records, prefix=""):
+def lowest_lines(records, prefix="", tolerance=DECLARED_TIE_TOLERANCE):
     """The labelled minima as text, after the per-pair lines, each line
     starting "lowest over": per content, the lowest pole (smallest real part)
     of each spin and column over its doublet contents, with the doublet
     content it came from; then the lowest over every (content, doublet
-    content) pair, with the pair it came from. Ties are named."""
+    content) pair, with the pair it came from. Ties are named at
+    ``tolerance``, the tie tolerance the records' ratios were read at."""
     lines = []
     for record in records:
         if "failed" in record:
             continue
-        per_column = {name: lowest_poles(record, name) for name in COLUMNS}
+        per_column = {name: lowest_poles(record, name, tolerance)
+                      for name in COLUMNS}
         lines.append("%slowest over the doublet contents of content %s: %s"
                      % (prefix, list(record["content"]), "; ".join(
                          "spin %s %s %s" % (
                              SPIN_NAMES[j2], COLUMN_NAMES[name],
                              _lowest_text(per_column[name][j2], False))
                          for j2 in SPINS for name in COLUMNS)))
-    per_column = {name: lowest_over_pairs(records, name) for name in COLUMNS}
+    per_column = {name: lowest_over_pairs(records, name, tolerance)
+                  for name in COLUMNS}
     lines.append("%slowest over every (content, doublet content) pair: %s" % (
         prefix, "; ".join(
             "spin %s %s %s" % (SPIN_NAMES[j2], COLUMN_NAMES[name],
@@ -5095,7 +5430,8 @@ def point_lines(point):
                 "; " + flagged if flagged else ""))
         lines += term_trace_lines(record.get("relaxation"), "    ")
         lines += content_pair_lines(record, "  ")
-    lines += lowest_lines(records, "  ")
+    lines += lowest_lines(records, "  ",
+                          point.get("tie_tolerance", DECLARED_TIE_TOLERANCE))
     lines += ratio_lines(point.get("ratios"), "  ")
     return lines
 
@@ -5117,10 +5453,24 @@ def default_config(kappas=DECLARED_KAPPAS, betas=DECLARED_BETAS,
     declared. ``villain_order`` is the order the Villain weight of the
     holonomy term is summed to (`DECLARED_VILLAIN_ORDER`). ``solve`` sets
     any of `SOLVE_OPTIONS` by key; the others are recorded at their declared
-    values."""
+    values. A content that is not one of the ten (`checked_contents`), and a
+    name of the hinges, the elimination, the band selection or the fiber
+    pinning that is not declared, has no value and is refused here, before
+    anything is computed."""
+    checked_regge_hinges(regge_hinges)
+    if elimination not in ELIMINATIONS:
+        raise ValueError("the elimination is one of %s; got %r"
+                         % (", ".join(ELIMINATIONS), elimination))
+    if band_selection not in BAND_SELECTIONS:
+        raise ValueError("the band selection is one of %s; got %r"
+                         % (", ".join(BAND_SELECTIONS), band_selection))
+    if fiber_pinning not in FIBER_PINNINGS:
+        raise ValueError("the fiber pinning is one of %s; got %r"
+                         % (", ".join(FIBER_PINNINGS), fiber_pinning))
     return {
         "mode": "controlled synthesis",
-        "contents": [list(c) for c in (selected_contents or contents())],
+        "contents": [list(c) for c in checked_contents(
+            selected_contents or contents())],
         "kappas": list(kappas),
         "betas": list(betas),
         "edge_squared": edge_squared,
@@ -5146,6 +5496,89 @@ def default_config(kappas=DECLARED_KAPPAS, betas=DECLARED_BETAS,
     }
 
 
+def _git_commit(directory):
+    """The commit a directory's checkout is at, read from its `.git` (a
+    directory, or the file of a linked worktree that names one) without
+    running git: ``HEAD``, and for a symbolic HEAD the ref's file, in the
+    worktree's own git directory or the common one, or its line of
+    ``packed-refs``. Returns the checkout's root, the ref and the commit;
+    None for each that is not found."""
+    root = os.path.abspath(directory)
+    while not os.path.exists(os.path.join(root, ".git")):
+        parent = os.path.dirname(root)
+        if parent == root:
+            return {"root": None, "ref": None, "commit": None}
+        root = parent
+    git = os.path.join(root, ".git")
+    try:
+        if os.path.isfile(git):
+            with open(git) as handle:
+                git = os.path.normpath(os.path.join(
+                    root, handle.read().split("gitdir:", 1)[1].strip()))
+        common = git
+        if os.path.isfile(os.path.join(git, "commondir")):
+            with open(os.path.join(git, "commondir")) as handle:
+                common = os.path.normpath(os.path.join(git,
+                                                       handle.read().strip()))
+        with open(os.path.join(git, "HEAD")) as handle:
+            head = handle.read().strip()
+        if not head.startswith("ref:"):
+            return {"root": root, "ref": None, "commit": head}
+        ref = head.split("ref:", 1)[1].strip()
+        for base in (git, common):
+            path = os.path.join(base, ref)
+            if os.path.isfile(path):
+                with open(path) as handle:
+                    return {"root": root, "ref": ref,
+                            "commit": handle.read().strip()}
+        packed = os.path.join(common, "packed-refs")
+        if os.path.isfile(packed):
+            with open(packed) as handle:
+                for line in handle:
+                    parts = line.split()
+                    if len(parts) == 2 and parts[1] == ref:
+                        return {"root": root, "ref": ref, "commit": parts[0]}
+        return {"root": root, "ref": ref, "commit": None}
+    except (OSError, IndexError):
+        return {"root": root, "ref": None, "commit": None}
+
+
+def environment_record():
+    """What a run's numbers depend on beside its configuration, recorded
+    once in the header of its files: the command line as run (``argv``),
+    the thread counts the environment declares (``OMP_NUM_THREADS`` and the
+    linear algebra library's own variables, None for one that is not set)
+    with the number of processors, the linear algebra numpy is built on,
+    the versions of Python, numpy and the package, and the commit of the
+    checkout the package is imported from (`_git_commit`). Decisions taken
+    at the declared tolerances on values that differ in their last bits
+    between thread counts depend on these."""
+    try:
+        build = np.show_config(mode="dicts").get("Build Dependencies", {})
+        linear_algebra = {
+            name: {key: build[name].get(key)
+                   for key in ("name", "version", "openblas configuration")
+                   if build[name].get(key) is not None}
+            for name in ("blas", "lapack") if name in build}
+    except (TypeError, AttributeError):
+        linear_algebra = {}
+    return {
+        "argv": [str(argument) for argument in sys.argv],
+        "threads": {name: os.environ.get(name)
+                    for name in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS",
+                                 "MKL_NUM_THREADS")},
+        "processors": os.cpu_count(),
+        "linear_algebra": linear_algebra,
+        "python": sys.version.split()[0],
+        "numpy": np.__version__,
+        "package": str(getattr(T, "__version__", None)
+                       or getattr(getattr(T, "_tessera", None),
+                                  "__version__", None) or "unknown"),
+        "checkout": _git_commit(os.path.dirname(os.path.abspath(
+            T.__file__))),
+    }
+
+
 def points_path(json_path):
     """The append-only JSON-lines file beside ``json_path`` that holds one
     line per completed scan point (and a first line with the configuration
@@ -5155,8 +5588,10 @@ def points_path(json_path):
 
 
 def _append_line(path, record):
+    """One record appended to a points file as one line of JSON; a value
+    that is not JSON is refused by the writer and never written."""
     with open(path, "a") as handle:
-        handle.write(json.dumps(_jsonable(record)) + "\n")
+        handle.write(json.dumps(_jsonable(record), allow_nan=False) + "\n")
         handle.flush()
         os.fsync(handle.fileno())
 
@@ -5177,7 +5612,8 @@ def drive(config, progress=False, on_frame=None, stop_requested=None,
         declared_tolerance(config, "character_tolerance"), certified=False)
     frames = []
     host = {
-        "monopole": _monopole_record(declared["spin_read"]),
+        "monopole": _monopole_record(declared["spin_read"],
+                                     declared["bands"]),
         "averaged_eigenvalues": declared["averaged_eigenvalues"],
         "reference_carrier": declared["reference_carrier"],
         "reference_certified": declared["reference_certified"],
@@ -5207,21 +5643,44 @@ def drive(config, progress=False, on_frame=None, stop_requested=None,
             "stopped": False}
 
 
-def _monopole_record(read):
+def _monopole_record(read, bands):
+    """The record of a support's monopole and spin read: the monopole
+    number, the projective class, and the symmetry-protected bands the
+    driver reads (``bands``, the certificates of `symmetry_bands`, the bands
+    `aligned_doublet_frame` takes its reference doublet from) with whether
+    one of them is the j = 1/2 doublet and its place among them. The reading
+    of the library's own grouping (`MonopoleSupport.spinRead`) is recorded
+    beside it under ``library`` and named as the library's."""
+    doublet = reference_doublet(bands)
     return {
         "monopole_number": int(read.monopole.monopole_number),
         "odd": bool(read.monopole.odd),
         "cocycle_nontrivial": bool(read.cocycle.nontrivial),
         "commutator_phase": complex(read.cocycle.commutator_phase),
-        "half_integer_doublet": bool(read.half_integer_doublet),
-        "doublet_index": int(read.doublet_index),
-        "bands": [{"eigenvalue": float(b.eigenvalue),
-                   "dimension": int(b.dimension),
-                   "spinor_doublet": bool(b.spinor_doublet),
-                   "coexact": bool(b.coexact),
-                   "coexact_residual": float(b.coexact_residual),
-                   "irreducibility_score": float(b.irreducibility_score)}
-                  for b in read.bands],
+        "half_integer_doublet": doublet is not None,
+        "doublet_index": (len(bands) if doublet is None
+                          else next(k for k, band in enumerate(bands)
+                                    if band is doublet)),
+        "bands": [{"eigenvalue": float(b["eigenvalue"]),
+                   "dimension": int(b["dimension"]),
+                   "spinor_doublet": bool(b["spinor_doublet"]),
+                   "coexact": bool(b["coexact"]),
+                   "coexact_residual": float(b["coexact_residual"]),
+                   "invariance_residual": float(b["invariance_residual"]),
+                   "irreducibility_score": float(b["irreducibility_score"])}
+                  for b in bands],
+        "library": {
+            "half_integer_doublet": bool(read.half_integer_doublet),
+            "doublet_index": int(read.doublet_index),
+            "bands": [{"eigenvalue": float(b.eigenvalue),
+                       "dimension": int(b.dimension),
+                       "spinor_doublet": bool(b.spinor_doublet),
+                       "coexact": bool(b.coexact),
+                       "coexact_residual": float(b.coexact_residual),
+                       "irreducibility_score": float(
+                           b.irreducibility_score)}
+                      for b in read.bands],
+        },
         "certificate": read.certificate.describe(),
     }
 
@@ -5230,26 +5689,52 @@ def _complex_text(value):
     return "%.6g%+.3gi" % (value.real, value.imag)
 
 
+#: How a float that is not finite is written: JSON has no NaN and no
+#: infinity, so each is the string of its name (`_jsonable`, `number`).
+NON_FINITE = {"nan": math.nan, "inf": math.inf, "-inf": -math.inf}
+
+
+def _real(value):
+    """A float as JSON holds it: itself when finite, and the string "nan",
+    "inf" or "-inf" otherwise."""
+    value = float(value)
+    if math.isfinite(value):
+        return value
+    return "nan" if math.isnan(value) else "inf" if value > 0 else "-inf"
+
+
 def _jsonable(value):
     """The JSON-ready form of a record: a complex number is ``{"re", "im"}``,
     an array a nested list, a numpy scalar the Python number or truth value
-    it holds, and every key a string."""
-    if isinstance(value, complex):
-        return {"re": value.real, "im": value.imag}
+    it holds, every key a string, and a float that is not finite the string
+    of its name (`NON_FINITE`: "nan", "inf", "-inf"; the parts of a complex
+    number likewise), which `number` reads back. The result holds no value
+    that is not JSON."""
+    if isinstance(value, (bool, np.bool_)):
+        return bool(value)
+    if isinstance(value, (complex, np.complexfloating)):
+        return {"re": _real(value.real), "im": _real(value.imag)}
     if isinstance(value, dict):
         return {str(k): _jsonable(v) for k, v in value.items()}
     if isinstance(value, (list, tuple)):
         return [_jsonable(v) for v in value]
     if isinstance(value, np.ndarray):
         return _jsonable(value.tolist())
-    if isinstance(value, np.bool_):
-        return bool(value)
-    if isinstance(value, (np.floating,)):
-        return float(value)
     if isinstance(value, (np.integer,)):
         return int(value)
-    if isinstance(value, np.complexfloating):
-        return {"re": float(value.real), "im": float(value.imag)}
+    if isinstance(value, (float, np.floating)):
+        return _real(value)
+    return value
+
+
+def number(value):
+    """A number read back from a written record: the float of a string that
+    names one that is not finite ("nan", "inf", "-inf"), the complex number
+    of a written ``{"re", "im"}`` pair, and the value itself otherwise."""
+    if isinstance(value, str) and value in NON_FINITE:
+        return NON_FINITE[value]
+    if isinstance(value, dict) and set(value) == {"re", "im"}:
+        return complex(number(value["re"]), number(value["im"]))
     return value
 
 
@@ -5930,7 +6415,7 @@ def build_parser():
                      default=DECLARED_EDGE_SQUARED,
                      help="squared edge length of the tetrahedron (default "
                           "%g, the paper's a^2)" % DECLARED_EDGE_SQUARED)
-    run.add_argument("--regge-hinges", choices=("interior", "all"),
+    run.add_argument("--regge-hinges", choices=tuple(REGGE_HINGES),
                      default="interior",
                      help="hinges of the primal Regge sum (default interior)")
     run.add_argument("--json", default=None,
@@ -6143,6 +6628,9 @@ def main(argv=None):
                             solve=solve_options_from(args))
     if args.isospin_doublet:
         config["isospin_doublet"] = True
+    # what the numbers of the run depend on beside the configuration,
+    # written once in the header
+    config["environment"] = environment_record()
     points_file = points_path(args.json) if args.json else None
     result = (drive_live(config, progress=not args.quiet,
                          points_file=points_file, keep_open=True)
@@ -6151,7 +6639,7 @@ def main(argv=None):
                          points_file=points_file))
     if args.json:
         with open(args.json, "w") as handle:
-            json.dump(_jsonable(result), handle, indent=1)
+            json.dump(_jsonable(result), handle, indent=1, allow_nan=False)
     if args.out:
         render(result, args.out)
     if not args.quiet:
