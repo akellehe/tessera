@@ -150,7 +150,7 @@ TOLERANCE_KEYS = [
     "tie_tolerance", "degeneracy_tolerance", "pole_rank_tolerance",
     "fluctuation_tolerance", "recursion_tolerance",
     "spin_sector_tolerance", "character_tolerance", "elimination_tolerance",
-    "pure_gauge_tolerance", "gauge_resonance_radius",
+    "pure_gauge_tolerance", "gauge_resonance_radius", "truncation_tolerance",
     "hessian_reality_tolerance", "fibre_lift_tolerance", "isotypic_tolerance",
     "attachment_rank_tolerance", "quotient_rank_tolerance",
     "grown_cell_rank_tolerance", "move_tolerance",
@@ -167,7 +167,7 @@ def test_the_registry_lists_every_tolerance():
     once, each with a one-phrase meaning, and each the detector's tolerance
     it names where it is one of `ISOSPIN_TOLERANCES`."""
     assert [key for key, _ in bp.TOLERANCES] == TOLERANCE_KEYS
-    assert len(set(TOLERANCE_KEYS)) == len(TOLERANCE_KEYS) == 32
+    assert len(set(TOLERANCE_KEYS)) == len(TOLERANCE_KEYS) == 33
     assert all(isinstance(meaning, str) and meaning
                for _, meaning in bp.TOLERANCES)
     assert [key for key, _ in bp.ISOSPIN_TOLERANCES] == [
@@ -272,6 +272,8 @@ def test_main_writes_the_json_and_the_points_file(cheap, tmp_path):
     assert ratios["by_spin_lift"]["nucleon_pole"] == {"re": 0.5, "im": 0.1}
     assert set(document["host"]) == {"monopole", "averaged_eigenvalues",
                                       "reference_carrier",
+                                      "reference_certified",
+                                      "reference_doublet", "trialities",
                                       "intertwining_residual"}
     lines = (tmp_path / "poles.points.jsonl").read_text().splitlines()
     assert len(lines) == 3
