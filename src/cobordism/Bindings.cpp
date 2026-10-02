@@ -5467,6 +5467,10 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      "The occupied bands with their overlaps and crossings.")
       .def_readwrite("band_isolation",
                      &SelfConsistentMeanFieldStep::bandIsolation)
+      .def_readwrite("defective", &SelfConsistentMeanFieldStep::defective)
+      .def_readwrite(
+          "eigenbasis_reciprocal_condition",
+          &SelfConsistentMeanFieldStep::eigenbasisReciprocalCondition)
       .def_readwrite("band_crossing",
                      &SelfConsistentMeanFieldStep::bandCrossing)
       .def_readwrite("multipliers", &SelfConsistentMeanFieldStep::multipliers,
@@ -5505,6 +5509,10 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def_readwrite("bands", &SelfConsistentMeanFieldReport::bands)
       .def_readwrite("band_isolation",
                      &SelfConsistentMeanFieldReport::bandIsolation)
+      .def_readwrite("defective", &SelfConsistentMeanFieldReport::defective)
+      .def_readwrite(
+          "eigenbasis_reciprocal_condition",
+          &SelfConsistentMeanFieldReport::eigenbasisReciprocalCondition)
       .def_readwrite("band_crossing_iterates",
                      &SelfConsistentMeanFieldReport::bandCrossingIterates)
       .def_readwrite("lowest_band_overlap",

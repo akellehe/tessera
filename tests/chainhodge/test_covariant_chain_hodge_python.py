@@ -85,7 +85,7 @@ PROBES = ("transposeMetric", "transposePencilProbe", "transposeOperatorProbe", "
 
 
 def _assert_proposition_3(cov, K, trivial=False):
-    """Proposition 3 (i)-(vi) as asserted on construction: every residual
+    """Proposition 3 (i)-(vi) as measured on construction: every residual
     measured, finite, and within the certificate's tolerance 10 n eps cond."""
     cert = cov.certificate()
     assert cert.holds
@@ -272,3 +272,47 @@ class TestBaseVertexConvention:
             for j, e in enumerate(es):
                 if B[i, j] != 0:
                     assert BU[i, j] == pytest.approx(B[i, j] * U.link(v, min(e)), rel=1e-14)
+
+
+#: A fan of two tetrahedra one of whose cells is flat to 1e-8 of its size
+#: (vertex 3 lies in the plane of 0, 1, 2 up to that), with unit-modulus
+#: links: the chain metric's condition number is 2e6, and the residual of
+#: Proposition 3 (v) on it is 1.7e-6 against the tolerance 3.9e-8.
+NEARLY_FLAT_SQUARED_LENGTHS = [
+    3.5093909858957524, 12.400724354091007, 3.5328497665415988,
+    6.316874670971411, 5.636042782196954, 0.8269771741054874,
+    10.825850257688257, 2.9307729072276185, 9.137942324807913]
+NEARLY_FLAT_LINKS = [
+    complex(-0.757660271369655, 0.652649150147352),
+    complex(0.8805029478834331, -0.47404067206156936),
+    complex(0.10733357182073075, 0.9942230656951205),
+    complex(0.9764179725849793, -0.21588872785080437),
+    complex(0.8431813341630843, 0.5376292753552034),
+    complex(0.3534063234821787, 0.9354699196247892),
+    complex(0.885714578326643, 0.464230207698354),
+    complex(-0.9018829144310345, 0.43198056513850625),
+    complex(-0.8638049024277893, 0.5038264488310606)]
+
+
+def test_an_instance_whose_certificate_does_not_hold_is_built_and_says_so():
+    """Proposition 3 is measured on construction and compared with the
+    certificate's tolerance. On an instance where a residual exceeds it the
+    operator is built all the same; the certificate does not hold and names
+    the property with its residual. On an instance where every residual is
+    within the tolerance nothing is named."""
+    K = cob.ChainComplex.fromTopCells([[0, 1, 2, 3], [0, 1, 2, 4]])
+    base = ch.ChainHodge(K, [complex(z) for z in NEARLY_FLAT_SQUARED_LENGTHS])
+    cov = ch.CovariantChainHodge(base, ch.Connection(K, NEARLY_FLAT_LINKS))
+    cert = cov.certificate()
+    assert not cert.holds
+    assert len(cert.failed) >= 1
+    assert all(entry.startswith("Proposition 3 (") and "residual" in entry
+               and "exceeds the tolerance" in entry for entry in cert.failed)
+    assert max(getattr(cert, name) for name in PROBES) > cert.tolerance
+    operator = np.asarray(cov.covariantOperator(1))
+    assert operator.shape == (9, 9) and np.all(np.isfinite(operator))
+
+    regular = ch.CovariantChainHodge(ch.ChainHodge(K, [8.0 + 0j] * 9),
+                                     ch.Connection(K, NEARLY_FLAT_LINKS))
+    assert regular.certificate().holds
+    assert list(regular.certificate().failed) == []

@@ -8,10 +8,10 @@ bands of degenerate eigenvalues and band b of rank r_b carries the declared
 occupation n_b spread evenly over it: Gamma = sum_b (n_b / r_b) P_b. The host is
 the three-sheeted unit-monopole tetrahedron. Its covariant operator h_1 (the
 Whitney pencil) has six eigenvalues per sheet at the monopole connection, each
-carried once by every sheet. The three computed copies of an eigenvalue differ
-at rounding (by up to 4e-14), and the bands are read at the declared band
-tolerance 1e-15, at which the eighteen eigenvalues group into eight bands of
-ranks (2, 1, 3, 3, 3, 2, 1, 3) in ascending order.
+carried once by every sheet. The sheets are equal blocks of the operator and
+each is decomposed on its own, so the three copies of an eigenvalue are equal
+exactly, and at the declared band tolerance 1e-15 the eighteen eigenvalues
+group into six bands of rank three.
 
 Every test reads the host as built (`SelfConsistentMeanField.read`): the
 lengths and the links are not variables of the declared system, so nothing
@@ -29,7 +29,7 @@ cob = T.cobordism
 
 #: The ranks of the bands of h_1 on the host at the declared band tolerance,
 #: in ascending order of real part.
-HOST_BAND_RANKS = [2, 1, 3, 3, 3, 2, 1, 3]
+HOST_BAND_RANKS = [3, 3, 3, 3, 3, 3]
 
 
 def _mean_field(occupations):
@@ -59,40 +59,43 @@ def _read(action, declaration):
 
 
 class TestBandFilling(unittest.TestCase):
-    def test_the_host_has_eight_bands_at_the_declared_tolerance(self):
+    def test_the_host_has_six_bands_at_the_declared_tolerance(self):
         _, action = _action()
         declaration = _mean_field([1, 1, 1])
         self.assertEqual(declaration.band_tolerance, 1e-15)
         report = _read(action, declaration)
         self.assertEqual(list(report.band_ranks), HOST_BAND_RANKS)
         self.assertEqual(sum(report.band_ranks), 18)
-        self.assertEqual([band.rank for band in report.bands], [2, 1, 3])
+        self.assertEqual([band.rank for band in report.bands], [3, 3, 3])
+        self.assertFalse(report.defective)
+        self.assertGreater(report.eigenbasis_reciprocal_condition, 0.1)
 
     def test_the_covariance_is_the_weighted_band_projector(self):
-        """An occupation 3/2 of the lowest band, of rank two: Gamma is 3/4
-        of the band's projector, which is the projector onto the two lowest
-        modes."""
+        """An occupation 3/2 of the lowest band, of rank three: Gamma is
+        half the band's projector, which is the projector onto the three
+        lowest modes."""
         _, action = _action()
         report = _read(action, _mean_field([1.5, 0, 0]))
         gamma = bp.matrix(report.covariance)
         (band,) = report.bands
-        self.assertEqual(band.rank, 2)
-        self.assertLess(np.max(np.abs(gamma - 0.75 * bp.matrix(
+        self.assertEqual(band.rank, 3)
+        self.assertFalse(band.overfilled)
+        self.assertLess(np.max(np.abs(gamma - 0.5 * bp.matrix(
             band.projector))), 1e-15)
-        lowest = bp.matrix(action.occupation_projector(2))
-        self.assertLess(np.max(np.abs(gamma - 0.75 * lowest)), 1e-15)
+        lowest = bp.matrix(action.occupation_projector(3))
+        self.assertLess(np.max(np.abs(gamma - 0.5 * lowest)), 1e-15)
         self.assertLess(abs(np.trace(gamma) - 1.5), 1e-14)
         h = bp.matrix(action.carrier_operator())
         self.assertLess(np.max(np.abs(gamma @ h - h @ gamma)), 1e-13)
-        # Gamma^2 = (3/4) Gamma on the band, so not a projector
-        self.assertAlmostEqual(report.purity_defect, 0.26525047569832727,
+        # Gamma^2 = (1/2) Gamma on the band, so not a projector
+        self.assertAlmostEqual(report.purity_defect, 0.43315221299427403,
                                places=12)
 
     def test_a_full_filling_is_a_projector(self):
-        """The two lowest bands, of ranks two and one, filled: Gamma is the
-        projector onto the three lowest modes."""
+        """The lowest band, of rank three, filled: Gamma is the projector
+        onto the three lowest modes."""
         _, action = _action()
-        report = _read(action, _mean_field([2, 1, 0]))
+        report = _read(action, _mean_field([3, 0, 0]))
         self.assertLess(report.purity_defect, 1e-15)
         gamma = bp.matrix(report.covariance)
         lowest = bp.matrix(action.occupation_projector(3))
@@ -109,28 +112,40 @@ class TestBandFilling(unittest.TestCase):
         self.assertEqual([(band.declared_index, band.rank)
                           for band in report.bands], [(2, 3), (3, 3)])
         gamma = bp.matrix(report.covariance)
-        joint = (bp.matrix(action.occupation_projector(9))
-                 - bp.matrix(action.occupation_projector(3)))
+        joint = (bp.matrix(action.occupation_projector(12))
+                 - bp.matrix(action.occupation_projector(6)))
         self.assertLess(np.max(np.abs(gamma - joint / 3.0)), 1e-15)
 
-    def test_refusals(self):
+    def test_an_overfilled_band_is_filled_as_declared_and_marked(self):
+        """Four particles in the lowest band, of rank three: the read is
+        made, Gamma is 4/3 of the band's projector with trace four, and the
+        band says it holds more than its rank. Three particles do not."""
+        _, action = _action()
+        report = _read(action, _mean_field([4]))
+        (band,) = report.bands
+        self.assertTrue(band.overfilled)
+        self.assertEqual((band.rank, band.occupation), (3, 4.0))
+        gamma = bp.matrix(report.covariance)
+        self.assertLess(np.max(np.abs(gamma - (4.0 / 3.0) * bp.matrix(
+            band.projector))), 1e-15)
+        self.assertLess(abs(np.trace(gamma) - 4.0), 1e-14)
+        (band,) = _read(action, _mean_field([3])).bands
+        self.assertFalse(band.overfilled)
+
+    def test_declarations_without_a_value(self):
         """An occupation rule that names no particle, or a negative number
-        of them, is refused when the system is posed; an occupation a band
-        cannot hold, and more occupations than the spectrum has bands, when
-        the bands are read."""
+        of them, has no value when the system is posed; more occupations
+        than the spectrum has bands have none when the bands are read."""
         _, action = _action()
         for occupations in ([], [0, 0, 0], [-1, 2, 0]):
             with self.assertRaises(ValueError):
                 cob.SelfConsistentMeanField(action, _mean_field(occupations))
-        with self.assertRaisesRegex(ValueError, "band 0 has rank 2 and "
-                                    "cannot hold the declared occupation"):
-            _read(action, _mean_field([4]))
-        self.assertEqual(list(_read(action, _mean_field([1] * 8)).band_ranks),
+        self.assertEqual(list(_read(action, _mean_field([1] * 6)).band_ranks),
                          HOST_BAND_RANKS)
-        with self.assertRaisesRegex(ValueError, "9 band occupations were "
+        with self.assertRaisesRegex(ValueError, "7 band occupations were "
                                     "declared but the spectrum groups into "
-                                    "only 8 bands"):
-            _read(action, _mean_field([1] * 9))
+                                    "only 6 bands"):
+            _read(action, _mean_field([1] * 7))
 
     def test_bands_read_under_a_declared_symmetry(self):
         """With the rotation action declared, the bands are those of the

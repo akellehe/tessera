@@ -314,6 +314,53 @@ def test_the_bands_of_the_sheeted_host_have_rank_three():
         assert ordered[3 * k] == ordered[3 * k + 1] == ordered[3 * k + 2]
 
 
+def test_a_defective_eigenbasis_is_inverted_as_computed_and_marked():
+    """A Jordan block beside a simple eigenvalue. The eigensolver returns two
+    eigenvectors of the block that are parallel to rounding, so the block's
+    eigenvector matrix is singular at the threshold of its decomposition:
+    the read says so (`defective`, the reciprocal condition at rounding) and
+    is made with the inverse as computed. The two modes are one band at the
+    declared band tolerance, and the band's projector, the sum over both, is
+    the identity on the block; the covariance of one particle in it is half
+    of that. A diagonalizable operator is not marked."""
+    jordan = np.array([[1.0, 1.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 3.0]],
+                      dtype=complex)
+    read = _follower([1.0], cob.BandSelection.Continuation).read(
+        list(jordan.reshape(-1)))
+    assert read.defective
+    assert read.eigenbasis_reciprocal_condition < 1e-14
+    assert list(read.ranks) == [2, 1]
+    (band,) = read.bands
+    assert band.rank == 2 and not band.overfilled
+    expected = np.diag([0.5, 0.5, 0.0])
+    np.testing.assert_allclose(np.asarray(read.covariance).reshape(3, 3),
+                               expected, atol=1e-12)
+
+    simple = np.diag([1.0, 2.0, 3.0]).astype(complex)
+    simple[0, 1] = 0.5
+    read = _follower([1.0], cob.BandSelection.Continuation).read(
+        list(simple.reshape(-1)))
+    assert not read.defective
+    assert read.eigenbasis_reciprocal_condition > 0.1
+
+
+def test_an_eigenbasis_near_a_defect_reports_its_condition():
+    """Two eigenvalues eps apart on a Jordan-like block: the eigenbasis is
+    not singular at the decomposition's threshold, each mode is its own band,
+    and the reciprocal condition reported is of order eps, which is the size
+    the band's projector is the reciprocal of."""
+    for eps in (1e-4, 1e-8):
+        block = np.array([[1.0, 1.0, 0.0], [0.0, 1.0 + eps, 0.0],
+                          [0.0, 0.0, 3.0]], dtype=complex)
+        read = _follower([1.0], cob.BandSelection.Continuation).read(
+            list(block.reshape(-1)))
+        assert not read.defective
+        assert list(read.ranks) == [1, 1, 1]
+        assert 0.1 * eps < read.eigenbasis_reciprocal_condition < 10.0 * eps
+        largest = np.max(np.abs(np.asarray(read.covariance)))
+        assert 0.1 / eps < largest < 10.0 / eps
+
+
 def test_a_band_of_three_sheets_is_followed_across_another():
     """Three identical sheets, as on the recursion's host: every band has one
     mode per sheet, rank three. The operator is built here as a Kronecker

@@ -447,6 +447,11 @@ struct SelfConsistentMeanFieldStep {
   /// The distance separating the occupied bands from the rest of the
   /// spectrum (`BandRead::bandIsolation`).
   double bandIsolation = 0.0;
+  /// Whether the operator's eigenbasis is singular at its decomposition's
+  /// threshold (`BandRead::defective`).
+  bool defective = false;
+  /// `BandRead::eigenbasisReciprocalCondition` at this point.
+  double eigenbasisReciprocalCondition = 1.0;
   /// Whether an occupied band had crossed another at this iterate.
   bool bandCrossing = false;
   /// The multipliers \f$ \xi_j \f$ of the pinned fiber moments at this
@@ -497,6 +502,11 @@ struct SelfConsistentMeanFieldReport {
   /// The distance separating the occupied bands from the rest of the
   /// spectrum at \f$ z^{*} \f$.
   double bandIsolation = 0.0;
+  /// Whether the operator's eigenbasis is singular at its decomposition's
+  /// threshold at \f$ z^{*} \f$ (`BandRead::defective`).
+  bool defective = false;
+  /// `BandRead::eigenbasisReciprocalCondition` at \f$ z^{*} \f$.
+  double eigenbasisReciprocalCondition = 1.0;
   /// The number of iterates at which an occupied band had crossed another.
   std::size_t bandCrossingIterates = 0;
   /// The smallest \f$ |\text{overlap}| \f$ of an occupied band with its

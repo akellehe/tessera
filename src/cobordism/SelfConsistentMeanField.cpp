@@ -493,6 +493,8 @@ SelfConsistentMeanFieldStep measure(
   step.bandRanks = read.ranks;
   step.bands = read.bands;
   step.bandIsolation = read.bandIsolation;
+  step.defective = read.defective;
+  step.eigenbasisReciprocalCondition = read.eigenbasisReciprocalCondition;
   step.bandCrossing = read.crossing;
   step.multipliers = ownUnitMultipliers(action);
   step.momentResidualNorm = momentResidualNormOf(action);
@@ -662,6 +664,8 @@ void finishReport(SelfConsistentMeanFieldReport &report,
   report.bandRanks = last.bandRanks;
   report.bands = last.bands;
   report.bandIsolation = last.bandIsolation;
+  report.defective = last.defective;
+  report.eigenbasisReciprocalCondition = last.eigenbasisReciprocalCondition;
   report.action = last.action;
   report.actionAvailable = last.actionAvailable;
   report.actionUnavailable = last.actionUnavailable;
@@ -776,18 +780,20 @@ BandRead BandFollower::read(const std::vector<complexd> &operatorMatrix) const {
       throw std::runtime_error(
           "BandFollower: the operator's eigendecomposition did not converge");
     Eigen::FullPivLU<Eigen::MatrixXcd> lu(solver.eigenvectors());
-    out.eigenbasisReciprocalCondition =
-        std::min(out.eigenbasisReciprocalCondition, lu.rcond());
-    if (!lu.isInvertible()) {
-      // Singular at the decomposition's threshold: the read is made with
-      // the inverse every nonzero pivot gives, and says so. An exactly zero
-      // pivot leaves no inverse.
-      out.defective = true;
-      lu.setThreshold(0.0);
-    }
+    // Singular at the decomposition's own threshold: the read is made with
+    // the inverse every nonzero pivot gives, and says so. An exactly zero
+    // pivot leaves no inverse. The condition is estimated with every
+    // nonzero pivot counted, as the inverse is formed.
+    if (!lu.isInvertible()) out.defective = true;
+    lu.setThreshold(0.0);
+    const bool invertible = lu.isInvertible();
+    const double reciprocal = invertible ? lu.rcond() : 0.0;
+    out.eigenbasisReciprocalCondition = std::min(
+        out.eigenbasisReciprocalCondition,
+        std::isfinite(reciprocal) ? reciprocal : 0.0);
     Eigen::MatrixXcd partInverse = Eigen::MatrixXcd::Zero(size, size);
-    if (lu.isInvertible()) partInverse = lu.inverse();
-    if (!lu.isInvertible() || !partInverse.allFinite()) withoutInverse = true;
+    if (invertible) partInverse = lu.inverse();
+    if (!invertible || !partInverse.allFinite()) withoutInverse = true;
     for (Eigen::Index mode = 0; mode < size; ++mode) {
       values(first + mode) = solver.eigenvalues()(mode);
       for (Eigen::Index row = 0; row < size; ++row) {
