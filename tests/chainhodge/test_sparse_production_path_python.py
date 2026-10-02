@@ -313,7 +313,13 @@ class TestSparseFeshbach:
         assert result.solveResidual < 1e-10
         assert cost.factorNonZeros > 0 and cost.fillIn > 0.0
 
-    def test_an_interior_resonance_is_refused_by_name(self):
+    def test_an_interior_resonance_is_reported(self):
+        """At an eigenvalue of the interior pencil the sparse factorization
+        cannot solve the block's own interface load to the declared
+        tolerance (relative residual 4.6e-3 against 1e-8). The complement is
+        returned as the solve gives it, with the residual, the tolerance and
+        the mark that the solve does not hold; away from a resonance the
+        mark holds."""
         K, base, cov = _instance(dressed=False, seed=31)
         pencil = cov.sparsePencil(0)
         A, M = sp.csc_matrix(pencil.A), sp.csc_matrix(pencil.M)
@@ -322,8 +328,14 @@ class TestSparseFeshbach:
         idx = np.ix_(interior, interior)
         lam = complex(np.linalg.eigvals(
             np.linalg.solve(M.toarray()[idx], A.toarray()[idx]))[0])
-        with pytest.raises(Exception, match="resonance"):
-            PS.sparseFeshbach(A, M, lam, interface, 1e-8)
+        result, _ = PS.sparseFeshbach(A, M, lam, interface, 1e-8)
+        assert not result.solveHolds
+        assert result.solveTolerance == 1e-8
+        assert result.solveResidual > 1e-8
+        assert np.all(np.isfinite(np.array(result.response)))
+        regular, _ = PS.sparseFeshbach(A, M, complex(0.23, -0.07), interface,
+                                       1e-8)
+        assert regular.solveHolds and regular.solveResidual <= 1e-8
 
 
 class TestScalingReports:

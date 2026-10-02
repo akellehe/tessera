@@ -884,7 +884,8 @@ alpha_tau vanish identically. Transpose pairing throughout.)doc")
   py::class_<FeshbachResult>(m, "FeshbachResult",
       "One Feshbach complement F_B(lambda) = P_BB - P_BI P_II^{-1} P_IB of a symmetric pencil "
       "P = A - lambda M, with det P = det P_II det F_B and the constraint modes T = [I_B; -P_II^{-1} P_IB]. "
-      "At an interior resonance the inverse is the Drazin inverse P_II^D = (P_II + Pi0)^{-1} (I - Pi0) "
+      "At an interior resonance the inverse is the Drazin inverse P_II^D = (P_II + u Pi0)^{-1} (I - Pi0), "
+      "u the spectral radius of P_II (drazinUnit), "
       "built on the Riesz projector Pi0 onto the generalized eigenspace of the eigenvalues inside the "
       "resonance disc; nullProjector is Pi0 and rangeProjector is I - Pi0, both oblique.")
       .def_readonly("lambda_", &FeshbachResult::lambda)
@@ -902,12 +903,15 @@ alpha_tau vanish identically. Transpose pairing throughout.)doc")
       .def_readonly("logModulusResidual", &FeshbachResult::logModulusResidual)
       .def_readonly("logPhaseResidual", &FeshbachResult::logPhaseResidual)
       .def_readonly("solveResidual", &FeshbachResult::solveResidual)
+      .def_readonly("solveTolerance", &FeshbachResult::solveTolerance)
+      .def_readonly("solveHolds", &FeshbachResult::solveHolds)
       .def_readonly("interiorSingular", &FeshbachResult::interiorSingular)
       .def_readonly("resonanceRadius", &FeshbachResult::resonanceRadius)
       .def_readonly("resonanceEnclosure", &FeshbachResult::resonanceEnclosure)
       .def_readonly("resonanceSeparation", &FeshbachResult::resonanceSeparation)
       .def_readonly("interiorRank", &FeshbachResult::interiorRank)
       .def_readonly("interiorInverse", &FeshbachResult::interiorInverse)
+      .def_readonly("drazinUnit", &FeshbachResult::drazinUnit)
       .def_readonly("resonantSpace", &FeshbachResult::resonantSpace)
       .def_readonly("resonantLeftSpace", &FeshbachResult::resonantLeftSpace)
       .def_readonly("resonantModes", &FeshbachResult::resonantModes)
@@ -956,6 +960,12 @@ alpha_tau vanish identically. Transpose pairing throughout.)doc")
       .def_readonly("feshbachDefects", &SurrogateResult::feshbachDefects)
       .def_readonly("feshbachBounds", &SurrogateResult::feshbachBounds)
       .def_readonly("feshbachHolds", &SurrogateResult::feshbachHolds)
+      .def_readonly("interiorMetricSingular", &SurrogateResult::interiorMetricSingular)
+      .def_readonly("interiorMetricReciprocalCondition",
+                    &SurrogateResult::interiorMetricReciprocalCondition)
+      .def_readonly("reducedMetricSingular", &SurrogateResult::reducedMetricSingular)
+      .def_readonly("reducedMetricReciprocalCondition",
+                    &SurrogateResult::reducedMetricReciprocalCondition)
       .def_readonly("resonantAtEigenvalue", &SurrogateResult::resonantAtEigenvalue)
       .def_readonly("tolerance", &SurrogateResult::tolerance)
       .def_readonly("certified", &SurrogateResult::certified)
@@ -1006,8 +1016,9 @@ is the transpose.)doc")
            py::arg("A"), py::arg("M"), py::arg("lambda_"), py::arg("interface"),
            py::arg("solve_tolerance") = 1e-8,
            "(result, cost): the same complement on the sparse production path, the interior block "
-           "factorized by sparse LU and no n x n matrix formed. An interior resonance is refused "
-           "by name; the dense feshbach resolves it.")
+           "factorized by sparse LU and no n x n matrix formed. An interior resonance, a block that "
+           "cannot solve its own interface load to solve_tolerance, is reported (solveHolds); the "
+           "dense feshbach resolves it.")
       .def_static("craigBampton",
            py::overload_cast<const Eigen::MatrixXcd &, const Eigen::MatrixXcd &,
                              const Eigen::MatrixXcd &>(&PencilSchur::craigBampton),

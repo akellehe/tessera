@@ -36,8 +36,13 @@ namespace tessera::chainhodge {
 /// to them):
 /// \f[
 ///   \Pi_0 = \frac{1}{2\pi i}\oint_{|z| = R} (z - P_{II})^{-1}\,dz,\qquad
-///   P_{II}^{D} = (P_{II} + \Pi_0)^{-1}(I - \Pi_0).
+///   P_{II}^{D} = (P_{II} + u\,\Pi_0)^{-1}(I - \Pi_0)\quad(u\ne0).
 /// \f]
+/// The identity holds for every nonzero \f$ u \f$. The projector is
+/// dimensionless and \f$ P_{II} \f$ is not, so \f$ u \f$ is taken in the
+/// unit of \f$ P_{II} \f$, its spectral radius (`drazinUnit`): the solve is
+/// then conditioned the same way whatever unit the pencil is expressed in, and
+/// \f$ (c\,P_{II})^{D} = P_{II}^{D}/c \f$ to rounding.
 /// \f$ \Pi_0 \f$ commutes with \f$ P_{II} \f$, and \f$ P_{II}^{D} \f$ is
 /// the inverse of \f$ P_{II} \f$ on the complementary invariant subspace
 /// \f$ \operatorname{ran}(I - \Pi_0) \f$ and zero on the generalized
@@ -94,6 +99,14 @@ struct FeshbachResult {
   double logPhaseResidual{std::numeric_limits<double>::quiet_NaN()};
   /// Relative residual of the interior solve.
   double solveResidual{std::numeric_limits<double>::quiet_NaN()};
+  /// On the sparse path: the declared tolerance of the interior solve, and
+  /// whether `solveResidual` is at or below it. A block that cannot solve its
+  /// own interface load to the tolerance is numerically singular at the shift,
+  /// an interior resonance; the complement is returned as the solve gives it,
+  /// with this mark. Quiet NaN and true on the dense path, which declares the
+  /// resonance spectrally (`interiorSingular`).
+  double solveTolerance{std::numeric_limits<double>::quiet_NaN()};
+  bool solveHolds{true};
   /// True when \f$ P_{II} \f$ was singular at the shift: an interior
   /// resonance, where the fields below carry the resonant reduction.
   bool interiorSingular{false};
@@ -122,6 +135,12 @@ struct FeshbachResult {
   /// at a resonance; empty away from one, where the ordinary inverse is applied
   /// by solves and never formed.
   Eigen::MatrixXcd interiorInverse{};
+  /// The unit \f$ u \f$ the Riesz projector is added in when the Drazin
+  /// inverse is formed, \f$ P_{II}^{D} = (P_{II} + u\,\Pi_0)^{-1}(I - \Pi_0) \f$:
+  /// the spectral radius of \f$ P_{II} \f$; its Frobenius norm when every
+  /// eigenvalue is zero; one for the zero block. Quiet NaN away from a
+  /// resonance.
+  double drazinUnit{std::numeric_limits<double>::quiet_NaN()};
   /// A basis \f$ N \f$ of the generalized eigenspace \f$ \operatorname{ran}\Pi_0 \f$
   /// (\f$ |I| \times q \f$, orthonormal columns: the leading Schur vectors):
   /// the resonant interior modes, empty away from a resonance.
@@ -312,6 +331,18 @@ struct SurrogateResult {
   /// Whether each claimed pair's defect is within its bound, measured rather
   /// than assumed.
   std::vector<bool> feshbachHolds{};
+  /// Whether the interior chain metric \f$ M_{II} \f$, and the reduced chain
+  /// metric \f$ V^TMV \f$, is singular at the declared rank tolerance (a pivot
+  /// of its full-pivoting LU decomposition at or below that fraction of the
+  /// largest), with the reciprocal condition number of each in the 1-norm,
+  /// estimated with every nonzero pivot counted. A singular metric is inverted
+  /// as computed, the surrogate's numbers are returned, and it does not
+  /// certify. The reciprocal conditions are quiet NaN where the metric is
+  /// empty.
+  bool interiorMetricSingular{false};
+  double interiorMetricReciprocalCondition{std::numeric_limits<double>::quiet_NaN()};
+  bool reducedMetricSingular{false};
+  double reducedMetricReciprocalCondition{std::numeric_limits<double>::quiet_NaN()};
   /// Whether \f$ \theta \f$ was an interior resonance of the pencil, where the
   /// bound above is not defined because \f$ P_{II}^{-1} \f$ is not; the defect
   /// is then measured against the resonant reduction \f$ \hat F(\theta) \f$
@@ -320,9 +351,10 @@ struct SurrogateResult {
   /// The declared acceptance tolerance the certificate holds against.
   double tolerance{0.0};
   /// The whole surrogate's verdict: every claimed pair's defect is within its
-  /// certified bound, every bound is at or below `tolerance`, and no discarded
-  /// fixed-interface mode lies inside the window. A surrogate that fails is
-  /// returned with its numbers rather than refused.
+  /// certified bound, every bound is at or below `tolerance`, no discarded
+  /// fixed-interface mode lies inside the window, and neither metric is
+  /// singular at the rank tolerance. A surrogate that fails is returned with
+  /// its numbers rather than refused.
   bool certified{false};
   /// Why it failed, by name; empty when `certified`.
   std::string refusal{};
@@ -421,11 +453,13 @@ class PencilSchur {
   ///
   /// The Riesz projectors, the Drazin inverse and the resonant reduction are
   /// not available here: they rest on the Schur form of the interior block,
-  /// which is dense. An interior resonance is therefore detected and refused by
-  /// name, with the dense reading named as the one that resolves it. A sparse LU reveals no rank, and a determinant is no measure
+  /// which is dense. An interior resonance is therefore detected and reported
+  /// (`FeshbachResult::solveHolds`), and the dense reading is the one that
+  /// resolves it. A sparse LU reveals no rank, and a determinant is no measure
   /// of singularity at this size; the scale-free quantity the factorization
   /// does offer is the residual of the solve it was asked for, and a block that
   /// cannot solve its own interface load to \p solveTolerance is a resonance.
+  /// The complement is returned as the solve gives it either way.
   /// @param solveTolerance the declared relative residual
   ///   \f$ \|P_{II}X - P_{IB}\| / \|P_{IB}\| \f$ above which the interior
   ///   block is taken to be numerically singular at this shift.
@@ -433,8 +467,9 @@ class PencilSchur {
   ///   factorization: its wall time, the memory of its factors and their
   ///   fill-in.
   /// @throws std::invalid_argument when \p A and \p M are not square of the
-  ///   same size or an interface index is out of range; std::runtime_error at
-  ///   an interior resonance.
+  ///   same size or an interface index is out of range; std::runtime_error
+  ///   when the sparse factorization of the interior block fails, which leaves
+  ///   no solve to form the complement from.
   [[nodiscard]] static FeshbachResult sparseFeshbach(const SparseMatrix &A, const SparseMatrix &M,
                                                      Complex lambda,
                                                      const std::vector<int> &interface,
@@ -473,8 +508,9 @@ class PencilSchur {
   /// @throws std::invalid_argument when \p A and \p M are not square of the
   ///   same size, an interface index is out of range, or either radius is
   ///   negative; std::runtime_error when the interior metric \f$ M_{II} \f$ or the
-  ///   reduced metric \f$ V^TMV \f$ is singular, by name, so that a meaningless
-  ///   surrogate spectrum is never returned.
+  ///   reduced metric \f$ V^TMV \f$ has no finite inverse, by name. A metric
+  ///   that is singular at \p rankTolerance and has an inverse is inverted as
+  ///   computed, and the surrogate says so and does not certify.
   [[nodiscard]] static SurrogateResult craigBampton(const Eigen::MatrixXcd &A,
                                                     const Eigen::MatrixXcd &M,
                                                     const std::vector<int> &interface,
