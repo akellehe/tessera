@@ -425,7 +425,8 @@ def test_the_fingerprint_holds_above_the_certificates_rounding():
     assert len(refinement["refined_bands"]) == 1
     assert refinement["refined_rank"] == 2
     assert refinement["overlap"] == pytest.approx(1.0, abs=1e-12)
-    assert refinement["energy_shift"] == pytest.approx(0.19763, abs=1e-4)
+    # relative to the size of h_1's spectrum
+    assert refinement["energy_shift"] == pytest.approx(0.11358, abs=1e-4)
     assert [e.held for e in bp.fingerprint_evidence(read)] == [True, True]
     assert bp.fingerprint_text(read).startswith(
         "spectral fingerprint: relabeling stable (")
@@ -434,7 +435,8 @@ def test_the_fingerprint_holds_above_the_certificates_rounding():
 def test_a_fingerprint_without_a_doublet_says_which_band_is_nearest():
     """At a certificate tolerance below the rounding of the certificates
     (1e-17) no band of the host is the certified doublet: both reads are
-    unread, with the nearest band's certificates in words."""
+    unread and not evaluable, with the nearest band's certificates in
+    words."""
     config = bp.default_config([1.0], [1.0],
                                tolerances={"certificate_tolerance": 1e-17})
     read = bp.spectral_fingerprint_read(bp.build_host(), 1.0, 1.0, config,
@@ -443,12 +445,13 @@ def test_a_fingerprint_without_a_doublet_says_which_band_is_nearest():
     assert [band["dimension"] for band in read["band_certificates"]] == \
         [2, 2, 2]
     for key in ("relabeling", "refinement"):
-        assert read[key]["held"] is False
+        assert read[key]["held"] is None
         assert read[key]["unread"].startswith(
             "no spinor doublet on the host: no band is a certified coexact "
             "spinor doublet at the tolerance 1e-17: the band nearest the "
             "coexact sector (eigenvalue 4, rank 2) has coexact residual ")
-    assert [e.held for e in bp.fingerprint_evidence(read)] == [False, False]
+    # a fingerprint that was not read is not evaluable
+    assert [e.held for e in bp.fingerprint_evidence(read)] == [None, None]
 
 
 # ----------------------------------------------------- the with-quartic flag

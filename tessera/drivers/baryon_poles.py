@@ -2416,6 +2416,29 @@ def contents():
     return [c for c in itertools.product(range(4), repeat=3) if sum(c) == 3]
 
 
+def checked_contents(selected):
+    """Contents as declared, each one of the ten of `contents`: three
+    non-negative integers, the occupations of the three bands, that sum to
+    the three quarks. Another content has no value: the pole read is of
+    three-quark sectors."""
+    allowed = set(contents())
+    out = []
+    for content in selected:
+        try:
+            numbers = tuple(content)
+            valid = (all(int(n) == n for n in numbers)
+                     and tuple(int(n) for n in numbers) in allowed)
+        except (TypeError, ValueError):
+            valid = False
+        if not valid:
+            raise ValueError(
+                "a content is three non-negative integers that sum to three "
+                "(the occupations of three bands by three quarks); got %r"
+                % (content,))
+        out.append(tuple(int(n) for n in numbers))
+    return out
+
+
 IRREP_NAMES = ("2", "2'", "2''")
 
 
@@ -2599,14 +2622,18 @@ def eigenbasis_marks(operator):
 
 def hessian_sign(value, scale, tolerance=DECLARED_TOLERANCE):
     """The sign of the moment-constrained Hessian along the Hellmann-Feynman
-    force as a word: "positive" or "negative" when the quotient is real to
-    ``tolerance`` times the Hessian's scale (the real slice), "complex" when
-    it is not, and "unread" when it is not a number."""
+    force as a word: "positive", "negative" or "zero" when the quotient is
+    real to ``tolerance`` times the Hessian's scale (the real slice),
+    "complex" when it is not, and "unread" when the quotient or the scale is
+    not a number."""
     value = complex(value)
-    if not (math.isfinite(value.real) and math.isfinite(value.imag)):
+    if not (math.isfinite(value.real) and math.isfinite(value.imag)
+            and math.isfinite(scale)):
         return "unread"
     if abs(value.imag) > tolerance * scale:
         return "complex"
+    if value.real == 0:
+        return "zero"
     return "positive" if value.real > 0 else "negative"
 
 
@@ -3087,6 +3114,15 @@ def pole_projectors(read, dimension):
             for residue in read.residue]
 
 
+def _ratio(numerator, pairing):
+    """A matrix element over its pairing as a complex number; not a number
+    when the pairing vanishes or is not finite, and never an exception."""
+    pairing = complex(pairing)
+    if pairing == 0 or not np.isfinite(pairing):
+        return complex(math.nan, math.nan)
+    return complex(numerator) / pairing
+
+
 def _worst_relative(images, states):
     """sup over the span of the columns of ``states`` of ||A psi|| / ||psi||,
     for ``images`` the columns' images under A: the largest singular value
@@ -3143,11 +3179,9 @@ def pole_certificates(projector, multiplicity, j2, sector, dual, images,
         images["right_spin"] @ right - j2 * states, states)
     left_residual = _worst_relative(
         images["left_spin"] @ left - j2 * partners, partners)
-    with np.errstate(divide="ignore", invalid="ignore"):
-        pairing = complex(np.trace(images["left"].T @ images["right"]
-                                   @ projector))
-        expectation = complex(np.trace(
-            images["left"].T @ images["right_spin"] @ projector)) / pairing
+    expectation = _ratio(
+        np.trace(images["left"].T @ images["right_spin"] @ projector),
+        np.trace(images["left"].T @ images["right"] @ projector))
     finite = bool(np.isfinite(expectation))
     out = {
         "eigenspace_dimension": count,
@@ -3173,9 +3207,8 @@ def pole_certificates(projector, multiplicity, j2, sector, dual, images,
                                        patterns)
         spinor_left = _worst_relative(
             dual_patterns - isotypic.T @ dual_patterns, dual_patterns)
-        with np.errstate(divide="ignore", invalid="ignore"):
-            weight = (complex(np.trace(dual @ isotypic @ sector @ projector))
-                      / complex(np.trace(dual @ sector @ projector)))
+        weight = _ratio(np.trace(dual @ isotypic @ sector @ projector),
+                        np.trace(dual @ sector @ projector))
         out.update({
             "sharp_spinor": bool(np.isfinite(weight)
                                  and spinor_right <= tolerance
@@ -3185,6 +3218,17 @@ def pole_certificates(projector, multiplicity, j2, sector, dual, images,
             "spinor_weight": weight,
         })
     return out
+
+
+def lowest_pole(poles):
+    """The pole of smallest real part, then smallest imaginary part, among
+    those whose real part is a number; the first pole when none is; None
+    for no pole. The choice does not depend on where in the list a pole
+    that is not a number stands."""
+    numbers = [p for p in poles if not math.isnan(p.real)]
+    if numbers:
+        return min(numbers, key=lambda p: (p.real, p.imag))
+    return poles[0] if poles else None
 
 
 def sector_entry(j2, triality, sector, operators, projectors=None,
@@ -3230,7 +3274,7 @@ def sector_entry(j2, triality, sector, operators, projectors=None,
     for name, operator in operators:
         block, leakage, read = sector_poles(operator, sector, config)
         poles = [complex(p) for p in read.poles]
-        lowest = min(poles, key=lambda p: (p.real, p.imag)) if poles else None
+        lowest = lowest_pole(poles)
         # every pole's certificates, on the eigenspace its spectral
         # projector projects onto
         size = block.shape[0]
@@ -3612,6 +3656,10 @@ def recursion_read(spacetime, config):
         "transport_norms": [float(np.linalg.norm(np.asarray(t.block)))
                             for t in level.transports
                             if t.from_component != t.to_component],
+        # the size the leakage is measured against, in its own unit
+        "fiber_norms": [float(np.linalg.norm(np.asarray(t.block)))
+                        for t in level.transports
+                        if t.from_component == t.to_component],
         "fock_stage_dimension": float(level.fock_stage_dimension),
         "determinant_residual": float(level.determinant_residual),
         "certificate": level.certificate.describe(),
@@ -4535,7 +4583,10 @@ def quark_conditions(spacetime, alignments, recursion, symmetry_residual,
     reported in the detail of the colour transport's evidence, has full rank
     when its smallest singular value reaches ``attachment_rank_tolerance``.
     The bands of the cell's own supports are grouped at
-    ``degeneracy_tolerance``."""
+    ``degeneracy_tolerance``. The leakage between components holds when
+    every inter-component transport norm is at or below ``tolerance`` times
+    the largest norm of a component's own fiber operator (the read's
+    ``fiber_norms``), so it does not move with the unit of the operator."""
     E = obs.QuarkConditionEvidence
     supports = [sheet_support(spacetime, t, tolerance) for t in range(SHEETS)]
     monopoles = [s.monopoleNumber(tolerance) for s, _ in supports]
@@ -4568,6 +4619,23 @@ def quark_conditions(spacetime, alignments, recursion, symmetry_residual,
         return E(name, held(), detail())
 
     accepted = all(recursion["bands_accepted"]) if produced else None
+
+    def leakage():
+        """The inter-component transport norms relative to the largest norm
+        of a component's own fiber operator (``fiber_norms``), which is in
+        their unit; a read that carries no fiber norm gives them as they
+        are."""
+        fibers = recursion.get("fiber_norms") or []
+        scale = max(fibers) if fibers else 1.0
+        return [_relative_shift(n, scale)
+                for n in recursion["transport_norms"]]
+
+    def leakage_text():
+        fibers = recursion.get("fiber_norms") or []
+        return ("inter-component transport norms %s%s"
+                % (recursion["transport_norms"],
+                   ", %s of the largest fiber operator norm %.3g"
+                   % (leakage(), max(fibers)) if fibers else ""))
     evidence = [
         [from_level("persistent-support", lambda: accepted,
                     lambda: "partition %s" % recursion["partition"]),
@@ -4582,10 +4650,8 @@ def quark_conditions(spacetime, alignments, recursion, symmetry_residual,
          E("multi-frame-lifetime", None,
            "a single level spans one cobordism frame"),
          from_level("external-leakage",
-                    lambda: all(n < tolerance
-                                for n in recursion["transport_norms"]),
-                    lambda: "inter-component transport norms %s"
-                    % recursion["transport_norms"])],
+                    lambda: all(n <= tolerance for n in leakage()),
+                    leakage_text)],
         [sheet_count_evidence(spacetime),
          E("sheet-isomorphism", bool(isomorphism.isomorphic),
            "length residual %.3g, connection residual %.3g"
@@ -4626,10 +4692,8 @@ def quark_conditions(spacetime, alignments, recursion, symmetry_residual,
               attachment_rank_tolerance,
               bool(declared_rule.certificate.holds()))),
          from_level("base-transport-leakage",
-                    lambda: all(n < tolerance
-                                for n in recursion["transport_norms"]),
-                    lambda: "inter-component transport norms %s"
-                    % recursion["transport_norms"]),
+                    lambda: all(n <= tolerance for n in leakage()),
+                    leakage_text),
          E("transport-over-lifetime", None,
            "a single level has no lifetime")],
         [E("lineage-intersection", None,
@@ -4695,6 +4759,8 @@ def scan_point(kappa, beta, config, on_content=None):
             "flagged_contents": [record["content"] for record in records
                                  if record.get("flags")],
             "contents": records,
+            # the tolerance every lowest pole of the point is picked at
+            "tie_tolerance": declared_tolerance(config, "tie_tolerance"),
             "ratios": ratios(records,
                              declared_tolerance(config, "tie_tolerance")),
             "pole_table": pole_table(records)}
@@ -4746,7 +4812,11 @@ def lowest_of(candidates, tolerance=DECLARED_TIE_TOLERANCE):
     candidates = list(candidates)
     best = None
     for candidate in candidates:
-        if best is None or candidate["pole"].real < best["pole"].real:
+        # a pole whose real part is not a number is below nothing: it is the
+        # lowest only when no candidate has a real part that is a number
+        if best is None or candidate["pole"].real < best["pole"].real \
+                or (math.isnan(best["pole"].real)
+                    and not math.isnan(candidate["pole"].real)):
             best = candidate
     if best is None:
         return None
@@ -4859,11 +4929,15 @@ def pole_table(records):
 
 
 def _pair(s_n, s_d, extra):
+    """The ratios of a nucleon pole to a Delta pole: of the complex poles,
+    of their moduli and of their real parts. A ratio whose denominator
+    vanishes (a Delta pole at zero, or on the imaginary axis for the real
+    parts) is not a number, and the pair is recorded all the same."""
     out = {
         "nucleon_pole": s_n, "delta_pole": s_d,
-        "pole_ratio": s_n / s_d,
-        "modulus_ratio": abs(s_n) / abs(s_d),
-        "real_part_ratio": s_n.real / s_d.real,
+        "pole_ratio": _ratio(s_n, s_d),
+        "modulus_ratio": _ratio(abs(s_n), abs(s_d)).real,
+        "real_part_ratio": _ratio(s_n.real, s_d.real).real,
         "target_mass_ratio": TARGET_MASS_RATIO,
     }
     out.update(extra)
@@ -4932,7 +5006,7 @@ def ratios(records, tolerance=DECLARED_TIE_TOLERANCE):
             })
         else:
             result["by_2T_reading"] = None
-        by_spin = lowest_over_pairs(records, name)
+        by_spin = lowest_over_pairs(records, name, tolerance)
         n, d = by_spin[str(SPIN_HALF)], by_spin[str(SPIN_THREE_HALVES)]
         if n is not None and d is not None:
             restriction_d = d["restriction_to_2T"] or []
@@ -5224,24 +5298,27 @@ def _lowest_text(best, name_content):
     return text
 
 
-def lowest_lines(records, prefix=""):
+def lowest_lines(records, prefix="", tolerance=DECLARED_TIE_TOLERANCE):
     """The labelled minima as text, after the per-pair lines, each line
     starting "lowest over": per content, the lowest pole (smallest real part)
     of each spin and column over its doublet contents, with the doublet
     content it came from; then the lowest over every (content, doublet
-    content) pair, with the pair it came from. Ties are named."""
+    content) pair, with the pair it came from. Ties are named at
+    ``tolerance``, the tie tolerance the records' ratios were read at."""
     lines = []
     for record in records:
         if "failed" in record:
             continue
-        per_column = {name: lowest_poles(record, name) for name in COLUMNS}
+        per_column = {name: lowest_poles(record, name, tolerance)
+                      for name in COLUMNS}
         lines.append("%slowest over the doublet contents of content %s: %s"
                      % (prefix, list(record["content"]), "; ".join(
                          "spin %s %s %s" % (
                              SPIN_NAMES[j2], COLUMN_NAMES[name],
                              _lowest_text(per_column[name][j2], False))
                          for j2 in SPINS for name in COLUMNS)))
-    per_column = {name: lowest_over_pairs(records, name) for name in COLUMNS}
+    per_column = {name: lowest_over_pairs(records, name, tolerance)
+                  for name in COLUMNS}
     lines.append("%slowest over every (content, doublet content) pair: %s" % (
         prefix, "; ".join(
             "spin %s %s %s" % (SPIN_NAMES[j2], COLUMN_NAMES[name],
@@ -5332,7 +5409,8 @@ def point_lines(point):
                 "; " + flagged if flagged else ""))
         lines += term_trace_lines(record.get("relaxation"), "    ")
         lines += content_pair_lines(record, "  ")
-    lines += lowest_lines(records, "  ")
+    lines += lowest_lines(records, "  ",
+                          point.get("tie_tolerance", DECLARED_TIE_TOLERANCE))
     lines += ratio_lines(point.get("ratios"), "  ")
     return lines
 
@@ -5354,10 +5432,24 @@ def default_config(kappas=DECLARED_KAPPAS, betas=DECLARED_BETAS,
     declared. ``villain_order`` is the order the Villain weight of the
     holonomy term is summed to (`DECLARED_VILLAIN_ORDER`). ``solve`` sets
     any of `SOLVE_OPTIONS` by key; the others are recorded at their declared
-    values."""
+    values. A content that is not one of the ten (`checked_contents`), and a
+    name of the hinges, the elimination, the band selection or the fiber
+    pinning that is not declared, has no value and is refused here, before
+    anything is computed."""
+    checked_regge_hinges(regge_hinges)
+    if elimination not in ELIMINATIONS:
+        raise ValueError("the elimination is one of %s; got %r"
+                         % (", ".join(ELIMINATIONS), elimination))
+    if band_selection not in BAND_SELECTIONS:
+        raise ValueError("the band selection is one of %s; got %r"
+                         % (", ".join(BAND_SELECTIONS), band_selection))
+    if fiber_pinning not in FIBER_PINNINGS:
+        raise ValueError("the fiber pinning is one of %s; got %r"
+                         % (", ".join(FIBER_PINNINGS), fiber_pinning))
     return {
         "mode": "controlled synthesis",
-        "contents": [list(c) for c in (selected_contents or contents())],
+        "contents": [list(c) for c in checked_contents(
+            selected_contents or contents())],
         "kappas": list(kappas),
         "betas": list(betas),
         "edge_squared": edge_squared,
@@ -5383,6 +5475,89 @@ def default_config(kappas=DECLARED_KAPPAS, betas=DECLARED_BETAS,
     }
 
 
+def _git_commit(directory):
+    """The commit a directory's checkout is at, read from its `.git` (a
+    directory, or the file of a linked worktree that names one) without
+    running git: ``HEAD``, and for a symbolic HEAD the ref's file, in the
+    worktree's own git directory or the common one, or its line of
+    ``packed-refs``. Returns the checkout's root, the ref and the commit;
+    None for each that is not found."""
+    root = os.path.abspath(directory)
+    while not os.path.exists(os.path.join(root, ".git")):
+        parent = os.path.dirname(root)
+        if parent == root:
+            return {"root": None, "ref": None, "commit": None}
+        root = parent
+    git = os.path.join(root, ".git")
+    try:
+        if os.path.isfile(git):
+            with open(git) as handle:
+                git = os.path.normpath(os.path.join(
+                    root, handle.read().split("gitdir:", 1)[1].strip()))
+        common = git
+        if os.path.isfile(os.path.join(git, "commondir")):
+            with open(os.path.join(git, "commondir")) as handle:
+                common = os.path.normpath(os.path.join(git,
+                                                       handle.read().strip()))
+        with open(os.path.join(git, "HEAD")) as handle:
+            head = handle.read().strip()
+        if not head.startswith("ref:"):
+            return {"root": root, "ref": None, "commit": head}
+        ref = head.split("ref:", 1)[1].strip()
+        for base in (git, common):
+            path = os.path.join(base, ref)
+            if os.path.isfile(path):
+                with open(path) as handle:
+                    return {"root": root, "ref": ref,
+                            "commit": handle.read().strip()}
+        packed = os.path.join(common, "packed-refs")
+        if os.path.isfile(packed):
+            with open(packed) as handle:
+                for line in handle:
+                    parts = line.split()
+                    if len(parts) == 2 and parts[1] == ref:
+                        return {"root": root, "ref": ref, "commit": parts[0]}
+        return {"root": root, "ref": ref, "commit": None}
+    except (OSError, IndexError):
+        return {"root": root, "ref": None, "commit": None}
+
+
+def environment_record():
+    """What a run's numbers depend on beside its configuration, recorded
+    once in the header of its files: the command line as run (``argv``),
+    the thread counts the environment declares (``OMP_NUM_THREADS`` and the
+    linear algebra library's own variables, None for one that is not set)
+    with the number of processors, the linear algebra numpy is built on,
+    the versions of Python, numpy and the package, and the commit of the
+    checkout the package is imported from (`_git_commit`). Decisions taken
+    at the declared tolerances on values that differ in their last bits
+    between thread counts depend on these."""
+    try:
+        build = np.show_config(mode="dicts").get("Build Dependencies", {})
+        linear_algebra = {
+            name: {key: build[name].get(key)
+                   for key in ("name", "version", "openblas configuration")
+                   if build[name].get(key) is not None}
+            for name in ("blas", "lapack") if name in build}
+    except (TypeError, AttributeError):
+        linear_algebra = {}
+    return {
+        "argv": [str(argument) for argument in sys.argv],
+        "threads": {name: os.environ.get(name)
+                    for name in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS",
+                                 "MKL_NUM_THREADS")},
+        "processors": os.cpu_count(),
+        "linear_algebra": linear_algebra,
+        "python": sys.version.split()[0],
+        "numpy": np.__version__,
+        "package": str(getattr(T, "__version__", None)
+                       or getattr(getattr(T, "_tessera", None),
+                                  "__version__", None) or "unknown"),
+        "checkout": _git_commit(os.path.dirname(os.path.abspath(
+            T.__file__))),
+    }
+
+
 def points_path(json_path):
     """The append-only JSON-lines file beside ``json_path`` that holds one
     line per completed scan point (and a first line with the configuration
@@ -5392,8 +5567,10 @@ def points_path(json_path):
 
 
 def _append_line(path, record):
+    """One record appended to a points file as one line of JSON; a value
+    that is not JSON is refused by the writer and never written."""
     with open(path, "a") as handle:
-        handle.write(json.dumps(_jsonable(record)) + "\n")
+        handle.write(json.dumps(_jsonable(record), allow_nan=False) + "\n")
         handle.flush()
         os.fsync(handle.fileno())
 
@@ -5491,26 +5668,52 @@ def _complex_text(value):
     return "%.6g%+.3gi" % (value.real, value.imag)
 
 
+#: How a float that is not finite is written: JSON has no NaN and no
+#: infinity, so each is the string of its name (`_jsonable`, `number`).
+NON_FINITE = {"nan": math.nan, "inf": math.inf, "-inf": -math.inf}
+
+
+def _real(value):
+    """A float as JSON holds it: itself when finite, and the string "nan",
+    "inf" or "-inf" otherwise."""
+    value = float(value)
+    if math.isfinite(value):
+        return value
+    return "nan" if math.isnan(value) else "inf" if value > 0 else "-inf"
+
+
 def _jsonable(value):
     """The JSON-ready form of a record: a complex number is ``{"re", "im"}``,
     an array a nested list, a numpy scalar the Python number or truth value
-    it holds, and every key a string."""
-    if isinstance(value, complex):
-        return {"re": value.real, "im": value.imag}
+    it holds, every key a string, and a float that is not finite the string
+    of its name (`NON_FINITE`: "nan", "inf", "-inf"; the parts of a complex
+    number likewise), which `number` reads back. The result holds no value
+    that is not JSON."""
+    if isinstance(value, (bool, np.bool_)):
+        return bool(value)
+    if isinstance(value, (complex, np.complexfloating)):
+        return {"re": _real(value.real), "im": _real(value.imag)}
     if isinstance(value, dict):
         return {str(k): _jsonable(v) for k, v in value.items()}
     if isinstance(value, (list, tuple)):
         return [_jsonable(v) for v in value]
     if isinstance(value, np.ndarray):
         return _jsonable(value.tolist())
-    if isinstance(value, np.bool_):
-        return bool(value)
-    if isinstance(value, (np.floating,)):
-        return float(value)
     if isinstance(value, (np.integer,)):
         return int(value)
-    if isinstance(value, np.complexfloating):
-        return {"re": float(value.real), "im": float(value.imag)}
+    if isinstance(value, (float, np.floating)):
+        return _real(value)
+    return value
+
+
+def number(value):
+    """A number read back from a written record: the float of a string that
+    names one that is not finite ("nan", "inf", "-inf"), the complex number
+    of a written ``{"re", "im"}`` pair, and the value itself otherwise."""
+    if isinstance(value, str) and value in NON_FINITE:
+        return NON_FINITE[value]
+    if isinstance(value, dict) and set(value) == {"re", "im"}:
+        return complex(number(value["re"]), number(value["im"]))
     return value
 
 
@@ -6404,6 +6607,9 @@ def main(argv=None):
                             solve=solve_options_from(args))
     if args.isospin_doublet:
         config["isospin_doublet"] = True
+    # what the numbers of the run depend on beside the configuration,
+    # written once in the header
+    config["environment"] = environment_record()
     points_file = points_path(args.json) if args.json else None
     result = (drive_live(config, progress=not args.quiet,
                          points_file=points_file, keep_open=True)
@@ -6412,7 +6618,7 @@ def main(argv=None):
                          points_file=points_file))
     if args.json:
         with open(args.json, "w") as handle:
-            json.dump(_jsonable(result), handle, indent=1)
+            json.dump(_jsonable(result), handle, indent=1, allow_nan=False)
     if args.out:
         render(result, args.out)
     if not args.quiet:

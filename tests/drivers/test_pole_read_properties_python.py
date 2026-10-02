@@ -362,17 +362,17 @@ def _half_sector():
 
 
 def _certificate_of(block):
-    """The certificates `sector_entry` reads for the pole of an operator
-    whose compressed block on the spin-1/2 sector of `_half_sector` is
-    ``block``, from the two eigendecompositions it takes of the block (of
-    the block and of its transpose)."""
+    """The certificates `sector_entry` reads for the lowest pole of an
+    operator whose compressed block on the spin-1/2 sector of `_half_sector`
+    is ``block``: those of the pole's eigenspace, from the block's spectral
+    projector onto it."""
     sector, dual = _half_sector()
-    values, right = np.linalg.eig(block)
-    values_left, left = np.linalg.eig(block.T)
-    return bp.pole_certificates(
-        values[0], bp.SPIN_HALF, sector, dual,
-        (values, right, values_left, left), bp.occupation_basis(),
-        bp.edge_spin_matrices())
+    images = bp.sector_spin_images(sector, dual, bp.occupation_basis(),
+                                   bp.edge_spin_matrices())
+    _, _, read = bp.sector_poles(sector @ block @ dual, sector)
+    (projector,) = bp.pole_projectors(read, 2)
+    return bp.pole_certificates(projector, read.multiplicity[0],
+                                bp.SPIN_HALF, sector, dual, images)
 
 
 def test_the_certificates_of_a_double_pole_on_a_scalar_block():
@@ -383,23 +383,19 @@ def test_the_certificates_of_a_double_pole_on_a_scalar_block():
     assert certificate["colour_casimir_residual"] < 1e-12
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "pole_certificates pairs the right eigenvector nearest a pole with the "
-    "left eigenvector whose eigenvalue is nearest, taken from two separate "
-    "eigendecompositions of the block. For a pole of multiplicity above "
-    "one the two need not be partners: on a block that is scalar up to one "
-    "entry of 1e-16 their pairing is exactly zero and the spin-lift "
-    "expectation is NaN while the certificate reads sharp (60 of the pole "
-    "certificates of the run of 2026-10-01)"))
 @pytest.mark.parametrize("entry", [(0, 1), (1, 0)])
 def test_the_certificates_of_a_double_pole_pair_a_state_with_its_partner(
         entry):
-    """The expectation of J^2 in a state of the spin-1/2 sector is 3/4
-    whichever eigenvector of the double pole is taken, as long as the left
-    vector is the partner of the right one."""
+    """The expectation of J^2 on the eigenspace of a double pole of the
+    spin-1/2 sector is 3/4 on a block that is scalar up to one entry of
+    1e-16, where an eigensolver returns two eigenvectors that are parallel
+    to rounding: the certificate is read on the eigenspace, from the block's
+    spectral projector, and no state is paired with a vector that is not its
+    partner."""
     block = 2.0 * np.eye(2, dtype=complex)
     block[entry] = 1e-16
     certificate = _certificate_of(block)
+    assert certificate["eigenspace_dimension"] == 2
     assert certificate["spin_lift_sharp"]
     assert certificate["spin_lift_expectation"] == pytest.approx(
         bp.SPIN_HALF, abs=1e-9)
@@ -481,11 +477,6 @@ def test_two_poles_tie_at_the_declared_tolerance():
     assert not bp._tied(2.0 + 0j, 2.0 + 1e-7 + 0j)
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "baryon_poles._tied compares two real parts with tolerance * "
-    "max(1, |a|, |b|): the floor of one is in the unit of the poles, so "
-    "poles of size 1e-9 (the poles of tick 1 of the run of 2026-10-01 are "
-    "1e-5 to 1e-8) tie when they differ by one part in 1e7"))
 def test_ties_do_not_depend_on_the_unit_of_the_poles():
     for unit in (1e9, 1e-9):
         assert not bp._tied(unit * (2.0 + 0j), unit * (2.0 + 1e-7 + 0j))
@@ -618,13 +609,6 @@ def test_the_spin_of_the_singlet_states_is_one_half_or_three_halves(content):
         bp.SPIN_HALF * half + bp.SPIN_THREE_HALVES * three, abs=1e-12)
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "spin_sectors keeps an eigenvalue of the J^2 block only when it is "
-    "within 1e-15 of 3/4 or 15/4, and the eigensolver returns them up to "
-    "2e-15 away: states are assigned to neither sector (fix(drivers): the "
-    "spin and band reads group computed eigenvalues at 1e-15, below the "
-    "eigensolver's rounding, "
-    "https://github.com/akellehe/tessera/issues/1362)"))
 def test_the_spin_sectors_account_for_every_singlet_state():
     for content in bp.contents():
         states, _ = bp.singlet_states(content)
@@ -793,14 +777,6 @@ def test_the_averaged_spectrum_does_not_depend_on_the_gauge(cell):
         < 1e-10 * np.max(np.abs(reference))
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "aligned_doublet_frame reads the index of the coexact doublet among "
-    "the bands of the spin read as an index among the three carriers; the "
-    "spin read splits the fixture's lowest doublet into two bands at the "
-    "absolute degeneracy tolerance 1e-15, so the index is 2 where the "
-    "coexact doublet is carrier 1 (fix(drivers): the spin and band reads "
-    "group computed eigenvalues at 1e-15, below the eigensolver's "
-    "rounding, https://github.com/akellehe/tessera/issues/1362)"))
 def test_the_reference_carrier_of_the_fixture_is_its_coexact_doublet():
     support = bp.monopole_support()
     alignment = bp.aligned_doublet_frame(support, bp.rotation_group())
@@ -814,13 +790,6 @@ def test_the_reference_carrier_of_the_fixture_is_its_coexact_doublet():
 # ----------------------------------------------------- the bands of h_1
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "band_projectors decomposes the 18 by 18 operator of the three-sheeted "
-    "host as a whole, and the rounding of that decomposition separates the "
-    "three equal copies of an eigenvalue at the band tolerance 1e-15 "
-    "(fix(drivers): the spin and band reads group computed eigenvalues at "
-    "1e-15, below the eigensolver's rounding, "
-    "https://github.com/akellehe/tessera/issues/1362)"))
 def test_the_bands_of_the_three_sheeted_fixture_have_rank_three():
     bands = bp.band_projectors(_carrier(_fixture_cell(), bp.SHEETS), 1e-15)
     assert [len(values) for values, _ in bands] == [3] * 6
@@ -847,11 +816,14 @@ def test_three_separate_eigenvalues_are_three_bands():
 
 
 @pytest.mark.xfail(strict=True, reason=(
-    "band_projectors groups two eigenvalues when they differ by at most "
-    "tolerance * max(1, |eigenvalue|): the floor of one is in the unit of "
-    "the operator, so on an operator of size 1e-9 (h_1 of a cell whose "
-    "squared lengths are 1e9) eigenvalues one part in 1e7 apart are one "
-    "band at the band tolerance 1e-15"))
+    "band_projectors takes its bands from BandFollower::read, which groups "
+    "two eigenvalues when they differ by at most bandTolerance * "
+    "max(1, |eigenvalue|): the floor of one is in the unit of the operator, "
+    "so on an operator of size 1e-9 (h_1 of a cell whose squared lengths "
+    "are 1e9) eigenvalues one part in 1e7 apart are one band at the band "
+    "tolerance 1e-15 (fix(cobordism): the Regge sheet starts again at every "
+    "scored point, and the multipliers and band grouping depend on the unit "
+    "of length, https://github.com/akellehe/tessera/issues/1385)"))
 def test_the_bands_do_not_depend_on_the_unit_of_the_operator():
     assert [len(values) for values, _ in
             bp.band_projectors(_three_levels(1e-9), 1e-15)] == [1, 1, 1]
@@ -862,7 +834,10 @@ def test_the_bands_do_not_depend_on_the_unit_of_the_operator():
     "bandTolerance * max(1, |eigenvalue|): the floor of one is in the unit "
     "of the operator, so on an operator of size 1e-9 (h_1 of a cell whose "
     "squared lengths are 1e9) eigenvalues one part in 1e7 apart are one "
-    "band at the band tolerance 1e-15"))
+    "band at the band tolerance 1e-15 (fix(cobordism): the Regge sheet "
+    "starts again at every scored point, and the multipliers and band "
+    "grouping depend on the unit of length, "
+    "https://github.com/akellehe/tessera/issues/1385)"))
 def test_the_band_follower_does_not_depend_on_the_unit_of_the_operator():
     declaration = cob.SelfConsistentMeanFieldDeclaration()
     declaration.covariance_rule = cob.CovarianceRule.BandFilling
@@ -908,13 +883,6 @@ def test_the_occupations_of_the_sheets_add_up_to_the_quarks():
                        occupations, atol=1e-12)
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "quark_conditions takes the evidence of the protected base band and of "
-    "its coexact sector from the spin reads of the aligned frames; for a "
-    "cell read in the fixture's frame those are the spin reads of the "
-    "fixture, and the evidence 'base-band-sector' is reported held for a "
-    "cell whose own support carries no coexact j = 1/2 doublet (all 66 "
-    "reads of the run of 2026-10-01)"))
 def test_the_base_band_evidence_of_a_cell_is_read_on_the_cell():
     spacetime, supports, _, frame = _spin_frame_of(DILATED_CELL)
     assert frame["name"] == bp.SPIN_FRAME_OF_THE_HOST
@@ -927,15 +895,6 @@ def test_the_base_band_evidence_of_a_cell_is_read_on_the_cell():
     assert not held["base-band-sector"]
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "on the three-sheeted fixture the bands of h_1 are read with ranks 2 "
-    "and 1 where the sheets give rank three, so the covariance of a "
-    "content is not the same on every sheet: the sheets of content "
-    "(1, 1, 1) carry 5/6, 5/6 and 4/3 quarks and the evidence of quark "
-    "condition 4 fails on the declared host (fix(cobordism): the band "
-    "follower splits the exact degeneracy of the sheets by the rounding of "
-    "one dense eigendecomposition, "
-    "https://github.com/akellehe/tessera/issues/1356)"))
 def test_every_sheet_of_the_fixture_carries_one_quark():
     host = bp.build_host()
     action = cob.JointAction(host, bp.action_declaration(host, 1.0, 1.0))
@@ -963,14 +922,6 @@ def _zero_solve_config(content, cell, **declared):
     return config
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "with --eliminate lengths the stiffness of a lone tetrahedron is zero "
-    "by structure and the elimination integrates out nothing "
-    "(drazin_elimination: a 0 by 0 reduced stiffness and no coupling); "
-    "evaluate_content hands that empty stiffness to "
-    "DressedFluctuation::effectiveAction, which refuses it (\"the "
-    "elimination inverts the bare stiffness A, and none is declared\"), so "
-    "every content of every cell is recorded without a value"))
 def test_the_lengths_only_elimination_is_read_through_the_driver():
     config = _zero_solve_config((1, 1, 1), CUBE_ROOT_CELL,
                                 elimination="lengths")
