@@ -2428,7 +2428,9 @@ def read_lines(record):
             if "failed" not in c:
                 lines += ["      " + line
                           for line in bp.content_pair_lines(c, prefix)]
-        lines += bp.lowest_lines(cell["contents"], "    " + prefix)
+        lines += bp.lowest_lines(
+            cell["contents"], "    " + prefix,
+            bp.number(cell.get("tie_tolerance", bp.DECLARED_TIE_TOLERANCE)))
         lines += bp.ratio_lines(cell.get("ratios"), "    " + prefix)
     return lines
 
@@ -2553,6 +2555,9 @@ def main(argv=None):
         limits=bp.limits_from(args),
         solve=bp.solve_options_from(args),
         villain_order=args.villain_order)
+    # what the run's numbers depend on beside its declarations: the command
+    # line, the commit, the thread count and the linear algebra library
+    config["environment"] = bp.environment_record()
     points_file = points_path(args.json) if args.json else None
     result = (drive_live(config, progress=not args.quiet,
                          points_file=points_file, keep_open=True)
@@ -2561,7 +2566,7 @@ def main(argv=None):
                          points_file=points_file))
     if args.json:
         with open(args.json, "w") as handle:
-            json.dump(_jsonable(result), handle, indent=1)
+            json.dump(_jsonable(result), handle, indent=1, allow_nan=False)
     if args.out:
         render(result, args.out)
     if not args.quiet:

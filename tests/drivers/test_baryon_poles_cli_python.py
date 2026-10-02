@@ -158,7 +158,10 @@ TOLERANCE_KEYS = [
     "isospin_projector_tolerance", "isospin_invariance_tolerance",
     "isospin_commutant_tolerance", "isospin_isotypic_tolerance",
     "isospin_hermiticity_tolerance", "isospin_transport_leakage_tolerance",
-    "isospin_intertwining_tolerance",
+    "isospin_intertwining_tolerance", "isospin_min_relative_gap",
+    "isospin_span_tolerance", "isospin_transport_rank_tolerance",
+    "isospin_singular_value_grouping_tolerance",
+    "isospin_member_splitting_tolerance", "isospin_occupation_tolerance",
 ]
 
 
@@ -167,7 +170,7 @@ def test_the_registry_lists_every_tolerance():
     once, each with a one-phrase meaning, and each the detector's tolerance
     it names where it is one of `ISOSPIN_TOLERANCES`."""
     assert [key for key, _ in bp.TOLERANCES] == TOLERANCE_KEYS
-    assert len(set(TOLERANCE_KEYS)) == len(TOLERANCE_KEYS) == 33
+    assert len(set(TOLERANCE_KEYS)) == len(TOLERANCE_KEYS) == 39
     assert all(isinstance(meaning, str) and meaning
                for _, meaning in bp.TOLERANCES)
     assert [key for key, _ in bp.ISOSPIN_TOLERANCES] == [

@@ -441,37 +441,34 @@ def test_the_options_one_driver_offers_and_the_other_does_not():
     assert registry <= flags(bp) & flags(R)
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "`isospin_doublet_config` sets the eight tolerances of "
-    "`ISOSPIN_TOLERANCES`; the detector's other thresholds stay at the "
-    "library's values whatever the run declares: min_relative_gap 1e-6, "
-    "condition_number_cap 1e8 and track_overlap_threshold 0.5 "
-    "(`IsospinDoubletConfig`), which no key of `TOLERANCES` reaches "
-    "(https://github.com/akellehe/tessera/issues/1372)"))
-def test_the_registry_reaches_every_threshold_of_the_isospin_detector():
+def test_the_registry_reaches_every_tolerance_of_the_isospin_detector():
     """Every real-valued field of the detector's configuration is set from
     a key of the registry: with every key at one value, every field is at
-    that value."""
+    that value. The one exception is the overlap a continuation must
+    exceed, a declared threshold of one half and not a tolerance of a
+    rounding; the detector's caps are not declared."""
     config = {key: 0.125 for key, _ in bp.TOLERANCES}
     detector = bp.isospin_doublet_config(config)
     fields = {name: getattr(detector, name) for name in dir(detector)
               if not name.startswith("_")
               and isinstance(getattr(detector, name), float)}
-    assert fields
+    assert len(fields) == 15
     assert {name: value for name, value in fields.items()
-            if value != 0.125} == {}
+            if value != 0.125} == {"track_overlap_threshold": 0.5}
+    assert (detector.condition_number_cap, detector.decomposed_rank_limit,
+            detector.decomposed_commutant_limit) == (None, None, None)
 
 
-def test_the_isospin_detector_takes_its_eight_tolerances_from_the_registry():
+def test_the_isospin_detector_takes_its_tolerances_from_the_registry():
     config = {key: 0.125 for key, _ in bp.TOLERANCES}
     detector = bp.isospin_doublet_config(config)
     assert [getattr(detector, field) for _, field in bp.ISOSPIN_TOLERANCES] \
-        == [0.125] * 8
+        == [0.125] * 14
     assert {key for key, _ in bp.ISOSPIN_TOLERANCES} <= \
         {key for key, _ in bp.TOLERANCES}
     declared = obs.IsospinDoubletConfig()
     assert (declared.min_relative_gap, declared.condition_number_cap,
-            declared.track_overlap_threshold) == (1e-6, 1e8, 0.5)
+            declared.track_overlap_threshold) == (1e-15, None, 0.5)
 
 
 # ------------------------------------------------------ records and files

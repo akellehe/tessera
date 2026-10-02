@@ -305,7 +305,8 @@ def main(argv=None):
                    limits=bp.limits_from(args))
     if args.json:
         with open(args.json, "w") as handle:
-            json.dump(bp._jsonable(result), handle, indent=1)
+            json.dump(bp._jsonable(result), handle, indent=1,
+                      allow_nan=False)
     return result
 
 
