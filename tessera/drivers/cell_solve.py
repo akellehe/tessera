@@ -36,8 +36,20 @@ the system on all of its sheets:
   keep the held moduli when sectors are held;
 * a spectral-moment stiffness declared on the node
   (`MultiCobordism.set_moment_stiffness`) is a term of the action on every
-  sheet: its gradient is added to R and its Hessian to J, so that the scalar
-  stays the residual norm of one action. None is declared by default.
+  sheet: its gradient in the squared lengths and in the links is added to R
+  and its Hessian to J (`moment_stiffness_derivatives`), so that the scalar
+  stays the residual norm of one action. Its reference is the one the node
+  holds, taken on the complex the stiffness was declared on; a complex with
+  another number of cells has no stiffness and no residual. None is
+  declared by default;
+* a pinned region declared on the node (`MultiCobordism.declare_pinned_region`)
+  holds the squared length and the link of every base edge with both ends in
+  it: the engine leaves those edges where they are, and the step is the one
+  over the coordinates left free, the minimum-norm d with no component on a
+  held coordinate that leaves the least of J d = -R (`held_coordinates`,
+  `HeldLinearization`), taken over the steps that keep the held moduli when
+  sectors are held. The scalar stays the norm of the whole residual, as the
+  engine scores a complex with a pinned region. None is declared by default.
 
 `MultiCobordism` does the rest as it stands (`solve`), and its mechanics are
 the solve's: stage 1 scores every Pachner move of the base complex, which is
@@ -362,6 +374,304 @@ def series_step(point, linearization, order):
                                             dtype=complex)))))
 
 
+def moment_stiffness_derivatives(spacetime, degree, reference, coefficients,
+                                 hessian=True):
+    """The gradient and, with ``hessian``, the Hessian of the spectral-moment
+    stiffness of a complex,
+
+        S_M = 1/2 sum_j beta_j sum_x (mu_j(x) - mu_j^0(x))^2,
+        mu_j(x) = (L^j)_xx,
+
+    (`HodgeLaplacian.spectralMomentStiffness`: L the degree-``degree``
+    operator, ``coefficients`` the beta_j, ``reference`` the flat row-major
+    mu_j^0(x) of the carrier) in the coordinates of the stationarity system:
+    the squared length z_e of every edge and the increment delta_e of its
+    link, U_e -> U_e exp(delta_e) on the stored orientation, in
+    `getEdgeList()` order, lengths then links.
+
+    Closed forms, with D_p the derivative of L in coordinate p
+    (`JointAction.carrier_derivatives`), W_j the diagonal matrix of
+    mu_j - mu_j^0 and G = sum_j beta_j sum_{a+b=j-1} L^b W_j L^a:
+
+        d_p S_M = tr(G D_p),
+        d_p d_q S_M = tr(G d_p d_q L)
+                      + sum_j beta_j sum_x (d_p L^j)_xx (d_q L^j)_xx
+                      + tr((d_q G at fixed W) D_p),
+
+    the first term of the Hessian being the second derivatives of the
+    operator contracted with G (`JointAction.action_hessian` of the action
+    whose only term is tr(G L)).
+
+    Returns the gradient (2 |E| entries) and the Hessian (2 |E| by 2 |E|, or
+    None). Raises ValueError when the reference is not of this complex's
+    cells, in which case the stiffness has no value here."""
+    hodge = cob.HodgeLaplacian(spacetime)
+    orders = len(coefficients)
+    edges = len(edge_fields(spacetime))
+    gradient = np.zeros(2 * edges, dtype=complex)
+    if orders == 0:
+        return gradient, (np.zeros((2 * edges, 2 * edges), dtype=complex)
+                          if hessian else None)
+    moments = np.asarray(hodge.localSpectralMoments(int(degree), orders),
+                         dtype=complex)
+    size = len(moments) // orders
+    if len(reference) != size * orders:
+        raise ValueError(
+            "the spectral-moment stiffness has no value on this complex: its "
+            "reference, the moments of the complex it was declared on, has "
+            "%d entries, and the degree-%d operator here has %d cells at %d "
+            "orders" % (len(reference), int(degree), size, orders))
+    deviation = moments.reshape(size, orders) - np.asarray(
+        reference, dtype=complex).reshape(size, orders)
+    declaration = cob.JointActionDeclaration()
+    declaration.carrier_degree = int(degree)
+    declaration.metric_source = hodge.metricSource()
+    declaration.gravitational_weight = 0.0
+    declaration.holonomy_weight = 0.0
+    declaration.matter_weight = 1.0
+    declaration.covariance = [0j] * (size * size)
+    action = cob.JointAction(spacetime, declaration)
+    operator = np.asarray(action.carrier_operator(),
+                          dtype=complex).reshape(size, size)
+    powers = [np.eye(size, dtype=complex)]
+    for _ in range(orders):
+        powers.append(powers[-1] @ operator)
+    beta = [float(c) for c in coefficients]
+    contraction = np.zeros((size, size), dtype=complex)
+    for j in range(1, orders + 1):
+        weights = np.diag(deviation[:, j - 1])
+        for a in range(j):
+            contraction += beta[j - 1] * (powers[j - 1 - a] @ weights
+                                          @ powers[a])
+    derivatives = action.carrier_derivatives()
+    first = [np.asarray(matrix, dtype=complex).reshape(size, size)
+             for matrix in list(derivatives.lengths) + list(derivatives.links)]
+    for p, matrix in enumerate(first):
+        gradient[p] = np.sum(contraction * matrix.T)
+    if not hessian:
+        return gradient, None
+    action.set_covariance(list(contraction.reshape(-1)))
+    second = np.asarray(action.action_hessian(True, True),
+                        dtype=complex).reshape(2 * edges, 2 * edges).copy()
+    # the derivatives of the powers, d_p L^j = d_p L^(j-1) L + L^(j-1) D_p
+    power_derivatives = []
+    for matrix in first:
+        of_powers = [np.zeros((size, size), dtype=complex)]
+        for j in range(1, orders + 1):
+            of_powers.append(of_powers[-1] @ operator + powers[j - 1] @ matrix)
+        power_derivatives.append(of_powers)
+    for q in range(2 * edges):
+        moved = np.zeros((size, size), dtype=complex)
+        for j in range(1, orders + 1):
+            weights = np.diag(deviation[:, j - 1])
+            for a in range(j):
+                b = j - 1 - a
+                moved += beta[j - 1] * (
+                    powers[b] @ weights @ power_derivatives[q][a]
+                    + power_derivatives[q][b] @ weights @ powers[a])
+        for p in range(2 * edges):
+            value = np.sum(moved * first[p].T)
+            for j in range(1, orders + 1):
+                value += beta[j - 1] * np.sum(
+                    np.diag(power_derivatives[p][j])
+                    * np.diag(power_derivatives[q][j]))
+            second[p, q] += value
+    return gradient, second
+
+
+def held_coordinates(spacetime, regions, classes):
+    """The coordinates the pinned regions of a node hold on a base complex:
+    `MultiCobordism` holds an edge, its squared length and its link, when
+    both its ends lie in one region, and a coordinate is held when an edge
+    that carries it is. ``regions`` are vertex sets, ``classes`` the
+    coordinate of every edge in `getEdgeList()` order (`Point.classes`).
+    Returns the held coordinates in ascending order."""
+    regions = [set(int(v) for v in region) for region in regions]
+    held = set()
+    for (a, b, _, _), index in zip(edge_fields(spacetime), classes):
+        if any(a in region and b in region for region in regions):
+            held.add(int(index))
+    return sorted(held)
+
+
+class HeldStep:
+    """The step of a `HeldLinearization` with the measurements of its linear
+    solve, under the names of `cobordism.HolomorphicNewtonStep`."""
+
+    def __init__(self, **fields):
+        self.__dict__.update(fields)
+
+
+class HeldLinearization:
+    """The linearization of a system at a point over the steps that have no
+    component on held coordinates: `HolomorphicRelaxation.linearization`
+    restricted to the coordinates a pinned region leaves free.
+
+    The system's variables are the squared lengths of the coordinates, the
+    increments of their links (U -> U exp(delta)) and the multipliers, in
+    that order (`Point`). A step of this linearization is zero on the squared
+    length and the link of every coordinate in ``held``, and, when the
+    geometry holds monopole sectors, the real part of its link block changes
+    no held modulus: it lies in the kernel of the held faces' coboundary on
+    the free link coordinates. Such steps are parametrized by real unknowns
+    (the real and imaginary parts of every free length and of every
+    multiplier, the imaginary part of every free link, and the coefficients
+    of the link block's real part on an orthonormal basis of that kernel),
+    which is the parametrization the library uses for held sectors, with the
+    held coordinates left out.
+
+    `solve(rhs)` is the minimum-norm solution, over those steps, of the
+    least-squares problem J d = rhs: with D the scales of the variables
+    (`HolomorphicRelaxation.variable_scales`, the modulus of a coordinate's
+    squared length for a length and one otherwise; all one where the library
+    has no such method), it solves (D J D) y = D rhs with d = D y, the
+    singular values at or below the declared rank tolerance times the
+    largest counted as zero, as the library's own linearization does.
+    ``added_residual`` and ``added_jacobian`` are terms added to the system's
+    residual and Jacobian (flat, the Jacobian row-major), or empty."""
+
+    def __init__(self, point, held, added_residual=(), added_jacobian=()):
+        relaxation = point.relaxation
+        size = int(relaxation.variable_count())
+        residual = np.asarray(relaxation.residual(), dtype=complex)
+        jacobian = np.asarray(relaxation.jacobian(),
+                              dtype=complex).reshape(size, size)
+        if len(added_residual):
+            residual = residual + np.asarray(added_residual, dtype=complex)
+        if len(added_jacobian):
+            jacobian = jacobian + np.asarray(
+                added_jacobian, dtype=complex).reshape(size, size)
+        scales = getattr(relaxation, "variable_scales", None)
+        scale = (np.asarray(scales(), dtype=float) if scales is not None
+                 else np.ones(size))
+        tolerance = float(point.geometry.rank_tolerance)
+        count = point.count
+        held = sorted(int(c) for c in held)
+        free = [c for c in range(count) if c not in set(held)]
+        length_offset = 0
+        link_offset = count if point.lengths else 0
+        multiplier_offset = link_offset + (count if point.links else 0)
+        self.held_variables = (
+            ([length_offset + c for c in held] if point.lengths else [])
+            + ([link_offset + c for c in held] if point.links else []))
+
+        def unit(index, value):
+            column = np.zeros(size, dtype=complex)
+            column[index] = value
+            return column
+
+        basis = []
+        if point.lengths:
+            for c in free:
+                basis.append(unit(length_offset + c, 1.0))
+                basis.append(unit(length_offset + c, 1j))
+        sectors = list(point.geometry.held_sectors)
+        self.constrained = bool(point.links and sectors)
+        if point.links:
+            for c in free:
+                basis.append(unit(link_offset + c, 1j))
+            moduli = np.eye(len(free))
+            if self.constrained:
+                coboundary = self._coboundary(point, sectors)[:, free]
+                _, singular, right = np.linalg.svd(coboundary)
+                rank = (int(np.sum(singular > tolerance * singular[0]))
+                        if len(singular) and singular[0] > 0.0 else 0)
+                moduli = right[rank:].T
+            for k in range(moduli.shape[1]):
+                column = np.zeros(size, dtype=complex)
+                column[[link_offset + c for c in free]] = moduli[:, k]
+                basis.append(column)
+        for index in range(multiplier_offset, size):
+            basis.append(unit(index, 1.0))
+            basis.append(unit(index, 1j))
+        self._parametrization = (np.stack(basis, axis=1) if basis
+                                 else np.zeros((size, 0), dtype=complex))
+        self._scale = scale
+        self._jacobian = jacobian
+        self.residual = residual
+        scaled = (scale[:, None] * jacobian * scale[None, :])
+        image = scaled @ self._parametrization
+        system = np.concatenate([image.real, image.imag], axis=0)
+        self._left, self._singular, self._right = np.linalg.svd(
+            system, full_matrices=False)
+        singular = self._singular
+        self._rank = (int(np.sum(singular > tolerance * singular[0]))
+                      if len(singular) and singular[0] > 0.0 else 0)
+        # the measurements of the solve: the complex system over the free
+        # variables, as the library reports its own
+        kept = [index for index in range(size)
+                if index not in set(self.held_variables)]
+        values = (np.linalg.svd(scaled[:, kept], compute_uv=False)
+                  if kept else np.zeros(0))
+        rank = (int(np.sum(values > tolerance * values[0]))
+                if len(values) and values[0] > 0.0 else 0)
+        step = self.solve(-residual)
+        norm = float(np.linalg.norm(residual))
+        gap = lambda v, r: (float("nan") if r == 0 else  # noqa: E731
+                            float(v[r - 1] / v[r]) if r < len(v)
+                            else float("inf"))
+        self.newton_step = HeldStep(
+            step=[complex(x) for x in step],
+            residual_norm=norm,
+            jacobian_rank=rank,
+            rank_tolerance=tolerance,
+            largest_singular_value=float(values[0]) if len(values) else 0.0,
+            smallest_retained_singular_value=(
+                float(values[rank - 1]) if rank else float("nan")),
+            largest_discarded_singular_value=(
+                float(values[rank]) if rank < len(values) else 0.0),
+            rank_gap=gap(values, rank),
+            constrained=self.constrained,
+            constrained_rank=self._rank if self.constrained else 0,
+            constrained_rank_gap=(gap(singular, self._rank)
+                                  if self.constrained else float("nan")),
+            linear_residual=(float(np.linalg.norm(jacobian @ step + residual)
+                                   / norm) if norm > 0.0 else 0.0))
+
+    @staticmethod
+    def _coboundary(point, sectors):
+        """The real coboundary of the held faces on the link coordinates:
+        one row per held face, the sum over its three sides of the sign of
+        the side on its stored edge, pulled back through the edge classes
+        (a link coordinate moves every edge that carries it, each on its own
+        orientation). A real link increment in its kernel changes no held
+        modulus."""
+        fields = edge_fields(point.support.spacetime)
+        lookup = {}
+        for index, (a, b, _, _) in enumerate(fields):
+            lookup[(a, b)] = (index, 1.0)
+            lookup[(b, a)] = (index, -1.0)
+        classes = [int(c) for c in point.geometry.edge_classes]
+        signs = [int(s) for s in point.geometry.edge_class_orientations]
+        if not classes:
+            classes = list(range(len(fields)))
+        if not signs:
+            signs = [1] * len(fields)
+        rows = []
+        for sector in sectors:
+            for face in sector.faces:
+                row = np.zeros(point.count)
+                for k in range(3):
+                    index, sign = lookup[(int(face[k]),
+                                          int(face[(k + 1) % 3]))]
+                    row[classes[index]] += sign * signs[index]
+                rows.append(row)
+        return (np.stack(rows) if rows
+                else np.zeros((0, point.count)))
+
+    def solve(self, right_hand_side):
+        """The minimum-norm least-squares step d with J d = rhs over the
+        steps this linearization allows."""
+        target = self._scale * np.asarray(right_hand_side, dtype=complex)
+        stacked = np.concatenate([target.real, target.imag])
+        rank = self._rank
+        unknown = self._right[:rank].T @ (
+            (self._left[:, :rank].T @ stacked) / self._singular[:rank])
+        step = self._scale * (self._parametrization @ unknown)
+        step[self.held_variables] = 0.0
+        return step
+
+
 def least_squares_multipliers(action, geometry):
     """The multipliers of the constraints an action declares that leave the
     least of the stationarity equations they enter: those equations are
@@ -477,6 +787,11 @@ class ContentSystem:
             support, action.declaration.carrier_degree)
         self.reference = references_of(start.bands)
         self._covariance = covariance_of(start.bands)
+        # the places each band is declared at, per complex (named by its
+        # carrier cells): on the host, where the bands are chosen; on any
+        # other complex, where the first measurement there finds them
+        self._places = {tuple(self.reference_cells): [
+            list(band.declared_positions) for band in start.bands]}
 
     def _declaration(self, support):
         """The mean-field declaration of a support, the fiber pinned at the
@@ -501,6 +816,25 @@ class ContentSystem:
         return (reference_on(cells, self.reference_cells, self.reference),
                 cells)
 
+    def _measured_reference(self, field, support, action):
+        """`_reference` for a measurement. A band's declared places are
+        places in the spectrum of one complex, so a reference read on a
+        complex with other cells declares the places its bands hold at the
+        first measurement on that complex; whether a band has left its
+        places (`OccupiedBand.crossed`) is then said of the complex the band
+        is read on. Which modes a band takes is decided by the reference's
+        projectors alone and is the same either way."""
+        reference, cells = self._reference(support, action)
+        if cells != self.reference_cells:
+            key = tuple(cells)
+            if key not in self._places:
+                first = field.iterate(reference, [])
+                self._places[key] = [list(band.positions)
+                                     for band in first.bands]
+            for entry, places in zip(reference, self._places[key]):
+                entry.declared_positions = list(places)
+        return reference, cells
+
     def point(self, base):
         support = sheeted_support(base, self.sheets)
         declaration = self._declaration(support)
@@ -516,7 +850,7 @@ class ContentSystem:
         its bands followed from the reference and its covariance change taken
         from the last accepted point's, with the point's carrier cells."""
         field, action, support = self._field(base)
-        reference, cells = self._reference(support, action)
+        reference, cells = self._measured_reference(field, support, action)
         previous = (self._covariance
                     if len(self._covariance) == len(cells) ** 2 else [])
         return field.iterate(reference, previous), cells
@@ -529,6 +863,8 @@ class ContentSystem:
         if self.band_reference == "previous":
             self.reference_cells = cells
             self.reference = references_of(step.bands)
+            self._places.setdefault(tuple(cells), [
+                list(band.declared_positions) for band in step.bands])
         return step
 
     def read(self, base, start_scale=0.0):
@@ -537,7 +873,7 @@ class ContentSystem:
         multipliers, and the report (`SelfConsistentMeanField.read`), the
         bands followed from the reference."""
         field, action, support = self._field(base)
-        reference, _ = self._reference(support, action)
+        reference, _ = self._measured_reference(field, support, action)
         return (support, field.joint_system(reference).action,
                 field.read(reference, start_scale))
 
@@ -576,6 +912,13 @@ class StationarityObjective(cob.CobordismObjective):
         self._lock = threading.Lock()
         #: One record per stage-2 update, taken where its step was formed.
         self.updates = []
+        #: The vertex sets of the pinned regions of the node the objective
+        #: is injected in (`hold`); none unless the node declares one.
+        self.pinned_regions = []
+        # the cells and the fields of the complex at every step proposal,
+        # and of the last complex scored with its score
+        self._proposed = []
+        self._last_scored = None
         # the declared time of the drive in progress, read on the thread
         # that runs it (`begin`)
         self._deadline = None
@@ -593,6 +936,51 @@ class StationarityObjective(cob.CobordismObjective):
         self._seconds = time_limit_seconds
         self._deadline = (None if time_limit_seconds is None
                           else time.monotonic() + float(time_limit_seconds))
+
+    def hold(self, regions):
+        """Tell the objective the pinned regions of its node, as vertex
+        sets: the edges the engine holds, on whose coordinates the step has
+        no component (`held_coordinates`)."""
+        self.pinned_regions = [set(int(v) for v in region)
+                               for region in regions]
+
+    @staticmethod
+    def _fingerprint(spacetime):
+        """The cells and the fields of a complex, to tell one point of a
+        drive from another."""
+        return (tuple(sorted(top_cells(spacetime))),
+                tuple(edge_fields(spacetime)))
+
+    def proposed_points(self, final):
+        """The distinct points of a drive in order, each by its cells and
+        its fields: the points its steps were proposed from, and ``final``,
+        the complex it was left on, when no step was proposed from it."""
+        points = []
+        for point in self._proposed + [self._fingerprint(final)]:
+            if not points or point != points[-1]:
+                points.append(point)
+        return points
+
+    def proposed_trace(self, final=None):
+        """The residual norm at every distinct point a step was proposed
+        from, in order: the first point, then one entry per committed move
+        update and per accepted relaxation update that a later proposal
+        followed. With ``final``, the complex a drive was left on, and when
+        no step was proposed from it, its score closes the trace when it is
+        the last complex scored: an accepted trial is the last one its line
+        search scores. It is the engine's trace of a drive, kept here
+        because the engine returns its own only when the drive returns."""
+        trace = []
+        previous = None
+        for update, point in zip(self.updates, self._proposed):
+            if point != previous:
+                trace.append(float(update["residual_norm"]))
+            previous = point
+        if final is not None and self._last_scored is not None:
+            ended = self._fingerprint(final)
+            if ended != previous and self._last_scored[0] == ended:
+                trace.append(float(self._last_scored[1]))
+        return trace
 
     def _check_time(self):
         if (self._deadline is not None
@@ -624,17 +1012,28 @@ class StationarityObjective(cob.CobordismObjective):
             if len(added):
                 residual = residual + np.asarray(added)
             value = float(np.linalg.norm(residual))
-        except (ValueError, ArithmeticError, RuntimeError) as error:
+        except DeclaredLimitReached:
+            raise
+        except Exception as error:  # noqa: BLE001
             # the declared system is not posed on this complex: it has no
             # residual, the objective is infinite, a step that lands there is
             # shortened and a move that leads there is not committed; the
-            # reason is kept for the report
-            self.undefined.append(str(error))
+            # reason is kept for the report. An error of any kind is a
+            # reason, so that the scoring of one complex does not end the
+            # drive of another; one the library and the systems do not
+            # raise by design carries its type's name.
+            reason = str(error)
+            if not isinstance(error, (ValueError, ArithmeticError,
+                                      RuntimeError)):
+                reason = "%s: %s" % (type(error).__name__, reason)
+            self.undefined.append(reason)
             terms.joint_action_stationarity = float("inf")
             return terms
         if not math.isfinite(value):
             self.undefined.append("the residual norm is not finite")
             value = float("inf")
+        with self._lock:
+            self._last_scored = (self._fingerprint(context.spacetime), value)
         terms.joint_action_stationarity = value
         return terms
 
@@ -645,8 +1044,14 @@ class StationarityObjective(cob.CobordismObjective):
         point = self._system.point(spacetime)
         added_residual, added_jacobian = self._stiffness(
             point, context.scalar, True)
-        linearization = point.relaxation.linearization(added_residual,
-                                                       added_jacobian)
+        held = held_coordinates(spacetime, self.pinned_regions,
+                                point.classes)
+        if held:
+            linearization = HeldLinearization(point, held, added_residual,
+                                              added_jacobian)
+        else:
+            linearization = point.relaxation.linearization(added_residual,
+                                                           added_jacobian)
         newton = linearization.newton_step
         if self.direction_order == 1:
             step = np.asarray(newton.step, dtype=complex)
@@ -678,6 +1083,7 @@ class StationarityObjective(cob.CobordismObjective):
                                                  + point.count][classes]
         out.baseline = float(newton.residual_norm)
         out.baseline_computed = True
+        self._proposed.append(self._fingerprint(spacetime))
         self.updates.append({
             "residual_norm": float(newton.residual_norm),
             "step_norm": float(np.linalg.norm(step)),
@@ -692,6 +1098,7 @@ class StationarityObjective(cob.CobordismObjective):
             "constrained_rank": int(newton.constrained_rank),
             "constrained_rank_gap": float(newton.constrained_rank_gap),
             "linear_residual": float(newton.linear_residual),
+            "held_coordinates": list(held),
             "complex": complex_counts(spacetime),
             "cells": sorted(top_cells(spacetime)),
             "scored_before": self.scored,
@@ -706,46 +1113,66 @@ class StationarityObjective(cob.CobordismObjective):
         """The gradient and, with ``jacobian``, the Hessian of the node's
         spectral-moment stiffness on the system's variables (flat, the
         Hessian row-major): the stiffness of the base complex, declared on
-        the node, once per sheet. Empty when no stiffness is declared or the
-        squared lengths are not relaxed."""
+        the node, once per sheet, in the squared lengths and the links that
+        the system relaxes (`moment_stiffness_derivatives`). Empty when no
+        stiffness is declared or neither field is relaxed."""
         weight = (float(context.moment_stiffness_weight)
                   * point.support.sheets)
-        if weight == 0.0 or not point.lengths:
+        if weight == 0.0 or not (point.lengths or point.links):
             return [], []
         spacetime = context.spacetime
         edges = len(point.classes)
-        hodge = cob.HodgeLaplacian(spacetime)
         coefficients = list(context.moment_stiffness_coefficients)
-        gradient = np.zeros(edges, dtype=complex)
-        hessian = np.zeros((edges, edges), dtype=complex)
+        gradient = np.zeros(2 * edges, dtype=complex)
+        hessian = np.zeros((2 * edges, 2 * edges), dtype=complex)
         for degree, reference in zip(context.moment_stiffness_degrees,
                                      context.moment_stiffness_reference):
-            gradient += weight * np.asarray(
-                hodge.spectralMomentStiffnessGradient(degree, reference,
-                                                      coefficients))
-            if not jacobian:
-                continue
-            for column in range(edges):
-                unit = [0j] * edges
-                unit[column] = 1.0 + 0j
-                hessian[:, column] += weight * np.asarray(
-                    hodge.spectralMomentStiffnessHessianProduct(
-                        degree, reference, coefficients, unit))
+            part, second = moment_stiffness_derivatives(
+                spacetime, degree, list(reference), coefficients, jacobian)
+            gradient += weight * part
+            if jacobian:
+                hessian += weight * second
         # the equation of a coordinate is the sum of its edges' equations,
-        # and the coordinate moves every edge that carries it
-        expansion = np.zeros((edges, point.count))
-        expansion[np.arange(edges), np.asarray(point.classes, dtype=int)] = 1.0
+        # and the coordinate moves every edge that carries it: its squared
+        # length by the coordinate's step, its link by the step on the
+        # coordinate's orientation
+        classes = np.asarray(point.classes, dtype=int)
+        carried = np.zeros((edges, point.count))
+        carried[np.arange(edges), classes] = 1.0
+        oriented = np.zeros((edges, point.count))
+        oriented[np.arange(edges), classes] = np.asarray(point.orientations,
+                                                         dtype=float)
+        blocks = []
+        if point.lengths:
+            blocks.append((carried, slice(0, edges)))
+        if point.links:
+            blocks.append((oriented, slice(edges, 2 * edges)))
         size = point.relaxation.variable_count()
         residual = np.zeros(size, dtype=complex)
-        residual[:point.count] = expansion.T @ gradient
+        for index, (expansion, rows) in enumerate(blocks):
+            at = slice(index * point.count, (index + 1) * point.count)
+            residual[at] = expansion.T @ gradient[rows]
         if not jacobian:
             return list(residual), []
         matrix = np.zeros((size, size), dtype=complex)
-        matrix[:point.count, :point.count] = expansion.T @ hessian @ expansion
+        for i, (left, rows) in enumerate(blocks):
+            for j, (right, columns) in enumerate(blocks):
+                matrix[i * point.count:(i + 1) * point.count,
+                       j * point.count:(j + 1) * point.count] = \
+                    left.T @ hessian[rows, columns] @ right
         return list(residual), list(matrix.reshape(-1))
 
 
 # ----------------------------------------------------------------- the drive
+
+
+def undefined_reasons(reasons):
+    """How many scored complexes had no residual for each reason, in the
+    order the reasons were first met."""
+    counts = {}
+    for reason in reasons:
+        counts[reason] = counts.get(reason, 0) + 1
+    return counts
 
 
 def cell_node(spacetime, objective, register_degrees=(1,)):
@@ -796,9 +1223,14 @@ def solve(spacetime, system, tolerance=1e-15, move_tolerance=1e-15,
 
     Returns the drive's record: the base complex it ended on (``spacetime``;
     a committed move replaces the object), the node and the objective, the
-    trace of the residual norm, the stop by name with its detail, the number
-    of committed move updates and of accepted relaxation updates, the counts
-    of the base complex before and after, and the seconds it took."""
+    trace of the residual norm (the engine's; for a drive an error or a
+    declared time ended, the residual norm at every point a step was
+    proposed from and at the last accepted point,
+    `StationarityObjective.proposed_trace`), the stop by name
+    with its detail, the number of committed move updates and of accepted
+    relaxation updates, how many scored complexes had no residual for each
+    reason (``undefined_reasons``), the counts of the base complex before
+    and after, and the seconds it took."""
     depth, length = checked_schedule(combinatorial_depth,
                                      combinatorial_length)
     objective = StationarityObjective(system, direction_order, series)
@@ -806,6 +1238,7 @@ def solve(spacetime, system, tolerance=1e-15, move_tolerance=1e-15,
     node.move_tolerance = move_tolerance
     if configure is not None:
         configure(node)
+    objective.hold([vertices for _, vertices in node.pinned_regions()])
     before = complex_counts(spacetime)
     cells_before = sorted(top_cells(spacetime))
     started = time.time()
@@ -833,6 +1266,13 @@ def solve(spacetime, system, tolerance=1e-15, move_tolerance=1e-15,
     final = node.spacetime()
     updates = objective.updates
     last = updates[-1] if updates else None
+    if limit is not None or refusal is not None:
+        # the engine returns its trace when the drive returns; a drive an
+        # error ended keeps the residual norms of the points its steps were
+        # proposed from and of the last accepted point, where the base is
+        # left
+        trace = objective.proposed_trace(final)
+        points = objective.proposed_points(final)
     # a committed move changes the cells of the complex a step is proposed
     # on; every other entry of the engine's trace after the first is an
     # accepted relaxation update
@@ -841,6 +1281,11 @@ def solve(spacetime, system, tolerance=1e-15, move_tolerance=1e-15,
     committed = sum(1 for first, second in zip(seen, seen[1:])
                     if first != second)
     accepted = max(len(trace) - 1 - committed, 0)
+    if limit is not None or refusal is not None:
+        # between two points of one complex lies an accepted relaxation
+        # update
+        accepted = sum(1 for first, second in zip(points, points[1:])
+                       if first[0] == second[0])
     for update in updates:
         del update["cells"]
     norm = (trace[-1] if len(trace)
@@ -890,6 +1335,7 @@ def solve(spacetime, system, tolerance=1e-15, move_tolerance=1e-15,
         "refusal": refusal,
         "moves_committed": committed,
         "accepted_updates": accepted,
+        "undefined_reasons": undefined_reasons(objective.undefined),
         "moves": bool(moves),
         "combinatorial_depth": depth,
         "combinatorial_length": length,

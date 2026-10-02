@@ -628,6 +628,27 @@ def declared_solve_options(options=None):
         raise ValueError("the band reference is one of %s; got %r"
                          % (", ".join(cell_solve.BAND_REFERENCES),
                             out["band_reference"]))
+    # what the engine requires of a stiffness and of a pinned region when
+    # the node of a solve is configured, required here, where the options
+    # are declared
+    weight = float(out["moment_stiffness_weight"])
+    coefficients = [float(c) for c in out["moment_stiffness_coefficients"]]
+    if not math.isfinite(weight) or weight < 0.0:
+        raise ValueError("the weight of the moment stiffness is finite and "
+                         "not negative; got %r"
+                         % (out["moment_stiffness_weight"],))
+    if any(not math.isfinite(c) or c < 0.0 for c in coefficients):
+        raise ValueError("the coefficients of the moment stiffness are "
+                         "finite and not negative; got %r" % (coefficients,))
+    if weight != 0.0 and not coefficients:
+        raise ValueError("a moment stiffness of weight %g needs the "
+                         "coefficient of at least one moment "
+                         "(moment_stiffness_coefficients)" % weight)
+    if any(isinstance(v, bool) or int(v) != v or int(v) < 0
+           for v in out["pinned_vertices"]):
+        raise ValueError("the pinned vertices are vertex ids, integers that "
+                         "are not negative; got %r"
+                         % (out["pinned_vertices"],))
     return out
 
 
@@ -887,7 +908,7 @@ def node_configuration(config):
                               or []])
         pinned = [int(v) for v in config.get("pinned_vertices") or []]
         if pinned:
-            node.declare_pinned_region("pinned", pinned)
+            node.declare_pinned_region("pinned", set(pinned))
     return configure
 
 
