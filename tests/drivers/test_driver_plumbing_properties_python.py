@@ -390,16 +390,16 @@ def stub_reads(monkeypatch):
     return calls
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "the growth step's schedule (--pachner-depth, --pachner-length) is "
-    "checked by `pachner_stage`, which a tick calls after its relaxation, "
-    "its box and every cell read: --pachner-depth 0 passes the parser and "
-    "`default_config`, the whole tick is computed, and the ValueError is "
-    "raised at its end, before the tick is appended to the points file "
-    "(https://github.com/akellehe/tessera/issues/1372)"))
 @pytest.mark.parametrize("argv", [
     ["--pachner-depth", "0"],
-    ["--pachner-depth", "2", "--pachner-length", "2"]])
+    ["--pachner-depth", "2", "--pachner-length", "2"],
+    ["--pachner-updates", "-1"],
+    ["--ticks", "-1"],
+    ["--kappa", "0"],
+    ["--kappa", "nan"],
+    ["--band-rank", "0"],
+    ["--resolutions", "1.0", "-2.0"],
+    ["--persistence-required", "-1"]])
 def test_an_invalid_growth_schedule_is_refused_before_the_first_tick(
         argv, stub_reads, tmp_path):
     """A schedule of the growth step that has no meaning is refused before
@@ -409,6 +409,18 @@ def test_an_invalid_growth_schedule_is_refused_before_the_first_tick(
                 "--no-pachner-moves", "--quiet", "--json",
                 str(tmp_path / "run.json")] + argv)
     assert stub_reads == []
+    assert not (tmp_path / "run.points.jsonl").exists()
+
+
+def test_the_hinges_of_the_regge_sum_are_an_option_of_the_recursion():
+    """``--regge-hinges`` reaches the run's config, and from it every
+    level's and every cell's action; the default is the interior hinges."""
+    assert R.default_config()["regge_hinges"] == "interior"
+    args = R.build_parser().parse_args(["run", "--regge-hinges", "all"])
+    assert R.default_config(regge_hinges=args.regge_hinges)[
+        "regge_hinges"] == "all"
+    with pytest.raises(SystemExit):
+        R.build_parser().parse_args(["run", "--regge-hinges", "some"])
 
 
 def _options_without_help(driver):
@@ -419,13 +431,8 @@ def _options_without_help(driver):
             if action.option_strings and not action.help]
 
 
-@pytest.mark.parametrize("driver", [
-    bp,
-    pytest.param(R, marks=pytest.mark.xfail(strict=True, reason=(
-        "--eliminate of the recursion driver has no help string; the same "
-        "option of baryon_poles has one "
-        "(https://github.com/akellehe/tessera/issues/1372)")))],
-    ids=["baryon_poles", "recursion"])
+@pytest.mark.parametrize("driver", [bp, R],
+                         ids=["baryon_poles", "recursion"])
 def test_every_option_but_quiet_has_a_help_string(driver):
     assert _options_without_help(driver) == ["--quiet"]
 
@@ -440,10 +447,11 @@ def test_the_options_one_driver_offers_and_the_other_does_not():
                        "run"]
         return {action.option_strings[0] for action in run._actions
                 if action.option_strings}
-    assert flags(bp) - flags(R) == {"--isospin-doublet", "--regge-hinges"}
+    assert flags(bp) - flags(R) == {"--isospin-doublet"}
     assert flags(R) - flags(bp) == {
         "--band-rank", "--contents", "--max-cells", "--pachner-depth",
-        "--pachner-length", "--pachner-updates", "--persistence-required",
+        "--pachner-length", "--pachner-objective", "--pachner-updates",
+        "--persistence-required",
         "--resolutions", "--tetrahedra", "--ticks"}
     registry = {"--" + key.replace("_", "-") for key, *_ in
                 bp.TOLERANCES + bp.LIMITS + bp.SOLVE_OPTIONS
@@ -685,7 +693,9 @@ def test_a_tick_that_stops_early_is_written_and_reported(
     of the Section 15 box has no value, is a record like any other: it is
     appended to the points file, it is the run's last tick, the progress
     line, the summary and the drawn frame read it, and it says why it
-    stopped."""
+    stopped. A tick that relaxed makes its cell reads, which need only the
+    level, whatever the box gives; a tick without a relaxed level makes
+    none."""
     stop(monkeypatch)
     config = R.default_config(ticks=3, solve={"pachner_moves": False})
     points = tmp_path / "run.points.jsonl"
@@ -694,7 +704,8 @@ def test_a_tick_that_stops_early_is_written_and_reported(
     assert len(result["ticks"]) == 1 and result["stopped"] is False
     (record,) = result["ticks"]
     assert record["stopped"].startswith(reason)
-    assert record["reads"] == [] and stub_reads == []
+    assert (len(stub_reads) == 1) is relaxed
+    assert (record["reads"] != []) is relaxed
     assert ("failed" in record["relaxation"]) is not relaxed
     lines = points.read_text().splitlines()
     assert len(lines) == 2
@@ -708,7 +719,7 @@ def test_a_tick_that_stops_early_is_written_and_reported(
     data = R.frame_data(result["ticks"], 0)
     assert data["counts"] == [{"tick": 0, "response_vertices": 0,
                                "grown_cells": 0, "row_sum_defects": []}]
-    assert data["marks"] == [] and data["ratios"] == []
+    assert (data["marks"] != []) is relaxed
     R.render(result, str(tmp_path / "run.png"))
     assert (tmp_path / "run.png").read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
 

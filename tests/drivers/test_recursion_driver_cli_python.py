@@ -593,8 +593,8 @@ def test_the_summary_of_a_failed_grown_cell_and_a_stop():
     record = {
         "tick": 3, "relaxation": {"converged": True, "residual": 0.0},
         "level": {"vertices": 4, "edges": 6, "tetrahedra": 1,
-                  "declared_monopole_numbers": [1],
-                  "monopole_numbers": [1]},
+                  "bulk_monopole_numbers_before": [1],
+                  "bulk_monopole_numbers_after": [1]},
         "partition": {"partition": [[0], [1]], "selected_resolution": 1.0,
                       "bands_accepted": [True, True],
                       "isolation_gaps": [1.0, 1.0],
