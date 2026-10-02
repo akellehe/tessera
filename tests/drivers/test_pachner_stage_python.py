@@ -146,20 +146,45 @@ def _objective_before(name, squared, links):
     return record["objective_before"]
 
 
-def test_the_growth_objective_is_declared_and_defaults_to_the_engine_s():
-    """The objective of the growth step is a declared option: the engine's
-    joint stationarity objective by default, the joint action's stationarity
-    by name; another name has no value."""
-    assert R.PACHNER_OBJECTIVES == ("engine", "joint-action")
-    assert R.default_config()["pachner_objective"] == "engine"
+def test_the_growth_objective_is_declared_and_is_the_joint_action_s():
+    """The objective of the growth step is a declared option: the joint
+    action's stationarity, which the level's relaxation descends, unless the
+    engine's joint stationarity objective is named; another name has no
+    value."""
+    assert R.PACHNER_OBJECTIVES == ("joint-action", "engine")
+    assert R.default_config()["pachner_objective"] == "joint-action"
     args = R.build_parser().parse_args(["run"])
-    assert args.pachner_objective == "engine"
-    args = R.build_parser().parse_args(
-        ["run", "--pachner-objective", "joint-action"])
     assert args.pachner_objective == "joint-action"
+    args = R.build_parser().parse_args(
+        ["run", "--pachner-objective", "engine"])
+    assert args.pachner_objective == "engine"
     with pytest.raises(ValueError, match="the growth step's objective is "
-                                         "one of engine, joint-action"):
+                                         "one of joint-action, engine"):
         R.default_config(pachner_objective="regge")
+
+
+def test_the_growth_step_draws_its_candidates_when_a_count_is_declared():
+    """With no count the growth step scores every candidate move of the
+    base; with ``--pachner-candidate-moves`` N it draws N at every update,
+    each a sequence of the search's depth, and says so in its record. A
+    negative count has no meaning."""
+    cells, squared, links = _grown_level()
+    assert R.default_config()["pachner_candidate_moves"] == 0
+    every = R.pachner_stage(cells, squared, links, R.default_config())[3]
+    assert every["candidate_moves"] == 0
+    assert every["candidates"].startswith("every candidate move")
+    args = R.build_parser().parse_args(
+        ["run", "--pachner-candidate-moves", "6", "--pachner-depth", "3"])
+    config = R.default_config(
+        pachner_candidate_moves=args.pachner_candidate_moves,
+        pachner_depth=args.pachner_depth)
+    drawn = R.pachner_stage(cells, squared, links, config)[3]
+    assert (drawn["candidate_moves"], drawn["depth"]) == (6, 3)
+    assert drawn["candidates"].startswith("6 candidates drawn at random")
+    assert drawn["objective_before"] == pytest.approx(
+        every["objective_before"], rel=1e-13)
+    with pytest.raises(ValueError, match="candidates the growth step draws"):
+        R.default_config(pachner_candidate_moves=-1)
 
 
 def test_the_joint_action_objective_is_the_level_s_residual_norm():

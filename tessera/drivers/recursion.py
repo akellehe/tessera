@@ -111,12 +111,13 @@ At level l (a complex K_l of three sheets of a base complex):
    base then takes the combinatorial moves of the growth step
    (`pachner_stage`): a stage-1 search of `MultiCobordism` in unforced
    emergence under the declared objective (``--pachner-objective``,
-   `PACHNER_OBJECTIVES`: the engine's joint stationarity objective, or the
-   stationarity of the joint action over the level's sheets), the four
+   `PACHNER_OBJECTIVES`: the stationarity of the joint action over the
+   level's sheets, or the engine's joint stationarity objective), the four
    Pachner kinds
    alone (no cone-out, cone-in or disposition move), run as the emergence
-   driver runs its stage 1 but over every candidate move of the base
-   rather than a drawn sample (``--pachner-updates``, ``--pachner-depth``,
+   driver runs its stage 1, over every candidate move of the base or over
+   a drawn sample of them (``--pachner-candidate-moves``,
+   ``--pachner-updates``, ``--pachner-depth``,
    ``--pachner-length``; zero updates run none); the next level is built
    from the base that comes
    back;
@@ -224,20 +225,28 @@ DECLARED_PACHNER_UPDATES = 1
 DECLARED_PACHNER_DEPTH = 1
 DECLARED_PACHNER_LENGTH = 0
 #: The objective the growth step's search scores a base with
-#: (``--pachner-objective``). ``engine`` is `JointStationarityObjective`: the
-#: Regge action in its dual form with every dihedral angle on its principal
-#: sheet, and the Hodge spectral entropies. A grown level whose squared
-#: lengths are real to rounding lies on the cuts of that sheet, where the
-#: sign of an imaginary part at rounding selects the value. ``joint-action``
-#: is the stationarity of the joint action the level's relaxation descends
-#: (`cell_solve.StationarityObjective` over the level's sheets), whose Regge
-#: term is read on the continued sheet and has one value there.
-PACHNER_OBJECTIVES = ("engine", "joint-action")
+#: (``--pachner-objective``). ``joint-action``, the declared one, is the
+#: stationarity of the joint action the level's relaxation descends
+#: (`cell_solve.StationarityObjective` over the level's sheets): its Regge
+#: term is read on the sheet continued from the level as grown and has one
+#: value there. ``engine`` is `JointStationarityObjective`: the Regge action
+#: in its dual form with every dihedral angle on its principal sheet, and
+#: the Hodge spectral entropies. A grown level whose squared lengths are
+#: real to rounding lies on the cuts of that sheet, where the sign of an
+#: imaginary part at rounding selects the value, so under ``engine`` the
+#: search's scores depend on that rounding.
+PACHNER_OBJECTIVES = ("joint-action", "engine")
+#: How many candidates each update of the growth step's search draws at
+#: random (``--pachner-candidate-moves``): zero scores every candidate move
+#: of the base, and with a depth or a length above one every composition of
+#: that many moves; a positive number draws that many candidates, each a
+#: sequence of the search's depth or length drawn move by move.
+DECLARED_PACHNER_CANDIDATE_MOVES = 0
 #: The hinges of the primal Regge sum of every level's and every cell's
 #: action (``--regge-hinges``): the interior hinges, or all of them.
 REGGE_HINGES = ("interior", "all")
 DECLARED_REGGE_HINGES = "interior"
-DECLARED_PACHNER_OBJECTIVE = "engine"
+DECLARED_PACHNER_OBJECTIVE = "joint-action"
 #: The degrees the joint stationarity objective is declared over on the base:
 #: the register degree and the Hodge degrees, the emergence driver's
 #: (`emergence.DECLARED_REGISTER_DEGREES`, `DECLARED_HODGE_DEGREES`).
@@ -1369,9 +1378,15 @@ def pachner_stage(cells, z, links, config):
         config.get("pachner_length", DECLARED_PACHNER_LENGTH))
     name = checked_pachner_objective(
         config.get("pachner_objective", DECLARED_PACHNER_OBJECTIVE))
+    drawn = int(config.get("pachner_candidate_moves",
+                           DECLARED_PACHNER_CANDIDATE_MOVES))
     record = {
         "updates": updates, "depth": depth, "length": length,
-        "candidates": "every candidate move of the base, scored in full",
+        "candidate_moves": drawn,
+        "candidates": ("every candidate move of the base, scored in full"
+                       if drawn <= 0 else
+                       "%d candidates drawn at random at every update, each "
+                       "scored in full" % drawn),
         "moves": ("the four Pachner kinds; no cone-out, cone-in or "
                   "disposition move"),
         "objective_name": name,
@@ -1400,6 +1415,8 @@ def pachner_stage(cells, z, links, config):
         node.should_propose_surgery = False
     else:
         system, _ = level_system(spacetime, config, [], SHEETS)
+        # the Regge sheets of the search start at the level as grown
+        system.begin(spacetime)
         objective = cell_solve.StationarityObjective(system)
         objective.begin()
         node = cell_solve.cell_node(spacetime, objective)
@@ -1408,7 +1425,7 @@ def pachner_stage(cells, z, links, config):
         config, "admissibility_tolerance")
     record["objective_before"] = float(node.objective())
     record["trace"] = [float(value) for value in node.run_stage1(
-        max_steps=updates, n_candidate_moves=0,
+        max_steps=updates, n_candidate_moves=max(drawn, 0),
         grow_boundaries=False, max_lookahead=depth,
         combinatorial_breadth=length)]
     record["objective_after"] = float(node.objective())
@@ -1776,7 +1793,7 @@ def _tick(record, index, cells, z, links, config):
 
 def checked_run(ticks, tetrahedra, kappa, beta, resolutions, band_rank,
                 persistence_required, max_cells, pachner_updates,
-                pachner_depth, pachner_length):
+                pachner_depth, pachner_length, pachner_candidate_moves=0):
     """The declarations of a run that have no meaning, each named: a count
     that is negative, a coupling that is zero or not finite (the action
     carries 1/kappa), an empty window of resolutions or a resolution that is
@@ -1791,6 +1808,8 @@ def checked_run(ticks, tetrahedra, kappa, beta, resolutions, band_rank,
     whole("the number of tetrahedra of the declared host", tetrahedra, 1)
     whole("the band rank", band_rank, 1)
     whole("the number of updates of the growth step", pachner_updates, 0)
+    whole("the number of candidates the growth step draws",
+          pachner_candidate_moves, 0)
     if persistence_required is not None:
         whole("the number of resolutions a component persists across",
               persistence_required, 0)
@@ -1826,7 +1845,9 @@ def default_config(ticks=DECLARED_TICKS, tetrahedra=DECLARED_TETRAHEDRA,
                    pachner_updates=DECLARED_PACHNER_UPDATES,
                    pachner_depth=DECLARED_PACHNER_DEPTH,
                    pachner_length=DECLARED_PACHNER_LENGTH,
-                   pachner_objective=DECLARED_PACHNER_OBJECTIVE, limits=None,
+                   pachner_objective=DECLARED_PACHNER_OBJECTIVE,
+                   pachner_candidate_moves=DECLARED_PACHNER_CANDIDATE_MOVES,
+                   limits=None,
                    villain_order=bp.DECLARED_VILLAIN_ORDER, solve=None,
                    regge_hinges=DECLARED_REGGE_HINGES):
     """The declared configuration, recorded with every run. ``max_cells``
@@ -1850,7 +1871,7 @@ def default_config(ticks=DECLARED_TICKS, tetrahedra=DECLARED_TETRAHEDRA,
     computed (`checked_run`)."""
     checked_run(ticks, tetrahedra, kappa, beta, resolutions, band_rank,
                 persistence_required, max_cells, pachner_updates,
-                pachner_depth, pachner_length)
+                pachner_depth, pachner_length, pachner_candidate_moves)
     config = bp.default_config(kappas=[kappa], betas=[beta],
                                regge_hinges=regge_hinges,
                                edge_squared=edge_squared,
@@ -1895,6 +1916,7 @@ def default_config(ticks=DECLARED_TICKS, tetrahedra=DECLARED_TETRAHEDRA,
         "pachner_depth": int(pachner_depth),
         "pachner_length": int(pachner_length),
         "pachner_objective": checked_pachner_objective(pachner_objective),
+        "pachner_candidate_moves": int(pachner_candidate_moves),
         "pachner_stage": ("stage-1 updates of MultiCobordism on each grown "
                           "level's base (one sheet) under the declared "
                           "pachner_objective, the four Pachner kinds "
@@ -2507,14 +2529,22 @@ def build_parser():
     run.add_argument("--pachner-objective", choices=PACHNER_OBJECTIVES,
                      default=DECLARED_PACHNER_OBJECTIVE,
                      help="what the growth step's search scores a base with: "
-                          "engine, the Regge action on the principal sheet "
-                          "of its dihedral angles with the Hodge spectral "
-                          "entropies, whose value on a level with squared "
-                          "lengths real to rounding depends on the signs of "
-                          "their imaginary parts; joint-action, the "
-                          "stationarity of the joint action the level's "
-                          "relaxation descends, on the continued sheet "
-                          "(default %s)" % DECLARED_PACHNER_OBJECTIVE)
+                          "joint-action, the stationarity of the joint "
+                          "action the level's relaxation descends, its Regge "
+                          "term on the sheet continued from the level as "
+                          "grown; engine, the Regge action on the principal "
+                          "sheet of its dihedral angles with the Hodge "
+                          "spectral entropies, whose value on a level with "
+                          "squared lengths real to rounding depends on the "
+                          "signs of their imaginary parts (default %s)"
+                          % DECLARED_PACHNER_OBJECTIVE)
+    run.add_argument("--pachner-candidate-moves", type=int,
+                     default=DECLARED_PACHNER_CANDIDATE_MOVES,
+                     help="how many candidates each update of the growth "
+                          "step's search draws at random, each a sequence of "
+                          "the search's depth or length; 0 scores every "
+                          "candidate (default %d)"
+                          % DECLARED_PACHNER_CANDIDATE_MOVES)
     run.add_argument("--json", default=None,
                      help="write every record here at the end; each tick is "
                           "also appended, as it completes, to "
@@ -2551,6 +2581,7 @@ def main(argv=None):
         pachner_depth=args.pachner_depth,
         pachner_length=args.pachner_length,
         pachner_objective=args.pachner_objective,
+        pachner_candidate_moves=args.pachner_candidate_moves,
         regge_hinges=args.regge_hinges,
         limits=bp.limits_from(args),
         solve=bp.solve_options_from(args),
