@@ -69,31 +69,24 @@ def test_no_isospin_doublet_on_the_monopole_host(host_read, operator):
 def test_the_averaged_host_bands_are_colour_times_spin_doublets(host_read):
     """The T-averaged operator's bands on the host are the three doublets
     times the three sheets (WP v17 §8 and line 506): rank 6 each, colour
-    acting, not flavour candidates. At the declared tolerances (1e-15) the
-    two lower bands are read as spin doublets times the sheets; the isotypic
-    read of the highest splits its one isotype in two, so it is read as
-    "1 x 3 sheets x 1 + 0 x 3 sheets x 1" and not as a spin doublet."""
+    acting, a spin doublet times the sheets and not a flavour candidate, at
+    the declared tolerances (1e-15)."""
     bands = host_read["t_averaged"]["frames"][0]["bands"]
     assert [b["rank"] for b in bands] == [6, 6, 6]
     for band in bands:
         assert band["colour_acts"]
         assert not band["doublet_candidate"]
-    assert [b["spin_doublet"] for b in bands] == [True, True, False]
-    assert [b["content"] for b in bands] == [
-        "2 x 3 sheets x 1", "2 x 3 sheets x 1",
-        "1 x 3 sheets x 1 + 0 x 3 sheets x 1"]
+    assert [b["spin_doublet"] for b in bands] == [True, True, True]
+    assert [b["content"] for b in bands] == ["2 x 3 sheets x 1"] * 3
 
 
 def test_a_constructed_flavour_doubling_at_the_averaged_values():
     """h-bar (x) I_2 (x) I_3, with h-bar the T-averaged edge Laplacian of the
     unit monopole, carries a genuine two-dimensional flavour space on each of
     its three twelve-fold eigenvalues 4 - 2/sqrt 3, 4 and 4 + 2/sqrt 3 (WP
-    v17 line 506). At the declared tolerances (1e-15) the detector reads the
-    band at 4 as a candidate of rank 12. The band at 4 - 2/sqrt 3 is
-    isolated with rank 12, and its isotypic read splits the one isotype in
-    two, so it is not a candidate. The twelve copies of 4 + 2/sqrt 3 are
-    computed up to 7e-15 apart and are read as three groups of ranks 0, 12
-    and 0, none isolated."""
+    v17 line 506). At the declared tolerances (1e-15) the detector reads each
+    as an isolated band of rank 12 and a candidate, two copies of a spin
+    doublet times the sheets."""
     support = obs.MonopoleSupport.tetrahedron(1)
     group = obs.MonopoleSupport.tetrahedralRotations()
     base = np.asarray(support.rotationAveragedEdgeOperator(
@@ -106,16 +99,12 @@ def test_a_constructed_flavour_doubling_at_the_averaged_values():
         op, sheet_of_cell=[i % 3 for i in range(n)],
         base_cell_of_cell=[i // 3 for i in range(n)], symmetry=actions,
         spinorial=True)
-    assert [b.rank for b in frame.bands] == [12, 12, 0, 12, 0]
-    assert [b.doublet_candidate for b in frame.bands] == [
-        False, True, False, False, False]
-    assert [b.isolated for b in frame.bands] == [
-        True, True, False, False, False]
-    assert frame.bands[0].content == "0 x 3 sheets x 1 + 1 x 3 sheets x 2"
-    assert frame.bands[1].content == "2 x 3 sheets x 2"
+    assert [b.rank for b in frame.bands] == [12, 12, 12]
+    assert all(b.doublet_candidate and b.isolated for b in frame.bands)
+    assert [b.content for b in frame.bands] == ["2 x 3 sheets x 2"] * 3
     np.testing.assert_allclose(
         [b.center.real for b in frame.bands],
-        [4 - 2 / SQRT3, 4.0] + [4 + 2 / SQRT3] * 3, atol=1e-12)
+        [4 - 2 / SQRT3, 4.0, 4 + 2 / SQRT3], atol=1e-14)
 
 
 # ------------------------------------------------------ complex transport

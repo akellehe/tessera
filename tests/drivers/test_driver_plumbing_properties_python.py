@@ -457,7 +457,7 @@ def test_the_registry_reaches_every_tolerance_of_the_isospin_detector():
     fields = {name: getattr(detector, name) for name in dir(detector)
               if not name.startswith("_")
               and isinstance(getattr(detector, name), float)}
-    assert len(fields) == 15
+    assert len(fields) == 14
     assert {name: value for name, value in fields.items()
             if value != 0.125} == {"track_overlap_threshold": 0.5}
     assert (detector.condition_number_cap, detector.decomposed_rank_limit,
@@ -468,7 +468,7 @@ def test_the_isospin_detector_takes_its_tolerances_from_the_registry():
     config = {key: 0.125 for key, _ in bp.TOLERANCES}
     detector = bp.isospin_doublet_config(config)
     assert [getattr(detector, field) for _, field in bp.ISOSPIN_TOLERANCES] \
-        == [0.125] * 14
+        == [0.125] * 13
     assert {key for key, _ in bp.ISOSPIN_TOLERANCES} <= \
         {key for key, _ in bp.TOLERANCES}
     declared = obs.IsospinDoubletConfig()

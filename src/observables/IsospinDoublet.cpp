@@ -252,10 +252,11 @@ struct Content {
   bool decomposed = false;
 };
 
-/// The isotypic decomposition of a band under the acting algebra, from the
-/// commutant basis: the centre fixes the isotypes, and f^2 is the dimension of
-/// each isotypic block of the commutant. A commutant above the declared
-/// `commutantLimit` is returned with its dimension and not decomposed.
+/// The isotypic decomposition of a band under the acting algebra, from an
+/// orthonormal (Frobenius) basis of its commutant (`commutant`): the centre
+/// fixes the isotypes, and f^2 is the dimension of each isotypic block of the
+/// commutant. A commutant above the declared `commutantLimit` is returned with
+/// its dimension and not decomposed.
 ///
 /// The centre is the null space of the Gram matrix of the maps
 /// c -> sum_a c_a [B_a, B_j]. An eigenvalue of it counts as zero at or below
@@ -264,9 +265,21 @@ struct Content {
 /// the size a squared commutator of two basis elements has in the basis's own
 /// unit (one for the orthonormal basis `commutant` returns), so a commutative
 /// commutant, whose Gram matrix is zero to rounding, is its own centre.
+///
+/// The isotypic components are the images of the minimal idempotents of the
+/// centre, formed in closed form. The centre is a commutative algebra of
+/// dimension k, one dimension per isotype, and a generic central element g
+/// acts on it by multiplication with k eigenvalues mu_1, ..., mu_k, each
+/// simple. The idempotent of isotype i is the Lagrange polynomial of g at
+/// them, e_i = prod_{j != i} (g - mu_j) / (mu_i - mu_j), which is the identity
+/// when the centre is the scalars. The dimension of the component is tr e_i,
+/// and f_i^2 = dim e_i A' is the trace of the idempotent map X -> e_i X on the
+/// commutant A', read in its orthonormal basis. Both are integers read to the
+/// nearest one. The eigenvalues of g on the band, where mu_i is repeated
+/// tr e_i times, are not formed, and no rank is cut. Two of the mu_i that are
+/// equal exactly leave the commutant not decomposed.
 Content decompose(const std::vector<Mat>& basis, Eigen::Index r,
                   std::size_t colourFactor, double tolerance,
-                  double isotypicTolerance,
                   const std::optional<std::size_t>& commutantLimit) {
   Content out;
   out.commutantDimension = basis.size();
@@ -306,39 +319,48 @@ Content decompose(const std::vector<Mat>& basis, Eigen::Index r,
       centre.push_back(std::move(z));
     }
   out.isotypeCount = centre.size();
-  // A generic central element with fixed deterministic coefficients; its
-  // eigenspaces are the isotypic components.
+  // A generic central element with fixed deterministic coefficients.
+  const auto k = static_cast<Eigen::Index>(centre.size());
   Mat generic = Mat::Zero(r, r);
   for (std::size_t c = 0; c < centre.size(); ++c)
     generic += cd(1.0 / (static_cast<double>(c) + std::sqrt(2.0)),
                   1.0 / (static_cast<double>(c) + std::sqrt(3.0))) *
                centre[c];
-  Eigen::ComplexEigenSolver<Mat> ces(generic);
-  std::vector<cd> values(ces.eigenvalues().data(),
-                         ces.eigenvalues().data() + r);
-  double valueScale = 0.0;
-  for (const cd& v : values) valueScale = std::max(valueScale, std::abs(v));
-  const auto groups =
-      clusters(values, isotypicTolerance * std::max(valueScale, 1e-300));
-  const Mat v = ces.eigenvectors();
-  const Mat vinv = v.inverse();
-  for (const auto& g : groups) {
-    Mat e = Mat::Zero(r, r);
-    for (const Eigen::Index i : g) e += v.col(i) * vinv.row(i);
-    // f^2 = dim e A' e.
-    Mat stack(r * r, m);
-    for (Eigen::Index a = 0; a < m; ++a) {
-      const Mat block = e * basis[static_cast<std::size_t>(a)] * e;
-      stack.col(a) = Eigen::Map<const Eigen::VectorXcd>(block.data(), r * r);
+  const Mat identity = Mat::Identity(r, r);
+  std::vector<Mat> idempotents;
+  if (k <= 1) {
+    idempotents.push_back(identity);
+  } else {
+    // g z_j = sum_i action(i, j) z_i on the centre's orthonormal basis.
+    Mat action(k, k);
+    for (Eigen::Index i = 0; i < k; ++i)
+      for (Eigen::Index j = 0; j < k; ++j)
+        action(i, j) = (centre[static_cast<std::size_t>(i)].adjoint() * generic *
+                        centre[static_cast<std::size_t>(j)])
+                           .trace();
+    Eigen::ComplexEigenSolver<Mat> ces(action, false);
+    std::vector<cd> mu(ces.eigenvalues().data(), ces.eigenvalues().data() + k);
+    std::sort(mu.begin(), mu.end(), lessComplex);
+    for (Eigen::Index i = 0; i < k; ++i) {
+      Mat e = identity;
+      for (Eigen::Index j = 0; j < k; ++j) {
+        if (j == i) continue;
+        const cd gap =
+            mu[static_cast<std::size_t>(i)] - mu[static_cast<std::size_t>(j)];
+        if (gap == cd(0.0, 0.0)) return out;
+        e = e * (generic - mu[static_cast<std::size_t>(j)] * identity) / gap;
+      }
+      idempotents.push_back(std::move(e));
     }
-    Eigen::JacobiSVD<Mat> svd(stack);
-    const Eigen::VectorXd& s = svd.singularValues();
-    std::size_t rank = 0;
-    for (Eigen::Index i = 0; i < s.size(); ++i)
-      if (s(i) > isotypicTolerance * std::max(s(0), 1e-300)) ++rank;
+  }
+  for (const Mat& e : idempotents) {
+    cd blockTrace(0.0, 0.0);
+    for (const Mat& element : basis)
+      blockTrace += (element.adjoint() * e * element).trace();
     const auto f = static_cast<std::size_t>(
-        std::llround(std::sqrt(static_cast<double>(rank))));
-    const std::size_t n = g.size();
+        std::llround(std::sqrt(std::max(blockTrace.real(), 0.0))));
+    const auto n =
+        static_cast<std::size_t>(std::max<long long>(std::llround(e.trace().real()), 0));
     out.multiplicities.push_back(f);
     out.irreducibleDimensions.push_back(
         f == 0 ? 0 : n / (f * std::max<std::size_t>(colourFactor, 1)));
@@ -687,7 +709,6 @@ IsospinFrameRead IsospinDoublet::bands(
     } else {
       const std::vector<Mat> basis = commutant(generators, r, cfg.commutantTolerance);
       const Content c = decompose(basis, r, colourFactor, cfg.commutantTolerance,
-                                  cfg.isotypicTolerance,
                                   cfg.decomposedCommutantLimit);
       band.commutantDimension = c.commutantDimension;
       band.isotypeCount = c.isotypeCount;

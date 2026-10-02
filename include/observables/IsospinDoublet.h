@@ -146,11 +146,6 @@ struct IsospinDoubletConfig {
   /// Relative eigenvalue cut deciding the null space of the commutator map
   /// and the centre of the commutant.
   double commutantTolerance = 1e-15;
-  /// Relative width within which eigenvalues of the generic central element
-  /// of the commutant belong to one isotypic component (relative to the
-  /// largest eigenvalue modulus), and the relative singular-value cut of the
-  /// rank of each isotypic block of the commutant.
-  double isotypicTolerance = 1e-15;
   /// The departure of the operator from its adjoint relative to its own
   /// size, ||h - h^dagger||_F / ||h||_F, at or below which the frame is read
   /// in the Hermitian regime (the zero operator is Hermitian).

@@ -50,7 +50,6 @@ TOLERANCES = {
     "isospin_projector_tolerance": 1e-9,
     "isospin_invariance_tolerance": 1e-8,
     "isospin_commutant_tolerance": 1e-9,
-    "isospin_isotypic_tolerance": 1e-6,
     "isospin_hermiticity_tolerance": 1e-12,
     "isospin_transport_leakage_tolerance": 1e-1,
     "isospin_intertwining_tolerance": 1e-6,
