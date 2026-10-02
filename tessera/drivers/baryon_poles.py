@@ -2400,7 +2400,7 @@ def eliminate_fluctuations(spacetime, action, carrier, kappa, beta, config):
 
 
 def many_body_operators(carrier, couplings, stiffness, frame, dual,
-                        tolerance=DECLARED_TOLERANCE):
+                        tolerance=DECLARED_TOLERANCE, one_body_only=False):
     """The two operators the poles are read on, on the three-particle space
     of a fiber's frame (the occupation basis, `occupation_basis`):
     dGamma(Phi~^T h Phi) of the carrier h, and the same with the quartic of
@@ -2416,8 +2416,27 @@ def many_body_operators(carrier, couplings, stiffness, frame, dual,
     is zero by structure, `drazin_elimination`), the quartic is the zero
     operator and the eliminated operator is the one-body operator itself,
     formed here as dGamma of the carrier in the frame (`second_quantized`);
-    there is no stiffness, so its asymmetry and conditioning are None."""
+    there is no stiffness, so its asymmetry and conditioning are None.
+
+    With ``one_body_only`` the one-body operator alone is formed, by the
+    library as in the full read, and the second return is None: the quartic,
+    a product of operators of the three-particle space for every eliminated
+    fluctuation, is not formed for a caller that reads the one-body operator
+    alone."""
     stiffness = np.asarray(stiffness, dtype=complex)
+    if one_body_only and len(couplings):
+        declaration = cob.DressedFluctuationDeclaration()
+        declaration.carrier_dimension = carrier.shape[0]
+        declaration.carrier = list(np.asarray(carrier,
+                                              dtype=complex).reshape(-1))
+        declaration.couplings = []
+        declaration.bare_stiffness = []
+        declaration.occupied_modes = 3
+        declaration.tolerance = tolerance
+        read = cob.DressedFluctuation(declaration).effective_action(
+            list(frame.reshape(-1)), list(dual.reshape(-1)), 3)
+        dimension = int(read.dimension)
+        return np.asarray(read.one_body).reshape(dimension, dimension), None
     if len(couplings) == 0 and stiffness.size == 0:
         in_frame = dual @ carrier @ frame
         one_body = second_quantized(in_frame)
@@ -3200,14 +3219,22 @@ def _ratio(numerator, pairing):
     return complex(numerator) / pairing
 
 
-def _worst_relative(images, states):
+def _worst_relative(images, states, triangular=None):
     """sup over the span of the columns of ``states`` of ||A psi|| / ||psi||,
     for ``images`` the columns' images under A: the largest singular value
     of the images in an orthonormal basis of the span. It does not depend on
-    the basis the span is given in."""
-    orthonormal, triangular = np.linalg.qr(states)
+    the basis the span is given in. ``triangular`` is the triangular factor
+    of ``states`` (`_triangular`) when the caller has formed it."""
+    if triangular is None:
+        triangular = _triangular(states)
     in_basis = np.linalg.solve(triangular.T, images.T).T
     return float(np.linalg.norm(in_basis, 2))
+
+
+def _triangular(states):
+    """R of the QR factorization of ``states``, whose columns span the
+    space `_worst_relative` takes its supremum over."""
+    return np.linalg.qr(states, mode="r")
 
 
 def pole_certificates(projector, multiplicity, j2, sector, dual, images,
@@ -3252,8 +3279,11 @@ def pole_certificates(projector, multiplicity, j2, sector, dual, images,
     left = right_h[:count, :].T
     states = images["right"] @ right
     partners = images["left"] @ left
+    # the right states' factor serves the spin and the colour reads
+    states_triangular = _triangular(states)
     right_residual = _worst_relative(
-        images["right_spin"] @ right - j2 * states, states)
+        images["right_spin"] @ right - j2 * states, states,
+        states_triangular)
     left_residual = _worst_relative(
         images["left_spin"] @ left - j2 * partners, partners)
     expectation = _ratio(
@@ -3275,7 +3305,7 @@ def pole_certificates(projector, multiplicity, j2, sector, dual, images,
         "determinant_count": int(np.count_nonzero(np.any(states != 0,
                                                          axis=1))),
         "colour_casimir_residual": _worst_relative(
-            images["right_casimir"] @ right, states),
+            images["right_casimir"] @ right, states, states_triangular),
     }
     if isotypic is not None:
         patterns = sector @ right
@@ -3504,7 +3534,8 @@ def _content_reads(content, kappa, beta, config, started, spacetime, action,
     # many-body operator)
     quasi_free, _ = many_body_operators(
         averaged, coupling_matrices, fluctuations["reduced_stiffness"],
-        frame, dual, declared_tolerance(config, "fluctuation_tolerance"))
+        frame, dual, declared_tolerance(config, "fluctuation_tolerance"),
+        one_body_only=True)
     dimension = quasi_free.shape[0]
     _, quartic = many_body_operators(
         carrier + shift, coupling_matrices, fluctuations["reduced_stiffness"],
