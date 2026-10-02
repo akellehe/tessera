@@ -593,11 +593,14 @@ _NOT_JSON = (
 def test_the_files_of_a_tick_are_json(one_tick):
     """Every line of the points file and the file written at the end are
     JSON. A tick of the stand-in run holds six infinities: the isolation gap
-    of every fiber of the level's partition, whose band is the whole block
+    of each of the three components whose band is its whole block, in the
+    level's partition and in its image-supported fibers
     (partition.isolation_gaps, fibers.isolation_gap)."""
     directory, result = one_tick
-    gaps = result["ticks"][0]["partition"]["isolation_gaps"]
-    assert gaps and all(math.isinf(gap) for gap in gaps)
+    tick = result["ticks"][0]
+    for gaps in (tick["partition"]["isolation_gaps"],
+                 tick["fibers"]["isolation_gap"]):
+        assert sum(1 for gap in gaps if math.isinf(gap)) == 3
     for line in (directory / "run.points.jsonl").read_text().splitlines():
         _strict(line)
     _strict((directory / "run.json").read_text())
