@@ -267,7 +267,9 @@ def test_a_full_band_pins_its_trace_with_a_multiplier_of_minus_one():
     assert report.converged
     assert drive["accepted_updates"] == 5 and drive["moves_committed"] == 0
     assert drive["stop_reason"] == cs.STOP_STATIONARY
-    assert bp.relaxation_record(report, drive)["stop_reason"] == "converged"
+    assert bp.relaxation_record(
+        report, drive, step_tolerance=bp.declared_tolerance(
+            config, "step_tolerance"))["stop_reason"] == "converged"
     assert report.fiber_rank == 3 and len(report.multipliers) == 1
     assert abs(report.multipliers[0] + 1.0) < 1e-13
     assert abs(report.moment_residuals[0]) < 1e-12 * abs(
@@ -476,11 +478,13 @@ def test_pinning_the_band_eigenvalues_holds_the_host_of_0134_111():
     assert (report.jacobian_size, report.jacobian_rank) == (15, 12)
     assert report.moment_scale == pytest.approx(19.371, abs=1e-3)
     assert len(action.declaration.moment_band_projectors) == 3
-    record = bp.relaxation_record(report, drive)
+    record = bp.relaxation_record(
+        report, drive,
+        step_tolerance=bp.declared_tolerance(config, "step_tolerance"))
     assert record["fiber_pinning"] == "eigenvalues"
     assert record["fiber_moments"] == 3
     assert record["converged"] and record["stop_reason"] == "converged"
-    assert record["iterations"] == 0 and record["moves_committed"] == 0
+    assert record["accepted_updates"] == 0 and record["moves_committed"] == 0
 
 
 def test_a_full_band_pins_its_eigenvalue_with_a_multiplier_of_minus_three():

@@ -551,14 +551,15 @@ def _solved(record, **relaxation):
 def test_solve_state_reads_the_solve_or_the_missing_value_of_each_record():
     record = {"content": [1, 1, 1], "doublet_reads": []}
     assert bp.solve_state(record) is None
-    assert bp.solve_state(_solved(record, converged=True, iterations=6,
+    assert bp.solve_state(_solved(record, converged=True, accepted_updates=6,
                                   stop_reason="converged")) == {
-        "state": "converged", "reason": None, "iterations": 6}
+        "state": "converged", "reason": None, "accepted_updates": 6}
     assert bp.solve_state(_solved(
-        record, converged=False, iterations=12,
+        record, converged=False, accepted_updates=12,
         stop_reason="no move and no scaled step lowers the residual "
                     "norm")) == {
-        "state": "not converged", "reason": "no descent", "iterations": 12}
+        "state": "not converged", "reason": "no descent",
+        "accepted_updates": 12}
     # every stop a drive names, and every reason a read has no value, has a
     # short name
     assert bp.STOP_SHORT == {
@@ -567,39 +568,41 @@ def test_solve_state_reads_the_solve_or_the_missing_value_of_each_record():
         "a declared limit was reached": "declared limit",
         "the squared lengths overflowed the double": "lengths overflowed",
         "the cell is not a tetrahedron after its Pachner moves": "cell moved",
+        "a read the poles are built on has no value": "read without a value",
     }
     # a stop reason without a short name is shown whole
-    assert bp.solve_state(_solved(record, converged=False, iterations=2,
+    assert bp.solve_state(_solved(record, converged=False, accepted_updates=2,
                                   stop_reason="new reason"))["reason"] == \
         "new reason"
     # a read with no value is marked so whatever its solve reached, with the
     # short name of the reason its record names
-    missing = _solved(record, converged=False, iterations=5)
+    missing = _solved(record, converged=False, accepted_updates=5)
     missing.update(failed="the squared lengths overflowed the double (...), "
                           "so there is no finite geometry to read a pole on",
                    reason="the squared lengths overflowed the double")
     assert bp.solve_state(missing) == {
-        "state": "no value", "reason": "lengths overflowed", "iterations": 5}
+        "state": "no value", "reason": "lengths overflowed",
+        "accepted_updates": 5}
     assert bp.solve_state({"content": [0, 3, 0], "failed": "band 1 has "
                            "rank 2", "doublet_reads": []}) == {
-        "state": "no value", "reason": None, "iterations": None}
+        "state": "no value", "reason": None, "accepted_updates": None}
     # a flagged read is a read: it is marked by its solve, as any other
-    flagged = _solved(record, converged=True, iterations=5)
+    flagged = _solved(record, converged=True, accepted_updates=5)
     flagged["flags"] = [{"name": "not Kontsevich-Segal allowable",
                          "detail": "margin -0.613"}]
     assert bp.solve_state(flagged) == {
-        "state": "converged", "reason": None, "iterations": 5}
+        "state": "converged", "reason": None, "accepted_updates": 5}
 
 
 def test_callout_lines():
     assert bp.callout_lines({"state": "converged", "reason": None,
-                             "iterations": 1}) == ["\u2713 converged",
-                                                   "1 iteration"]
+                             "accepted_updates": 1}) == [
+        "\u2713 converged", "1 update"]
     assert bp.callout_lines({"state": "not converged", "reason": "no descent",
-                             "iterations": 12}) == [
-        "\u2717 not converged", "no descent", "12 iterations"]
+                             "accepted_updates": 12}) == [
+        "\u2717 not converged", "no descent", "12 updates"]
     assert bp.callout_lines({"state": "no value", "reason": None,
-                             "iterations": None}) == ["\u2717 no value"]
+                             "accepted_updates": None}) == ["\u2717 no value"]
 
 
 def test_a_ratio_row_carries_the_solve_behind_each_pole():
@@ -607,9 +610,9 @@ def test_a_ratio_row_carries_the_solve_behind_each_pole():
              "nucleon_content": [2, 1, 0],
              "nucleon_doublet_content": [1, 1, 1],
              "delta_content": [3, 0, 0], "delta_doublet_content": [0, 3, 0]}
-    converged = {"state": "converged", "reason": None, "iterations": 3}
+    converged = {"state": "converged", "reason": None, "accepted_updates": 3}
     stalled = {"state": "not converged", "reason": "no descent",
-               "iterations": 9}
+               "accepted_updates": 9}
     row = bp.ratio_row("k=1 b=2", "quasi_free", ratio,
                        {(2, 1, 0): converged, (3, 0, 0): stalled})
     assert row["nucleon"]["solve"] == converged
@@ -635,11 +638,12 @@ def test_the_drawn_frame_marks_each_content_by_its_solve(point):
     import matplotlib.pyplot as plt
     point = dict(point)
     point["contents"] = [_solved(
-        point["contents"][0], converged=False, iterations=12,
+        point["contents"][0], converged=False, accepted_updates=12,
         stop_reason="no move and no scaled step lowers the residual norm")]
     data = bp.frame_data([point], 0)
     assert data["groups"][0]["solve"] == {
-        "state": "not converged", "reason": "no descent", "iterations": 12}
+        "state": "not converged", "reason": "no descent",
+        "accepted_updates": 12}
     figure = plt.figure(figsize=bp.FIGURE_SIZE)
     try:
         bp.draw_frame(figure, [point], 0)
@@ -649,7 +653,7 @@ def test_the_drawn_frame_marks_each_content_by_its_solve(point):
             callouts = [t for t in axis.texts
                         if t.get_text().startswith("\u2717")]
             assert [t.get_text() for t in callouts] == [
-                "\u2717 not converged\nno descent\n12 iterations"]
+                "\u2717 not converged\nno descent\n12 updates"]
             assert matplotlib.colors.same_color(callouts[0].get_color(),
                                                 style["ink"])
             bands = [p for p in axis.patches

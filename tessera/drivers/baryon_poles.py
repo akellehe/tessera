@@ -2093,6 +2093,24 @@ def relax_content(content, kappa, beta, config):
     return support.spacetime, action, report, drive
 
 
+#: The errors by which the library and the drivers say that an operation
+#: has no value (a refused logarithm, a singular block, a decomposition that
+#: did not converge, a division by zero): `std::invalid_argument` and
+#: `std::domain_error` arrive as ValueError, `std::runtime_error` as
+#: RuntimeError, an overflow or a zero divisor as ArithmeticError. A step of
+#: a run that meets one is recorded by name with the reason, and the rest of
+#: the run is made. Any other error is a defect of the code and is raised.
+NO_VALUE_ERRORS = (ValueError, ArithmeticError, RuntimeError)
+
+
+def solve_converged(residual_norm, tolerance=DECLARED_TOLERANCE):
+    """Whether a solve converged, by the one definition every solve's record
+    uses (a content's and a level's): the residual norm of the system its
+    drive descends, read at the point the drive ended on, is a number at or
+    below the declared ``step_tolerance``."""
+    return bool(residual_norm <= tolerance)
+
+
 class ReadWithoutValue(ValueError):
     """A content's pole read that has no value on what its mean-field solve
     reached: ``name`` is the reason by name ("the squared lengths overflowed
@@ -2123,7 +2141,52 @@ def _band_record(band):
             "declared_positions": [int(p) for p in band.declared_positions],
             "overlap": complex(band.overlap),
             "crossed": bool(band.crossed),
-            "ambiguous": bool(band.ambiguous)}
+            "ambiguous": bool(band.ambiguous),
+            "overfilled": bool(getattr(band, "overfilled", False))}
+
+
+def band_flags(report):
+    """The flags of the occupied bands a mean-field solve ended on: one flag
+    per band that holds more particles than its rank
+    (`OccupiedBand.overfilled`), with the band, its rank and its occupation.
+    The band is filled as declared and the reads are made on it; the flag
+    says the filling is not a density of at most one particle per mode."""
+    flags = []
+    for band in report.bands:
+        if not getattr(band, "overfilled", False):
+            continue
+        flags.append({
+            "name": "a band holds more particles than its rank",
+            "detail": ("the declared band %d has rank %d and holds %g "
+                       "particles, so its filling %g per mode is above one"
+                       % (band.declared_index, band.rank, band.occupation,
+                          band.occupation / band.rank if band.rank
+                          else math.inf)),
+            "declared_index": int(band.declared_index),
+            "rank": int(band.rank),
+            "occupation": float(band.occupation),
+        })
+    return flags
+
+
+def eigenbasis_marks(operator):
+    """The marks of the eigenbasis the bands of ``operator`` (flat,
+    row-major) are read in (`BandFollower.read`): whether a block's
+    eigenvector matrix is singular at the threshold of its LU decomposition
+    (``defective``; the bands are then read with the inverse as computed)
+    and the smallest reciprocal condition number of a block's eigenvector
+    matrix. None when the library reports neither. The marks are the
+    operator's own, so they are read with one occupied mode, which no
+    spectrum refuses."""
+    declaration = cob.SelfConsistentMeanFieldDeclaration()
+    declaration.covariance_rule = cob.CovarianceRule.OccupiedProjector
+    declaration.occupied_modes = 1
+    read = cob.BandFollower(declaration).read(list(operator))
+    if not hasattr(read, "defective"):
+        return None
+    return {"defective": bool(read.defective),
+            "reciprocal_condition": float(
+                read.eigenbasis_reciprocal_condition)}
 
 
 def hessian_sign(value, scale, tolerance=DECLARED_TOLERANCE):
@@ -2168,14 +2231,19 @@ def _proposal_record(update):
 
 
 def relaxation_record(report, drive,
-                      hessian_reality_tolerance=DECLARED_TOLERANCE):
+                      hessian_reality_tolerance=DECLARED_TOLERANCE,
+                      step_tolerance=DECLARED_TOLERANCE):
     """What a content's solve reached and how, as every content record
-    carries it. From the drive (`cell_solve.solve`): why it stopped (by
-    name, with its detail), the accepted relaxation updates and committed
-    Pachner moves, the base complex before and after, the trace of the
-    residual norm, and one entry per step proposal (``trace``). From the
+    carries it. From the drive (`cell_solve.solve`): whether it converged
+    (``converged``, `solve_converged`: the residual norm at the point the
+    drive ended on, ``residual``, the last entry of its trace, at or below
+    ``step_tolerance``), why it stopped (by name, with its detail), the
+    number of accepted relaxation updates (``accepted_updates``) and of
+    committed Pachner moves, the base complex before and after, the trace of
+    the residual norm, and one entry per step proposal (``trace``). From the
     end-point report (`SelfConsistentMeanField.read`): whether the force and
-    the pinned moments are at the tolerance there (``converged``), the final
+    the pinned moments are at the mean-field tolerance there
+    (``self_consistent``, with the report's sentence), the final
     force, the joint Jacobian's rank and rank gap, the Kontsevich-Segal
     margin and the growth of the lengths, the occupied bands followed to the
     end point, the pinned moments of the occupied fiber (their number,
@@ -2188,18 +2256,24 @@ def relaxation_record(report, drive,
                 if update.get("measured") is not None]
     overlaps = [abs(complex(band.overlap)) for step in measured
                 for band in step.bands]
-    converged = bool(report.converged)
+    residual = float(drive["trace"][-1]) if len(drive["trace"]) else math.nan
+    converged = solve_converged(residual, step_tolerance)
     return {
         "method": "MultiCobordism drive of the joint action's stationarity",
         "direction_order": int(objective.direction_order),
         "band_selection": _band_selection_name(report.band_selection),
         "converged": converged,
+        "residual": residual,
+        "step_tolerance": float(step_tolerance),
+        "self_consistent": bool(report.converged),
+        "self_consistent_detail": str(report.stop_detail),
         "stop_reason": "converged" if converged else drive["stop_reason"],
-        "stop_detail": (report.stop_detail + "; the drive ended: "
-                        + drive["stop_detail"] if converged
-                        else drive["stop_detail"]),
+        "stop_detail": ("the residual norm %.3g is at or below the step "
+                        "tolerance %.3g; the drive ended: %s"
+                        % (residual, step_tolerance, drive["stop_detail"])
+                        if converged else drive["stop_detail"]),
         "drive_stop_reason": drive["stop_reason"],
-        "iterations": int(drive["accepted_updates"]),
+        "accepted_updates": int(drive["accepted_updates"]),
         "moves_committed": int(drive["moves_committed"]),
         "pachner_moves": bool(drive["moves"]),
         "combinatorial_depth": int(drive["combinatorial_depth"]),
@@ -2260,6 +2334,7 @@ def relaxation_record(report, drive,
 #: Why a solved cell has no pole read, by name.
 NO_VALUE_OVERFLOW = "the squared lengths overflowed the double"
 NO_VALUE_MOVED = "the cell is not a tetrahedron after its Pachner moves"
+NO_VALUE_READ = "a read the poles are built on has no value"
 
 
 def geometry_without_value(spacetime, drive):
@@ -2268,11 +2343,14 @@ def geometry_without_value(spacetime, drive):
     One whose squared lengths are not finite: the only bound on a length is
     the datatype's, and a squared length beyond the largest finite double is
     not a number, so there is no finite geometry to read an operator on. And
-    one whose cells a committed Pachner move changed: the pole read is
-    defined on the three-sheeted tetrahedron (its eighteen edge modes, its
-    rotation group, its doublets), and has no definition on another complex.
-    A solve that stopped for any other reason is read, and its record says
-    why it stopped."""
+    one whose base is not one tetrahedron: the pole read is defined on the
+    three-sheeted tetrahedron (its eighteen edge modes, its rotation group,
+    its doublets), and has no definition on another complex. The test is on
+    the base the drive ended on (``drive["spacetime"]``), one cell of four
+    vertices and six edges, whatever its vertices are called and whatever
+    moves led to it: a drive whose moves returned the base to a tetrahedron
+    is read. A solve that stopped for any other reason is read, and its
+    record says why it stopped."""
     for index, (_, _, length, _) in enumerate(
             cell_solve.edge_fields(spacetime)):
         squared = length * length
@@ -2281,8 +2359,8 @@ def geometry_without_value(spacetime, drive):
                     "%s (|z| is not finite on edge %d), so there is no "
                     "finite geometry to read a pole on"
                     % (NO_VALUE_OVERFLOW, index))
-    if drive["changed"]:
-        after = drive["complex_after"]
+    after = cell_solve.complex_counts(drive["spacetime"])
+    if after != {"vertices": 4, "edges": 6, "cells": 1}:
         return (NO_VALUE_MOVED,
                 "%s (%d committed move updates left a base complex of %d "
                 "vertices, %d edges and %d cells), and the pole read is "
@@ -2621,18 +2699,54 @@ def evaluate_content(content, kappa, beta, config):
     the frame the spin was read in is named under ``relaxation.spin_frame``.
     A solve that left no finite geometry, or a complex that is not the
     tetrahedron, has no pole read and raises `ReadWithoutValue`
-    (`geometry_without_value`)."""
+    (`geometry_without_value`).
+
+    A read of the solved cell that has no value (`NO_VALUE_ERRORS`) is
+    recorded by name and the rest is kept. The reads the poles are built on
+    (the spin frame, the spin decomposition, the eliminated fluctuations,
+    the many-body operators, the sectors, the end-point measurements of the
+    solve) leave the content without a pole: `ReadWithoutValue` with the
+    name `NO_VALUE_READ`, the read that had no value and the library's
+    reason, carrying the solve's record. The reads beside the poles (the
+    level-recursion read, the anchor atlas, the spectral fingerprint, the
+    quark conditions, the isospin doublet) leave the poles as they are: the
+    record omits that read and carries a flag that names it with the
+    reason.
+
+    A band the solve ended on that holds more particles than its rank
+    (`band_flags`) and a carrier operator whose eigenbasis is singular at
+    the threshold of its LU decomposition (`eigenbasis_marks`, recorded
+    under ``carrier_eigenbasis``) are read as they are and flagged."""
     started = time.time()
     spacetime, action, report, drive = relax_content(content, kappa, beta,
                                                      config)
     solve = relaxation_record(
         report, drive,
-        declared_tolerance(config, "hessian_reality_tolerance"))
+        declared_tolerance(config, "hessian_reality_tolerance"),
+        declared_tolerance(config, "step_tolerance"))
     missing = geometry_without_value(spacetime, drive)
     if missing is not None:
         raise ReadWithoutValue(missing[0], missing[1], solve)
     flags = geometry_flags(
         report, declared_tolerance(config, "allowability_tolerance"))
+    flags = flags + band_flags(report)
+    # the read in progress, by name, for the record of one without a value
+    stage = ["the carrier operator"]
+    try:
+        return _content_reads(content, kappa, beta, config, started,
+                              spacetime, action, report, solve, flags, stage)
+    except ReadWithoutValue:
+        raise
+    except NO_VALUE_ERRORS as error:
+        raise ReadWithoutValue(
+            NO_VALUE_READ, "%s: %s (%s)" % (NO_VALUE_READ, stage[0], error),
+            solve) from error
+
+
+def _content_reads(content, kappa, beta, config, started, spacetime, action,
+                   report, solve, flags, stage):
+    """The reads of `evaluate_content` on the cell its solve reached;
+    ``stage`` (a one-entry list) names the read in progress."""
     carrier = matrix(action.carrier_operator())
     certificate_tolerance = declared_tolerance(config, "certificate_tolerance")
 
@@ -2642,6 +2756,7 @@ def evaluate_content(content, kappa, beta, config):
     # the projective action D_1(g) of the cell itself when the cell meets
     # the preconditions of that read, and with that of the declared symmetric
     # host, flagged, when it does not (`spin_frame`).
+    stage[0] = "the spin frame"
     supports = [sheet_support(spacetime, t, certificate_tolerance)
                 for t in range(SHEETS)]
     symmetry = cell_symmetry(spacetime, supports, certificate_tolerance)
@@ -2658,6 +2773,7 @@ def evaluate_content(content, kappa, beta, config):
     band_energies, averaged_residual = _block_scalar(dual @ averaged @ frame)
     _, covariant_residual = _block_scalar(dual @ carrier @ frame)
     trialities = alignments[0]["trialities"]
+    stage[0] = "the spin decomposition"
     spin = spin_decomposition(carrier, matrix(action.declaration.covariance),
                               content, frame, dual, trialities,
                               config["band_tolerance"])
@@ -2670,6 +2786,7 @@ def evaluate_content(content, kappa, beta, config):
     # (the squared lengths, and the link phases unless only the lengths are
     # declared), their couplings O_a, the bare stiffness A of the geometric
     # action and its Drazin inverse A^D
+    stage[0] = "the elimination of the fluctuations"
     fluctuations = eliminate_fluctuations(spacetime, action, carrier, kappa,
                                           beta, config)
     couplings = fluctuations["couplings"]
@@ -2695,6 +2812,7 @@ def evaluate_content(content, kappa, beta, config):
     # the reduced coordinates f = R g carry the Drazin elimination
     coupling_matrices = fluctuations["reduced_couplings"]
     # quasi-free: dGamma of the T-averaged operator
+    stage[0] = "the many-body operators"
     quasi_free_read = many_body(averaged, coupling_matrices)
     dimension = int(quasi_free_read.dimension)
     quasi_free = np.asarray(quasi_free_read.one_body).reshape(dimension,
@@ -2713,6 +2831,7 @@ def evaluate_content(content, kappa, beta, config):
     # every doublet content (n_2, n_2', n_2''): a content of this driver names
     # occupations of the bands of h_1, which are not doublets, so the sectors
     # are read for every doublet content and labelled by it
+    stage[0] = "the poles of the spin sectors"
     doublet_reads = []
     for doublet_content in contents():
         sector_reads = {}
@@ -2730,17 +2849,52 @@ def evaluate_content(content, kappa, beta, config):
             "sectors": {str(k): v for k, v in sector_reads.items()},
         })
 
-    recursion = recursion_read(spacetime, config)
-    anchor = anchor_atlas_read(spacetime, alignments, certificate_tolerance)
-    fingerprint = spectral_fingerprint_read(spacetime, kappa, beta, config)
-    quark = quark_conditions(
-        spacetime, alignments, recursion, averaged_residual, report, anchor,
-        fingerprint, certificate_tolerance,
-        fibre_lift_tolerance=declared_tolerance(config,
-                                                "fibre_lift_tolerance"),
-        attachment_rank_tolerance=declared_tolerance(
-            config, "attachment_rank_tolerance"),
-        covariance=matrix(action.declaration.covariance))
+    # the reads beside the poles: one without a value is flagged by name and
+    # left out of the record, and the poles stand
+    def beside(name, read):
+        try:
+            return read()
+        except NO_VALUE_ERRORS as error:
+            flags.append({"name": "%s has no value" % name,
+                          "detail": str(error)})
+            return None
+
+    eigenbasis = beside("the eigenbasis of the carrier operator",
+                        lambda: eigenbasis_marks(action.carrier_operator()))
+    if eigenbasis and eigenbasis["defective"]:
+        flags.append({
+            "name": "the carrier operator is defective at the LU threshold",
+            "detail": ("an eigenvector matrix of the carrier operator is "
+                       "singular at the threshold of its LU decomposition "
+                       "(smallest reciprocal condition number %.3g), and the "
+                       "bands are read with its inverse as computed"
+                       % eigenbasis["reciprocal_condition"]),
+            "reciprocal_condition": eigenbasis["reciprocal_condition"],
+        })
+    recursion = beside("the level-recursion read",
+                       lambda: recursion_read(spacetime, config))
+    anchor = beside("the anchor atlas", lambda: anchor_atlas_read(
+        spacetime, alignments, certificate_tolerance))
+    fingerprint = beside("the spectral fingerprint",
+                         lambda: spectral_fingerprint_read(
+                             spacetime, kappa, beta, config))
+    quark = None
+    if recursion is None or anchor is None or fingerprint is None:
+        flags.append({
+            "name": "the quark conditions have no value",
+            "detail": "they are evaluated on the level-recursion read, the "
+                      "anchor atlas and the spectral fingerprint, and one "
+                      "of the three has no value"})
+    else:
+        quark = beside("the quark conditions", lambda: quark_conditions(
+            spacetime, alignments, recursion, averaged_residual, report,
+            anchor, fingerprint, certificate_tolerance,
+            fibre_lift_tolerance=declared_tolerance(config,
+                                                    "fibre_lift_tolerance"),
+            attachment_rank_tolerance=declared_tolerance(
+                config, "attachment_rank_tolerance"),
+            covariance=matrix(action.declaration.covariance)))
+    stage[0] = "the end-point measurements of the solve"
     truncation_read = action.holonomy_truncation()
     record = {
         "content": list(content),
@@ -2811,19 +2965,24 @@ def evaluate_content(content, kappa, beta, config):
             "fluctuations": fluctuations["record"],
         },
         "doublet_reads": doublet_reads,
-        "recursion": recursion,
-        "anchor": anchor,
-        "spectral_fingerprint": fingerprint,
-        "quark_conditions": quark,
     }
+    for key, read in (("recursion", recursion), ("anchor", anchor),
+                      ("spectral_fingerprint", fingerprint),
+                      ("quark_conditions", quark),
+                      ("carrier_eigenbasis", eigenbasis)):
+        if read is not None:
+            record[key] = read
     if config.get("isospin_doublet"):
         # The isospin-doublet observation (WP §10) on h_1 and its T-average,
         # added only when requested so that the default record is unchanged.
         from tessera.drivers import isospin_doublet
         spinorial = all(bool(a["spin_read"].cocycle.nontrivial)
                         for a in alignments)
-        record["isospin_doublet"] = isospin_doublet.observe_host(
-            carrier, actions, spinorial, config)
+        doublet = beside("the isospin doublet",
+                         lambda: isospin_doublet.observe_host(
+                             carrier, actions, spinorial, config))
+        if doublet is not None:
+            record["isospin_doublet"] = doublet
     return record
 
 
@@ -3731,9 +3890,11 @@ def scan_point(kappa, beta, config, on_content=None):
     carries its poles and lists its flags (``flags``), and
     ``flagged_contents`` names it. A content with no value has a record with
     ``failed`` (the message) and no pole, and ``failed_contents`` names it:
-    one whose solve left no finite geometry (`ReadWithoutValue`, with
-    ``reason`` the reason by name and the solve's record), and one at which
-    the library names no value."""
+    one whose solve left no geometry the poles are defined on, or whose
+    solved cell has a read without a value that the poles are built on
+    (`ReadWithoutValue`, with ``reason`` the reason by name and the solve's
+    record), and one whose solve itself has no value (`NO_VALUE_ERRORS`: the
+    library's message). Every other content of the point is read."""
     records = []
     for content in config.get("contents") or contents():
         try:
@@ -3747,11 +3908,11 @@ def scan_point(kappa, beta, config, on_content=None):
                            "failed": str(missing), "reason": missing.name,
                            "relaxation": missing.relaxation,
                            "doublet_reads": []}, **missing.records)
-        except ValueError as error:
-            # the library names no value at this content (a band that cannot
-            # hold the occupation, a face holonomy outside the domain of the
-            # holonomy term): recorded with the library's message, and the
-            # content supplies no pole
+        except NO_VALUE_ERRORS as error:
+            # the solve of this content has no value (a face holonomy outside
+            # the domain of the holonomy term, a decomposition that did not
+            # converge): recorded with the library's message, and the content
+            # supplies no pole
             record = {"content": list(content),
                       "elimination": config["elimination"],
                       "failed": str(error), "doublet_reads": []}
@@ -4159,8 +4320,10 @@ def term_trace_lines(relaxation, prefix):
 
 
 def relaxation_text(relaxation):
-    """One content's mean-field solve as text: whether it converged, its
-    force and iterations, and, where the record carries them, the method, why
+    """One content's mean-field solve as text: whether it converged
+    (`solve_converged`) with its residual norm, its force norm and whether
+    the end point is self-consistent at the mean-field tolerance, its number
+    of accepted relaxation updates, and, where the record carries them, why
     it stopped (by name, with its detail), the joint Jacobian's rank and rank
     gap at the end point, the Kontsevich-Segal margin and the growth of the
     lengths there, and the occupied bands followed from the host with their
@@ -4169,9 +4332,18 @@ def relaxation_text(relaxation):
     projector."""
     if not relaxation or "converged" not in relaxation:
         return "mean field unrecorded"
-    text = "mean field converged %s (force norm %.3g after %d iterations)" % (
-        relaxation["converged"], relaxation["force_norm"],
-        relaxation["iterations"])
+    measures = []
+    if "residual" in relaxation:
+        measures.append("residual norm %.3g" % relaxation["residual"])
+    measures.append("force norm %.3g" % relaxation["force_norm"])
+    if "self_consistent" in relaxation:
+        measures.append("self-consistent %s" % relaxation["self_consistent"])
+    text = "solve converged %s (%s)" % (relaxation["converged"],
+                                        ", ".join(measures))
+    if relaxation.get("accepted_updates") is not None:
+        count = int(relaxation["accepted_updates"])
+        text += " after %d accepted update%s" % (count,
+                                                 "" if count == 1 else "s")
     if "stop_reason" not in relaxation:
         return text
     jacobian = relaxation.get("joint_jacobian") or {}
@@ -4489,12 +4661,19 @@ def _complex_text(value):
 
 
 def _jsonable(value):
+    """The JSON-ready form of a record: a complex number is ``{"re", "im"}``,
+    an array a nested list, a numpy scalar the Python number or truth value
+    it holds, and every key a string."""
     if isinstance(value, complex):
         return {"re": value.real, "im": value.imag}
     if isinstance(value, dict):
         return {str(k): _jsonable(v) for k, v in value.items()}
     if isinstance(value, (list, tuple)):
         return [_jsonable(v) for v in value]
+    if isinstance(value, np.ndarray):
+        return _jsonable(value.tolist())
+    if isinstance(value, np.bool_):
+        return bool(value)
     if isinstance(value, (np.floating,)):
         return float(value)
     if isinstance(value, (np.integer,)):
@@ -4553,6 +4732,7 @@ STOP_SHORT = {
     cell_solve.STOP_DECLARED_LIMIT: "declared limit",
     NO_VALUE_OVERFLOW: "lengths overflowed",
     NO_VALUE_MOVED: "cell moved",
+    NO_VALUE_READ: "read without a value",
 }
 #: The largest font size of the callouts; they are set smaller, all to one
 #: size, when the narrowest group needs it.
@@ -4571,35 +4751,35 @@ def solve_state(record):
     converged" as the solve's record says, whether or not the read is
     flagged; ``reason`` is the short name (`STOP_SHORT`) of why an
     unconverged solve stopped or of why the read has no value, None when the
-    record names none; ``iterations`` is the solve's iteration count, None
-    when unrecorded. None when the record carries neither ``failed`` nor a
-    solve."""
+    record names none; ``accepted_updates`` is the number of relaxation
+    updates the solve's drive accepted, None when unrecorded. None when the
+    record carries neither ``failed`` nor a solve."""
     relaxation = record.get("relaxation") or {}
-    iterations = relaxation.get("iterations")
+    updates = relaxation.get("accepted_updates")
     if "failed" in record:
         name = record.get("reason")
         return {"state": "no value", "reason": STOP_SHORT.get(name, name),
-                "iterations": iterations}
+                "accepted_updates": updates}
     if "converged" not in relaxation:
         return None
     if relaxation["converged"]:
         return {"state": "converged", "reason": None,
-                "iterations": iterations}
+                "accepted_updates": updates}
     stop = relaxation.get("stop_reason")
     return {"state": "not converged", "reason": STOP_SHORT.get(stop, stop),
-            "iterations": iterations}
+            "accepted_updates": updates}
 
 
 def callout_lines(solve):
     """The lines of one group's callout (`solve_state`): the sign and the
     state, then why the solve stopped or the read has no value, then the
-    solve's iterations, each where known."""
+    number of relaxation updates the solve accepted, each where known."""
     lines = ["%s %s" % (SOLVE_STYLE[solve["state"]]["sign"], solve["state"])]
     if solve["reason"]:
         lines.append(solve["reason"])
-    if solve["iterations"] is not None:
-        count = int(solve["iterations"])
-        lines.append("%d iteration%s" % (count, "" if count == 1 else "s"))
+    if solve["accepted_updates"] is not None:
+        count = int(solve["accepted_updates"])
+        lines.append("%d update%s" % (count, "" if count == 1 else "s"))
     return lines
 
 
@@ -4759,7 +4939,7 @@ def draw_pole_panel(axis, data, name, title, group_label):
     names). Each group whose record carries a mean-field solve or has no
     value (`solve_state`) has a band behind its pairs and a callout above
     them in its state's colour (`SOLVE_STYLE`): whether the solve converged,
-    why it stopped or the read has no value, and its iterations
+    why it stopped or the read has no value, and its accepted updates
     (`callout_lines`)."""
     style_axis(axis)
     named = set()
