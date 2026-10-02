@@ -548,15 +548,20 @@ namespace {
 VillainSeries certifiedSeries(const VillainCharacter &character,
                               complexd holonomy) {
   VillainSeries point = character.series(holonomy);
-  if (!VillainCharacter::certifiedNonzero(point))
+  // The derivatives DW_M/W_M and D^2W_M/W_M are formed with W_M as summed
+  // wherever it is not exactly zero. Whether its modulus exceeds its
+  // rounding bound there is a measurement of the point
+  // (`VillainCharacter::certifiedNonzero`, `HolonomyTruncation`), reported
+  // and not required.
+  if (point.value == complexd{0.0, 0.0} || !std::isfinite(point.value.real()) ||
+      !std::isfinite(point.value.imag()))
     throw std::domain_error(
-        "VillainCharacter: W_M is not certified nonzero at the holonomy " +
-        pointText(holonomy) + ": |W_M| = " +
-        threeDigits(std::abs(point.value)) +
-        " does not exceed its rounding bound " +
-        threeDigits(point.roundingBound) +
+        "VillainCharacter: W_M is " +
+        std::string(point.value == complexd{0.0, 0.0} ? "exactly zero"
+                                                      : "not finite") +
+        " at the holonomy " + pointText(holonomy) +
         ", so the potential's derivatives DW_M/W_M and D^2W_M/W_M have no "
-        "certified value there");
+        "value there");
   return point;
 }
 
@@ -2183,6 +2188,10 @@ HolonomyTruncation JointAction::holonomyTruncation() const {
   // zero in double precision) leaves the maximum as it is.
   for (const complexd &holonomy : workspace.holonomies) {
     const VillainSeries point = character.series(holonomy);
+    if (!VillainCharacter::certifiedNonzero(point)) ++report.uncertifiedFaces;
+    const double margin = std::abs(point.value) / point.roundingBound;
+    if (margin < report.smallestCertificateMargin)
+      report.smallestCertificateMargin = margin;
     report.relativeValueTail = std::max(report.relativeValueTail,
                                         point.valueTail / point.magnitude);
     report.relativeFirstTail = std::max(

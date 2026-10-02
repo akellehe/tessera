@@ -307,9 +307,9 @@ double largestSquaredLengthOf(const JointAction &action) {
 /// sums depend on one another. It is where the root find starts and changes
 /// no equation. The action must carry the covariance it will be solved with.
 /// Returns the fiber's rank.
-/// @throws std::invalid_argument when more moments are pinned than the fiber's
-///   rank, when targets are declared for a different number of moments, or
-///   when the action already declares constraints of its own.
+/// @throws std::invalid_argument when more band eigenvalues are pinned than
+///   the fiber has bands, when targets are declared for a different number
+///   of moments, or when the action already declares constraints of its own.
 std::size_t installFiberMoments(
     JointAction &action, const SelfConsistentMeanFieldDeclaration &declaration,
     const BandRead &read) {
@@ -318,14 +318,9 @@ std::size_t installFiberMoments(
   if (declaration.fiberMoments == 0) return rank;
   const bool eigenvalues =
       declaration.fiberConstraintForm == FiberConstraintForm::BandEigenvalues;
-  if (!eigenvalues && declaration.fiberMoments > rank)
-    throw std::invalid_argument(
-        "SelfConsistentMeanField: " +
-        std::to_string(declaration.fiberMoments) +
-        " power sums of the occupied fiber are declared pinned, but the fiber "
-        "has rank " + std::to_string(rank) +
-        "; its power sums j = 1 .. " + std::to_string(rank) +
-        " are the ones WP v17 §3.4 pins");
+  // More power sums than the fiber's rank are pinned as declared: those
+  // beyond the rank are functions of the first ones, and the multipliers
+  // are their minimum-norm least-squares ones.
   if (eigenvalues && declaration.fiberMoments > read.bands.size())
     throw std::invalid_argument(
         "SelfConsistentMeanField: " +
@@ -435,6 +430,20 @@ std::size_t installFiberMoments(
   Eigen::VectorXcd target(rows);
   for (Eigen::Index row = 0; row < rows; ++row)
     target(row) = -force[static_cast<std::size_t>(row)];
+  // The fit is of the equations in one unit: a length equation dS/dz times
+  // the modulus of its squared length (`lengthCoordinateScales`), as the
+  // step's linear solve scales them. In dS/dz itself the fit would weigh
+  // the length equations by the unit of length.
+  if (geometry.relaxLengths) {
+    const std::vector<double> scales =
+        lengthCoordinateScales(action, geometry);
+    for (std::size_t row = 0;
+         row < scales.size() && static_cast<Eigen::Index>(row) < rows;
+         ++row) {
+      target(static_cast<Eigen::Index>(row)) *= scales[row];
+      gradients.row(static_cast<Eigen::Index>(row)) *= scales[row];
+    }
+  }
   const Eigen::JacobiSVD<Eigen::MatrixXcd> svd(
       gradients, Eigen::ComputeThinU | Eigen::ComputeThinV);
   const Eigen::VectorXd &singular = svd.singularValues();
@@ -821,12 +830,17 @@ BandRead BandFollower::read(const std::vector<complexd> &operatorMatrix) const {
   }
   // The degenerate groups in the declared order: consecutive eigenvalues
   // within the band tolerance, relative to their size.
+  // The tolerance is relative to the operator's own scale, its largest
+  // eigenvalue modulus, so the grouping is the same in every unit.
+  double spectralScale = 0.0;
+  for (const complexd &value : out.ordered)
+    spectralScale = std::max(spectralScale, std::abs(value));
   std::vector<std::size_t> starts;
   std::vector<std::size_t> groupOfPlace(order.size(), 0);
   for (std::size_t place = 0; place < out.ordered.size(); ++place) {
     if (place == 0 ||
         std::abs(out.ordered[place] - out.ordered[place - 1]) >
-            tolerance_ * std::max(1.0, std::abs(out.ordered[place - 1])))
+            tolerance_ * spectralScale)
       starts.push_back(place);
     groupOfPlace[place] = starts.size() - 1;
   }

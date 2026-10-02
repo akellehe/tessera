@@ -1027,14 +1027,12 @@ HolomorphicNewtonStep HolomorphicRelaxation::newtonStep() const {
   return linearization().newtonStep();
 }
 
-std::vector<double> HolomorphicRelaxation::variableScales() const {
-  const EdgeClasses classes =
-      edgeClassesOf(action_.edgeCount(), declaration_);
-  const Layout layout(classes.count(), action_.constraintCount(),
-                      declaration_);
-  std::vector<double> scales(layout.count, 1.0);
-  if (!layout.lengths) return scales;
-  const auto &spacetime = action_.spacetime();
+std::vector<double> lengthCoordinateScales(
+    const JointAction &action,
+    const HolomorphicRelaxationDeclaration &declaration) {
+  const EdgeClasses classes = edgeClassesOf(action.edgeCount(), declaration);
+  std::vector<double> scales(classes.count(), 1.0);
+  const auto &spacetime = action.spacetime();
   if (!spacetime || !spacetime->getEdgeList()) return scales;
   const auto edges = spacetime->getEdgeList()->toVector();
   for (std::size_t index = 0; index < classes.count(); ++index) {
@@ -1045,8 +1043,20 @@ std::vector<double> HolomorphicRelaxation::variableScales() const {
       const complexd length = edge->getLength();
       largest = std::max(largest, std::abs(length * length));
     }
-    if (largest > 0.0) scales[layout.lengthOffset + index] = largest;
+    if (largest > 0.0) scales[index] = largest;
   }
+  return scales;
+}
+
+std::vector<double> HolomorphicRelaxation::variableScales() const {
+  const std::vector<double> lengths =
+      lengthCoordinateScales(action_, declaration_);
+  const Layout layout(lengths.size(), action_.constraintCount(),
+                      declaration_);
+  std::vector<double> scales(layout.count, 1.0);
+  if (!layout.lengths) return scales;
+  for (std::size_t index = 0; index < lengths.size(); ++index)
+    scales[layout.lengthOffset + index] = lengths[index];
   return scales;
 }
 

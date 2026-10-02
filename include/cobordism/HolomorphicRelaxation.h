@@ -261,6 +261,16 @@ struct ActionTermRecord {
   double gradientNorm = 0.0;
 };
 
+/// The scale of every length coordinate of a system: the modulus of the
+/// squared length the coordinate carries (the largest over the edges of a
+/// declared class; one when every one of them is zero), in the order of the
+/// length block of `HolomorphicRelaxation::jacobian`. A length equation
+/// \f$ \partial S/\partial z \f$ times its scale is dimensionless, as the
+/// link equations are.
+[[nodiscard]] std::vector<double> lengthCoordinateScales(
+    const JointAction &action,
+    const HolomorphicRelaxationDeclaration &declaration);
+
 /// # HolomorphicNewtonStep
 ///
 /// The step that solves the stationarity system to first order about a

@@ -7,6 +7,7 @@
 #include <complex>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <map>
 #include <memory>
 #include <string>
@@ -435,9 +436,12 @@ struct VillainSeries {
 /// \f$ W_M \f$ is certified nonzero at \f$ F \f$ when the modulus of the
 /// computed sum, rounded downward, exceeds this bound: then
 /// \f$ W_M(F)\neq0 \f$. No other factor enters the certificate. Where it does
-/// not hold the computed sum cannot be told from zero, and \f$ DW_M/W_M \f$,
-/// \f$ D^2W_M/W_M \f$ and \f$ \log W_M \f$ have no certified value there
-/// (`std::domain_error`).
+/// not hold the computed sum cannot be told from zero. The derivatives
+/// \f$ DW_M/W_M \f$ and \f$ D^2W_M/W_M \f$ are formed there with the sum as
+/// computed, and the point is counted (`HolonomyTruncation::uncertifiedFaces`);
+/// they have no value only where the sum is exactly zero or not finite.
+/// \f$ \log W_M \f$, whose branch is the path's, has no certified value
+/// there (`std::domain_error`).
 ///
 /// ## The logarithm
 ///
@@ -603,11 +607,13 @@ class VillainCharacter {
   [[nodiscard]] std::complex<double> potential(
       std::complex<double> holonomy) const;
   /// \f$ D\phi=-\beta_V\,DW_M/W_M \f$.
-  /// @throws std::domain_error when \f$ W_M(F) \f$ is not certified nonzero.
+  /// @throws std::domain_error when \f$ W_M(F) \f$ is exactly zero or not
+  ///   finite.
   [[nodiscard]] std::complex<double> firstDerivative(
       std::complex<double> holonomy) const;
   /// \f$ D^2\phi=-\beta_V(D^2W_M/W_M-(DW_M/W_M)^2) \f$.
-  /// @throws std::domain_error when \f$ W_M(F) \f$ is not certified nonzero.
+  /// @throws std::domain_error when \f$ W_M(F) \f$ is exactly zero or not
+  ///   finite.
   [[nodiscard]] std::complex<double> secondDerivative(
       std::complex<double> holonomy) const;
 
@@ -652,6 +658,14 @@ struct HolonomyTruncation {
   /// \f$ \max_\tau \f$ of the tail of \f$ D^2W \f$ over
   /// \f$ \sum_{|m|\le M}m^2c_m|\mathcal F_\tau|^m \f$.
   double relativeSecondTail = 0.0;
+  /// The number of faces at which \f$ |W_M| \f$ does not exceed its rounding
+  /// bound (`VillainCharacter::certifiedNonzero`): there the sum is zero to
+  /// the rounding of its terms, and the derivatives \f$ DW_M/W_M \f$,
+  /// \f$ D^2W_M/W_M \f$ are formed with it as summed.
+  std::size_t uncertifiedFaces = 0;
+  /// \f$ \min_\tau|W_M(\mathcal F_\tau)| \f$ over its rounding bound: above
+  /// one where every face is certified; infinite on a complex without faces.
+  double smallestCertificateMargin = std::numeric_limits<double>::infinity();
 };
 
 /// # ReportedActionValue
