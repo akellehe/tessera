@@ -3060,7 +3060,9 @@ def anchor_atlas_read(spacetime, alignments,
     the determinant-line transition cocycle residual, the named refusals,
     and the invariant coordinates alpha_tau of the faces from the sheet's
     Whitney chain Hodge operator and the band's geometric images
-    (`withInvariantCoordinates`), or why they were not attached. The summary
+    (`withInvariantCoordinates`), or why they were not attached, and the
+    Proposition 3 certificate of that operator (whether it holds, and each
+    property that does not, with its residual). The summary
     takes the worst sheet: the read is anchored only when every sheet
     anchors, and carries the largest residuals."""
     fixture = monopole_support()
@@ -3084,10 +3086,20 @@ def anchor_atlas_read(spacetime, alignments,
         read = ch.DressedAnchor.profile(complex_, connection, paths, faces,
                                         phi, tolerance)
         unattached = None
+        operator_certificate = None
         try:
             base = ch.ChainHodge(complex_, [squared[k] for k in order],
                                  ch.Preset.L2)
             covariant = ch.CovariantChainHodge(base, connection)
+            # the operator is built whatever the residuals of Proposition 3
+            # are; the coordinates are attached and the certificate says
+            # which property, if any, does not hold on this sheet
+            certificate = covariant.certificate()
+            operator_certificate = {
+                "holds": bool(certificate.holds),
+                "failed": [str(entry) for entry in certificate.failed],
+                "tolerance": float(certificate.tolerance),
+                "condition_estimate": float(certificate.conditionEstimate)}
             images = np.asarray(covariant.applyG(1, phi))
             dual_images = np.asarray(covariant.dual().applyG(1, phi))
             read = ch.DressedAnchor.withInvariantCoordinates(
@@ -3102,6 +3114,7 @@ def anchor_atlas_read(spacetime, alignments,
             "invariant_coordinates": [complex(a) for a in
                                       read.invariantCoordinates],
             "invariant_coordinates_unattached": unattached,
+            "operator_certificate": operator_certificate,
             "coordinate_scale": float(read.coordinateScale),
             "covariance_residual": float(read.covarianceResidual),
             "transition_cocycle_residual": float(
@@ -3123,6 +3136,13 @@ def anchor_atlas_read(spacetime, alignments,
             s["transition_cocycle_residual"] for s in sheets),
         "invariant_coordinates_attached": all(
             s["invariant_coordinates_unattached"] is None for s in sheets),
+        "operator_certificates_hold": all(
+            s["operator_certificate"] is not None
+            and s["operator_certificate"]["holds"] for s in sheets),
+        "operator_certificates_failed": sorted(
+            {entry for s in sheets
+             for entry in (s["operator_certificate"] or {}).get("failed",
+                                                                [])}),
         "failed_certificates": sorted({f for s in sheets
                                        for f in s["failed_certificates"]}),
         "sheets": sheets,
