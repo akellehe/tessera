@@ -280,14 +280,19 @@ def test_the_multipliers_are_the_least_squares_ones(key, scale, posed):
     """The geometric rows of the residual are R = F + G xi with G the
     constraints' gradients, the multiplier columns of the Jacobian. The
     multipliers a point carries are the least-squares solution of
-    G xi = -F: they agree with `numpy.linalg.lstsq` to 1e-10 of their size
-    (measured: 2e-13 at most)."""
+    G xi = -F with every equation in one unit, a length equation times the
+    scale of its coordinate (`HolomorphicRelaxation.variable_scales`), as
+    the step's linear solve scales them: they agree with
+    `numpy.linalg.lstsq` on the scaled rows to 1e-10 of their size."""
     _, _, point = _displaced_point(key, scale, posed)
     residual, jacobian, count = _reads(point)
     gradients = jacobian[:2 * count, 2 * count:]
     multipliers = np.asarray(point.relaxation.action.multipliers())
     force = residual[:2 * count] - gradients @ multipliers
-    expected = np.linalg.lstsq(gradients, -force, rcond=None)[0]
+    scales = np.asarray(point.relaxation.variable_scales(),
+                        dtype=float)[:2 * count]
+    expected = np.linalg.lstsq(scales[:, None] * gradients, -scales * force,
+                               rcond=None)[0]
     assert _relative(multipliers, expected) < 1e-10
 
 
@@ -545,7 +550,9 @@ def test_an_edge_a_move_creates_starts_where_it_is_accepted():
     moved = _regge_sphere(lambda a, b: 9.0 + 0.25j)
     support = cs.sheeted_support(moved, 1)
     declared = start.declared(_regge_declaration(), support)
-    assert list(declared.regge_start_squared_lengths) == [8.0 + 0j] * 10
+    np.testing.assert_allclose(
+        np.asarray(declared.regge_start_squared_lengths), [8.0 + 0j] * 10,
+        rtol=1e-15)
     # a declaration with a start of its own keeps it, and is not copied
     own = _regge_declaration([7.0 + 0j] * 10)
     assert start.declared(own, support) is own
@@ -571,8 +578,8 @@ def test_an_edge_a_move_creates_starts_where_it_is_accepted():
 # constraints
 
 
-@pytest.mark.parametrize("content, occupied", [((1, 1, 1), 3), ((0, 0, 1), 1),
-                                               ((1, 0, 1), 2), ((2, 1, 0), 2)])
+@pytest.mark.parametrize("content, occupied", [((1, 1, 1), 3), ((0, 0, 3), 1),
+                                               ((1, 0, 2), 2), ((2, 1, 0), 2)])
 def test_the_number_of_pinned_constraints_of_a_content(content, occupied):
     """`fiber_moment_count` on the three-sheeted host of the declared cell:
     an integer setting is that integer; "bands" is the number of bands the

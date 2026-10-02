@@ -134,7 +134,10 @@ def test_the_baryon_driver_adds_the_read_only_when_asked():
         assert sheet["half_turn_trace_residual"] is not None
     for read in plain["doublet_reads"]:
         split = read["spin_split"]
-        assert set(split["dimensions"]) == set(read["sectors"])
+        # a sector of dimension zero is measured and is not a sector of the
+        # read (the contents with one band hold the spin 3/2 alone)
+        assert {key for key, dimension in split["dimensions"].items()
+                if dimension > 0} == set(read["sectors"])
         assert sum(split["dimensions"].values()) > 0
         assert split["polynomial_residual"] < 1e-13
     # the with-quartic read's flags are flags of the content

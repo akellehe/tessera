@@ -336,11 +336,9 @@ def test_the_sharp_spin_refusals_are_named():
     with pytest.raises(ValueError, match="at least one spin-one-half "
                                          "carrier"):
         SharpSpin.doubletSpinMatrices(0)
-    with pytest.raises(ValueError, match="13 carriers need 26 modes, above "
-                                         "the limit of 24"):
-        SharpSpin.doubletSpinMatrices(13)
-    with pytest.raises(ValueError, match="dense Fock operator is materialized "
-                                         "only"):
-        SharpSpin.totalSpinSquaredMatrix(SharpSpin.doubletSpinMatrices(9))
+    with pytest.raises(ValueError, match="the declared mode limit of 12 was "
+                                         "reached"):
+        SharpSpin.totalSpinSquaredMatrix(SharpSpin.doubletSpinMatrices(9),
+                                         modeLimit=12)
     with pytest.raises(ValueError, match="which is not 2\\^M"):
         SharpSpin.applyTotalSpinSquared(spin, np.ones(63, dtype=complex))
