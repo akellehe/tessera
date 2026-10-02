@@ -32,12 +32,6 @@ using cobordism::CertificateRegime;
 constexpr double kInf = std::numeric_limits<double>::infinity();
 constexpr double kNaN = std::numeric_limits<double>::quiet_NaN();
 
-/// The largest band rank whose commutant is decomposed densely. The commutator
-/// map of a rank-R band acts on R^2 coordinates.
-constexpr Eigen::Index kMaxDecomposedRank = 24;
-/// The largest commutant whose centre is decomposed.
-constexpr Eigen::Index kMaxDecomposedCommutant = 100;
-
 double spectralNorm(const Mat& a) {
   if (a.size() == 0) return 0.0;
   Eigen::JacobiSVD<Mat> svd(a);
@@ -96,6 +90,44 @@ std::vector<std::vector<Eigen::Index>> clusters(const std::vector<cd>& values,
   return out;
 }
 
+/// The exactly decoupled blocks of a square matrix: the connected components
+/// of the graph that joins two indices when either entry between them is not
+/// zero. Each block lists its indices in ascending order, and the blocks are
+/// in the order of their smallest index.
+std::vector<std::vector<Eigen::Index>> decoupledBlocks(const Mat& matrix) {
+  const Eigen::Index n = matrix.rows();
+  std::vector<Eigen::Index> root(static_cast<std::size_t>(n));
+  std::iota(root.begin(), root.end(), Eigen::Index{0});
+  const auto find = [&root](Eigen::Index index) {
+    while (root[static_cast<std::size_t>(index)] != index)
+      index = root[static_cast<std::size_t>(index)];
+    return index;
+  };
+  const cd zero(0.0, 0.0);
+  for (Eigen::Index i = 0; i < n; ++i)
+    for (Eigen::Index j = i + 1; j < n; ++j) {
+      if (matrix(i, j) == zero && matrix(j, i) == zero) continue;
+      const Eigen::Index a = find(i);
+      const Eigen::Index b = find(j);
+      // the smaller root stays, so a block is named by its smallest index
+      if (a != b)
+        root[static_cast<std::size_t>(std::max(a, b))] = std::min(a, b);
+    }
+  std::vector<std::vector<Eigen::Index>> blocks;
+  std::vector<Eigen::Index> blockOf(static_cast<std::size_t>(n), -1);
+  for (Eigen::Index i = 0; i < n; ++i) {
+    const Eigen::Index top = find(i);
+    if (blockOf[static_cast<std::size_t>(top)] < 0) {
+      blockOf[static_cast<std::size_t>(top)] =
+          static_cast<Eigen::Index>(blocks.size());
+      blocks.emplace_back();
+    }
+    blocks[static_cast<std::size_t>(blockOf[static_cast<std::size_t>(top)])]
+        .push_back(i);
+  }
+  return blocks;
+}
+
 /// Orthonormal basis of the column span of `a`, at a relative cut.
 Mat orthonormalSpan(const Mat& a, double relativeCut) {
   if (a.cols() == 0 || a.rows() == 0) return Mat(a.rows(), 0);
@@ -107,10 +139,11 @@ Mat orthonormalSpan(const Mat& a, double relativeCut) {
   return svd.matrixU().leftCols(r);
 }
 
-/// Subspace overlap sum cos^2 / max(ranks) of two column spans.
-double subspaceOverlap(const Mat& a, const Mat& b) {
-  const Mat qa = orthonormalSpan(a, 1e-10);
-  const Mat qb = orthonormalSpan(b, 1e-10);
+/// Subspace overlap sum cos^2 / max(ranks) of two column spans, each span's
+/// rank read at the relative singular-value cut `relativeCut`.
+double subspaceOverlap(const Mat& a, const Mat& b, double relativeCut) {
+  const Mat qa = orthonormalSpan(a, relativeCut);
+  const Mat qb = orthonormalSpan(b, relativeCut);
   if (qa.cols() == 0 || qb.cols() == 0) return 0.0;
   Eigen::JacobiSVD<Mat> svd(qa.adjoint() * qb);
   const Eigen::VectorXd s = svd.singularValues();
@@ -168,12 +201,24 @@ double invarianceResidual(const Mat& p, const std::vector<Mat>& generators) {
 
 /// Orthonormal (Frobenius) basis of the commutant of `generators` on C^R, as
 /// R x R matrices. With no generator it is the whole matrix algebra.
+///
+/// The commutant is the null space of the Gram matrix of the commutator maps
+/// X -> A X - X A. An eigenvalue of that Gram matrix counts as zero at or
+/// below `tolerance` times its scale, which is the larger of its largest
+/// eigenvalue and the largest squared spectral norm of a generator: the
+/// second is the size the map has in the generators' own unit, so a set of
+/// generators that commute with everything to rounding has the whole algebra
+/// for its commutant, and the read does not change when the generators are
+/// rescaled.
 std::vector<Mat> commutant(const std::vector<Mat>& generators, Eigen::Index r,
                            double tolerance) {
   const Eigen::Index r2 = r * r;
   Mat gram = Mat::Zero(r2, r2);
   const Mat id = Mat::Identity(r, r);
+  double generatorScale = 0.0;
   for (const Mat& a : generators) {
+    const double size = spectralNorm(a);
+    generatorScale = std::max(generatorScale, size * size);
     // vec(A X - X A) = (I (x) A - A^T (x) I) vec X, column-major vec.
     Mat k = Mat::Zero(r2, r2);
     for (Eigen::Index i = 0; i < r; ++i)
@@ -186,7 +231,8 @@ std::vector<Mat> commutant(const std::vector<Mat>& generators, Eigen::Index r,
   }
   Eigen::SelfAdjointEigenSolver<Mat> eig(gram);
   const Eigen::VectorXd& w = eig.eigenvalues();
-  const double scale = std::max(1.0, w.size() > 0 ? w(w.size() - 1) : 0.0);
+  const double scale =
+      std::max(generatorScale, w.size() > 0 ? w(w.size() - 1) : 0.0);
   std::vector<Mat> basis;
   for (Eigen::Index c = 0; c < r2; ++c)
     if (w(c) <= tolerance * scale) {
@@ -208,37 +254,49 @@ struct Content {
 
 /// The isotypic decomposition of a band under the acting algebra, from the
 /// commutant basis: the centre fixes the isotypes, and f^2 is the dimension of
-/// each isotypic block of the commutant.
+/// each isotypic block of the commutant. A commutant above the declared
+/// `commutantLimit` is returned with its dimension and not decomposed.
+///
+/// The centre is the null space of the Gram matrix of the maps
+/// c -> sum_a c_a [B_a, B_j]. An eigenvalue of it counts as zero at or below
+/// `tolerance` times its scale, the larger of its largest eigenvalue and the
+/// largest fourth power of a basis element's Frobenius norm: the second is
+/// the size a squared commutator of two basis elements has in the basis's own
+/// unit (one for the orthonormal basis `commutant` returns), so a commutative
+/// commutant, whose Gram matrix is zero to rounding, is its own centre.
 Content decompose(const std::vector<Mat>& basis, Eigen::Index r,
                   std::size_t colourFactor, double tolerance,
-                  double isotypicTolerance) {
+                  double isotypicTolerance,
+                  const std::optional<std::size_t>& commutantLimit) {
   Content out;
   out.commutantDimension = basis.size();
   const auto m = static_cast<Eigen::Index>(basis.size());
   if (m == 0) return out;
-  if (m > kMaxDecomposedCommutant) return out;
+  if (commutantLimit.has_value() && basis.size() > *commutantLimit) return out;
   // The centre: coefficients c with sum_a c_a [B_a, B_j] = 0 for every j.
+  // gram(a, b) = sum_j tr([B_a, B_j]^dagger [B_b, B_j]), accumulated one j at
+  // a time from the commutators of that j stacked as columns, so that the
+  // m^2 commutators are never held together.
   Mat gram = Mat::Zero(m, m);
-  std::vector<std::vector<Mat>> comm(static_cast<std::size_t>(m));
-  for (Eigen::Index a = 0; a < m; ++a)
-    for (Eigen::Index j = 0; j < m; ++j)
-      comm[static_cast<std::size_t>(a)].push_back(
-          basis[static_cast<std::size_t>(a)] * basis[static_cast<std::size_t>(j)] -
-          basis[static_cast<std::size_t>(j)] * basis[static_cast<std::size_t>(a)]);
-  for (Eigen::Index a = 0; a < m; ++a)
-    for (Eigen::Index b = a; b < m; ++b) {
-      cd sum(0.0, 0.0);
-      for (Eigen::Index j = 0; j < m; ++j)
-        sum += (comm[static_cast<std::size_t>(a)][static_cast<std::size_t>(j)]
-                    .adjoint() *
-                comm[static_cast<std::size_t>(b)][static_cast<std::size_t>(j)])
-                   .trace();
-      gram(a, b) = sum;
-      gram(b, a) = std::conj(sum);
+  double basisScale = 0.0;
+  for (const Mat& element : basis) {
+    const double size = element.squaredNorm();
+    basisScale = std::max(basisScale, size * size);
+  }
+  Mat stacked(r * r, m);
+  for (Eigen::Index j = 0; j < m; ++j) {
+    const Mat& bj = basis[static_cast<std::size_t>(j)];
+    for (Eigen::Index a = 0; a < m; ++a) {
+      const Mat& ba = basis[static_cast<std::size_t>(a)];
+      const Mat commutator = ba * bj - bj * ba;
+      stacked.col(a) =
+          Eigen::Map<const Eigen::VectorXcd>(commutator.data(), r * r);
     }
+    gram.noalias() += stacked.adjoint() * stacked;
+  }
   Eigen::SelfAdjointEigenSolver<Mat> eig(gram);
   const Eigen::VectorXd& w = eig.eigenvalues();
-  const double scale = std::max(1.0, w(w.size() - 1));
+  const double scale = std::max(basisScale, w(w.size() - 1));
   std::vector<Mat> centre;
   for (Eigen::Index c = 0; c < m; ++c)
     if (w(c) <= tolerance * scale) {
@@ -416,17 +474,76 @@ IsospinFrameRead IsospinDoublet::bands(
       sheetUnits(n, sheetOfCell, baseCellOfCell, sheetCount);
 
   IsospinFrameRead read;
-  Eigen::ComplexEigenSolver<Mat> ces(h, false);
-  std::vector<cd> values(ces.eigenvalues().data(),
-                         ces.eigenvalues().data() + n);
+  // The Hermitian regime is read relative to the operator's own size.
+  const bool hermitian =
+      (h - h.adjoint()).norm() <= cfg.hermiticityTolerance * h.norm();
+
+  // The eigenvalues, the eigenvector matrix and its inverse: the Riesz
+  // projector of a band is V_b V_b^{-1}, the band's columns of the first
+  // times the matching rows of the second. Each exactly decoupled block of
+  // the operator is decomposed on its own, so an eigenvector is supported on
+  // one block and blocks that are equal entry for entry (the sheets of a
+  // sheeted support) have equal eigenvalues and equal eigenvectors: the
+  // degeneracy the copies give is exact, where one decomposition of the
+  // whole matrix separates the copies of an eigenvalue by its rounding. In
+  // the Hermitian regime a block is read on its Hermitian part, whose
+  // eigenvectors are orthonormal, so the inverse is the adjoint; otherwise
+  // the inverse is formed with every nonzero pivot counted, and its
+  // conditioning is reported. The modes are in the order of the blocks.
+  std::vector<cd> values(static_cast<std::size_t>(n));
+  Mat vectors = Mat::Zero(n, n);
+  Mat inverse = Mat::Zero(n, n);
+  read.eigenbasisReciprocalCondition = 1.0;
+  Eigen::Index first = 0;
+  for (const std::vector<Eigen::Index>& block : decoupledBlocks(h)) {
+    const auto size = static_cast<Eigen::Index>(block.size());
+    Mat part(size, size);
+    for (Eigen::Index row = 0; row < size; ++row)
+      for (Eigen::Index column = 0; column < size; ++column)
+        part(row, column) = h(block[static_cast<std::size_t>(row)],
+                              block[static_cast<std::size_t>(column)]);
+    Eigen::VectorXcd partValues(size);
+    Mat partVectors;
+    Mat partInverse;
+    if (hermitian) {
+      Eigen::SelfAdjointEigenSolver<Mat> solver(0.5 * (part + part.adjoint()));
+      for (Eigen::Index mode = 0; mode < size; ++mode)
+        partValues(mode) = cd(solver.eigenvalues()(mode), 0.0);
+      partVectors = solver.eigenvectors();
+      partInverse = partVectors.adjoint();
+    } else {
+      Eigen::ComplexEigenSolver<Mat> ces(part, true);
+      partValues = ces.eigenvalues();
+      partVectors = ces.eigenvectors();
+      Eigen::FullPivLU<Mat> eigenbasis(partVectors);
+      eigenbasis.setThreshold(0.0);
+      if (eigenbasis.isInvertible()) partInverse = eigenbasis.inverse();
+      if (partInverse.size() == 0 || !partInverse.allFinite())
+        throw std::invalid_argument(
+            "IsospinDoublet::bands: the operator's eigenvector matrix has no "
+            "finite inverse, so no band projector has a value");
+      const double reciprocalCondition = eigenbasis.rcond();
+      read.eigenbasisReciprocalCondition =
+          std::min(read.eigenbasisReciprocalCondition,
+                   std::isfinite(reciprocalCondition) ? reciprocalCondition
+                                                      : 0.0);
+    }
+    for (Eigen::Index mode = 0; mode < size; ++mode) {
+      values[static_cast<std::size_t>(first + mode)] = partValues(mode);
+      for (Eigen::Index row = 0; row < size; ++row) {
+        const Eigen::Index index = block[static_cast<std::size_t>(row)];
+        vectors(index, first + mode) = partVectors(row, mode);
+        inverse(first + mode, index) = partInverse(mode, row);
+      }
+    }
+    first += size;
+  }
   double scale = 0.0;
   for (const cd& v : values) scale = std::max(scale, std::abs(v));
   if (scale == 0.0) scale = 1.0;
   read.spectrum = values;
   std::sort(read.spectrum.begin(), read.spectrum.end(), lessComplex);
 
-  const bool hermitian =
-      (h - h.adjoint()).norm() <= cfg.hermiticityTolerance * std::max(h.norm(), 1.0);
   const double hn = std::max(h.norm(), 1e-300);
   const auto groups = clusters(values, cfg.groupingTolerance * scale);
   for (std::size_t gi = 0; gi < groups.size(); ++gi) {
@@ -460,7 +577,12 @@ IsospinFrameRead IsospinDoublet::bands(
     band.contourCenter = centre;
     band.contourRadius = separable ? radius : kNaN;
 
+    // The band's Riesz projector in closed form.
     Mat p = Mat::Zero(n, n);
+    for (const Eigen::Index i : g) p += vectors.col(i) * inverse.row(i);
+    // The resolvent norm on the circle that isolates the band, sampled at
+    // the declared number of equally spaced points; a band that no circle
+    // about its centre isolates has none and is reported uncertified.
     double resolventMax = kNaN;
     std::string contourText;
     if (separable && radius > 0.0) {
@@ -472,15 +594,7 @@ IsospinFrameRead IsospinDoublet::bands(
         const Mat shifted = contour.nodes[j] * Mat::Identity(n, n) - h;
         const Mat resolvent = shifted.partialPivLu().inverse();
         resolventMax = std::max(resolventMax, spectralNorm(resolvent));
-        p += contour.weights[j] * resolvent;
       }
-    } else {
-      // Not separable by a circle: the eigenvector projector, reported as an
-      // uncertified band.
-      Eigen::ComplexEigenSolver<Mat> full(h, true);
-      const Mat v = full.eigenvectors();
-      const Mat vinv = v.inverse();
-      for (const Eigen::Index i : g) p += v.col(i) * vinv.row(i);
     }
     band.resolventMax = resolventMax;
     band.projectorResidual = (p * p - p).norm() / std::max(1.0, p.norm());
@@ -489,7 +603,8 @@ IsospinFrameRead IsospinDoublet::bands(
         0, std::llround(p.trace().real())));
     band.isolated = separable && gap >= cfg.minRelativeGap * scale &&
                     band.projectorResidual <= cfg.projectorTolerance &&
-                    band.projectorNorm <= cfg.conditionNumberCap;
+                    (!cfg.conditionNumberCap.has_value() ||
+                     band.projectorNorm <= *cfg.conditionNumberCap);
 
     // Right frame: an orthonormal basis of Ran P; transpose dual
     // Phi~^T = Phi^dagger P, so that P = Phi Phi~^T and Phi~^T Phi = I.
@@ -560,16 +675,20 @@ IsospinFrameRead IsospinDoublet::bands(
     std::ostringstream content;
     if (r == 0) {
       band.classification = "an empty band";
-    } else if (r > kMaxDecomposedRank) {
+    } else if (cfg.decomposedRankLimit.has_value() &&
+               band.rank > *cfg.decomposedRankLimit) {
       band.classification =
           "a band of rank " + std::to_string(r) +
-          ", above the rank whose commutant is decomposed densely; its content "
-          "is not read";
+          ", above the declared limit of " +
+          std::to_string(*cfg.decomposedRankLimit) +
+          " on the rank of a band whose commutant is decomposed "
+          "(decomposedRankLimit); its content is not read";
       band.unexplainedMultiplicity = false;
     } else {
       const std::vector<Mat> basis = commutant(generators, r, cfg.commutantTolerance);
       const Content c = decompose(basis, r, colourFactor, cfg.commutantTolerance,
-                                  cfg.isotypicTolerance);
+                                  cfg.isotypicTolerance,
+                                  cfg.decomposedCommutantLimit);
       band.commutantDimension = c.commutantDimension;
       band.isotypeCount = c.isotypeCount;
       band.irreducibleDimensions = c.irreducibleDimensions;
@@ -580,7 +699,14 @@ IsospinFrameRead IsospinDoublet::bands(
                 << (colourFactor == 1 ? " sheet" : " sheets") << " x "
                 << c.multiplicities[i];
       }
-      if (!c.decomposed) content << "commutant of dimension " << c.commutantDimension;
+      if (!c.decomposed) {
+        content << "commutant of dimension " << c.commutantDimension;
+        if (cfg.decomposedCommutantLimit.has_value() &&
+            c.commutantDimension > *cfg.decomposedCommutantLimit)
+          content << ", above the declared limit of "
+                  << *cfg.decomposedCommutantLimit
+                  << " (decomposedCommutantLimit)";
+      }
       band.content = content.str();
       const bool irreducible = c.commutantDimension == 1;
       band.unexplainedMultiplicity = !irreducible;
@@ -706,7 +832,8 @@ IsospinDoubletRead IsospinDoublet::observe(const IsospinDoubletDeclaration& decl
         const Mat carried =
             transfer * out.frames[t].bands[cand.trackedBands.back()].fiber.rightFrame();
         for (const IsospinBandRead& b : out.frames[t + 1].bands) {
-          const double o = subspaceOverlap(carried, b.fiber.rightFrame());
+          const double o =
+              subspaceOverlap(carried, b.fiber.rightFrame(), cfg.spanTolerance);
           if (o > overlap) {
             overlap = o;
             next = b.index;
@@ -734,7 +861,8 @@ IsospinDoubletRead IsospinDoublet::observe(const IsospinDoubletDeclaration& decl
       double best = 0.0;
       for (const IsospinBandRead& b : out.resolutions[q].bands)
         if (b.doubletCandidate && b.isolated)
-          best = std::max(best, subspaceOverlap(carried, b.fiber.rightFrame()));
+          best = std::max(best, subspaceOverlap(carried, b.fiber.rightFrame(),
+                                                cfg.spanTolerance));
       cand.resolutionOverlap.push_back(best);
       cand.resolutionFound.push_back(best >= cfg.trackOverlapThreshold);
     }
@@ -812,7 +940,9 @@ IsospinDoubletRead IsospinDoublet::observe(const IsospinDoubletDeclaration& decl
     } else {
       ComplexTransportConfig tcfg;
       tcfg.leakageTolerance = cfg.transportLeakageTolerance;
-      tcfg.conditionNumberCap = cfg.conditionNumberCap;
+      tcfg.rankTolerance = cfg.transportRankTolerance;
+      // no declared cap: no conditioning uncertifies a transport
+      tcfg.conditionNumberCap = cfg.conditionNumberCap.value_or(kInf);
       bool fullRank = true;
       double worstLeak = 0.0;
       double worstIntertwining = 0.0;
@@ -854,7 +984,8 @@ IsospinDoubletRead IsospinDoublet::observe(const IsospinDoubletDeclaration& decl
         const std::vector<double>& s = step.transport.singularValues;
         if (!s.empty()) {
           std::vector<cd> sv(s.begin(), s.end());
-          const auto groups = clusters(sv, 1e-6 * std::max(s.front(), 1e-300));
+          const auto groups =
+              clusters(sv, cfg.singularValueGroupingTolerance * s.front());
           const std::size_t half = s.size() / 2;
           if (groups.size() == 1)
             step.flavourSingularValues = {s.front(), s.front()};
@@ -870,8 +1001,10 @@ IsospinDoubletRead IsospinDoublet::observe(const IsospinDoubletDeclaration& decl
         Eigen::JacobiSVD<Mat> svd(composed);
         const Eigen::VectorXd& s = svd.singularValues();
         cand.lifetimeSingularValues.assign(s.data(), s.data() + s.size());
-        fullRank = fullRank && s.size() > 0 && s(s.size() - 1) > 1e-9 * s(0) &&
-                   s(0) / s(s.size() - 1) <= cfg.conditionNumberCap;
+        fullRank = fullRank && s.size() > 0 &&
+                   s(s.size() - 1) > cfg.transportRankTolerance * s(0) &&
+                   (!cfg.conditionNumberCap.has_value() ||
+                    s(0) / s(s.size() - 1) <= *cfg.conditionNumberCap);
       }
       if (!chainComplete) {
         ev2.push_back(evidence("transport-full-rank", maps.empty() ? std::optional<bool>{} : std::optional<bool>{fullRank},
@@ -923,10 +1056,12 @@ IsospinDoubletRead IsospinDoublet::observe(const IsospinDoubletDeclaration& decl
         for (const Mat& x : restricted(decl.symmetry, fiber)) gens.push_back(x);
       const std::vector<Mat> basis = commutant(gens, r, cfg.commutantTolerance);
       const Mat& h0 = decl.frames[0].operatorMatrix;
-      const double floor = 1e-8;
+      // An operator splits the two members when the traceless commutant part
+      // of its compression to the band is above the declared fraction of the
+      // operator's own size.
       Mat split = tracelessCommutantPart(dual.transpose() * h0 * right, basis);
       charges.memberSource = "in-band operator";
-      if (split.norm() <= floor * std::max(1.0, h0.norm())) {
+      if (split.norm() <= cfg.memberSplittingTolerance * h0.norm()) {
         split = Mat();
         if (decl.memberSplitting.size() != 0) {
           if (decl.memberSplitting.rows() != n || decl.memberSplitting.cols() != n)
@@ -935,7 +1070,8 @@ IsospinDoubletRead IsospinDoublet::observe(const IsospinDoubletDeclaration& decl
                 "match the first frame's cells");
           const Mat s = tracelessCommutantPart(
               dual.transpose() * decl.memberSplitting * right, basis);
-          if (s.norm() > floor * std::max(1.0, decl.memberSplitting.norm())) {
+          if (s.norm() >
+              cfg.memberSplittingTolerance * decl.memberSplitting.norm()) {
             split = s;
             charges.memberSource = "declared splitting operator";
           }
@@ -989,9 +1125,10 @@ IsospinDoubletRead IsospinDoublet::observe(const IsospinDoubletDeclaration& decl
         const cd np = (decl.threeQuarkDensity * charges.memberProjectors[0]).trace();
         const cd nm = (decl.threeQuarkDensity * charges.memberProjectors[1]).trace();
         charges.memberOccupations = {np, nm};
-        const auto integer = [](cd x, long long& k) {
+        const auto integer = [&cfg](cd x, long long& k) {
           k = std::llround(x.real());
-          return std::abs(x - cd(static_cast<double>(k), 0.0)) <= 1e-6;
+          return std::abs(x - cd(static_cast<double>(k), 0.0)) <=
+                 cfg.occupationTolerance;
         };
         long long kp = 0, km = 0;
         if (integer(np, kp) && integer(nm, km) && kp == 2 && km == 1)

@@ -2795,7 +2795,14 @@ whether it is a spinor doublet.)doc")
                     &SpinorBandRead::irreducibilityScore)
       .def_readonly("coexact_residual", &SpinorBandRead::coexactResidual)
       .def_readonly("spinor_doublet", &SpinorBandRead::spinorDoublet)
-      .def_readonly("coexact", &SpinorBandRead::coexact);
+      .def_readonly("coexact", &SpinorBandRead::coexact)
+      .def_readonly("hermiticity_defect", &SpinorBandRead::hermiticityDefect,
+                    "max |h - h^dagger| over max |h| of the operator the "
+                    "bands were read on; the bands are those of its "
+                    "Hermitian part.")
+      .def_readonly("hermitian", &SpinorBandRead::hermitian,
+                    "Whether hermiticity_defect is at or below the declared "
+                    "tolerance.");
 
   py::class_<MonopoleSpinRead>(m, "MonopoleSpinRead",
       R"doc(What a classifier needs from an odd-monopole support in one
@@ -2986,23 +2993,28 @@ sector and the projector equations (I - P_rho)|Psi_R> = 0 and
 by the isolating interaction; beside it the spin-lift read, the J^2
 eigen-equations under a declared SU(2) action on the modes.  J^2 is
 polynomial in the exterior generators, so its action is applied mode-pair by
-mode-pair; the dense Fock matrix is materialized only for fixtures and only
-below the declared mode limit.)doc")
-      .def_property_readonly_static("kMaxDenseModes",
-          [](py::object) { return SharpSpin::kMaxDenseModes; })
-      .def_property_readonly_static("kMaxStateModes",
-          [](py::object) { return SharpSpin::kMaxStateModes; })
+mode-pair; the dense Fock matrix is materialized only for fixtures.  No
+function imposes a size: modeLimit and patternLimit are limits the caller may
+declare (None by default), and a declared limit that is reached raises a
+ValueError naming it.)doc")
+      .def_property_readonly_static("kIndexableModes",
+          [](py::object) { return SharpSpin::kIndexableModes; },
+          "The largest mode count whose Fock dimension 2^M the index type "
+          "counts; a bound of the index type, not a declared limit.")
       .def_static("determinant", &SharpSpin::determinant,
-                  py::arg("occupiedModes"), py::arg("modeCount"))
+                  py::arg("occupiedModes"), py::arg("modeCount"),
+                  py::arg("modeLimit") = std::optional<std::size_t>{})
       .def_static("determinantSuperposition",
                   &SharpSpin::determinantSuperposition,
                   py::arg("occupations"), py::arg("amplitudes"),
-                  py::arg("modeCount"))
+                  py::arg("modeCount"),
+                  py::arg("modeLimit") = std::optional<std::size_t>{})
       .def_static("applyTotalSpinSquared", &SharpSpin::applyTotalSpinSquared,
                   py::arg("spinMatrices"), py::arg("state"))
       .def_static("totalSpinSquaredMatrix",
                   &SharpSpin::totalSpinSquaredMatrix,
-                  py::arg("spinMatrices"))
+                  py::arg("spinMatrices"),
+                  py::arg("modeLimit") = std::optional<std::size_t>{})
       .def_static("read", &SharpSpin::read, py::arg("spinMatrices"),
                   py::arg("rightState"), py::arg("leftState"),
                   py::arg("targetEigenvalue") = 0.75,
@@ -3012,26 +3024,30 @@ below the declared mode limit.)doc")
                   "J_a = I (x) sigma_a / 2 on carrierCount distinguishable "
                   "spin-one-half carriers, mode 2c + s being spin state s of "
                   "carrier c.")
-      .def_property_readonly_static("kMaxSectorPatterns",
-          [](py::object) { return SharpSpin::kMaxSectorPatterns; })
       .def_static("sectorPatterns", &SharpSpin::sectorPatterns,
                   py::arg("modeCount"), py::arg("particles"),
+                  py::arg("patternLimit") = std::optional<std::size_t>{},
                   "The n-particle occupation patterns: ascending mode tuples "
                   "in lexicographic order, the basis of the sector matrices.")
       .def_static("exteriorPowerMatrix", &SharpSpin::exteriorPowerMatrix,
                   py::arg("oneParticle"), py::arg("particles"),
+                  py::arg("patternLimit") = std::optional<std::size_t>{},
                   "Lambda^n D on the n-particle sector: entry (J, I) is the "
                   "minor det D[J, I] over the sector patterns.")
       .def_static("sectorComponent", &SharpSpin::sectorComponent,
                   py::arg("state"), py::arg("particles"),
+                  py::arg("patternLimit") = std::optional<std::size_t>{},
                   "The n-particle component of a Fock vector over the sector "
                   "patterns.")
       .def_static("fockVector", &SharpSpin::fockVector, py::arg("sector"),
                   py::arg("modeCount"), py::arg("particles"),
+                  py::arg("modeLimit") = std::optional<std::size_t>{},
+                  py::arg("patternLimit") = std::optional<std::size_t>{},
                   "A vector over the sector patterns as a Fock vector.")
       .def_static("isotypicProjector", &SharpSpin::isotypicProjector,
                   py::arg("maps"), py::arg("characters"), py::arg("dimension"),
                   py::arg("particles"),
+                  py::arg("patternLimit") = std::optional<std::size_t>{},
                   "P_rho = (dim rho / |G|) sum_g conj(chi_rho(g)) Lambda^n "
                   "D(g) on the n-particle sector, from every element's "
                   "one-particle map and rho's character on it.")

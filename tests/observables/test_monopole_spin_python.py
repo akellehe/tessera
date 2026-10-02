@@ -461,53 +461,52 @@ class TestSpinorBands(unittest.TestCase):
         at mu = 3).
 
         The rotation-averaged edge Laplacian has the three doubly degenerate
-        eigenvalues 4 - 2/sqrt(3), 4 and 4 + 2/sqrt(3). The degeneracy
-        tolerance is an absolute separation, and the two eigenvalues of a
-        pair are computed up to 3e-15 apart, so a pair computed further apart
-        than 1e-15 is read as two bands of rank one, which are not invariant
-        (invariance residual 1/3) and not spinor doublets. At mu = +-1 the
-        pair at 4 - 2/sqrt(3) is read so and the other two pairs are read as
-        spinor doublets, the coexact one at 4 among them; at mu = 3 every
-        pair is read as two bands of rank one and no doublet is found."""
-        dimensions = {1: [1, 1, 2, 2], -1: [1, 1, 2, 2], 3: [1] * 6}
-        for mu, expected in dimensions.items():
+        eigenvalues 4 - 2/sqrt(3), 4 and 4 + 2/sqrt(3). The projective class
+        is nontrivial, so the eigenvalues are equal in consecutive pairs
+        exactly and each pair is one band of rank two, whatever the
+        eigensolver's rounding separates its two values by (up to 3e-15
+        here): three bands of rank two at every odd monopole number, at the
+        declared degeneracy tolerance. Each band's invariance residual and
+        irreducibility score are at rounding, and the band at 4 lies in the
+        coexact sector to rounding and the other two do not (coexact residual
+        above one half).
+
+        Whether a band at rounding is within 1e-15 is decided by that
+        rounding, so the verdicts are read at the certificate tolerance
+        1e-12: every band is a spinor doublet and the j = 1/2 doublet is the
+        middle one."""
+        rotations = MonopoleSupport.tetrahedralRotations()
+        for mu in (1, -1, 3):
             support = MonopoleSupport.tetrahedron(mu)
-            read = support.spinRead(MonopoleSupport.tetrahedralRotations())
+            read = support.spinRead(rotations)
             self.assertTrue(read.monopole.odd, msg=f"mu={mu}")
             self.assertTrue(read.cocycle.nontrivial, msg=f"mu={mu}")
             self.assertTrue(read.certificate.holds())
             self.assertEqual([band.dimension for band in read.bands],
-                             expected, msg=f"mu={mu}")
-            for band in read.bands:
-                if band.dimension == 2:
-                    self.assertLessEqual(band.invariance_residual, 1e-11)
-                    self.assertLessEqual(
-                        abs(band.irreducibility_score - 1.0), 1e-9)
-                    self.assertTrue(band.spinor_doublet)
-                else:
-                    self.assertAlmostEqual(band.invariance_residual,
-                                           1.0 / 3.0, places=12)
-                    self.assertAlmostEqual(band.irreducibility_score, 0.5,
-                                           places=12)
-                    self.assertFalse(band.spinor_doublet)
-            if mu == 3:
-                self.assertFalse(read.half_integer_doublet)
-                self.assertEqual(read.doublet_index, len(read.bands))
-                # the two bands of rank one at 4 lie in the coexact sector
-                self.assertEqual([band.coexact for band in read.bands],
-                                 [False, False, True, True, False, False])
-                continue
-            self.assertTrue(read.half_integer_doublet)
-            self.assertEqual(read.doublet_index, 2)
-            doublet = read.bands[read.doublet_index]
-            self.assertAlmostEqual(doublet.eigenvalue, 4.0, places=9)
-            self.assertTrue(doublet.coexact)
-            self.assertLessEqual(doublet.coexact_residual, 1e-10)
-            # The other bands are the images of the vertex doublets and lie
-            # in the exact sector, so they are NOT the j = 1/2 one.
+                             [2, 2, 2], msg=f"mu={mu}")
+            np.testing.assert_allclose(
+                [band.eigenvalue for band in read.bands],
+                [4.0 - 2.0 / np.sqrt(3.0), 4.0, 4.0 + 2.0 / np.sqrt(3.0)],
+                atol=1e-12)
             for index, band in enumerate(read.bands):
-                if index != read.doublet_index:
-                    self.assertFalse(band.coexact)
+                self.assertLessEqual(band.invariance_residual, 1e-13)
+                self.assertLessEqual(
+                    abs(band.irreducibility_score - 1.0), 1e-13)
+                self.assertEqual(band.hermiticity_defect <= 1e-14, True)
+                if index == 1:
+                    self.assertLessEqual(band.coexact_residual, 1e-13)
+                else:
+                    self.assertGreater(band.coexact_residual, 0.5)
+
+            graded = support.spinRead(rotations, 1e-15, 1e-12)
+            self.assertEqual([band.dimension for band in graded.bands],
+                             [2, 2, 2])
+            self.assertEqual([band.spinor_doublet for band in graded.bands],
+                             [True, True, True])
+            self.assertEqual([band.coexact for band in graded.bands],
+                             [False, True, False])
+            self.assertTrue(graded.half_integer_doublet)
+            self.assertEqual(graded.doublet_index, 1)
 
     def test_an_even_monopole_support_does_not(self) -> None:
         for mu in (0, 2, -2):
@@ -532,13 +531,30 @@ class TestSpinorBands(unittest.TestCase):
         self.assertEqual(coexact[0].dimension, 2)
         self.assertGreater(coexact[0].irreducibility_score, 1.5)
 
-    def test_a_non_hermitian_operator_is_refused(self) -> None:
+    def test_a_non_hermitian_operator_is_read_on_its_hermitian_part(
+            self) -> None:
+        """The bands of an operator that is not Hermitian are those of its
+        Hermitian part, and every band carries the operator's departure from
+        its adjoint, max |h - h^dagger| over max |h|, and whether that is
+        within the tolerance."""
         support = MonopoleSupport.tetrahedron(1)
         group = MonopoleSupport.tetrahedralRotations()
         skewed = np.eye(6, dtype=complex)
         skewed[0, 1] = 1.0
-        with self.assertRaises(ValueError):
-            support.spinorBands(skewed, group, True)
+        bands = support.spinorBands(skewed, group, False)
+        part = 0.5 * (skewed + skewed.conj().T)
+        expected = np.linalg.eigvalsh(part)
+        self.assertEqual(sum(band.dimension for band in bands), 6)
+        np.testing.assert_allclose(
+            sorted(v for band in bands
+                   for v in [band.eigenvalue] * band.dimension),
+            np.sort(expected), atol=1e-12)
+        for band in bands:
+            self.assertEqual(band.hermiticity_defect, 1.0)
+            self.assertFalse(band.hermitian)
+        for band in support.spinorBands(part, group, False):
+            self.assertEqual(band.hermiticity_defect, 0.0)
+            self.assertTrue(band.hermitian)
 
 
 # ─── the sharp-spin eigen-equations ────────────────────────────────────────
@@ -776,16 +792,20 @@ class TestIsotypicProjector(unittest.TestCase):
     def setUpClass(cls):
         cls.support = MonopoleSupport.tetrahedron(1)
         cls.group = MonopoleSupport.tetrahedralRotations()
-        cls.read = cls.support.spinRead(cls.group)
+        # the bands are the three pairs; their verdicts are graded at 1e-12,
+        # above the rounding of the residuals
+        cls.read = cls.support.spinRead(cls.group, 1e-15, 1e-12)
         averaged = np.asarray(cls.support.rotationAveragedEdgeOperator(
             cls.support.edgeLaplacian(), cls.group))
         values, vectors = np.linalg.eigh(averaged)
         order = np.argsort(values)
         vectors = vectors[:, order]
         # the three doublets 2, 2', 2'' as the eigenspaces of the averaged
-        # operator, in the order the spin read lists its bands
+        # operator, in the order the spin read lists its bands, so the
+        # read's doublet index is the coexact doublet's block
         cls.blocks = [vectors[:, 2 * c:2 * c + 2] for c in range(3)]
         cls.reference = int(cls.read.doublet_index)
+        assert cls.reference == 1
         # the lift: D(g) scaled to determinant one on the reference doublet,
         # with both signs, is a linear representation of the double cover
         cls.maps, cls.characters = [], {c: [] for c in range(3)}
@@ -813,8 +833,12 @@ class TestIsotypicProjector(unittest.TestCase):
         self.assertEqual(len(SharpSpin.sectorPatterns(18, 3)), 816)
         with self.assertRaises(ValueError):
             SharpSpin.sectorPatterns(3, 4)
-        with self.assertRaises(ValueError):
-            SharpSpin.sectorPatterns(24, 12)
+        # no pattern count is imposed: 16 modes with 8 particles is 12870
+        # patterns; a declared limit that is reached is named
+        self.assertEqual(len(SharpSpin.sectorPatterns(16, 8)), 12870)
+        with self.assertRaisesRegex(ValueError, "the declared pattern limit "
+                                    "of 8192 was reached"):
+            SharpSpin.sectorPatterns(24, 12, patternLimit=8192)
 
     def test_the_exterior_power_is_the_matrix_of_minors(self) -> None:
         generator = np.random.default_rng(2026)
@@ -900,12 +924,18 @@ class TestIsotypicProjector(unittest.TestCase):
         self.assertTrue(all(r > 0 for r in ranks))
 
     def test_the_read_certifies_a_state_of_one_type(self) -> None:
+        """The residuals of a state of one type are at rounding (1.2e-15
+        here), so the verdict is graded at 1e-12; at the declared 1e-15 the
+        same residuals are reported and the rounding decides the verdict."""
         projectors = [self.projector(c, 3) for c in range(3)]
         generator = np.random.default_rng(1196)
         random = generator.normal(size=20) + 1j * generator.normal(size=20)
         state = projectors[0] @ random
         left = projectors[0].T @ random.conj()
-        read = SharpSpin.isotypicRead(projectors[0], state, left, "2")
+        declared = SharpSpin.isotypicRead(projectors[0], state, left, "2")
+        self.assertLess(declared.right_residual, 1e-14)
+        self.assertLess(declared.left_residual, 1e-14)
+        read = SharpSpin.isotypicRead(projectors[0], state, left, "2", 1e-12)
         self.assertEqual(read.type, "2")
         self.assertTrue(read.sharp)
         self.assertLess(read.right_residual, 1e-12)
@@ -916,13 +946,14 @@ class TestIsotypicProjector(unittest.TestCase):
         self.assertTrue(read.certificate.holds())
         # the same state is not of another type, and the matrix element alone
         # says so only through the weight
-        other = SharpSpin.isotypicRead(projectors[1], state, left, "2'")
+        other = SharpSpin.isotypicRead(projectors[1], state, left, "2'",
+                                       1e-12)
         self.assertFalse(other.sharp)
         self.assertAlmostEqual(other.right_residual, 1.0, places=10)
         self.assertLess(abs(other.weight), 1e-10)
         # a sum of types certifies a state in either
         pair = SharpSpin.isotypicRead(projectors[0] + projectors[1], state,
-                                      left, "2 + 2'")
+                                      left, "2 + 2'", 1e-12)
         self.assertTrue(pair.sharp)
         self.assertEqual(pair.rank, read.rank
                          + int(round(np.trace(projectors[1]).real)))

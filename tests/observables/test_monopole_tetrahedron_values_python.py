@@ -142,25 +142,23 @@ def test_the_six_edge_modes_are_two_plus_two_prime_plus_two_double_prime():
     The averaged Laplacian has the paper's six eigenvalues to 1e-12, and the
     aligned frame's three carriers (the consecutive pairs of its ascending
     eigenvectors) carry the three characters with an intertwining residual
-    of 9.5e-16. The spin read at the declared tolerances (1e-15) reads four
-    bands, not three: the two eigenvalues at 4 - 2/sqrt(3) are computed
-    3e-15 apart, above the degeneracy tolerance, and are read as two bands
-    of rank one; the doublets at 4 (coexact, the genuine j = 1/2 doublet)
-    and at 4 + 2/sqrt(3) are read as spinor doublets. The read's doublet
-    index is the coexact doublet's place among the four bands, 2. The
-    aligned frame names its reference by the carrier that holds the coexact
-    doublet, 1, the pair at 4."""
+    of 9.5e-16. The spin read reads three bands of rank two at the declared
+    degeneracy tolerance: under the nontrivial class the eigenvalues are
+    equal in consecutive pairs exactly, so the two eigenvalues at
+    4 - 2/sqrt(3), computed 3e-15 apart, are one band. Graded at 1e-12,
+    above the rounding of the residuals, every band is a spinor doublet, and
+    the one at 4 is coexact, the genuine j = 1/2 doublet: the read's doublet
+    index is 1, which is also the carrier the aligned frame names as its
+    reference."""
     support = MonopoleSupport.tetrahedron(1)
     group = MonopoleSupport.tetrahedralRotations()
-    read = support.spinRead(group)
-    assert [b.dimension for b in read.bands] == [1, 1, 2, 2]
-    assert [b.spinor_doublet for b in read.bands] == [False, False, True,
-                                                      True]
+    assert [b.dimension for b in support.spinRead(group).bands] == [2, 2, 2]
+    read = support.spinRead(group, 1e-15, 1e-12)
+    assert [b.dimension for b in read.bands] == [2, 2, 2]
+    assert [b.spinor_doublet for b in read.bands] == [True, True, True]
     assert all(b.irreducibility_score == pytest.approx(1.0, abs=1e-12)
-               for b in read.bands[2:])
-    assert all(b.irreducibility_score == pytest.approx(0.5, abs=1e-12)
-               for b in read.bands[:2])
-    assert read.half_integer_doublet and read.doublet_index == 2
+               for b in read.bands)
+    assert read.half_integer_doublet and read.doublet_index == 1
     doublet = read.bands[read.doublet_index]
     assert doublet.coexact and doublet.coexact_residual < 1e-12
     assert doublet.eigenvalue == pytest.approx(4.0, abs=1e-12)
@@ -327,8 +325,11 @@ def test_the_sharp_spin_refusals_are_named():
                                          "space"):
         SharpSpin.determinant([6], 6)
     with pytest.raises(ValueError, match="the mode count must lie between "
-                                         "one and 24; received 25"):
-        SharpSpin.determinant([0], 25)
+                                         "one and 62"):
+        SharpSpin.determinant([0], 63)
+    with pytest.raises(ValueError, match="the declared mode limit of 24 was "
+                                         "reached"):
+        SharpSpin.determinant([0], 25, modeLimit=24)
     with pytest.raises(ValueError, match="2 determinants were listed but 1 "
                                          "amplitudes"):
         SharpSpin.determinantSuperposition([[0], [1]], [1.0], 6)

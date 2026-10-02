@@ -38,7 +38,28 @@ void register_isospin_doublet(py::module_ m) {
                      &IsospinDoubletConfig::transportLeakageTolerance)
       .def_readwrite("intertwining_tolerance",
                      &IsospinDoubletConfig::intertwiningTolerance)
-      .def_readwrite("condition_number_cap", &IsospinDoubletConfig::conditionNumberCap);
+      .def_readwrite("span_tolerance", &IsospinDoubletConfig::spanTolerance)
+      .def_readwrite("transport_rank_tolerance",
+                     &IsospinDoubletConfig::transportRankTolerance)
+      .def_readwrite("singular_value_grouping_tolerance",
+                     &IsospinDoubletConfig::singularValueGroupingTolerance)
+      .def_readwrite("member_splitting_tolerance",
+                     &IsospinDoubletConfig::memberSplittingTolerance)
+      .def_readwrite("occupation_tolerance",
+                     &IsospinDoubletConfig::occupationTolerance)
+      .def_readwrite("condition_number_cap", &IsospinDoubletConfig::conditionNumberCap,
+                     "A declared cap on the condition number of a certified "
+                     "transport and on each band's projector norm; None (the "
+                     "default) uncertifies nothing by its conditioning.")
+      .def_readwrite("decomposed_rank_limit",
+                     &IsospinDoubletConfig::decomposedRankLimit,
+                     "A declared limit on the rank of a band whose commutant "
+                     "is decomposed; None (the default) decomposes every band.")
+      .def_readwrite("decomposed_commutant_limit",
+                     &IsospinDoubletConfig::decomposedCommutantLimit,
+                     "A declared limit on the dimension of a commutant whose "
+                     "centre is decomposed; None (the default) decomposes "
+                     "every commutant.");
 
   py::class_<IsospinFrame>(m, "IsospinFrame",
       "One frame of a cluster's lifetime: the operator the fiber is read on and "
@@ -119,6 +140,8 @@ void register_isospin_doublet(py::module_ m) {
   py::class_<IsospinFrameRead>(m, "IsospinFrameRead", "The bands of one frame.")
       .def_readonly("label", &IsospinFrameRead::label)
       .def_readonly("spectrum", &IsospinFrameRead::spectrum)
+      .def_readonly("eigenbasis_reciprocal_condition",
+                    &IsospinFrameRead::eigenbasisReciprocalCondition)
       .def_readonly("bands", &IsospinFrameRead::bands);
 
   py::class_<IsospinTransportStep>(m, "IsospinTransportStep",

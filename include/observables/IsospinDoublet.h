@@ -132,8 +132,11 @@ struct IsospinDoubletConfig {
   /// A band is isolated when its distance to the nearest eigenvalue outside it
   /// is at least `minRelativeGap * scale` and the circle drawn around it
   /// separates it from every other eigenvalue.
-  double minRelativeGap = 1e-6;
-  /// Trapezoidal node count of each band's circular Riesz contour.
+  double minRelativeGap = 1e-15;
+  /// The number of equally spaced points of each band's isolating circle at
+  /// which the resolvent norm is sampled (`IsospinBandRead::resolventMax`).
+  /// The band's Riesz projector is formed in closed form from the
+  /// eigendecomposition and does not depend on it.
   int contourNodes = 64;
   /// Cap on the Riesz projector's relative idempotency defect.
   double projectorTolerance = 1e-15;
@@ -148,9 +151,9 @@ struct IsospinDoubletConfig {
   /// largest eigenvalue modulus), and the relative singular-value cut of the
   /// rank of each isotypic block of the commutant.
   double isotypicTolerance = 1e-15;
-  /// The departure of the operator from its adjoint,
-  /// ||h - h^dagger||_F / max(||h||_F, 1), at or below which the frame is
-  /// read in the Hermitian regime.
+  /// The departure of the operator from its adjoint relative to its own
+  /// size, ||h - h^dagger||_F / ||h||_F, at or below which the frame is read
+  /// in the Hermitian regime (the zero operator is Hermitian).
   double hermiticityTolerance = 1e-15;
   /// Minimum subspace overlap for a certified continuation between frames and
   /// between resolutions.
@@ -164,9 +167,46 @@ struct IsospinDoubletConfig {
   /// Cap on the relative intertwining residual of a transport against the
   /// rotation and colour actions.
   double intertwiningTolerance = 1e-15;
-  /// Cap on the condition number of a certified transport and on each band's
-  /// projector norm.
-  double conditionNumberCap = 1e8;
+  /// Relative singular-value cut of the rank of a column span in the subspace
+  /// overlaps that follow a band between frames of different cell sets and
+  /// between resolutions: a singular value counts toward the span when it is
+  /// above `spanTolerance` times the largest.
+  double spanTolerance = 1e-15;
+  /// Relative singular-value cut of a transport's rank: of each
+  /// frame-to-frame transport (`ComplexTransportConfig::rankTolerance`) and
+  /// of the composed lifetime transport, whose smallest singular value must
+  /// be above `transportRankTolerance` times its largest.
+  double transportRankTolerance = 1e-15;
+  /// Relative width within which singular values of a band transport form one
+  /// group, relative to the largest of them: the two groups are the two
+  /// singular values of the flavour factor.
+  double singularValueGroupingTolerance = 1e-15;
+  /// The size of the traceless commutant part of an operator's compression
+  /// to the band, relative to the operator's own Frobenius norm, at or below
+  /// which the operator does not split the doublet's two members.
+  double memberSplittingTolerance = 1e-15;
+  /// The departure of a member's occupation tr(gamma Pi) from an integer at
+  /// or below which it is read as that integer in the occupation pattern.
+  double occupationTolerance = 1e-15;
+  /// A declared cap on the condition number of a certified transport and on
+  /// each band's projector norm. None by default: no conditioning uncertifies
+  /// a band or a transport, and the numbers are reported
+  /// (`IsospinBandRead::projectorNorm`,
+  /// `IsospinFrameRead::eigenbasisReciprocalCondition`, the transports'
+  /// condition numbers and singular values).
+  std::optional<double> conditionNumberCap{};
+  /// A declared limit on the rank of a band whose commutant is decomposed:
+  /// the commutator map of a rank-R band acts on R^2 coordinates, and its
+  /// Gram matrix has R^4 entries. None by default: every band is decomposed.
+  /// A band above a declared limit is reported with the limit named and its
+  /// content unread.
+  std::optional<std::size_t> decomposedRankLimit{};
+  /// A declared limit on the dimension of a commutant whose centre is
+  /// decomposed (the centre's Gram matrix is formed from that many squared
+  /// commutators). None by default. A commutant above a declared limit is
+  /// reported with its dimension and the limit named, and its isotypes are
+  /// unread.
+  std::optional<std::size_t> decomposedCommutantLimit{};
 };
 
 /// One frame of the cluster's lifetime: the operator the fiber is read on at
@@ -252,21 +292,33 @@ struct IsospinBandRead {
   std::vector<std::complex<double>> eigenvalues{};
   /// Their mean.
   std::complex<double> center{0.0, 0.0};
-  /// The band rank (trace of the Riesz projector, rounded).
+  /// The band rank (trace of the Riesz projector, rounded). The projector is
+  /// V_b V_b^{-1}: the band's columns of the operator's eigenvector matrix
+  /// times the matching rows of its inverse (of its adjoint, in the Hermitian
+  /// regime, where the operator read is the Hermitian part). The operator is
+  /// decomposed one exactly decoupled block at a time, so the copies of an
+  /// eigenvalue on equal blocks (the sheets of a sheeted support) are equal
+  /// exactly and fall in one band.
   std::size_t rank = 0;
   /// Distance in the complex plane to the nearest eigenvalue outside the band
   /// (infinite when there is none).
   double gap = 0.0;
-  /// The contour the projector was integrated on.
+  /// The circle that isolates the band: centred on the mean of its
+  /// eigenvalues, with its radius halfway between the band's farthest member
+  /// and the nearest eigenvalue outside it. Not a number when no circle
+  /// about that centre separates the band from the rest of the spectrum.
   std::complex<double> contourCenter{0.0, 0.0};
   double contourRadius = 0.0;
   /// ||P^2 - P||_F / max(1, ||P||_F).
   double projectorResidual = 0.0;
   /// ||P||_2.
   double projectorNorm = 0.0;
-  /// max over the contour nodes of ||(zeta - h)^{-1}||_2.
+  /// The largest ||(zeta - h)^{-1}||_2 over the sampled points of the
+  /// isolating circle (`IsospinDoubletConfig::contourNodes` of them); not a
+  /// number when there is no such circle.
   double resolventMax = 0.0;
-  /// Whether the band met the isolation, idempotency and conditioning caps.
+  /// Whether the band met the isolation and idempotency thresholds and a
+  /// declared conditioning cap.
   bool isolated = false;
 
   /// The number of sheets declared, and whether the band is invariant under
@@ -312,6 +364,14 @@ struct IsospinFrameRead {
   std::string label{};
   /// Every eigenvalue, ascending real part then imaginary part.
   std::vector<std::complex<double>> spectrum{};
+  /// The smallest reciprocal condition number, over the operator's exactly
+  /// decoupled blocks, of a block's eigenvector matrix, whose inverse every
+  /// band projector of the frame is formed with. One in the Hermitian
+  /// regime, where the eigenvectors are orthonormal and the inverse is their
+  /// adjoint; near zero where the operator is close to defective, where the
+  /// projectors' own idempotency residuals and norms say what the inverse
+  /// cost them.
+  double eigenbasisReciprocalCondition = 1.0;
   std::vector<IsospinBandRead> bands{};
 };
 
@@ -429,7 +489,9 @@ class IsospinDoublet {
 
   /// The bands of one operator with their representation content.
   /// @throws std::invalid_argument on a non-square operator or a sheet, base
-  ///         cell or symmetry declaration whose size does not match it.
+  ///         cell or symmetry declaration whose size does not match it, or
+  ///         when the operator's eigenvector matrix has no finite inverse, so
+  ///         that no band projector has a value.
   [[nodiscard]] static IsospinFrameRead bands(
       const Eigen::MatrixXcd& operatorMatrix,
       const std::vector<std::vector<std::uint64_t>>& cells,
