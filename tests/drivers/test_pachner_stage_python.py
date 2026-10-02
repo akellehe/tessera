@@ -127,3 +127,87 @@ def test_the_search_offers_no_surgical_move():
     after = {frozenset(int(v) for v in f)
              for f in MC.boundary_facets(node.spacetime())}
     assert after == before
+
+
+# ------------------------------------------- the growth step's objective
+
+
+def _grown_level():
+    from tests.drivers import _recursion_levels_2026_10_01 as LEVELS
+    return (LEVELS.TICK1_CELLS, dict(LEVELS.GROWN_SQUARED_LENGTHS),
+            dict(LEVELS.GROWN_LINKS))
+
+
+def _objective_before(name, squared, links):
+    cells, _, _ = _grown_level()
+    config = R.default_config(pachner_objective=name)
+    record = R.pachner_stage(cells, squared, links, config)[3]
+    assert record["objective_name"] == name
+    return record["objective_before"]
+
+
+def test_the_growth_objective_is_declared_and_defaults_to_the_engine_s():
+    """The objective of the growth step is a declared option: the engine's
+    joint stationarity objective by default, the joint action's stationarity
+    by name; another name has no value."""
+    assert R.PACHNER_OBJECTIVES == ("engine", "joint-action")
+    assert R.default_config()["pachner_objective"] == "engine"
+    args = R.build_parser().parse_args(["run"])
+    assert args.pachner_objective == "engine"
+    args = R.build_parser().parse_args(
+        ["run", "--pachner-objective", "joint-action"])
+    assert args.pachner_objective == "joint-action"
+    with pytest.raises(ValueError, match="the growth step's objective is "
+                                         "one of engine, joint-action"):
+        R.default_config(pachner_objective="regge")
+
+
+def test_the_joint_action_objective_is_the_level_s_residual_norm():
+    """Under ``joint-action`` the growth step scores a base with the norm of
+    the joint action's stationarity residual over the level's sheets, nothing
+    held: on the level grown at tick 0 of the run of 2026-10-01 it is the
+    residual norm the level's relaxation starts from, 33.4178200400092."""
+    cells, squared, links = _grown_level()
+    value = _objective_before("joint-action", squared, links)
+    assert value == pytest.approx(33.4178200400092, rel=1e-12)
+    level, count = R.build_level(cells, squared, links)
+    base = R.sheet_base(level, count)
+    system, _ = R.level_system(base, R.default_config(), [], R.SHEETS)
+    assert value == pytest.approx(
+        np.linalg.norm(system.point(base).relaxation.residual()), rel=1e-13)
+
+
+def test_the_joint_action_objective_does_not_turn_on_a_rounding_or_a_gauge():
+    """The level grown at tick 0 has squared lengths real to rounding on
+    eight of its ten edges. The joint action's Regge term is read on the
+    continued sheet, so the objective is the same number whatever the signs
+    of those imaginary parts are, and it is the same under a gauge
+    transformation of the links whose moduli are not one. The engine's
+    objective on the same level takes values from 2.91 to 8.97 over the
+    same signs."""
+    cells, squared, links = _grown_level()
+    real = {edge: complex(value.real,
+                          value.imag if abs(value.imag) > 1e-10 else 0.0)
+            for edge, value in squared.items()}
+    reference = _objective_before("joint-action", real, links)
+    engine = _objective_before("engine", real, links)
+    spread = []
+    for edge, value in real.items():
+        if value.imag != 0.0:
+            continue
+        for sign in (1e-16, -1e-16):
+            moved = dict(real)
+            moved[edge] = complex(value.real, sign)
+            assert _objective_before("joint-action", moved, links) == \
+                pytest.approx(reference, rel=1e-12)
+            spread.append(_objective_before("engine", moved, links))
+    assert max(spread) - min(spread) > 1.0 and min(spread) < engine
+
+    rng = np.random.default_rng(5)
+    gauge = {vertex: np.exp(0.7 * rng.normal()
+                            + 1j * rng.uniform(0.0, 2.0 * np.pi))
+             for vertex in range(5)}
+    gauged = {(a, b): gauge[a] * link / gauge[b]
+              for (a, b), link in links.items()}
+    assert _objective_before("joint-action", real, gauged) == \
+        pytest.approx(reference, rel=1e-11)
