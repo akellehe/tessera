@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <array>
 #include <limits>
+#include <functional>
 #include <map>
 #include <cmath>
 #include <cstdio>
@@ -2001,6 +2002,30 @@ std::vector<complexd> JointAction::actionHessian(bool lengths,
   }
   const bool contracted = !matrix.isZero(0.0);
 
+  // The connected component of the complex each edge lies in. The operator
+  // is block diagonal over the components (the sheets of a sheeted support
+  // are components), so its second derivative in two edges of different
+  // components is exactly zero, and those pairs are not formed.
+  std::map<std::uint64_t, std::uint64_t> root;
+  const std::function<std::uint64_t(std::uint64_t)> find =
+      [&](std::uint64_t vertex) {
+        auto found = root.find(vertex);
+        if (found == root.end()) found = root.emplace(vertex, vertex).first;
+        if (found->second == vertex) return vertex;
+        const std::uint64_t top = find(found->second);
+        root[vertex] = top;
+        return top;
+      };
+  for (std::size_t e = 0; e < edges; ++e) {
+    if (!carried[e]) continue;
+    const std::uint64_t a = find(sources[e]);
+    const std::uint64_t b = find(targets[e]);
+    if (a != b) root[std::max(a, b)] = std::min(a, b);
+  }
+  std::vector<std::uint64_t> component(edges, 0);
+  for (std::size_t e = 0; e < edges; ++e)
+    if (carried[e]) component[e] = find(sources[e]);
+
   // tr(A d^2 h): the length block from the directional derivatives of the
   // gradient, one direction per edge; the link block and the mixed block from
   // the phase Hessian and the mixed derivative, with -1 = (-i)^2 and -i on
@@ -2021,7 +2046,7 @@ std::vector<complexd> JointAction::actionHessian(bool lengths,
     for (std::size_t e = 0; e < edges; ++e) {
       if (!carried[e]) continue;
       for (std::size_t f = 0; f < edges; ++f) {
-        if (!carried[f]) continue;
+        if (!carried[f] || component[e] != component[f]) continue;
         const auto phase = workspace.hodge.laplacianPhaseHessian(
             degree, sources[e], targets[e], sources[f], targets[f]);
         if (phase.size() == cells)

@@ -4,6 +4,7 @@
 #include "cobordism/DressedFluctuation.h"
 
 #include <Eigen/Dense>
+#include <Eigen/SparseCore>
 
 #include <algorithm>
 #include <cmath>
@@ -817,17 +818,28 @@ ManyBodySpaceRead DressedFluctuation::effectiveAction(
   for (std::size_t index = 0; index < fluctuations_; ++index)
     lifted[index] = secondQuantize(currents[index]);
 
+  // -1/2 sum_ab A^-1_ab O_a O_b = -1/2 sum_a O_a (sum_b A^-1_ab O_b): one
+  // product per fluctuation, of the lifted current, which second
+  // quantization leaves sparse, with the response-contracted one.
   Eigen::MatrixXcd quartic = Eigen::MatrixXcd::Zero(order, order);
   Eigen::MatrixXcd induced =
       Eigen::MatrixXcd::Zero(static_cast<Eigen::Index>(rank),
                              static_cast<Eigen::Index>(rank));
-  for (std::size_t a = 0; a < fluctuations_; ++a)
+  for (std::size_t a = 0; a < fluctuations_; ++a) {
+    Eigen::MatrixXcd contracted = Eigen::MatrixXcd::Zero(order, order);
+    Eigen::MatrixXcd contractedCurrent =
+        Eigen::MatrixXcd::Zero(static_cast<Eigen::Index>(rank),
+                               static_cast<Eigen::Index>(rank));
     for (std::size_t b = 0; b < fluctuations_; ++b) {
-      const complexd weight = -0.5 * response(static_cast<Eigen::Index>(a),
-                                              static_cast<Eigen::Index>(b));
-      quartic += weight * (lifted[a] * lifted[b]);
-      induced += weight * (currents[a] * currents[b]);
+      const complexd weight = response(static_cast<Eigen::Index>(a),
+                                       static_cast<Eigen::Index>(b));
+      contracted += weight * lifted[b];
+      contractedCurrent += weight * currents[b];
     }
+    const Eigen::SparseMatrix<complexd> sparse = lifted[a].sparseView();
+    quartic.noalias() -= 0.5 * (sparse * contracted);
+    induced.noalias() -= 0.5 * (currents[a] * contractedCurrent);
+  }
   read.quartic = toFlat(quartic);
 
   const Eigen::MatrixXcd inducedLifted = secondQuantize(induced);
