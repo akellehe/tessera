@@ -5185,6 +5185,12 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
            "the block order of the Jacobian's rows.")
       .def("equation_count", &HolomorphicRelaxation::equationCount)
       .def("variable_count", &HolomorphicRelaxation::variableCount)
+      .def("variable_scales", &HolomorphicRelaxation::variableScales,
+           "The scale of every variable in the order of the Jacobian's "
+           "columns: the modulus of the squared length a length coordinate "
+           "carries (one when it is zero), and one for a link's increment "
+           "and a multiplier. The linearized system is decomposed with its "
+           "rows and columns multiplied by these.")
       .def("newton_step", &HolomorphicRelaxation::newtonStep,
            "The step that solves the system to first order about the current "
            "point (HolomorphicNewtonStep): the minimum-norm least-squares "
@@ -5349,6 +5355,9 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def_readonly("overlap", &OccupiedBand::overlap)
       .def_readonly("crossed", &OccupiedBand::crossed)
       .def_readonly("ambiguous", &OccupiedBand::ambiguous)
+      .def_readonly("overfilled", &OccupiedBand::overfilled,
+                    "Whether the band holds more particles than its rank; "
+                    "the read is made as declared.")
       .def_readonly("projector", &OccupiedBand::projector)
       .def_readonly("modes", &OccupiedBand::modes,
                     "The band's modes: indices into the read's eigenvalues, "
@@ -5368,6 +5377,14 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def_readonly("occupied_eigenvalues", &BandRead::occupiedEigenvalues)
       .def_readonly("spectral_gap", &BandRead::spectralGap)
       .def_readonly("band_isolation", &BandRead::bandIsolation)
+      .def_readonly("defective", &BandRead::defective,
+                    "Whether a block's eigenvector matrix is singular at the "
+                    "threshold of its LU decomposition; the read is made "
+                    "with the inverse as computed.")
+      .def_readonly("eigenbasis_reciprocal_condition",
+                    &BandRead::eigenbasisReciprocalCondition,
+                    "The smallest reciprocal condition number of a block's "
+                    "eigenvector matrix.")
       .def_readonly("crossing", &BandRead::crossing)
       .def_readonly("lowest_overlap", &BandRead::lowestOverlap)
       .def_readonly("eigenvalues", &BandRead::eigenvalues,
@@ -5450,6 +5467,10 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      "The occupied bands with their overlaps and crossings.")
       .def_readwrite("band_isolation",
                      &SelfConsistentMeanFieldStep::bandIsolation)
+      .def_readwrite("defective", &SelfConsistentMeanFieldStep::defective)
+      .def_readwrite(
+          "eigenbasis_reciprocal_condition",
+          &SelfConsistentMeanFieldStep::eigenbasisReciprocalCondition)
       .def_readwrite("band_crossing",
                      &SelfConsistentMeanFieldStep::bandCrossing)
       .def_readwrite("multipliers", &SelfConsistentMeanFieldStep::multipliers,
@@ -5488,6 +5509,10 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def_readwrite("bands", &SelfConsistentMeanFieldReport::bands)
       .def_readwrite("band_isolation",
                      &SelfConsistentMeanFieldReport::bandIsolation)
+      .def_readwrite("defective", &SelfConsistentMeanFieldReport::defective)
+      .def_readwrite(
+          "eigenbasis_reciprocal_condition",
+          &SelfConsistentMeanFieldReport::eigenbasisReciprocalCondition)
       .def_readwrite("band_crossing_iterates",
                      &SelfConsistentMeanFieldReport::bandCrossingIterates)
       .def_readwrite("lowest_band_overlap",

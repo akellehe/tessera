@@ -1278,7 +1278,7 @@ void CovariantChainHodge::measureSparseIdentities(std::uint64_t seed) {
   cert_.pureGaugeSimilarityProbe = pure;
   cert_.trivialReductionProbe = trivial ? reduction : std::numeric_limits<double>::quiet_NaN();
 
-  // Assert every measured property on this instance.
+  // Compare every measured property on this instance with the tolerance.
   const std::pair<double, const char *> measured[] = {
       {cert_.transposeMetric, "(ii) (M_k^U)^T = M_k^{U^-1}"},
       {cert_.transposePencilProbe, "(ii) (A_k^U)^T = A_k^{U^-1}"},
@@ -1293,11 +1293,10 @@ void CovariantChainHodge::measureSparseIdentities(std::uint64_t seed) {
   };
   for (const auto &[value, what] : measured)
     if (!(value <= cert_.tolerance))
-      throw std::runtime_error(std::string("CovariantChainHodge: Proposition 3 ") + what +
-                               " fails on this instance: residual " + format(value) +
-                               " exceeds the tolerance " + format(cert_.tolerance) +
-                               " (10 n eps cond, cond = " + format(cond) + ")");
-  cert_.holds = true;
+      cert_.failed.push_back(std::string("Proposition 3 ") + what + ": residual " + format(value) +
+                             " exceeds the tolerance " + format(cert_.tolerance) +
+                             " (10 n eps cond, cond = " + format(cond) + ")");
+  cert_.holds = cert_.failed.empty();
 }
 
 CovarianceCertificate CovariantChainHodge::verify(int k) const {

@@ -817,6 +817,10 @@ std::vector<complexd> HolomorphicRelaxation::residual() const {
 struct HolomorphicLinearization::Implementation {
   std::vector<complexd> residual;
   Eigen::MatrixXcd jacobian;
+  /// The scale of every variable (`HolomorphicRelaxation::variableScales`):
+  /// the decompositions below are of the equation with its rows and columns
+  /// multiplied by these.
+  Eigen::VectorXd scale;
   Eigen::MatrixXcd left;
   Eigen::MatrixXcd right;
   Eigen::VectorXd singular;
@@ -830,21 +834,26 @@ struct HolomorphicLinearization::Implementation {
   Eigen::Index constrainedRank = 0;
   HolomorphicNewtonStep newton;
 
+  /// The minimum-norm least-squares solution of the scaled equation
+  /// \f$ (DJD)\,y=D\,t \f$ for the right-hand side \f$ t \f$ of
+  /// \f$ J\,d=t \f$, returned as \f$ d=D\,y \f$.
   [[nodiscard]] Eigen::VectorXcd solve(const Eigen::VectorXcd &target) const {
     const Eigen::Index size = jacobian.cols();
+    const Eigen::VectorXcd scaled =
+        (scale.array() * target.array()).matrix();
     if (!constrained) {
       Eigen::VectorXcd step = Eigen::VectorXcd::Zero(size);
       if (rank > 0) {
-        Eigen::VectorXcd coefficients = left.leftCols(rank).adjoint() * target;
+        Eigen::VectorXcd coefficients = left.leftCols(rank).adjoint() * scaled;
         for (Eigen::Index k = 0; k < rank; ++k) coefficients(k) /= singular(k);
         step = right.leftCols(rank) * coefficients;
       }
-      return step;
+      return (scale.array() * step.array()).matrix();
     }
     const Eigen::Index n = jacobian.rows();
     Eigen::VectorXd stacked(2 * n);
-    stacked.head(n) = target.real();
-    stacked.tail(n) = target.imag();
+    stacked.head(n) = scaled.real();
+    stacked.tail(n) = scaled.imag();
     Eigen::VectorXd unknown = Eigen::VectorXd::Zero(parametrization.cols());
     if (constrainedRank > 0) {
       Eigen::VectorXd coefficients =
@@ -853,7 +862,8 @@ struct HolomorphicLinearization::Implementation {
         coefficients(k) /= constrainedSingular(k);
       unknown = constrainedRight.leftCols(constrainedRank) * coefficients;
     }
-    return parametrization * unknown.cast<complexd>();
+    const Eigen::VectorXcd step = parametrization * unknown.cast<complexd>();
+    return (scale.array() * step.array()).matrix();
   }
 };
 
@@ -921,6 +931,7 @@ HolomorphicLinearization HolomorphicRelaxation::linearization(
   out.constrainedRankGap = std::numeric_limits<double>::quiet_NaN();
   const auto size = static_cast<Eigen::Index>(layout.count);
   kept->jacobian = Eigen::MatrixXcd::Zero(size, size);
+  kept->scale = Eigen::VectorXd::Ones(size);
   if (layout.count == 0) return HolomorphicLinearization(kept);
 
   const std::vector<complexd> flat = jacobian();
@@ -936,10 +947,19 @@ HolomorphicLinearization HolomorphicRelaxation::linearization(
   for (Eigen::Index row = 0; row < size; ++row)
     target(row) = -kept->residual[static_cast<std::size_t>(row)];
 
-  // Two-sided Jacobi: every singular value accurate to rounding relative to
-  // the largest, which the rank decision reads.
+  // The equation is decomposed with every row and column multiplied by its
+  // variable's scale (`variableScales`): the rank decision compares singular
+  // values of one unit, where the Jacobian's own blocks carry the units of
+  // 1/z^2, 1/z and 1. Two-sided Jacobi: every singular value accurate to
+  // rounding relative to the largest, which the rank decision reads.
+  const std::vector<double> scales = variableScales();
+  kept->scale = Eigen::VectorXd(size);
+  for (Eigen::Index index = 0; index < size; ++index)
+    kept->scale(index) = scales[static_cast<std::size_t>(index)];
+  const Eigen::MatrixXcd scaledJacobian =
+      kept->scale.asDiagonal() * kept->jacobian * kept->scale.asDiagonal();
   const Eigen::JacobiSVD<Eigen::MatrixXcd> svd(
-      kept->jacobian, Eigen::ComputeThinU | Eigen::ComputeThinV);
+      scaledJacobian, Eigen::ComputeThinU | Eigen::ComputeThinV);
   kept->left = svd.matrixU();
   kept->right = svd.matrixV();
   kept->singular = svd.singularValues();
@@ -967,7 +987,10 @@ HolomorphicLinearization HolomorphicRelaxation::linearization(
                        declaration_.rankTolerance);
     kept->parametrization =
         heldParametrization(layout, sectors.freeModuli, size);
-    const Eigen::MatrixXcd image = kept->jacobian * kept->parametrization;
+    // The parametrized step is D P x: the scales act on the length block
+    // alone, which the held moduli do not constrain, so the scaled step
+    // keeps them, and the system over x is (D J D) P.
+    const Eigen::MatrixXcd image = scaledJacobian * kept->parametrization;
     Eigen::MatrixXd system(2 * size, image.cols());
     system.topRows(size) = image.real();
     system.bottomRows(size) = image.imag();
@@ -1002,6 +1025,29 @@ HolomorphicLinearization HolomorphicRelaxation::linearization(
 
 HolomorphicNewtonStep HolomorphicRelaxation::newtonStep() const {
   return linearization().newtonStep();
+}
+
+std::vector<double> HolomorphicRelaxation::variableScales() const {
+  const EdgeClasses classes =
+      edgeClassesOf(action_.edgeCount(), declaration_);
+  const Layout layout(classes.count(), action_.constraintCount(),
+                      declaration_);
+  std::vector<double> scales(layout.count, 1.0);
+  if (!layout.lengths) return scales;
+  const auto &spacetime = action_.spacetime();
+  if (!spacetime || !spacetime->getEdgeList()) return scales;
+  const auto edges = spacetime->getEdgeList()->toVector();
+  for (std::size_t index = 0; index < classes.count(); ++index) {
+    double largest = 0.0;
+    for (const auto &member : classes.members[index]) {
+      const auto *edge = edges[member.first];
+      if (edge == nullptr) continue;
+      const complexd length = edge->getLength();
+      largest = std::max(largest, std::abs(length * length));
+    }
+    if (largest > 0.0) scales[layout.lengthOffset + index] = largest;
+  }
+  return scales;
 }
 
 std::vector<int> HolomorphicRelaxation::sectorMonopoleNumbers() const {

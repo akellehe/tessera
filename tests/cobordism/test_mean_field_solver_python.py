@@ -261,26 +261,118 @@ def test_a_band_is_followed_across_a_constructed_crossing():
         follower.follow(read)
 
 
+def test_equal_decoupled_blocks_keep_their_degeneracy_exactly():
+    """An operator of three equal blocks that no entry couples, its indices
+    interleaved: the read decomposes each block on its own, so the copies of
+    an eigenvalue are equal bit for bit, the spectrum groups into bands of
+    rank three at the declared band tolerance 1e-15, every eigenvector is
+    supported on one block, and the left eigenvectors invert the right
+    ones."""
+    eigenvalues = lambda t: np.array([1.0, 2.5, 4.0, 7.0])  # noqa
+    sheet, sheet_vectors = _family(eigenvalues, 0.0, seed=5)
+    sheet = np.asarray(sheet).reshape(4, 4)
+    # index 3 * k + t is coordinate k of block t
+    operator = np.kron(sheet, np.eye(3))
+
+    read = _follower([2.0], cob.BandSelection.Continuation).read(
+        list(operator.reshape(-1)))
+    assert list(read.ranks) == [3, 3, 3, 3]
+    ordered = np.asarray(read.ordered)
+    for k in range(4):
+        assert ordered[3 * k] == ordered[3 * k + 1] == ordered[3 * k + 2]
+    np.testing.assert_allclose(ordered[::3], [1.0, 2.5, 4.0, 7.0],
+                               atol=1e-12)
+    vectors = np.asarray(read.eigenvectors).reshape(12, 12)
+    for mode in range(12):
+        support = {index % 3 for index in np.flatnonzero(vectors[:, mode])}
+        assert len(support) == 1
+    left = np.asarray(read.left_eigenvectors).reshape(12, 12)
+    np.testing.assert_allclose(left @ vectors, np.eye(12), atol=1e-12)
+    (band,) = read.bands
+    assert band.rank == 3 and not band.ambiguous
+    np.testing.assert_allclose(
+        np.asarray(read.covariance).reshape(12, 12),
+        (2.0 / 3.0) * np.kron(_projector(sheet_vectors, [0]), np.eye(3)),
+        atol=1e-12)
+
+
+def test_the_bands_of_the_sheeted_host_have_rank_three():
+    """On the three-sheeted support of the run's first host cell the carrier
+    operator is three equal blocks, and its spectrum is six bands of rank
+    three at the declared band tolerance 1e-15."""
+    content = (0, 0, 3)
+    config = _config(FIRST_CELL, content)
+    base = bp.build_base(config["edge_squared"], config["host_cell"])
+    host = cs.sheeted_support(base, bp.SHEETS)
+    action = cob.JointAction(host.spacetime,
+                             bp.action_declaration(host.spacetime, 1.0, 1.0))
+    read = cob.BandFollower(bp.mean_field_declaration(content, config)).read(
+        action.carrier_operator())
+    assert list(read.ranks) == [3] * 6
+    ordered = np.asarray(read.ordered)
+    for k in range(6):
+        assert ordered[3 * k] == ordered[3 * k + 1] == ordered[3 * k + 2]
+
+
+def test_a_defective_eigenbasis_is_inverted_as_computed_and_marked():
+    """A Jordan block beside a simple eigenvalue. The eigensolver returns two
+    eigenvectors of the block that are parallel to rounding, so the block's
+    eigenvector matrix is singular at the threshold of its decomposition:
+    the read says so (`defective`, the reciprocal condition at rounding) and
+    is made with the inverse as computed. The two modes are one band at the
+    declared band tolerance, and the band's projector, the sum over both, is
+    the identity on the block; the covariance of one particle in it is half
+    of that. A diagonalizable operator is not marked."""
+    jordan = np.array([[1.0, 1.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 3.0]],
+                      dtype=complex)
+    read = _follower([1.0], cob.BandSelection.Continuation).read(
+        list(jordan.reshape(-1)))
+    assert read.defective
+    assert read.eigenbasis_reciprocal_condition < 1e-14
+    assert list(read.ranks) == [2, 1]
+    (band,) = read.bands
+    assert band.rank == 2 and not band.overfilled
+    expected = np.diag([0.5, 0.5, 0.0])
+    np.testing.assert_allclose(np.asarray(read.covariance).reshape(3, 3),
+                               expected, atol=1e-12)
+
+    simple = np.diag([1.0, 2.0, 3.0]).astype(complex)
+    simple[0, 1] = 0.5
+    read = _follower([1.0], cob.BandSelection.Continuation).read(
+        list(simple.reshape(-1)))
+    assert not read.defective
+    assert read.eigenbasis_reciprocal_condition > 0.1
+
+
+def test_an_eigenbasis_near_a_defect_reports_its_condition():
+    """Two eigenvalues eps apart on a Jordan-like block: the eigenbasis is
+    not singular at the decomposition's threshold, each mode is its own band,
+    and the reciprocal condition reported is of order eps, which is the size
+    the band's projector is the reciprocal of."""
+    for eps in (1e-4, 1e-8):
+        block = np.array([[1.0, 1.0, 0.0], [0.0, 1.0 + eps, 0.0],
+                          [0.0, 0.0, 3.0]], dtype=complex)
+        read = _follower([1.0], cob.BandSelection.Continuation).read(
+            list(block.reshape(-1)))
+        assert not read.defective
+        assert list(read.ranks) == [1, 1, 1]
+        assert 0.1 * eps < read.eigenbasis_reciprocal_condition < 10.0 * eps
+        largest = np.max(np.abs(np.asarray(read.covariance)))
+        assert 0.1 / eps < largest < 10.0 / eps
+
+
 def test_a_band_of_three_sheets_is_followed_across_another():
     """Three identical sheets, as on the recursion's host: every band has one
     mode per sheet, rank three. The operator is built here as a Kronecker
-    product, and its eigenvalues on the three sheets agree to 1.8e-15 of
-    their size, the rounding of the eigendecomposition. At the declared band
-    tolerance 1e-15 they are not one band: the lowest mode is read as a band
-    of rank one, which cannot hold the two particles, and the read says so
-    by name. With the band tolerance declared at 1e-12, above that
-    rounding, the band at 1 + t, holding two particles, crosses the band at
-    2 - t; it is followed as one band of rank three, after the crossing it
-    holds places 3 to 5, and the covariance is two thirds of its projector,
-    the direct sum of one sheet's."""
+    product, three equal blocks that no entry couples; each block is
+    decomposed on its own, so the three copies of an eigenvalue are equal
+    exactly and are one band at the declared band tolerance 1e-15. The band
+    at 1 + t, holding two particles, crosses the band at 2 - t; it is
+    followed as one band of rank three, after the crossing it holds places 3
+    to 5, and the covariance is two thirds of its projector, the direct sum
+    of one sheet's."""
     eigenvalues = lambda t: np.array([1.0 + t, 2.0 - t, 4.0])  # noqa
-    sheet, _ = _family(eigenvalues, 0.0, seed=11)
-    host = np.kron(np.eye(3), np.asarray(sheet).reshape(3, 3))
-    with pytest.raises(ValueError, match="band 0 has rank 1 and cannot hold "
-                                         "the declared occupation 2"):
-        _follower([2.0], cob.BandSelection.Continuation).read(
-            list(host.reshape(-1)))
-    follower = _follower([2.0], cob.BandSelection.Continuation, 1e-12)
+    follower = _follower([2.0], cob.BandSelection.Continuation)
     for t in (0.0, 0.3, 0.7, 1.0):
         sheet, vectors = _family(eigenvalues, t, seed=11)
         operator = np.kron(np.eye(3), np.asarray(sheet).reshape(3, 3))

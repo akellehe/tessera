@@ -197,13 +197,13 @@ def test_band_filling_is_the_weighted_sum_of_band_projectors():
     assert np.trace(gamma) == pytest.approx(3.0, abs=1e-14)
 
 
-def test_band_filling_refusals_are_named():
-    """A band of rank 3 cannot hold 4; occupations must be non-negative and
-    not all zero; more occupations than bands are refused."""
+def test_band_filling_declarations_without_a_value_are_named():
+    """A band of rank 3 that is declared to hold 4 is filled and marked;
+    occupations must be non-negative and not all zero; more occupations than
+    bands have no value."""
     action, follower = _band_filling((4,))
-    with pytest.raises(ValueError, match="band 0 has rank 3 and cannot hold "
-                                         "the declared occupation 4"):
-        follower.read(action.carrier_operator())
+    (band,) = follower.read(action.carrier_operator()).bands
+    assert band.overfilled and band.rank == 3 and band.occupation == 4.0
     with pytest.raises(ValueError, match="cannot be negative"):
         _band_filling((1, -1))
     with pytest.raises(ValueError, match="sum to zero"):
