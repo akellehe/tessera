@@ -455,6 +455,28 @@ TOLERANCES = (
      "the relative intertwining residual of a transport against the "
      "rotation and colour actions at or below which the isospin-doublet "
      "detector certifies it"),
+    ("isospin_min_relative_gap",
+     "the distance from a band to the nearest eigenvalue outside it, "
+     "relative to the largest eigenvalue modulus, at or above which the "
+     "isospin-doublet detector reads the band as isolated"),
+    ("isospin_span_tolerance",
+     "the relative singular-value cut of the rank of a column span in the "
+     "subspace overlaps that follow a band of the isospin-doublet detector "
+     "between frames and between resolutions"),
+    ("isospin_transport_rank_tolerance",
+     "the relative singular-value cut of the rank of a frame-to-frame "
+     "transport and of the composed lifetime transport in the "
+     "isospin-doublet detector"),
+    ("isospin_singular_value_grouping_tolerance",
+     "the relative width within which singular values of a band transport "
+     "form one group in the isospin-doublet detector"),
+    ("isospin_member_splitting_tolerance",
+     "the traceless commutant part of an operator's compression to a band, "
+     "relative to the operator's norm, at or below which the operator does "
+     "not split the two members of a doublet"),
+    ("isospin_occupation_tolerance",
+     "the departure of a member's occupation from an integer at or below "
+     "which the isospin-doublet detector reads it as that integer"),
 )
 
 #: The tolerances of the isospin-doublet detector, by config key, with the
@@ -468,6 +490,13 @@ ISOSPIN_TOLERANCES = (
     ("isospin_hermiticity_tolerance", "hermiticity_tolerance"),
     ("isospin_transport_leakage_tolerance", "transport_leakage_tolerance"),
     ("isospin_intertwining_tolerance", "intertwining_tolerance"),
+    ("isospin_min_relative_gap", "min_relative_gap"),
+    ("isospin_span_tolerance", "span_tolerance"),
+    ("isospin_transport_rank_tolerance", "transport_rank_tolerance"),
+    ("isospin_singular_value_grouping_tolerance",
+     "singular_value_grouping_tolerance"),
+    ("isospin_member_splitting_tolerance", "member_splitting_tolerance"),
+    ("isospin_occupation_tolerance", "occupation_tolerance"),
 )
 
 
@@ -480,8 +509,10 @@ def declared_tolerance(config, key):
 def isospin_doublet_config(config=None):
     """The `observables.IsospinDoubletConfig` of a config: every tolerance of
     the detector (`ISOSPIN_TOLERANCES`) at the config's value, or at the
-    declared value when the config leaves it out. The detector's other
-    thresholds stay at the library's values."""
+    declared value when the config leaves it out. The detector's declared
+    threshold of a continuation's overlap, its number of resolvent samples
+    and its caps, none of which is declared by default, stay at the
+    library's values."""
     out = obs.IsospinDoubletConfig()
     for key, field in ISOSPIN_TOLERANCES:
         setattr(out, field, declared_tolerance(config, key))
@@ -2395,7 +2426,8 @@ def many_body_operators(carrier, couplings, stiffness, frame, dual,
     declaration.bare_stiffness = list(stiffness.reshape(-1))
     declaration.occupied_modes = 3
     declaration.tolerance = tolerance
-    read = cob.DressedFluctuation(declaration).effective_action(
+    dressed = cob.DressedFluctuation(declaration)
+    read = dressed.effective_action(
         list(frame.reshape(-1)), list(dual.reshape(-1)), 3)
     dimension = int(read.dimension)
     return (np.asarray(read.one_body).reshape(dimension, dimension), {
@@ -2404,6 +2436,13 @@ def many_body_operators(carrier, couplings, stiffness, frame, dual,
         "eliminated_dimension": len(couplings),
         "stiffness_asymmetry": float(read.stiffness_asymmetry),
         "stiffness_conditioning": float(read.stiffness_conditioning),
+        # the departures the library reports with a read it makes
+        "stiffness_singular": bool(read.stiffness_singular),
+        "stiffness_reciprocal_condition": float(
+            read.stiffness_reciprocal_condition),
+        "carrier_defective": bool(dressed.carrier_defective()),
+        "mode_frame_reciprocal_condition": float(
+            dressed.mode_frame_reciprocal_condition()),
         "frame_pairing_defect": float(read.frame_pairing_defect),
         "certificate": read.certificate.describe(),
     })
@@ -3564,6 +3603,12 @@ def _content_reads(content, kappa, beta, config, started, spacetime, action,
                     truncation_read.relative_first_tail),
                 "relative_second_tail": float(
                     truncation_read.relative_second_tail),
+                # the faces at which the Villain weight does not exceed its
+                # rounding bound, where its derivatives are formed with the
+                # weight as summed
+                "uncertified_faces": int(truncation_read.uncertified_faces),
+                "smallest_certificate_margin": float(
+                    truncation_read.smallest_certificate_margin),
             },
             "unit_circle_departure": max(dep for _, dep in supports),
             "symmetry_departure": symmetry["compensation_residual"],

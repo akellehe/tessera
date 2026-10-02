@@ -54,6 +54,13 @@ TOLERANCES = {
     "isospin_hermiticity_tolerance": 1e-12,
     "isospin_transport_leakage_tolerance": 1e-1,
     "isospin_intertwining_tolerance": 1e-6,
+    # the detector's values where the driver passed none
+    "isospin_min_relative_gap": 1e-6,
+    "isospin_span_tolerance": 1e-10,
+    "isospin_transport_rank_tolerance": 1e-9,
+    "isospin_singular_value_grouping_tolerance": 1e-6,
+    "isospin_member_splitting_tolerance": 1e-8,
+    "isospin_occupation_tolerance": 1e-6,
     # the run compared no remainder of the quartic's expansion with a
     # tolerance; one is the remainder as large as the term it follows
     "truncation_tolerance": 1.0,
