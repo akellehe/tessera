@@ -460,7 +460,7 @@ class TestTheReportedFields(unittest.TestCase):
         self.assertEqual(config.contour_nodes, 64)
         self.assertGreater(config.track_overlap_threshold, 0.0)
         self.assertLess(config.track_overlap_threshold, 1.0)
-        self.assertGreater(config.condition_number_cap, 1.0)
+        self.assertIsNone(config.condition_number_cap)
         for name in ("grouping_tolerance", "min_relative_gap",
                      "projector_tolerance", "invariance_tolerance",
                      "commutant_tolerance", "transport_leakage_tolerance",

@@ -41,9 +41,12 @@ def _argument_defaults(method):
     (cob.RecursiveQuotient.Options,
      ("tolerance", "rankTolerance", "nearIsometryEpsilon")),
     (obs.IsospinDoubletConfig,
-     ("grouping_tolerance", "projector_tolerance", "invariance_tolerance",
-      "commutant_tolerance", "isotypic_tolerance", "hermiticity_tolerance",
-      "transport_leakage_tolerance", "intertwining_tolerance")),
+     ("grouping_tolerance", "min_relative_gap", "projector_tolerance",
+      "invariance_tolerance", "commutant_tolerance", "isotypic_tolerance",
+      "hermiticity_tolerance", "transport_leakage_tolerance",
+      "intertwining_tolerance", "span_tolerance", "transport_rank_tolerance",
+      "singular_value_grouping_tolerance", "member_splitting_tolerance",
+      "occupation_tolerance")),
 ])
 def test_every_tolerance_field_defaults_to_1e_15(record, fields):
     built = record()
@@ -80,13 +83,20 @@ def test_every_tolerance_argument_defaults_to_1e_15(method, arguments):
 
 def test_the_isospin_detector_keeps_its_criteria():
     """The detector's thresholds that are criteria of the read, not
-    tolerances, are the library's declared values."""
+    tolerances, are the library's declared values, and its cap and its
+    limits are options that are not declared as built."""
     config = obs.IsospinDoubletConfig()
-    assert config.min_relative_gap == 1e-6
     assert config.contour_nodes == 64
     assert config.track_overlap_threshold == 0.5
     assert config.min_frames == 2
-    assert config.condition_number_cap == 1e8
+    assert config.condition_number_cap is None
+    assert config.decomposed_rank_limit is None
+    assert config.decomposed_commutant_limit is None
+    config.condition_number_cap = 1e8
+    config.decomposed_rank_limit = 24
+    config.decomposed_commutant_limit = 100
+    assert (config.condition_number_cap, config.decomposed_rank_limit,
+            config.decomposed_commutant_limit) == (1e8, 24, 100)
 
 
 def test_the_size_limit_of_a_level_is_not_declared():

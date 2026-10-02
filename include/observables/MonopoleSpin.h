@@ -100,6 +100,7 @@
 #include <complex>
 #include <cstddef>
 #include <limits>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -241,6 +242,14 @@ struct SpinorBandRead {
     bool spinorDoublet{false};
     /// Whether the band lies in the coexact sector at the declared tolerance.
     bool coexact{false};
+    /// The departure of the operator the bands were read on from its adjoint,
+    /// relative to its own size: max |h - h^dagger| over max |h| entrywise
+    /// (zero for the zero operator). The bands are those of its Hermitian
+    /// part (h + h^dagger) / 2, which is the operator itself when this is
+    /// zero. The same number on every band of one read.
+    double hermiticityDefect{0.0};
+    /// Whether `hermiticityDefect` is at or below the declared tolerance.
+    bool hermitian{true};
 };
 
 /// What the classifier needs from an odd-monopole support in one record.
@@ -380,7 +389,9 @@ class MonopoleSupport {
     [[nodiscard]] Eigen::MatrixXcd edgeLaplacian() const;
 
     /// The orthogonal projector onto the coexact sector
-    /// ker((delta_0^U)^dagger) of the edge cochains.
+    /// ker((delta_0^U)^dagger) of the edge cochains: the complement of the
+    /// image of delta_0^U, whose rank is the number of its singular values
+    /// above `tolerance` times the largest.
     /// @throws std::invalid_argument when the tolerance is not positive.
     [[nodiscard]] Eigen::MatrixXcd coexactProjector(
         double tolerance = 1e-15) const;
@@ -442,12 +453,24 @@ class MonopoleSupport {
 
     /// The symmetry-protected bands of a rotation-invariant edge operator.
     ///
-    /// `operatorMatrix` must be Hermitian and edge-sized; its eigenvalues are
-    /// grouped at `degeneracyTolerance` and each group is one band.
+    /// `operatorMatrix` is edge-sized. The bands are read on its Hermitian
+    /// part (h + h^dagger) / 2; its departure from its adjoint is measured
+    /// and travels on every band (`SpinorBandRead::hermiticityDefect`,
+    /// `hermitian`), so an operator that is Hermitian only to rounding is
+    /// read and says by how much it is not.
+    ///
     /// `nontrivialClass` says whether the projective class is nontrivial, and
-    /// only then can a band be a spinor doublet.
-    /// @throws std::invalid_argument on a shape mismatch, a non-Hermitian
-    ///         operator, an empty group, or a non-positive tolerance.
+    /// only then can a band be a spinor doublet. Under a nontrivial class
+    /// every invariant subspace has even rank, so the eigenvalues of a
+    /// rotation-invariant operator on an even number of edges are equal in
+    /// pairs exactly: consecutive eigenvalues (2k, 2k + 1) in ascending order
+    /// are one unit whatever the rounding of the eigensolver separates them
+    /// by. Under the trivial class, or on an odd number of edges, a unit is
+    /// one eigenvalue. A band is a run of units each of which starts within
+    /// `degeneracyTolerance` times the operator's scale (its largest
+    /// eigenvalue modulus) of the band's first eigenvalue.
+    /// @throws std::invalid_argument on a shape mismatch, an empty group, or
+    ///         a non-positive tolerance.
     [[nodiscard]] std::vector<SpinorBandRead> spinorBands(
         const Eigen::MatrixXcd& operatorMatrix,
         const std::vector<Permutation>& group, bool nontrivialClass,
@@ -599,7 +622,14 @@ struct IsotypicRead {
 /// exterior generators, so its action is applied mode-pair by mode-pair
 /// rather than by materializing the full Fock matrix;
 /// `totalSpinSquaredMatrix` materializes it anyway for fixtures and
-/// cross-checks, and refuses mode counts at which that is not affordable.
+/// cross-checks.
+///
+/// No function here imposes a size. A function that builds an object whose
+/// size grows with the mode count takes a limit the caller may declare
+/// (`modeLimit`, `patternLimit`; none by default), and a declared limit that
+/// is reached is named in a `std::length_error`. What has no value is a mode
+/// count whose Fock dimension the index type cannot count
+/// (`kIndexableModes`).
 class SharpSpin {
   public:
     /// Double-precision complex scalar of every state and operator entry.
@@ -607,35 +637,36 @@ class SharpSpin {
 
     SharpSpin() = delete;  // static kernel — no instances.
 
-    /// Largest mode count for which `totalSpinSquaredMatrix` materializes the
-    /// dense 2^M x 2^M operator. The applied form has no such limit.
-    static constexpr std::size_t kMaxDenseModes = 16;
-
-    /// Largest mode count for which a Fock state vector (2^M entries) is
-    /// built by `determinant` and `determinantSuperposition`, and for which
-    /// `doubletSpinMatrices` builds its one-particle matrices. It is the
-    /// exterior algebra's own matrix-layer limit: a state vector is one column
-    /// of the space, not the dense operator, so it is affordable well past
-    /// `kMaxDenseModes`. Eighteen modes, the edge modes of a three-sheeted
+    /// The largest mode count M whose Fock dimension 2^M is a value of the
+    /// signed 64-bit index every vector here is addressed with. It is a bound
+    /// of the index type and not a declared limit: a Fock vector over more
+    /// modes has no index. Eighteen modes, the edge modes of a three-sheeted
     /// tetrahedron, is a 2^18-entry vector.
-    static constexpr std::size_t kMaxStateModes = 24;
+    static constexpr std::size_t kIndexableModes = 62;
 
     /// The Slater determinant of the listed occupied modes as a Fock vector
-    /// over `modeCount` modes: the modes are wedged in the listed order, so a
-    /// reordering changes the vector by the permutation sign and nothing
-    /// else.
+    /// over `modeCount` modes (2^modeCount entries): the modes are wedged in
+    /// the listed order, a_{m_1}^dagger ... a_{m_n}^dagger on the vacuum, so
+    /// a reordering changes the vector by the permutation sign and nothing
+    /// else. `modeLimit` is a mode count the caller declares the vector must
+    /// not exceed; none by default.
     /// @throws std::invalid_argument on a repeated or out-of-range mode, or a
-    ///         mode count above `kMaxStateModes`.
+    ///         mode count of zero or above `kIndexableModes`.
+    /// @throws std::length_error when the mode count is above a declared
+    ///         `modeLimit`.
     [[nodiscard]] static Eigen::VectorXcd determinant(
-        const std::vector<std::size_t>& occupiedModes, std::size_t modeCount);
+        const std::vector<std::size_t>& occupiedModes, std::size_t modeCount,
+        std::optional<std::size_t> modeLimit = std::nullopt);
 
     /// The bounded superposition sum_d a_d |D_d> of determinants: one
     /// occupation list and one complex amplitude per determinant.
     /// @throws std::invalid_argument on mismatched lengths, an empty
-    ///         superposition, or any condition `determinant` refuses.
+    ///         superposition, or any condition `determinant` names.
+    /// @throws std::length_error as `determinant`.
     [[nodiscard]] static Eigen::VectorXcd determinantSuperposition(
         const std::vector<std::vector<std::size_t>>& occupations,
-        const std::vector<Complex>& amplitudes, std::size_t modeCount);
+        const std::vector<Complex>& amplitudes, std::size_t modeCount,
+        std::optional<std::size_t> modeLimit = std::nullopt);
 
     /// J^2 |Psi> = sum_a dGamma(J_a) dGamma(J_a) |Psi> applied without
     /// materializing the Fock matrix: each dGamma(J_a) is applied as the sum
@@ -652,11 +683,16 @@ class SharpSpin {
         const Eigen::VectorXcd& state);
 
     /// The dense total-space J^2 on the 2^M-dimensional Fock space, for
-    /// fixtures and cross-checks.
-    /// @throws std::invalid_argument on a misshaped matrix or a mode count
-    ///         above `kMaxDenseModes`.
+    /// fixtures and cross-checks: 4^M entries. `modeLimit` is a mode count
+    /// the caller declares the matrix must not exceed; none by default.
+    /// @throws std::invalid_argument on a misshaped matrix, or a mode count
+    ///         above `kIndexableModes / 2`, whose 4^M entries the index type
+    ///         cannot count.
+    /// @throws std::length_error when the mode count is above a declared
+    ///         `modeLimit`.
     [[nodiscard]] static Eigen::MatrixXcd totalSpinSquaredMatrix(
-        const std::array<Eigen::MatrixXcd, 3>& spinMatrices);
+        const std::array<Eigen::MatrixXcd, 3>& spinMatrices,
+        std::optional<std::size_t> modeLimit = std::nullopt);
 
     /// The sharpness read of a right and a left state against the target
     /// eigenvalue.
@@ -682,28 +718,26 @@ class SharpSpin {
     /// mode order (carrier, spin), so mode 2 c + s is spin state s of
     /// carrier c. On the tetrahedron the three carriers are the doublets
     /// 2, 2' and 2'' distinguished by the Z_3 = 2T / Q_8 character.
-    /// @throws std::invalid_argument when `carrierCount` is zero or the
-    ///         resulting mode count exceeds `kMaxStateModes`.
+    /// @throws std::invalid_argument when `carrierCount` is zero.
     [[nodiscard]] static std::array<Eigen::MatrixXcd, 3> doubletSpinMatrices(
         std::size_t carrierCount);
 
     // ---- the isotypic read: the sharp spinor certificate of WP v18 --------
 
-    /// Largest number of occupation patterns of an n-particle sector for
-    /// which the dense sector matrices below are formed. Eighteen modes with
-    /// three particles, the three-quark sector of a three-sheeted
-    /// tetrahedron, is 816 patterns.
-    static constexpr std::size_t kMaxSectorPatterns = 8192;
-
     /// The n-particle occupation patterns of `modeCount` modes: the
-    /// ascending mode tuples in lexicographic order. This is the basis the
-    /// sector matrices and vectors below are written in; pattern k is the
-    /// Fock basis state with exactly those modes occupied, which is also
-    /// `determinant` of the tuple.
-    /// @throws std::invalid_argument when `particles` exceeds the mode count
-    ///         or the pattern count exceeds `kMaxSectorPatterns`.
+    /// ascending mode tuples in lexicographic order, C(M, n) of them. This is
+    /// the basis the sector matrices and vectors below are written in;
+    /// pattern k is the Fock basis state with exactly those modes occupied,
+    /// which is also `determinant` of the tuple. Eighteen modes with three
+    /// particles, the three-quark sector of a three-sheeted tetrahedron, is
+    /// 816 patterns. `patternLimit` is a pattern count the caller declares
+    /// the sector must not exceed; none by default.
+    /// @throws std::invalid_argument when `particles` exceeds the mode count.
+    /// @throws std::length_error when the pattern count is above a declared
+    ///         `patternLimit`.
     [[nodiscard]] static std::vector<std::vector<std::size_t>> sectorPatterns(
-        std::size_t modeCount, std::size_t particles);
+        std::size_t modeCount, std::size_t particles,
+        std::optional<std::size_t> patternLimit = std::nullopt);
 
     /// Lambda^n D on the n-particle sector, the second quantization of the
     /// one-particle map D restricted to n particles: entry (J, I) is the
@@ -713,24 +747,31 @@ class SharpSpin {
     /// Lambda^n(A) Lambda^n(B), and Lambda^M D on M modes is det D.
     /// @throws std::invalid_argument when D is not square, or as
     ///         `sectorPatterns`.
+    /// @throws std::length_error as `sectorPatterns`.
     [[nodiscard]] static Eigen::MatrixXcd exteriorPowerMatrix(
-        const Eigen::MatrixXcd& oneParticle, std::size_t particles);
+        const Eigen::MatrixXcd& oneParticle, std::size_t particles,
+        std::optional<std::size_t> patternLimit = std::nullopt);
 
     /// The n-particle component of a Fock vector (2^M entries) over the
     /// sector patterns: entry k is the amplitude of the Fock basis state of
     /// pattern k. The mode count is read from the state dimension.
     /// @throws std::invalid_argument when the state dimension is not a power
     ///         of two, or as `sectorPatterns`.
+    /// @throws std::length_error as `sectorPatterns`.
     [[nodiscard]] static Eigen::VectorXcd sectorComponent(
-        const Eigen::VectorXcd& state, std::size_t particles);
+        const Eigen::VectorXcd& state, std::size_t particles,
+        std::optional<std::size_t> patternLimit = std::nullopt);
 
     /// A vector over the sector patterns as a Fock vector of `modeCount`
     /// modes: the inverse of `sectorComponent` on the n-particle sector.
     /// @throws std::invalid_argument on a length mismatch, or as
     ///         `sectorPatterns` and `determinant`.
+    /// @throws std::length_error as `determinant` and `sectorPatterns`.
     [[nodiscard]] static Eigen::VectorXcd fockVector(
         const Eigen::VectorXcd& sector, std::size_t modeCount,
-        std::size_t particles);
+        std::size_t particles,
+        std::optional<std::size_t> modeLimit = std::nullopt,
+        std::optional<std::size_t> patternLimit = std::nullopt);
 
     /// The isotypic projector P_rho = (dim rho / |G|) sum_g conj(chi_rho(g))
     /// Lambda^n D(g) on the n-particle sector, from the one-particle
@@ -742,10 +783,12 @@ class SharpSpin {
     /// @throws std::invalid_argument on an empty group, a length mismatch, a
     ///         zero dimension, a map that is not square or not of the first
     ///         map's size, or as `sectorPatterns`.
+    /// @throws std::length_error as `sectorPatterns`.
     [[nodiscard]] static Eigen::MatrixXcd isotypicProjector(
         const std::vector<Eigen::MatrixXcd>& maps,
         const std::vector<Complex>& characters, std::size_t dimension,
-        std::size_t particles);
+        std::size_t particles,
+        std::optional<std::size_t> patternLimit = std::nullopt);
 
     /// The sharpness read of a right and a left state, both over the sector
     /// patterns, against an isotypic projector (`isotypicProjector`, or a sum

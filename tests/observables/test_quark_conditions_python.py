@@ -84,9 +84,11 @@ class TestQuarkConditions(unittest.TestCase):
 
 
 class TestEighteenModeStates(unittest.TestCase):
-    def test_state_vectors_reach_the_exterior_algebra_limit(self):
-        self.assertEqual(obs.SharpSpin.kMaxStateModes, 24)
-        self.assertEqual(obs.SharpSpin.kMaxDenseModes, 16)
+    def test_state_vectors_have_no_imposed_mode_limit(self):
+        self.assertEqual(obs.SharpSpin.kIndexableModes, 62)
+        for name in ("kMaxStateModes", "kMaxDenseModes",
+                     "kMaxSectorPatterns"):
+            self.assertFalse(hasattr(obs.SharpSpin, name), msg=name)
         state = np.asarray(obs.SharpSpin.determinant([0, 7, 17], 18))
         self.assertEqual(state.size, 1 << 18)
         self.assertEqual(int(np.count_nonzero(state)), 1)

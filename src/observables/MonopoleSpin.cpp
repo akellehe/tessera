@@ -3,11 +3,10 @@
 
 #include "observables/MonopoleSpin.h"
 
-#include "quantum/GradedFock.h"
-
 #include <algorithm>
 #include <bit>
 #include <cmath>
+#include <cstdint>
 #include <sstream>
 #include <stdexcept>
 
@@ -337,8 +336,11 @@ Eigen::MatrixXcd MonopoleSupport::coexactProjector(double tolerance) const {
   const Eigen::VectorXd singular = svd.singularValues();
   Eigen::MatrixXcd image =
       Eigen::MatrixXcd::Zero(edgeCount, edgeCount);
+  // The rank of delta_0^U: its singular values above the tolerance times
+  // the largest.
+  const double largest = singular.size() > 0 ? singular(0) : 0.0;
   for (Eigen::Index i = 0; i < singular.size(); ++i) {
-    if (singular(i) <= tolerance) continue;
+    if (singular(i) <= tolerance * largest) continue;
     image += svd.matrixU().col(i) * svd.matrixU().col(i).adjoint();
   }
   return Eigen::MatrixXcd::Identity(edgeCount, edgeCount) - image;
@@ -633,34 +635,46 @@ std::vector<SpinorBandRead> MonopoleSupport::spinorBands(
             << "; the support has " << edges_.size() << " edges.";
     throw std::invalid_argument(message.str());
   }
-  const double hermiticity = maxAbs(operatorMatrix - operatorMatrix.adjoint());
-  if (hermiticity > tolerance) {
-    std::ostringstream message;
-    message << "MonopoleSupport::spinorBands: the operator is not Hermitian "
-               "to the declared tolerance (defect "
-            << hermiticity
-            << "); a band decomposition of a non-self-adjoint operator is a "
-               "different computation and is refused rather than "
-               "approximated.";
-    throw std::invalid_argument(message.str());
-  }
+  // The departure of the operator from its adjoint relative to its own size.
+  // The bands are read on the Hermitian part, and every band carries the
+  // departure and whether it is within the tolerance.
+  const double size = maxAbs(operatorMatrix);
+  const double defect = maxAbs(operatorMatrix - operatorMatrix.adjoint());
+  const double hermiticity = size > 0.0 ? defect / size : 0.0;
+  const Eigen::MatrixXcd hermitianPart =
+      0.5 * (operatorMatrix + operatorMatrix.adjoint());
 
   std::vector<Eigen::MatrixXcd> actions;
   actions.reserve(group.size());
   for (const Permutation& g : group) actions.push_back(edgeRepresentation(g));
   const Eigen::MatrixXcd coexact = coexactProjector(tolerance);
 
-  const Eigen::SelfAdjointEigenSolver<Eigen::MatrixXcd> solver(operatorMatrix);
+  const Eigen::SelfAdjointEigenSolver<Eigen::MatrixXcd> solver(hermitianPart);
   const Eigen::VectorXd values = solver.eigenvalues();
   const Eigen::MatrixXcd vectors = solver.eigenvectors();
+
+  // Under a nontrivial projective class every invariant subspace has even
+  // rank, so the ascending eigenvalues of a rotation-invariant operator on an
+  // even number of edges are equal in consecutive pairs exactly: a pair is
+  // one unit whatever the eigensolver's rounding separates its two values
+  // by. A band is a run of units each of which starts within the degeneracy
+  // tolerance, taken relative to the operator's scale, of the band's first
+  // eigenvalue.
+  const Eigen::Index unit =
+      nontrivialClass && values.size() % 2 == 0 ? 2 : 1;
+  const double scale =
+      values.size() > 0
+          ? std::max(std::abs(values(0)), std::abs(values(values.size() - 1)))
+          : 0.0;
+  const double width0 = degeneracyTolerance * scale;
 
   std::vector<SpinorBandRead> bands;
   Eigen::Index start = 0;
   while (start < values.size()) {
-    Eigen::Index stop = start + 1;
+    Eigen::Index stop = std::min(start + unit, values.size());
     while (stop < values.size() &&
-           std::abs(values(stop) - values(start)) <= degeneracyTolerance) {
-      ++stop;
+           std::abs(values(stop) - values(start)) <= width0) {
+      stop = std::min(stop + unit, values.size());
     }
     const Eigen::Index width = stop - start;
     const Eigen::MatrixXcd basis = vectors.block(0, start, m, width);
@@ -681,6 +695,8 @@ std::vector<SpinorBandRead> MonopoleSupport::spinorBands(
         characterSum / static_cast<double>(actions.size());
     band.coexactResidual = maxAbs(coexact * basis - basis);
     band.coexact = band.coexactResidual <= tolerance;
+    band.hermiticityDefect = hermiticity;
+    band.hermitian = hermiticity <= tolerance;
     band.spinorDoublet = nontrivialClass && width == 2 &&
                          band.invarianceResidual <= tolerance &&
                          std::abs(band.irreducibilityScore - 1.0) <= tolerance;
@@ -778,20 +794,42 @@ Eigen::VectorXcd applyDGamma(const Eigen::MatrixXcd& oneParticle,
   return out;
 }
 
+/// Name a declared limit that was reached.
+[[noreturn]] void declaredLimitReached(const char* where, const char* what,
+                                       std::size_t limit, double asked) {
+  std::ostringstream message;
+  message << where << ": the declared " << what << " limit of " << limit
+          << " was reached: " << asked << " were asked for.";
+  throw std::length_error(message.str());
+}
+
+/// A mode count M whose 2^M-entry Fock vector has an index (`indexable` is
+/// the largest such M for the object being built), within the caller's
+/// declared limit when there is one.
+void requireFockModes(const char* where, std::size_t modeCount,
+                      std::size_t indexable,
+                      const std::optional<std::size_t>& modeLimit) {
+  if (modeCount == 0 || modeCount > indexable) {
+    std::ostringstream message;
+    message << where << ": the mode count must lie between one and "
+            << indexable
+            << ", the largest count whose entries the index type counts; "
+               "received "
+            << modeCount << ".";
+    throw std::invalid_argument(message.str());
+  }
+  if (modeLimit.has_value() && modeCount > *modeLimit)
+    declaredLimitReached(where, "mode", *modeLimit,
+                         static_cast<double>(modeCount));
+}
+
 }  // namespace
 
 Eigen::VectorXcd SharpSpin::determinant(
-    const std::vector<std::size_t>& occupiedModes, std::size_t modeCount) {
-  if (modeCount == 0 || modeCount > kMaxStateModes) {
-    std::ostringstream message;
-    message << "SharpSpin::determinant: the mode count must lie between one "
-               "and "
-            << kMaxStateModes << "; received " << modeCount << ".";
-    throw std::invalid_argument(message.str());
-  }
-  const ::tessera::quantum::ExteriorAlgebra algebra(modeCount);
-  std::vector<Eigen::VectorXcd> vectors;
-  vectors.reserve(occupiedModes.size());
+    const std::vector<std::size_t>& occupiedModes, std::size_t modeCount,
+    std::optional<std::size_t> modeLimit) {
+  requireFockModes("SharpSpin::determinant", modeCount, kIndexableModes,
+                   modeLimit);
   std::vector<char> seen(modeCount, 0);
   for (const std::size_t mode : occupiedModes) {
     if (mode >= modeCount) {
@@ -808,17 +846,31 @@ Eigen::VectorXcd SharpSpin::determinant(
       throw std::invalid_argument(message.str());
     }
     seen[mode] = 1;
-    Eigen::VectorXcd basis =
-        Eigen::VectorXcd::Zero(static_cast<Eigen::Index>(modeCount));
-    basis(static_cast<Eigen::Index>(mode)) = cd(1.0, 0.0);
-    vectors.push_back(std::move(basis));
   }
-  return algebra.wedge(vectors);
+  // a_{m_1}^dagger ... a_{m_n}^dagger on the vacuum, the rightmost factor
+  // acting first. Creating mode i on an occupation carries the Jordan-Wigner
+  // sign of the occupied modes below i, the convention of
+  // `ExteriorAlgebra::creationMatrix`, so the wedge of basis modes is one
+  // Fock basis state with a sign.
+  std::uint64_t occupation = 0;
+  bool negative = false;
+  for (auto mode = occupiedModes.rbegin(); mode != occupiedModes.rend();
+       ++mode) {
+    const std::uint64_t bit = std::uint64_t{1} << *mode;
+    if (std::popcount(occupation & (bit - 1)) % 2 != 0) negative = !negative;
+    occupation |= bit;
+  }
+  Eigen::VectorXcd state = Eigen::VectorXcd::Zero(
+      static_cast<Eigen::Index>(std::uint64_t{1} << modeCount));
+  state(static_cast<Eigen::Index>(occupation)) =
+      cd(negative ? -1.0 : 1.0, 0.0);
+  return state;
 }
 
 Eigen::VectorXcd SharpSpin::determinantSuperposition(
     const std::vector<std::vector<std::size_t>>& occupations,
-    const std::vector<Complex>& amplitudes, std::size_t modeCount) {
+    const std::vector<Complex>& amplitudes, std::size_t modeCount,
+    std::optional<std::size_t> modeLimit) {
   if (occupations.empty()) {
     throw std::invalid_argument(
         "SharpSpin::determinantSuperposition: a bounded superposition needs "
@@ -833,7 +885,8 @@ Eigen::VectorXcd SharpSpin::determinantSuperposition(
   }
   Eigen::VectorXcd state;
   for (std::size_t d = 0; d < occupations.size(); ++d) {
-    const Eigen::VectorXcd term = determinant(occupations[d], modeCount);
+    const Eigen::VectorXcd term =
+        determinant(occupations[d], modeCount, modeLimit);
     if (state.size() == 0) state = Eigen::VectorXcd::Zero(term.size());
     state += amplitudes[d] * term;
   }
@@ -873,17 +926,13 @@ Eigen::VectorXcd SharpSpin::applyTotalSpinSquared(
 }
 
 Eigen::MatrixXcd SharpSpin::totalSpinSquaredMatrix(
-    const std::array<Eigen::MatrixXcd, 3>& spinMatrices) {
+    const std::array<Eigen::MatrixXcd, 3>& spinMatrices,
+    std::optional<std::size_t> modeLimit) {
   const Eigen::Index modes = spinMatrices[0].rows();
-  if (modes <= 0 || static_cast<std::size_t>(modes) > kMaxDenseModes) {
-    std::ostringstream message;
-    message << "SharpSpin::totalSpinSquaredMatrix: the one-particle spin "
-               "matrices carry "
-            << modes << " modes; the dense Fock operator is materialized only "
-                        "up to "
-            << kMaxDenseModes << " modes. Use applyTotalSpinSquared instead.";
-    throw std::invalid_argument(message.str());
-  }
+  // the dense operator has 4^M entries, so M is indexable up to half the bits
+  requireFockModes("SharpSpin::totalSpinSquaredMatrix",
+                   modes > 0 ? static_cast<std::size_t>(modes) : 0,
+                   kIndexableModes / 2, modeLimit);
   const auto modeCount = static_cast<std::size_t>(modes);
   const Eigen::Index dimension =
       static_cast<Eigen::Index>(std::size_t{1} << modeCount);
@@ -977,13 +1026,6 @@ std::array<Eigen::MatrixXcd, 3> SharpSpin::doubletSpinMatrices(
         "is required.");
   }
   const std::size_t modeCount = 2 * carrierCount;
-  if (modeCount > kMaxStateModes) {
-    std::ostringstream message;
-    message << "SharpSpin::doubletSpinMatrices: " << carrierCount
-            << " carriers need " << modeCount << " modes, above the limit of "
-            << kMaxStateModes << ".";
-    throw std::invalid_argument(message.str());
-  }
   Eigen::Matrix2cd sx;
   sx << cd(0.0, 0.0), cd(0.5, 0.0), cd(0.5, 0.0), cd(0.0, 0.0);
   Eigen::Matrix2cd sy;
@@ -1057,25 +1099,24 @@ std::size_t patternIndex(const std::vector<std::size_t>& pattern) {
 }  // namespace
 
 std::vector<std::vector<std::size_t>> SharpSpin::sectorPatterns(
-    std::size_t modeCount, std::size_t particles) {
+    std::size_t modeCount, std::size_t particles,
+    std::optional<std::size_t> patternLimit) {
   if (particles > modeCount) {
     std::ostringstream message;
     message << "SharpSpin::sectorPatterns: " << particles
             << " particles do not fit in " << modeCount << " modes.";
     throw std::invalid_argument(message.str());
   }
-  // the number of patterns, C(M, n), guarded before anything is built
-  double count = 1.0;
-  for (std::size_t k = 1; k <= particles; ++k)
-    count = count * static_cast<double>(modeCount - particles + k) /
-            static_cast<double>(k);
-  if (count > static_cast<double>(kMaxSectorPatterns)) {
-    std::ostringstream message;
-    message << "SharpSpin::sectorPatterns: " << modeCount << " modes with "
-            << particles << " particles have about " << count
-            << " occupation patterns, above the limit of "
-            << kMaxSectorPatterns << " for the dense sector matrices.";
-    throw std::invalid_argument(message.str());
+  // the number of patterns, C(M, n), compared with a declared limit before
+  // anything is built
+  if (patternLimit.has_value()) {
+    double count = 1.0;
+    for (std::size_t k = 1; k <= particles; ++k)
+      count = count * static_cast<double>(modeCount - particles + k) /
+              static_cast<double>(k);
+    if (count > static_cast<double>(*patternLimit))
+      declaredLimitReached("SharpSpin::sectorPatterns", "pattern",
+                           *patternLimit, count);
   }
   std::vector<std::vector<std::size_t>> patterns;
   std::vector<std::size_t> current(particles);
@@ -1097,7 +1138,8 @@ std::vector<std::vector<std::size_t>> SharpSpin::sectorPatterns(
 }
 
 Eigen::MatrixXcd SharpSpin::exteriorPowerMatrix(
-    const Eigen::MatrixXcd& oneParticle, std::size_t particles) {
+    const Eigen::MatrixXcd& oneParticle, std::size_t particles,
+    std::optional<std::size_t> patternLimit) {
   if (oneParticle.rows() != oneParticle.cols() || oneParticle.rows() <= 0) {
     std::ostringstream message;
     message << "SharpSpin::exteriorPowerMatrix: the one-particle map is "
@@ -1106,7 +1148,7 @@ Eigen::MatrixXcd SharpSpin::exteriorPowerMatrix(
     throw std::invalid_argument(message.str());
   }
   const auto modeCount = static_cast<std::size_t>(oneParticle.rows());
-  const auto patterns = sectorPatterns(modeCount, particles);
+  const auto patterns = sectorPatterns(modeCount, particles, patternLimit);
   const auto dimension = static_cast<Eigen::Index>(patterns.size());
   Eigen::MatrixXcd out(dimension, dimension);
   Eigen::MatrixXcd buffer(static_cast<Eigen::Index>(particles),
@@ -1123,8 +1165,9 @@ Eigen::MatrixXcd SharpSpin::exteriorPowerMatrix(
   return out;
 }
 
-Eigen::VectorXcd SharpSpin::sectorComponent(const Eigen::VectorXcd& state,
-                                            std::size_t particles) {
+Eigen::VectorXcd SharpSpin::sectorComponent(
+    const Eigen::VectorXcd& state, std::size_t particles,
+    std::optional<std::size_t> patternLimit) {
   const std::size_t modeCount = modeCountOf(state.size());
   if (modeCount == 0) {
     std::ostringstream message;
@@ -1134,7 +1177,7 @@ Eigen::VectorXcd SharpSpin::sectorComponent(const Eigen::VectorXcd& state,
                "vector.";
     throw std::invalid_argument(message.str());
   }
-  const auto patterns = sectorPatterns(modeCount, particles);
+  const auto patterns = sectorPatterns(modeCount, particles, patternLimit);
   Eigen::VectorXcd out(static_cast<Eigen::Index>(patterns.size()));
   for (std::size_t k = 0; k < patterns.size(); ++k)
     out(static_cast<Eigen::Index>(k)) =
@@ -1142,17 +1185,13 @@ Eigen::VectorXcd SharpSpin::sectorComponent(const Eigen::VectorXcd& state,
   return out;
 }
 
-Eigen::VectorXcd SharpSpin::fockVector(const Eigen::VectorXcd& sector,
-                                       std::size_t modeCount,
-                                       std::size_t particles) {
-  if (modeCount == 0 || modeCount > kMaxStateModes) {
-    std::ostringstream message;
-    message << "SharpSpin::fockVector: the mode count must lie between one "
-               "and "
-            << kMaxStateModes << "; received " << modeCount << ".";
-    throw std::invalid_argument(message.str());
-  }
-  const auto patterns = sectorPatterns(modeCount, particles);
+Eigen::VectorXcd SharpSpin::fockVector(
+    const Eigen::VectorXcd& sector, std::size_t modeCount,
+    std::size_t particles, std::optional<std::size_t> modeLimit,
+    std::optional<std::size_t> patternLimit) {
+  requireFockModes("SharpSpin::fockVector", modeCount, kIndexableModes,
+                   modeLimit);
+  const auto patterns = sectorPatterns(modeCount, particles, patternLimit);
   if (static_cast<std::size_t>(sector.size()) != patterns.size()) {
     std::ostringstream message;
     message << "SharpSpin::fockVector: the sector vector has "
@@ -1172,7 +1211,7 @@ Eigen::VectorXcd SharpSpin::fockVector(const Eigen::VectorXcd& sector,
 Eigen::MatrixXcd SharpSpin::isotypicProjector(
     const std::vector<Eigen::MatrixXcd>& maps,
     const std::vector<Complex>& characters, std::size_t dimension,
-    std::size_t particles) {
+    std::size_t particles, std::optional<std::size_t> patternLimit) {
   if (maps.empty()) {
     throw std::invalid_argument(
         "SharpSpin::isotypicProjector: the group has no elements.");
@@ -1201,7 +1240,8 @@ Eigen::MatrixXcd SharpSpin::isotypicProjector(
   }
   Eigen::MatrixXcd out;
   for (std::size_t g = 0; g < maps.size(); ++g) {
-    const Eigen::MatrixXcd term = exteriorPowerMatrix(maps[g], particles);
+    const Eigen::MatrixXcd term =
+        exteriorPowerMatrix(maps[g], particles, patternLimit);
     if (out.size() == 0) out = Eigen::MatrixXcd::Zero(term.rows(), term.cols());
     out += std::conj(characters[g]) * term;
   }
