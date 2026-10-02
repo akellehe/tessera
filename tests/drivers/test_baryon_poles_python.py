@@ -212,12 +212,12 @@ def test_a_cell_whose_spin_read_names_no_doublet_is_read_in_the_host_frame(
     real = bp.aligned_doublet_frame
 
     def read(support, group, degeneracy_tolerance, tolerance,
-             character_tolerance):
+             character_tolerance, certified=True):
         if any(support is sheet for sheet in own):
             raise bp.NoSpinorDoublet("the support carries no j = 1/2 "
                                      "doublet: no band of rank two")
         return real(support, group, degeneracy_tolerance, tolerance,
-                    character_tolerance)
+                    character_tolerance, certified)
     monkeypatch.setattr(bp, "aligned_doublet_frame", read)
     frame = _run_spin_frame(supports, symmetry)
     assert frame["name"] == bp.SPIN_FRAME_OF_THE_HOST
@@ -246,8 +246,9 @@ def test_a_cell_whose_sheets_disagree_on_the_labels_is_read_in_the_host_frame(
     real = bp.aligned_doublet_frame
 
     def read(support, group, degeneracy_tolerance, tolerance,
-             character_tolerance):
-        out = real(support, group, degeneracy_tolerance, tolerance)
+             character_tolerance, certified=True):
+        out = real(support, group, degeneracy_tolerance, tolerance,
+                   character_tolerance, certified)
         if support is third:
             out = dict(out, reference_carrier=0)
         return out
@@ -283,11 +284,11 @@ def test_the_primal_regge_term_is_empty_on_the_host():
 def test_the_monopole_spin_read(alignment):
     """The spin read of the declared host at the declared tolerances. The
     genuine j = 1/2 doublet is the pair at 4, the second of the three
-    carriers. The read finds it as its third band, because the two
-    eigenvalues at 4 - 2/sqrt(3) are computed 3e-15 apart, above the
-    degeneracy tolerance 1e-15, and are read as two bands of rank one. The
-    aligned frame takes the read's band index, 2, as its reference carrier,
-    which is the pair at 4 + 2/sqrt(3)."""
+    carriers. The library's read lists it as its third band, because it
+    reads the two eigenvalues at 4 - 2/sqrt(3), computed 3e-15 apart, as two
+    bands of rank one at the degeneracy tolerance 1e-15. The aligned frame
+    names its reference by the carrier that holds the doublet, 1, with that
+    carrier's certificates."""
     read = alignment["spin_read"]
     assert read.monopole.monopole_number == 1
     assert read.cocycle.nontrivial
@@ -299,7 +300,14 @@ def test_the_monopole_spin_read(alignment):
     values = alignment["averaged_eigenvalues"]
     expected = [4 - 2 / np.sqrt(3)] * 2 + [4.0] * 2 + [4 + 2 / np.sqrt(3)] * 2
     assert np.allclose(values, expected, atol=1e-12)
-    assert alignment["reference_carrier"] == 2
+    assert alignment["reference_carrier"] == 1
+    assert alignment["reference_certified"] is True
+    doublet = alignment["reference_doublet"]
+    assert doublet["dimension"] == 2
+    assert doublet["spinor_doublet"] and doublet["coexact"]
+    assert doublet["eigenvalue"] == pytest.approx(4.0, abs=1e-12)
+    assert doublet["coexact_residual"] <= 1e-15
+    assert alignment["trialities"] == [1, 0, 2]
 
 
 def test_the_doublets_are_aligned_to_one_su2_action(alignment):
@@ -316,17 +324,17 @@ def test_the_one_per_doublet_sector_is_two_halves_and_a_three_halves():
 
 
 def test_contents_carry_the_spins_they_can():
-    """The colour-singlet states of a content split by total spin at the
-    declared spin-sector tolerance 1e-15. (3, 0, 0) has four states of spin
-    3/2 and (1, 1, 1) four of each spin. (2, 1, 0) has two of spin 1/2 and
-    four of spin 3/2, of which three are read: one eigenvalue of J^2 is
-    computed 1.8e-15 from 15/4 and is assigned to neither sector."""
-    for content, half, three in (((3, 0, 0), 0, 4), ((2, 1, 0), 2, 3),
+    """The colour-singlet states of a content split by total spin: (3, 0, 0)
+    has four states of spin 3/2, (2, 1, 0) two of spin 1/2 and four of spin
+    3/2, and (1, 1, 1) four of each."""
+    for content, half, three in (((3, 0, 0), 0, 4), ((2, 1, 0), 2, 4),
                                  ((1, 1, 1), 4, 4)):
         states, _ = bp.singlet_states(content)
-        sectors, _ = bp.spin_sectors(states)
+        sectors, read = bp.spin_sectors(states)
         assert sectors.get(bp.SPIN_HALF, np.zeros((0, 0))).shape[-1] == half
         assert sectors[bp.SPIN_THREE_HALVES].shape[1] == three
+        assert read["dimensions"] == {bp.SPIN_HALF: half,
+                                      bp.SPIN_THREE_HALVES: three}
 
 
 def test_every_singlet_state_is_a_colour_singlet():
@@ -1285,9 +1293,9 @@ def test_every_pole_of_a_sector_carries_its_own_certificates(alignment,
     of spin 1/2 under the lift. At the declared certificate tolerance 1e-15
     the colour certificate holds exactly and the spinor certificate fails on
     every pole: the residuals of the isotypic projector equations are
-    1.3e-15 to 1.5e-15, the rounding of the projector. The spin-lift
-    residuals are 1.3e-16 to 1.0e-15, and the certificate holds on three of
-    the four poles."""
+    1.2e-15 to 1.8e-15, the rounding of the projector. The spin-lift
+    residuals are 1.7e-16 to 4.9e-16, and the certificate holds on the four
+    poles."""
     matrices, _ = projectors
     _, triality, sectors = bp.doublet_sectors([1, 1, 1],
                                               alignment["trialities"])
@@ -1313,7 +1321,7 @@ def test_every_pole_of_a_sector_carries_its_own_certificates(alignment,
         assert certificate["spin_lift_left_residual"] < 2e-15
         assert certificate["colour_casimir_residual"] == 0.0
     assert [c["spin_lift_sharp"] for c in read["pole_certificates"]] == [
-        True, True, False, True]
+        True, True, True, True]
     # without projectors the spinor certificate is unmeasured, not false
     bare = bp.sector_entry(bp.SPIN_HALF, triality, sector,
                            (("quasi_free", operator),))
@@ -1422,36 +1430,55 @@ def test_the_refined_host_keeps_the_boundary_and_its_monopole():
 def test_the_spectral_fingerprint_of_the_declared_host():
     """Quark condition 7 on the declared host at the declared tolerances
     (1e-15). The reference doublet is found on the host, with weight 1/3 on
-    every edge. Under the declared odd relabeling the spectrum of h_1 moves
-    by 2.1e-15 of its scale, above the certificate tolerance, and that of
-    its T-average by 7.3e-16; the relabeled support's spin read names no
-    doublet, so the relabeling does not hold. The refined support's spin
-    read names no doublet either, so the refinement does not hold and its
-    overlap is not read. Both pieces of evidence are measured and fail."""
+    every edge, and on the relabeled host: under the declared odd relabeling
+    the doublet's energy and edge weights move by 2.8e-16 and 5.0e-16, the
+    spectrum of the T-average by 7.3e-16, and the spectrum of h_1 by 2.1e-15
+    of its scale, above the certificate tolerance, so the relabeling does
+    not hold. The refined support's bands are five pairs; the coexact pair
+    at 4 has an invariance residual of 3.7e-14 and a coexact residual of
+    2.3e-14, above the certificate tolerance, so no band is the certified
+    doublet there, the overlap is not read, and the read says which band is
+    nearest and by how much. Both pieces of evidence are measured and
+    fail."""
     config = bp.default_config([1.0], [1.0])
     read = bp.spectral_fingerprint_read(bp.build_host(), 1.0, 1.0, config)
     assert read["doublet_found"] and read["sheet"] == 0
     assert read["tolerance"] == 1e-15
     assert np.allclose(read["doublet_weights"], [1.0 / 3.0] * 6)
+    assert [band["dimension"] for band in read["band_certificates"]] == \
+        [2, 2, 2]
     relabeling = read["relabeling"]
     assert relabeling["permutation"] == [1, 0, 2, 3]
     assert relabeling["monopole_number"] == -1  # the orientation flips
-    assert not relabeling["doublet_found"] and not relabeling["held"]
+    assert relabeling["doublet_found"] and not relabeling["held"]
     assert 1e-15 < relabeling["spectrum_shift"] < 1e-14
-    assert relabeling["averaged_spectrum_shift"] < 1e-14
-    assert "doublet_energy_shift" not in relabeling
+    assert relabeling["averaged_spectrum_shift"] < 1e-15
+    assert relabeling["doublet_energy_shift"] < 1e-15
+    assert relabeling["doublet_weight_shift"] < 1e-15
     refinement = read["refinement"]
     assert not refinement["doublet_found"] and not refinement["held"]
     assert refinement["monopole_number"] == 1
     assert refinement["overlap_floor"] == bp.DECLARED_REFINEMENT_OVERLAP
     assert "overlap" not in refinement
+    bands = refinement["band_certificates"]
+    assert [band["dimension"] for band in bands] == [2] * 5
+    nearest = min(bands, key=lambda band: band["coexact_residual"])
+    assert nearest["eigenvalue"] == pytest.approx(4.0, abs=1e-12)
+    assert 1e-15 < nearest["coexact_residual"] < 1e-12
+    assert 1e-15 < nearest["invariance_residual"] < 1e-12
+    assert refinement["unread"].startswith(
+        "no spinor doublet on the refined support: no band is a certified "
+        "coexact spinor doublet at the tolerance 1e-15: the band nearest "
+        "the coexact sector (eigenvalue 4, rank 2) has coexact residual ")
     evidence = bp.fingerprint_evidence(read)
     assert [e.name for e in evidence] == ["refinement-stability",
                                           "relabeling-stability"]
     assert [e.held for e in evidence] == [False, False]
+    assert evidence[0].detail == refinement["unread"]
     assert bp.fingerprint_text(read).startswith(
-        "spectral fingerprint: relabeling unstable; refinement unstable (no "
-        "spinor doublet on the refined support)")
+        "spectral fingerprint: relabeling unstable (spectrum shift 2.1e-15, "
+        "doublet weight shift 5e-16); refinement unstable (no spinor "
+        "doublet on the refined support: no band is a certified coexact ")
     assert [e.held for e in bp.fingerprint_evidence(None)] == [None, None]
     assert bp.fingerprint_text(None) == "spectral fingerprint unread"
 
@@ -1518,7 +1545,7 @@ def test_a_relaxed_cell_without_the_tetrahedral_group_is_read_in_the_host_frame(
     assert symmetry["length_departure"] == flag["length_departure"]
     assert symmetry["compensation_residual"] == flag["compensation_residual"]
     # the frames recorded are the declared host's, the same on every sheet
-    assert [f["reference_carrier"] for f in relaxation["frames"]] == [2] * 3
+    assert [f["reference_carrier"] for f in relaxation["frames"]] == [1] * 3
     assert len({tuple(f["trialities"]) for f in relaxation["frames"]}) == 1
     # the poles are read: ten doublet contents, each with its sectors
     assert [read["doublet_content"] for read in record["doublet_reads"]] == \

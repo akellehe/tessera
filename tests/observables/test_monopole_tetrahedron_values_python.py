@@ -147,9 +147,9 @@ def test_the_six_edge_modes_are_two_plus_two_prime_plus_two_double_prime():
     3e-15 apart, above the degeneracy tolerance, and are read as two bands
     of rank one; the doublets at 4 (coexact, the genuine j = 1/2 doublet)
     and at 4 + 2/sqrt(3) are read as spinor doublets. The read's doublet
-    index is the coexact doublet's place among the four bands, 2, and the
-    aligned frame takes that index as its reference carrier, which is the
-    pair at 4 + 2/sqrt(3)."""
+    index is the coexact doublet's place among the four bands, 2. The
+    aligned frame names its reference by the carrier that holds the coexact
+    doublet, 1, the pair at 4."""
     support = MonopoleSupport.tetrahedron(1)
     group = MonopoleSupport.tetrahedralRotations()
     read = support.spinRead(group)
@@ -168,7 +168,8 @@ def test_the_six_edge_modes_are_two_plus_two_prime_plus_two_double_prime():
     alignment = bp.aligned_doublet_frame(support, group)
     assert sorted(alignment["trialities"]) == [0, 1, 2]
     assert alignment["intertwining_residual"] < 1e-12
-    assert alignment["reference_carrier"] == 2
+    assert alignment["reference_carrier"] == 1
+    assert alignment["reference_certified"] is True
     np.testing.assert_allclose(alignment["averaged_eigenvalues"],
                                [4 - 2 / SQRT3] * 2 + [4.0] * 2
                                + [4 + 2 / SQRT3] * 2, atol=1e-12)

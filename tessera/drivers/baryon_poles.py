@@ -193,12 +193,16 @@ beside its result: a dict with the precondition's ``name``, a ``detail``
 sentence and the numbers that decided it. A content's record lists its flags
 under ``flags``, an empty list when every precondition holds. The names are
 "not Kontsevich-Segal allowable" (the geometry the mean-field solve reached,
-`geometry_flags`), and "not tetrahedrally symmetric", "no j = 1/2 doublet" and
-"the sheets' doublet labels disagree" (the three preconditions of the spin
-read of the cell itself, `spin_frame`). A read with no value at all is a
-different thing: a content whose solve overflowed the double, or at which the
-library names no value (a band that cannot hold the occupation, a face
-holonomy outside the domain of the holonomy term), has a record with
+`geometry_flags`), "not tetrahedrally symmetric", "no j = 1/2 doublet", "the
+sheets' doublet labels disagree" and "the doublet labels are not the three Z_3
+characters" (the preconditions of the spin read of the cell itself,
+`spin_frame`, which also flags a host frame whose reference doublet is not
+certified), and "the elimination is outside the range of its expansion" (the
+with-quartic read, `truncation_flags`, carried under ``quartic.truncation``
+and named beside every ratio built from the content). A read with no value
+at all is a different thing: a content whose solve overflowed the double, or
+at which the library names no value (a band that cannot hold the occupation,
+a face holonomy outside the domain of the holonomy term), has a record with
 ``failed`` and no pole.
 
 What a content names
@@ -207,10 +211,10 @@ A content (n_0, n_1, n_2) places n_b quarks in band b of h_1, the bands being
 groups of degenerate eigenvalues in ascending order of real part. On the
 monopole host each band of h_1 is one simple mode per sheet, rank three, not a
 spin doublet, so a content names no doublet. The record carries, beside it,
-how the occupied bands decompose into the doublets of h-bar_1
-(``spin_decomposition``), and the pole sectors are read for every doublet
-content and labelled by it (``doublet_reads``); no mapping from a content to a
-doublet content is made.
+how the bands the solved state occupies decompose into the doublets of
+h-bar_1 (``spin_decomposition``), and the pole sectors are read for every
+doublet content and labelled by it (``doublet_reads``); no mapping from a
+content to a doublet content is made.
 
 The same paragraph's caveat is carried with every Delta candidate: on the
 tetrahedron the j = 3/2 quartet restricts to 2' + 2'', so "spin-1/2 with
@@ -258,6 +262,7 @@ import sys
 import time
 
 import numpy as np
+from scipy.optimize import linear_sum_assignment
 
 import tessera as T
 from tessera import chainhodge as ch
@@ -358,12 +363,17 @@ TOLERANCES = (
      "the relative tolerance the level recursion's certificates hold "
      "against"),
     ("spin_sector_tolerance",
-     "the separation at or below which an eigenvalue of J^2 on a "
-     "colour-singlet block is read as a sector's j(j + 1)"),
+     "the size at or below which the measured departures of the spin split "
+     "of a colour-singlet block hold: the residual of the block's "
+     "two-eigenvalue polynomial (J^2 - 3/4)(J^2 - 15/4), the leakage of J^2 "
+     "out of the block, and the distance of each sector projector's trace "
+     "from an integer; the split itself is read from the polynomial "
+     "projectors and compares no eigenvalue"),
     ("character_tolerance",
-     "the modulus at or below which the trace of a rotation on the reference "
-     "doublet is zero, so that a doublet's character on that rotation is one "
-     "rather than a ratio of traces"),
+     "the modulus at or below which the measured trace of a half turn on the "
+     "reference doublet holds as zero; a doublet's character on a half turn "
+     "is one by the rotation's cycle type, and no trace is compared to "
+     "decide it"),
     ("elimination_tolerance",
      "the relative threshold of the rank decisions of the Drazin "
      "elimination's Feshbach read of the bare stiffness A, and the fraction "
@@ -377,6 +387,12 @@ TOLERANCES = (
      "the radius of the resonance disc about zero, relative to the spectral "
      "radius of the bare stiffness A, inside which an eigenvalue of A is a "
      "zero-stiffness direction of the Drazin inverse"),
+    ("truncation_tolerance",
+     "the remainder of the elimination's expansion along the induced "
+     "displacement, relative to the term the expansion keeps (the cubic "
+     "remainder of the geometric action over its quadratic term, and the "
+     "second-order remainder of h_1 over its linear term), above which the "
+     "with-quartic read is flagged as outside the range of the expansion"),
     ("hessian_reality_tolerance",
      "the imaginary part of the moment-constrained Hessian's quotient along "
      "the Hellmann-Feynman force, relative to the Hessian's scale, at or "
@@ -1087,49 +1103,191 @@ def cell_symmetry(spacetime, supports, tolerance=DECLARED_CERTIFICATE_TOLERANCE)
 
 
 class NoSpinorDoublet(RuntimeError):
-    """`aligned_doublet_frame` on a support whose spin read names no j = 1/2
-    doublet, so no reference doublet exists to align the others to."""
+    """`aligned_doublet_frame` on a support none of whose carriers is a
+    certified j = 1/2 doublet, so no reference doublet exists to align the
+    others to."""
+
+
+def _band_certificates(block, representations, coexact, nontrivial,
+                       tolerance):
+    """The certificates of one band of a rotation-invariant edge operator
+    (``block``, an orthonormal frame of it), as
+    `MonopoleSupport.spinorBands` grades them: the invariance of its
+    projector under the projective action, max_g ||D(g) P - P D(g)||_max;
+    the irreducibility score (1 / |G|) sum_g |tr D(g)|_W|^2, one on an
+    irreducible band; the coexact residual ||P_coexact V - V||_max; whether
+    it is a spinor doublet (rank two, invariant and irreducible at
+    ``tolerance``, under a nontrivial projective class) and whether it lies
+    in the coexact sector at ``tolerance``."""
+    projector = block @ block.conj().T
+    invariance = max(float(np.max(np.abs(d @ projector - projector @ d)))
+                     for d in representations)
+    score = float(sum(abs(np.trace(block.conj().T @ d @ block)) ** 2
+                      for d in representations) / len(representations))
+    residual = float(np.max(np.abs(coexact @ block - block)))
+    return {
+        "dimension": int(block.shape[1]),
+        "invariance_residual": invariance,
+        "irreducibility_score": score,
+        "coexact_residual": residual,
+        "spinor_doublet": bool(nontrivial and block.shape[1] == 2
+                               and invariance <= tolerance
+                               and abs(score - 1.0) <= tolerance),
+        "coexact": bool(residual <= tolerance),
+    }
+
+
+def symmetry_bands(support, group, nontrivial,
+                   degeneracy_tolerance=DECLARED_TOLERANCE,
+                   tolerance=DECLARED_CERTIFICATE_TOLERANCE):
+    """The symmetry-protected bands of the rotation-averaged edge Laplacian
+    of a support, in ascending order of eigenvalue, each with an orthonormal
+    frame, the place of its first mode in that order (``start``) and its
+    certificates (`_band_certificates`): the reading of
+    `MonopoleSupport.spinorBands`, with the frames.
+
+    Under a nontrivial projective class (``nontrivial``) every invariant
+    subspace has even rank, so the eigenvalues of a rotation-invariant
+    operator are equal in pairs exactly: the two eigenvalues of a pair are
+    one unit whatever the rounding of the eigensolver separates them by, and
+    a band is a run of units each of which starts within
+    ``degeneracy_tolerance`` of the band's first eigenvalue. Under the
+    trivial class a unit is one eigenvalue."""
+    averaged = np.asarray(support.rotationAveragedEdgeOperator(
+        support.edgeLaplacian(), group))
+    values, vectors = np.linalg.eigh(averaged)
+    order = np.argsort(values, kind="stable")
+    values, vectors = values[order], vectors[:, order]
+    representations = [np.asarray(support.edgeRepresentation(g))
+                       for g in group]
+    coexact = np.asarray(support.coexactProjector(tolerance))
+    unit = 2 if nontrivial and len(values) % 2 == 0 else 1
+    bands, start = [], 0
+    while start < len(values):
+        stop = start + unit
+        while (stop < len(values)
+               and abs(values[stop] - values[start]) <= degeneracy_tolerance):
+            stop += unit
+        block = vectors[:, start:stop]
+        band = _band_certificates(block, representations, coexact,
+                                  nontrivial, tolerance)
+        band.update({"eigenvalue": float(np.mean(values[start:stop])),
+                     "start": start, "frame": block})
+        bands.append(band)
+        start = stop
+    return bands
+
+
+def nearest_doublet_text(bands, tolerance):
+    """Why no band of `symmetry_bands` is the reference doublet, as text: the
+    certificates of the band nearest the coexact sector against the
+    tolerance they are graded at."""
+    if not bands:
+        return "the support has no band"
+    band = min(bands, key=lambda b: b["coexact_residual"])
+    return ("no band is a certified coexact spinor doublet at the tolerance "
+            "%.3g: the band nearest the coexact sector (eigenvalue %.6g, "
+            "rank %d) has coexact residual %.3g, invariance residual %.3g "
+            "and irreducibility score 1 %+.3g"
+            % (tolerance, band["eigenvalue"], band["dimension"],
+               band["coexact_residual"], band["invariance_residual"],
+               band["irreducibility_score"] - 1.0))
+
+
+def reference_doublet(bands):
+    """The j = 1/2 doublet among the bands of `symmetry_bands`: the first
+    rank-two, invariant, irreducible, spinorial band lying in the coexact
+    sector (the rule of `MonopoleSupport.spinRead`), or None when there is
+    none."""
+    for band in bands:
+        if band["spinor_doublet"] and band["coexact"]:
+            return band
+    return None
 
 
 def aligned_doublet_frame(support, group,
                           degeneracy_tolerance=DECLARED_TOLERANCE,
                           tolerance=DECLARED_CERTIFICATE_TOLERANCE,
-                          character_tolerance=DECLARED_TOLERANCE):
+                          character_tolerance=DECLARED_TOLERANCE,
+                          certified=True):
     """The edge basis in which the three doublets 2, 2', 2'' carry one common
     SU(2) action, each up to its own Z_3 character.
 
     The three doublets are the eigenspaces of the rotation-averaged edge
     operator (`MonopoleSupport.rotationAveragedEdgeOperator`); each appears
     once in the edge cochains, so they are the isotypic components of the
-    projective action D_1(g) and do not depend on the operator averaged. With
-    R(g) the action on the reference doublet (the coexact j = 1/2 doublet
-    `spinRead` names) and M_d(g) the action on doublet d, the character is
-    chi_d(g) = tr M_d(g) / tr R(g) where |tr R(g)| is above
-    ``character_tolerance`` and one otherwise (the Klein four-group, on which
-    tr R(g) = 0 and which is the kernel of the Z_3 character), and the
-    intertwiner T_d = sum_g chi_d(g)^{-1} M_d(g) X R(g)^{-1} carries R to
-    chi_d^{-1} M_d (Schur averaging from a fixed seed X). Columns 2 c + s of
-    the returned frame are spin state s of carrier c, the order
-    `SharpSpin.doubletSpinMatrices` uses. The carriers are ordered by the
-    eigenvalue of the averaged operator, ascending, which is the reading the
-    `spinRead` bands are listed in.
+    projective action D_1(g) and do not depend on the operator averaged. The
+    carriers are the three pairs of consecutive eigenvectors in ascending
+    order of eigenvalue: under the nontrivial projective class the
+    eigenvalues are equal in pairs exactly, so the pairing does not depend
+    on how far the eigensolver's rounding separates the two of a pair.
+
+    The reference carrier is the carrier that holds the coexact j = 1/2
+    doublet: the first band of `symmetry_bands` that is a certified spinor
+    doublet in the coexact sector (`reference_doublet`), named by the place
+    of its modes among the carriers and not by its index among the bands.
+    With no such band, `NoSpinorDoublet` is raised when ``certified`` is
+    true; otherwise the reference is the carrier of least coexact residual
+    and the returned ``reference_certified`` is false, with the carrier's
+    certificates under ``reference_doublet``.
+
+    With R(g) the action on the reference doublet and M_d(g) the action on
+    doublet d, the character is chi_d(g) = tr M_d(g) / tr R(g) on a rotation
+    that is not a half turn, and one on a half turn (a rotation of order
+    two, the Klein four-group, on which tr R(g) = 0 exactly and which is the
+    kernel of the Z_3 character). A half turn is known by the cycle type of
+    its permutation, so no computed trace is compared to decide it; the
+    largest |tr R(g)| over the half turns is returned as
+    ``half_turn_trace_residual``, with whether it is at or below
+    ``character_tolerance`` (``half_turn_trace_held``). The intertwiner
+    T_d = sum_g chi_d(g)^{-1} M_d(g) X R(g)^{-1} carries R to chi_d^{-1} M_d
+    (Schur averaging from a fixed seed X). Columns 2 c + s of the returned
+    frame are spin state s of carrier c, the order
+    `SharpSpin.doubletSpinMatrices` uses.
     """
     read = support.spinRead(group, degeneracy_tolerance, tolerance)
+    nontrivial = bool(read.cocycle.nontrivial)
     averaged = support.rotationAveragedEdgeOperator(support.edgeLaplacian(),
                                                     group)
     values, vectors = np.linalg.eigh(np.asarray(averaged))
-    order = np.argsort(values)
+    order = np.argsort(values, kind="stable")
     values, vectors = values[order], vectors[:, order]
     blocks = [vectors[:, 2 * c:2 * c + 2] for c in range(3)]
     representations = [np.asarray(support.edgeRepresentation(g))
                        for g in group]
-    reference = int(read.doublet_index)
-    if reference >= 3:
-        raise NoSpinorDoublet("the support carries no j = 1/2 doublet: %s"
-                              % read.certificate.describe())
-    basis_r = blocks[reference]
+    doublet = reference_doublet(symmetry_bands(
+        support, group, nontrivial, degeneracy_tolerance, tolerance))
+    coexact = np.asarray(support.coexactProjector(tolerance))
+    carriers = [_band_certificates(block, representations, coexact,
+                                   nontrivial, tolerance)
+                for block in blocks]
+    if doublet is not None:
+        reference = doublet["start"] // 2
+    elif certified:
+        raise NoSpinorDoublet(
+            "the support carries no j = 1/2 doublet: the carriers' coexact "
+            "residuals are %s, invariance residuals %s and irreducibility "
+            "scores %s at the tolerance %.3g, the projective class is %s "
+            "(%s)" % (
+                ["%.3g" % c["coexact_residual"] for c in carriers],
+                ["%.3g" % c["invariance_residual"] for c in carriers],
+                ["%.17g" % c["irreducibility_score"] for c in carriers],
+                tolerance, "nontrivial" if nontrivial else "trivial",
+                read.certificate.describe()))
+    else:
+        reference = min(range(3),
+                        key=lambda c: carriers[c]["coexact_residual"])
     actions = {c: [blocks[c].conj().T @ d @ blocks[c]
                    for d in representations] for c in range(3)}
+    # a half turn: a rotation other than the identity whose square is the
+    # identity
+    half_turns = [any(x != y for x, y in enumerate(g))
+                  and all(g[g[x]] == x for x in range(len(g)))
+                  for g in group]
+    half_turn_trace = max(
+        (float(abs(np.trace(r))) for r, half in zip(actions[reference],
+                                                    half_turns) if half),
+        default=0.0)
     seed = np.array([[0.7, 0.2 + 0.1j], [-0.3j, 1.1]])
     frame = np.zeros((BASE_EDGES, BASE_EDGES), dtype=complex)
     residual = 0.0
@@ -1138,11 +1296,10 @@ def aligned_doublet_frame(support, group,
             intertwiner = np.eye(2, dtype=complex)
             characters = [1.0] * len(group)
         else:
-            characters = []
-            for m, r in zip(actions[c], actions[reference]):
-                tr_r = np.trace(r)
-                characters.append(np.trace(m) / tr_r
-                                  if abs(tr_r) > character_tolerance else 1.0)
+            characters = [1.0 if half else np.trace(m) / np.trace(r)
+                          for m, r, half in zip(actions[c],
+                                                actions[reference],
+                                                half_turns)]
             intertwiner = sum(
                 (1.0 / chi) * m @ seed @ np.linalg.inv(r)
                 for chi, m, r in zip(characters, actions[c],
@@ -1173,7 +1330,14 @@ def aligned_doublet_frame(support, group,
         "three_cycle": list(group[three_cycle]),
         "averaged_eigenvalues": [float(v) for v in values],
         "reference_carrier": reference,
+        "reference_certified": doublet is not None,
+        "reference_doublet": dict(
+            carriers[reference],
+            eigenvalue=float(np.mean(values[2 * reference:
+                                            2 * reference + 2]))),
         "intertwining_residual": float(residual),
+        "half_turn_trace_residual": half_turn_trace,
+        "half_turn_trace_held": bool(half_turn_trace <= character_tolerance),
         "spin_read": read,
     }
 
@@ -1203,16 +1367,25 @@ def spin_frame(supports, symmetry, degeneracy_tolerance=DECLARED_TOLERANCE,
     2. the spin read of every sheet's own support names a j = 1/2 doublet, so
        that every sheet has an aligned frame;
     3. the aligned frames of the sheets carry the same doublet labels (the
-       Z_3 labels of the three carriers and the reference carrier).
+       Z_3 labels of the three carriers and the reference carrier);
+    4. those labels are the three Z_3 characters, one on each carrier, so
+       that a doublet content names a carrier content.
 
-    When the three hold, the frame is the cell's own: the actions and the
+    When the four hold, the frame is the cell's own: the actions and the
     aligned frames are built from the sheets' supports. When one does not
     hold, the frame is that of the declared symmetric host: the actions and
     the aligned frame of `monopole_support()`, the same on every sheet, and
     the first precondition that does not hold is recorded as a flag, a dict
     with its ``name`` ("not tetrahedrally symmetric", "no j = 1/2 doublet",
-    "the sheets' doublet labels disagree"), a ``detail`` sentence and the
-    numbers that decided it. The read proceeds in either frame.
+    "the sheets' doublet labels disagree", "the doublet labels are not the
+    three Z_3 characters"), a ``detail`` sentence and the numbers that
+    decided it. The read proceeds in either frame.
+
+    The host's frame is read whether or not its reference doublet is
+    certified at the tolerances (`aligned_doublet_frame` with ``certified``
+    false): when it is not, the reference is the carrier of least coexact
+    residual and the flag "the host's reference doublet is not certified"
+    carries that carrier's certificates.
 
     Returns a dict with ``name`` (`SPIN_FRAME_OF_THE_CELL` or
     `SPIN_FRAME_OF_THE_HOST`), ``actions``, ``alignments`` (one per sheet)
@@ -1262,17 +1435,49 @@ def spin_frame(supports, symmetry, degeneracy_tolerance=DECLARED_TOLERANCE,
                     "labels": labels,
                 })
                 own = None
+            elif sorted(own[0]["trialities"]) != [0, 1, 2]:
+                flags.append({
+                    "name": "the doublet labels are not the three Z_3 "
+                            "characters",
+                    "detail": "the aligned frame of the relaxed cell carries "
+                              "the trialities %s on its three carriers, so a "
+                              "doublet content names no carrier content"
+                              % (list(own[0]["trialities"]),),
+                    "trialities": list(own[0]["trialities"]),
+                })
+                own = None
     if own is not None:
         return {"name": SPIN_FRAME_OF_THE_CELL,
                 "actions": rotation_action([support
                                             for support, _ in supports]),
                 "alignments": own, "flags": flags}
     host = monopole_support()
+    alignment = aligned_doublet_frame(host, group, degeneracy_tolerance,
+                                      tolerance, character_tolerance,
+                                      certified=False)
+    if not alignment["reference_certified"]:
+        doublet = alignment["reference_doublet"]
+        flags.append({
+            "name": "the host's reference doublet is not certified",
+            "detail": (
+                "no carrier of the declared symmetric host is a certified "
+                "j = 1/2 doublet at the certificate tolerance %.3g; the "
+                "reference is carrier %d, the carrier of least coexact "
+                "residual (coexact residual %.3g, invariance residual %.3g, "
+                "irreducibility score %.17g)"
+                % (tolerance, alignment["reference_carrier"],
+                   doublet["coexact_residual"],
+                   doublet["invariance_residual"],
+                   doublet["irreducibility_score"])),
+            "tolerance": float(tolerance),
+            "reference_carrier": int(alignment["reference_carrier"]),
+            "coexact_residual": float(doublet["coexact_residual"]),
+            "invariance_residual": float(doublet["invariance_residual"]),
+            "irreducibility_score": float(doublet["irreducibility_score"]),
+        })
     return {"name": SPIN_FRAME_OF_THE_HOST,
             "actions": rotation_action([host] * SHEETS),
-            "alignments": [aligned_doublet_frame(
-                host, group, degeneracy_tolerance, tolerance,
-                character_tolerance)] * SHEETS,
+            "alignments": [alignment] * SHEETS,
             "flags": flags}
 
 
@@ -1404,31 +1609,85 @@ def left_inverse(columns):
 
 
 def spin_sectors(states, tolerance=DECLARED_TOLERANCE):
-    """Split a colour-singlet space by total spin: J^2 applied to each basis
-    state with `SharpSpin.applyTotalSpinSquared`, the block in the basis, and
-    its eigenvectors grouped by eigenvalue (3/4 or 15/4), an eigenvalue
-    within ``tolerance`` of a sector's j(j + 1) belonging to that sector."""
+    """Split a colour-singlet space of three spin-1/2 quarks by total spin.
+
+    J^2 is applied to each basis state with
+    `SharpSpin.applyTotalSpinSquared` and B is its block in the basis. Three
+    spins 1/2 add to 1/2 or 3/2, so B has the eigenvalues 3/4 and 15/4 only
+    and its sector projectors are polynomials of it,
+
+        P_3/2 = (B - 3/4) / 3,        P_1/2 = (15/4 - B) / 3,
+
+    which no eigenvalue is computed or compared for. A sector's dimension is
+    the trace of its projector, an integer, and its basis is the image of
+    the projector: with the states orthonormalized (the Cholesky factor of
+    their Gram matrix), the projector is Hermitian and the basis is its
+    eigenvectors of the largest eigenvalues, as many as the dimension,
+    orthonormal as Fock vectors, and real when the states are.
+
+    Returns the sectors by j(j + 1) (a sector of dimension zero is left
+    out) and the measurements of the read, none of which decides anything:
+
+    * ``dimensions`` and ``trace_departure``: per sector, the dimension and
+      the distance of the projector's trace from that integer;
+    * ``polynomial_residual``: ||(B - 3/4)(B - 15/4)||_max, zero exactly
+      when B has those two eigenvalues only and is diagonalizable;
+    * ``leakage``: ||J^2 V - V B||_max over the basis states V as Fock
+      vectors, zero exactly when their span is invariant under J^2;
+    * ``eigenvalues``: the eigenvalues of B as computed;
+    * ``tolerance`` and ``held``: whether the three departures are at or
+      below ``tolerance``."""
     basis = occupation_basis()
     spins = edge_spin_matrices()
-    images = []
-    for k in range(states.shape[1]):
-        fock = to_fock(states[:, k], basis)
-        image = np.asarray(obs.SharpSpin.applyTotalSpinSquared(spins, fock))
-        images.append(image)
-    # J^2 is real symmetric in the occupation basis, so the block is read by
-    # the bilinear pairing on the Fock vectors.
     focks = np.column_stack([to_fock(states[:, k], basis)
                              for k in range(states.shape[1])])
-    gram = focks.T @ focks
-    block = np.linalg.solve(gram, focks.T @ np.column_stack(images))
-    values, vectors = np.linalg.eig(block)
-    sectors = {}
-    for j2 in (SPIN_HALF, SPIN_THREE_HALVES):
-        picked = [k for k in range(len(values))
-                  if abs(values[k] - j2) <= tolerance]
-        if picked:
-            sectors[j2] = states @ vectors[:, picked]
-    return sectors, [complex(v) for v in values]
+    images = np.column_stack([
+        np.asarray(obs.SharpSpin.applyTotalSpinSquared(spins, focks[:, k]))
+        for k in range(states.shape[1])])
+    # J^2 is Hermitian (real symmetric in the occupation basis), so its
+    # block in the basis is read by the Hermitian pairing on the Fock
+    # vectors.
+    gram = focks.conj().T @ focks
+    block = np.linalg.solve(gram, focks.conj().T @ images)
+    count = block.shape[0]
+    identity = np.eye(count)
+    # with G = L L^H, the coefficients c = L^-H x are those of the
+    # orthonormalized states, in which the block is the Hermitian
+    # L^H B L^-H
+    factor = np.linalg.cholesky(gram)
+    hermitian = factor.conj().T @ block @ np.linalg.inv(factor.conj().T)
+    hermitian = (hermitian + hermitian.conj().T) / 2
+    if not np.any(hermitian.imag):
+        # real states: a real symmetric block, whose eigenvectors are real
+        hermitian = hermitian.real
+    projectors = {SPIN_HALF: (SPIN_THREE_HALVES * identity - hermitian) / 3,
+                  SPIN_THREE_HALVES: (hermitian - SPIN_HALF * identity) / 3}
+    sectors, dimensions, departures = {}, {}, {}
+    for j2, projector in projectors.items():
+        trace = float(np.trace(projector).real)
+        dimension = max(0, min(count, int(round(trace))))
+        dimensions[j2] = dimension
+        departures[j2] = abs(trace - dimension)
+        if dimension == 0:
+            continue
+        _, vectors = np.linalg.eigh(projector)
+        picked = vectors[:, count - dimension:]
+        sectors[j2] = states @ np.linalg.solve(factor.conj().T, picked)
+    polynomial = float(np.max(np.abs(
+        (block - SPIN_HALF * identity)
+        @ (block - SPIN_THREE_HALVES * identity)))) if count else 0.0
+    leakage = float(np.max(np.abs(images - focks @ block))) if count else 0.0
+    read = {
+        "dimensions": dimensions,
+        "trace_departure": departures,
+        "polynomial_residual": polynomial,
+        "leakage": leakage,
+        "eigenvalues": [complex(v) for v in np.linalg.eigvals(block)],
+        "tolerance": float(tolerance),
+        "held": bool(polynomial <= tolerance and leakage <= tolerance
+                     and all(d <= tolerance for d in departures.values())),
+    }
+    return sectors, read
 
 
 
@@ -1828,7 +2087,16 @@ def truncation_certificates(spacetime, kappa, beta, config, couplings,
     of the Villain term; where the logarithm is refused (a displacement that
     reaches a zero of W, or a W not resolved above its rounding), the value
     is unavailable, and the action remainder is then reported as unmeasured
-    with the reason."""
+    with the reason.
+
+    The elimination keeps the quadratic term of the action and the linear
+    term of h_1, so the with-quartic read is inside the range of its
+    expansion when both relative remainders are at or below the config's
+    ``truncation_tolerance``. When a measured one is above it, or the
+    action's is unmeasured, the read is made as it is and ``flags`` holds
+    the flag `QUARTIC_OUTSIDE_EXPANSION` with the remainders and the induced
+    displacement (`truncation_flags`); with no induced displacement nothing
+    is eliminated and there is no flag."""
     edges = spacetime.getEdgeList().toVector()
     n = len(edges)
     saved_lengths = [complex(edge.getLength()) for edge in edges]
@@ -1885,7 +2153,58 @@ def truncation_certificates(spacetime, kappa, beta, config, couplings,
                     "action_relative_remainder":
                         float(abs(cubic) / abs(quadratic))
                         if quadratic != 0 else None})
+    out["flags"] = truncation_flags(
+        out, declared_tolerance(config, "truncation_tolerance"))
     return out
+
+
+#: The flag of a with-quartic read whose elimination is outside the range of
+#: its expansion (`truncation_flags`).
+QUARTIC_OUTSIDE_EXPANSION = ("the elimination is outside the range of its "
+                             "expansion")
+
+
+def truncation_flags(truncation, tolerance=DECLARED_TOLERANCE):
+    """The flag of the with-quartic read from the measurements of
+    `truncation_certificates`: an empty list when nothing is eliminated (the
+    induced displacement is zero) or when both relative remainders are
+    measured and at or below ``tolerance``; otherwise the one flag
+    `QUARTIC_OUTSIDE_EXPANSION`, a dict with its ``name``, a ``detail``
+    sentence, and the numbers that decided it: the two relative remainders
+    (None for one that is unmeasured, with the reason), the norms of the
+    induced displacement and the tolerance."""
+    displacement = float(truncation["induced_displacement_norm"])
+    if displacement == 0.0:
+        return []
+    operator = truncation.get("operator_relative_remainder")
+    action = truncation.get("action_relative_remainder")
+    unmeasured = truncation.get("action_unmeasured")
+    outside = [value for value in (operator, action)
+               if value is not None and not value <= tolerance]
+    if not outside and not unmeasured:
+        return []
+    action_text = ("unmeasured (%s)" % unmeasured if action is None
+                   and unmeasured else _measured(action, "%.3g"))
+    return [{
+        "name": QUARTIC_OUTSIDE_EXPANSION,
+        "detail": (
+            "along the induced displacement (norm %.3g: squared lengths "
+            "%.3g, link phases %.3g rad) the second-order remainder of h_1 "
+            "relative to its linear term is %s and the cubic remainder of "
+            "the geometric action relative to its quadratic term is %s, "
+            "against the declared tolerance %.3g; the with-quartic poles "
+            "are read as they are" % (
+                displacement, truncation["induced_length_norm"],
+                truncation["induced_phase_norm"],
+                _measured(operator, "%.3g"), action_text, tolerance)),
+        "operator_relative_remainder": operator,
+        "action_relative_remainder": action,
+        "action_unmeasured": unmeasured,
+        "induced_displacement_norm": displacement,
+        "induced_length_norm": float(truncation["induced_length_norm"]),
+        "induced_phase_norm": float(truncation["induced_phase_norm"]),
+        "tolerance": float(tolerance),
+    }]
 
 
 def second_quantized(one_particle, basis=None):
@@ -2397,12 +2716,29 @@ def geometry_flags(report, tolerance=DECLARED_ALLOWABILITY_TOLERANCE):
     }]
 
 
+def content_flags(record, column=None):
+    """Every flag of one content record: the flags of its geometry and of
+    its spin frame (``flags``) and the flag of its with-quartic read
+    (``quartic.truncation.flags``, `truncation_flags`), each name once.
+    With ``column`` "quasi_free", the flags that bear on that column, which
+    leaves out the with-quartic read's."""
+    flags = list(record.get("flags") or [])
+    names = {flag["name"] for flag in flags}
+    quartic = ((record.get("quartic") or {}).get("truncation") or {}).get(
+        "flags") or []
+    flags += [flag for flag in quartic if flag["name"] not in names]
+    if column == "quasi_free":
+        flags = [flag for flag in flags
+                 if flag["name"] != QUARTIC_OUTSIDE_EXPANSION]
+    return flags
+
+
 def flags_text(record):
-    """The flags of one content record as text (`geometry_flags`,
-    `spin_frame`): each flag's name with its detail, and the frame the spin
-    was read in when the record names it. Empty when the record carries no
-    flag."""
-    flags = record.get("flags") or []
+    """The flags of one content record as text (`content_flags`: those of
+    `geometry_flags`, `spin_frame` and `truncation_flags`): each flag's name
+    with its detail, and the frame the spin was read in when the record
+    names it. Empty when the record carries no flag."""
+    flags = content_flags(record)
     if not flags:
         return ""
     text = "flagged: " + "; ".join("%s (%s)" % (flag["name"], flag["detail"])
@@ -2462,23 +2798,37 @@ CONTENT_MEANING = (
 
 
 def band_projectors(operator, tolerance):
-    """The bands of an operator as the band rule groups them: eigenvalues in
-    ascending order of real part, consecutive ones within ``tolerance``
-    relative to their size in one band, and each band's Riesz projector
-    V_b (V^-1)_b. Returns (eigenvalues, projector) per band."""
-    values, vectors = np.linalg.eig(operator)
-    order = sorted(range(len(values)), key=lambda k: values[k].real)
-    inverse = np.linalg.inv(vectors)
-    groups, current = [], [order[0]]
-    for previous, k in zip(order, order[1:]):
-        if abs(values[k] - values[previous]) > tolerance * max(
-                1.0, abs(values[previous])):
-            groups.append(current)
-            current = [k]
-        else:
-            current.append(k)
-    groups.append(current)
-    return [(values[g], vectors[:, g] @ inverse[g, :]) for g in groups]
+    """The bands of an operator as the band rule groups them, read by the
+    rule itself (`cobordism.BandFollower.read`, the read the mean field
+    fills its bands by): eigenvalues in ascending order of real part, the
+    groups of that read at the band tolerance ``tolerance``, and each band's
+    Riesz projector V_b (V^-1)_b from the read's right and left
+    eigenvectors. Returns (eigenvalues, projector) per band, in the order of
+    the read's ``ranks``."""
+    declaration = cob.SelfConsistentMeanFieldDeclaration()
+    declaration.covariance_rule = cob.CovarianceRule.BandFilling
+    # the read needs a filling to be declared; one particle in the lowest
+    # band fits a band of any rank and plays no part in the grouping
+    declaration.band_occupations = [1.0]
+    declaration.band_tolerance = tolerance
+    declaration.occupation_order = cob.OccupationOrder.AscendingRealPart
+    operator = np.asarray(operator, dtype=complex)
+    read = cob.BandFollower(declaration).read(list(operator.reshape(-1)))
+    count = operator.shape[0]
+    values = np.asarray(read.eigenvalues, dtype=complex)
+    vectors = np.asarray(read.eigenvectors, dtype=complex).reshape(count,
+                                                                   count)
+    inverse = np.asarray(read.left_eigenvectors, dtype=complex).reshape(
+        count, count)
+    # the read's declared order: ascending real part, equal keys in the
+    # order of its eigenvalues (a stable sort, as the read's own)
+    order = sorted(range(count), key=lambda k: values[k].real)
+    bands, start = [], 0
+    for rank in read.ranks:
+        group = order[start:start + int(rank)]
+        bands.append((values[group], vectors[:, group] @ inverse[group, :]))
+        start += int(rank)
+    return bands
 
 
 def doublet_projectors(frame, dual, trialities):
@@ -2499,24 +2849,38 @@ def spin_decomposition(carrier, covariance, content, frame, dual, trialities,
     """The spin content of the occupied state, read on the T-averaged operator
     (WP v17 §9 line 506) after the covariance was built from h_1 (ruling (a)).
 
-    * ``occupied_bands``: for every band b of h_1 the content occupies, its
-      rank r_b, its eigenvalues, and its overlap with each doublet d of
-      h-bar_1, tr(P_b Pbar_d) / r_b (complex, because P_b is a Riesz
-      projector of a non-normal operator; the three overlaps sum to one);
+    * ``band_occupations``: tr(Gamma P_b) of every band b of h_1 at the
+      point read, in ascending order of the bands (`band_projectors`): the
+      number of quarks the state holds in that band, the declared occupation
+      on a band the content fills and zero on the others;
+    * ``occupied_bands``: the bands the state occupies, as many as the
+      content has nonzero occupations: the bands of largest
+      |tr(Gamma P_b)|, in ascending order. They are read off the state and
+      not off the content's indices, because a band followed by continuation
+      keeps its declared index while its place among the bands of the point
+      changes when it crosses another. Each with its place ``band``, its
+      measured ``occupation`` tr(Gamma P_b), its rank r_b, its eigenvalues,
+      and its overlap with each doublet d of h-bar_1, tr(P_b Pbar_d) / r_b
+      (complex, because P_b is a Riesz projector of a non-normal operator;
+      the three overlaps sum to one);
     * ``occupied_state``: the number of quarks in each doublet,
       tr(Gamma Pbar_d), which sums to the number of quarks;
     * ``commutator``: ||[Gamma, h_1]|| / (||Gamma|| ||h_1||), zero to rounding
       when Gamma is built from the bands of h_1."""
     bands = band_projectors(carrier, tolerance)
     doublets = doublet_projectors(frame, dual, trialities)
+    occupations = [complex(np.trace(covariance @ projector))
+                   for _, projector in bands]
+    filled = sum(1 for n in content if n != 0)
+    # a stable sort, so equal occupations keep the bands' ascending order
+    places = sorted(sorted(range(len(bands)),
+                           key=lambda b: -abs(occupations[b]))[:filled])
     occupied = []
-    for b, n in enumerate(content):
-        if n == 0 or b >= len(bands):
-            continue
+    for b in places:
         values, projector = bands[b]
         rank = len(values)
         occupied.append({
-            "band": b, "occupation": int(n), "rank": rank,
+            "band": b, "occupation": occupations[b], "rank": rank,
             "eigenvalues": [complex(v) for v in values],
             "overlap": {name: complex(np.trace(projector @ d) / rank)
                         for name, d in doublets.items()},
@@ -2524,6 +2888,7 @@ def spin_decomposition(carrier, covariance, content, frame, dual, trialities,
     commutator = covariance @ carrier - carrier @ covariance
     return {
         "band_ranks": [len(v) for v, _ in bands],
+        "band_occupations": occupations,
         "occupied_bands": occupied,
         "occupied_state": {name: complex(np.trace(covariance @ d))
                            for name, d in doublets.items()},
@@ -2536,26 +2901,61 @@ def spin_decomposition(carrier, covariance, content, frame, dual, trialities,
 _DOUBLET_SECTORS = {}
 
 
+class DoubletLabelsWithoutValue(ValueError):
+    """A doublet content read against an aligned frame whose trialities are
+    not the three Z_3 characters, one on each carrier: the doublets 2, 2',
+    2'' then name no three carriers, and the doublet content has no carrier
+    content."""
+
+
+def _carrier_content(doublet_content, trialities):
+    """The carrier content a doublet content (n_2, n_2', n_2'') names in an
+    aligned frame's carrier order."""
+    if sorted(int(t) for t in trialities) != [0, 1, 2]:
+        raise DoubletLabelsWithoutValue(
+            "the aligned frame's trialities %s are not the three Z_3 "
+            "characters" % (list(trialities),))
+    carrier_of = {IRREP_NAMES[t]: c for c, t in enumerate(trialities)}
+    carrier_content = [0, 0, 0]
+    for name, n in zip(IRREP_NAMES, doublet_content):
+        carrier_content[carrier_of[name]] = int(n)
+    return carrier_content
+
+
+def _doublet_sector_entry(carrier_content, tolerance):
+    key = (tuple(carrier_content), float(tolerance))
+    if key not in _DOUBLET_SECTORS:
+        states, _ = singlet_states(carrier_content)
+        _DOUBLET_SECTORS[key] = spin_sectors(states, tolerance)
+    return _DOUBLET_SECTORS[key]
+
+
 def doublet_sectors(doublet_content, trialities,
                     tolerance=DECLARED_TOLERANCE):
     """The colour-singlet, one-quark-per-sheet spin sectors of a doublet
     content (n_2, n_2', n_2''): the carrier content in the aligned frame's
     carrier order, the total triality, and the sectors by total spin
-    (`spin_sectors` at ``tolerance``). They depend on the declared frame and
-    the tolerance only, so they are formed once for each."""
-    carrier_of = {IRREP_NAMES[t]: c for c, t in enumerate(trialities)}
-    if sorted(carrier_of.values()) != [0, 1, 2]:
-        raise RuntimeError("the aligned frame's trialities %s are not the "
-                           "three Z_3 characters" % (trialities,))
-    carrier_content = [0, 0, 0]
-    for name, n in zip(IRREP_NAMES, doublet_content):
-        carrier_content[carrier_of[name]] = int(n)
-    key = (tuple(carrier_content), float(tolerance))
-    if key not in _DOUBLET_SECTORS:
-        states, _ = singlet_states(carrier_content)
-        _DOUBLET_SECTORS[key] = spin_sectors(states, tolerance)[0]
+    (`spin_sectors`, whose measurements `doublet_sector_read` returns). They
+    depend on the declared frame and the tolerance only, so they are formed
+    once for each. An aligned frame whose trialities are not the three Z_3
+    characters gives a doublet content no carrier content
+    (`DoubletLabelsWithoutValue`)."""
+    carrier_content = _carrier_content(doublet_content, trialities)
     triality = sum(n * t for n, t in zip(carrier_content, trialities)) % 3
-    return carrier_content, triality, _DOUBLET_SECTORS[key]
+    return (carrier_content, triality,
+            _doublet_sector_entry(carrier_content, tolerance)[0])
+
+
+def doublet_sector_read(doublet_content, trialities,
+                        tolerance=DECLARED_TOLERANCE):
+    """The measurements of the spin split of a doublet content's
+    colour-singlet states (the second return of `spin_sectors`): the
+    sectors' dimensions, the departure of each projector's trace from its
+    integer, the residual of the block's two-eigenvalue polynomial, the
+    leakage of J^2 out of the states' span, and whether they hold at
+    ``tolerance``."""
+    return _doublet_sector_entry(
+        _carrier_content(doublet_content, trialities), tolerance)[1]
 
 
 def pole_certificates(target, j2, sector, dual, eigen, basis, spins,
@@ -3347,20 +3747,33 @@ def conjugated_group(group, permutation):
     return out
 
 
-def _bands_of(support, group, tolerance=DECLARED_TOLERANCE):
-    """The bands of the rotation-averaged edge Laplacian of a support, as
-    orthonormal blocks in ascending order of eigenvalue."""
-    averaged = np.asarray(support.rotationAveragedEdgeOperator(
-        support.edgeLaplacian(), group))
-    values, vectors = np.linalg.eigh(averaged)
-    order = np.argsort(values)
-    values, vectors = values[order], vectors[:, order]
-    bands, start = [], 0
-    for k in range(1, len(values) + 1):
-        if k == len(values) or abs(values[k] - values[start]) > tolerance:
-            bands.append((float(values[start]), vectors[:, start:k]))
-            start = k
-    return bands
+def multiset_distance(first, second):
+    """The distance of two spectra as multisets: the smallest, over the
+    one-to-one pairings of their entries, of the largest separation of a
+    pair. It does not depend on the order either spectrum is listed in: two
+    eigenvalues whose real parts agree to rounding are paired with their own
+    images whichever way a sort by real part lists them."""
+    a = np.asarray(first, dtype=complex)
+    b = np.asarray(second, dtype=complex)
+    if len(a) != len(b):
+        raise ValueError("the spectra have %d and %d eigenvalues and are not "
+                         "one multiset" % (len(a), len(b)))
+    if len(a) == 0:
+        return 0.0
+    distances = np.abs(a[:, None] - b[None, :])
+    thresholds = np.unique(distances)
+    # the smallest threshold at which the pairs within it contain a
+    # one-to-one pairing
+    low, high = 0, len(thresholds) - 1
+    while low < high:
+        middle = (low + high) // 2
+        beyond = (distances > thresholds[middle]).astype(float)
+        rows, columns = linear_sum_assignment(beyond)
+        if beyond[rows, columns].sum() == 0.0:
+            high = middle
+        else:
+            low = middle + 1
+    return float(thresholds[low])
 
 
 def _subspace_overlap(a, b):
@@ -3385,18 +3798,23 @@ def _fiber_fingerprint(host, support, group, edges, kappa, beta, config):
     """The label-free fingerprint of sheet 0 of a host: the spectrum of h_1,
     the spectrum of its T-average, and the reference doublet (the coexact
     rank-two spinorial band of the averaged combinatorial Laplacian, the
-    band the aligned frame's reference carrier is) with its energy on the
-    averaged h_1 and its weight on every edge."""
+    band the aligned frame's reference carrier is: `symmetry_bands`,
+    `reference_doublet`) with its energy on the averaged h_1 and its weight
+    on every edge. The doublet's frame is the frame of the band that carries
+    the certificates, so the band found and the band read are one."""
     degeneracy_tolerance = declared_tolerance(config, "degeneracy_tolerance")
+    certificate_tolerance = declared_tolerance(config,
+                                               "certificate_tolerance")
     read = support.spinRead(group, degeneracy_tolerance,
-                            declared_tolerance(config, "certificate_tolerance"))
+                            certificate_tolerance)
     carrier = _carrier(host, kappa, beta, config)
     block = carrier[:edges, :edges]
     actions = [np.asarray(support.edgeRepresentation(g)) for g in group]
     averaged = rotation_averaged(block, actions)
-    bands = _bands_of(support, group, degeneracy_tolerance)
-    index = int(read.doublet_index)
-    doublet = bands[index][1] if index < len(bands) else None
+    bands = symmetry_bands(support, group, bool(read.cocycle.nontrivial),
+                           degeneracy_tolerance, certificate_tolerance)
+    band = reference_doublet(bands)
+    doublet = None if band is None else band["frame"]
     out = {
         "spectrum": sorted((complex(v) for v in np.linalg.eigvals(block)),
                            key=lambda v: (v.real, v.imag)),
@@ -3404,8 +3822,10 @@ def _fiber_fingerprint(host, support, group, edges, kappa, beta, config):
             (complex(v) for v in np.linalg.eigvals(averaged)),
             key=lambda v: (v.real, v.imag)),
         "monopole_number": int(read.monopole.monopole_number),
-        "doublet_found": (bool(read.half_integer_doublet)
-                          and doublet is not None and doublet.shape[1] == 2),
+        "doublet_found": doublet is not None,
+        "band_certificates": [
+            {key: value for key, value in b.items() if key != "frame"}
+            for b in bands],
     }
     if out["doublet_found"]:
         out["doublet_energy"] = complex(
@@ -3445,24 +3865,35 @@ def spectral_fingerprint_read(spacetime, kappa, beta, config,
       operator, inside the isotypic component of that type in the refined
       action (`SharpSpin.isotypicProjector`), whose column span overlaps the
       original doublet most on the six shared edges, the refinement
-      continuation. The isotypic component is the span of the projector's
-      eigenvectors whose eigenvalues are within the config's
-      ``isotypic_tolerance`` of one, and two eigenvalues of the averaged
-      operator on it within that tolerance form one band. The overlap must
-      reach ``overlap_floor`` with the rank preserved, and the refined
-      support must carry a spinor doublet; the energy shift is reported
-      beside them."""
+      continuation. The isotypic component is the image of the projector:
+      its dimension is the projector's trace, an integer, and its basis the
+      eigenvectors whose eigenvalues are nearest one, as many as that
+      dimension, with the trace's departure from the integer and the
+      projector's idempotency defect reported. The averaged operator
+      commutes with the action on that component, which is copies of one
+      rank-two type, so its eigenvalues there are equal in pairs exactly: a
+      pair is one unit, and consecutive units within the config's
+      ``isotypic_tolerance`` form one band. The overlap must reach
+      ``overlap_floor`` with the rank preserved, and the refined support
+      must carry a spinor doublet; the energy shift is reported beside
+      them."""
     group = rotation_group()
+    # the tolerance the bands' certificates are graded at
+    band_tolerance = declared_tolerance(config, "certificate_tolerance")
     if tolerance is None:
-        tolerance = declared_tolerance(config, "certificate_tolerance")
+        tolerance = band_tolerance
     support, _ = sheet_support(spacetime, 0, tolerance)
     original = _fiber_fingerprint(spacetime, support, group, BASE_EDGES,
                                   kappa, beta, config)
     result = {"sheet": 0, "spectrum": original["spectrum"],
               "doublet_found": original["doublet_found"],
+              "band_certificates": original["band_certificates"],
               "tolerance": tolerance}
     if not original["doublet_found"]:
-        unread = {"held": False, "unread": "no spinor doublet on the host"}
+        unread = {"held": False,
+                  "unread": "no spinor doublet on the host: %s"
+                  % nearest_doublet_text(original["band_certificates"],
+                                         band_tolerance)}
         result["relabeling"] = dict(unread)
         result["refinement"] = dict(unread)
         return result
@@ -3476,15 +3907,15 @@ def spectral_fingerprint_read(spacetime, kappa, beta, config,
                                conjugated_group(group, permutation),
                                BASE_EDGES, kappa, beta, config)
     scale = max(1.0, max(abs(v) for v in original["spectrum"]))
-    spectrum_shift = max(abs(a - b) for a, b in
-                         zip(original["spectrum"], moved["spectrum"])) / scale
-    averaged_shift = max(abs(a - b) for a, b in
-                         zip(original["averaged_spectrum"],
-                             moved["averaged_spectrum"])) / scale
+    spectrum_shift = multiset_distance(original["spectrum"],
+                                       moved["spectrum"]) / scale
+    averaged_shift = multiset_distance(original["averaged_spectrum"],
+                                       moved["averaged_spectrum"]) / scale
     relabeling = {"permutation": permutation,
                   "spectrum_shift": float(spectrum_shift),
                   "averaged_spectrum_shift": float(averaged_shift),
                   "doublet_found": moved["doublet_found"],
+                  "band_certificates": moved["band_certificates"],
                   "monopole_number": moved["monopole_number"]}
     if moved["doublet_found"]:
         weight_shift = 0.0
@@ -3504,6 +3935,10 @@ def spectral_fingerprint_read(spacetime, kappa, beta, config,
                                         and energy_shift <= tolerance)})
     else:
         relabeling["held"] = False
+        relabeling["unread"] = (
+            "no spinor doublet on the relabeled host: %s"
+            % nearest_doublet_text(moved["band_certificates"],
+                                   band_tolerance))
     result["relabeling"] = relabeling
     # --- refinement
     refined, sheet_data = refined_host(spacetime)
@@ -3519,6 +3954,7 @@ def spectral_fingerprint_read(spacetime, kappa, beta, config,
                                  "mean field is not re-solved"),
                   "overlap_floor": overlap_floor,
                   "doublet_found": fine["doublet_found"],
+                  "band_certificates": fine["band_certificates"],
                   "monopole_number": fine["monopole_number"],
                   "refined_spectrum": fine["spectrum"]}
     if fine["doublet_found"]:
@@ -3534,7 +3970,18 @@ def spectral_fingerprint_read(spacetime, kappa, beta, config,
             maps, characters, 2, 1))
         values, vectors = np.linalg.eig(isotypic)
         isotypic_tolerance = declared_tolerance(config, "isotypic_tolerance")
-        span = vectors[:, np.abs(values - 1.0) <= isotypic_tolerance]
+        # the image of a projector: as many eigenvectors as its trace, those
+        # whose eigenvalues are nearest one
+        trace = complex(np.trace(isotypic))
+        dimension = max(0, min(len(values), int(round(trace.real))))
+        nearest = sorted(range(len(values)),
+                         key=lambda k: abs(values[k] - 1.0))[:dimension]
+        span = vectors[:, nearest]
+        refinement.update({
+            "isotypic_trace_departure": float(abs(trace - dimension)),
+            "isotypic_idempotency": float(np.max(np.abs(
+                isotypic @ isotypic - isotypic))),
+        })
         # the pseudo-inverse of the span counts a singular value at or below
         # the declared tolerance times the largest as zero
         compressed = (np.linalg.pinv(span, rcond=isotypic_tolerance)
@@ -3546,14 +3993,26 @@ def spectral_fingerprint_read(spacetime, kappa, beta, config,
         original_frame = np.zeros((edges, 2), dtype=complex)
         for m, k in enumerate(shared):
             original_frame[k, :] = original["doublet_frame"][m, :]
-        distinct = []
-        for e in energies:
-            if not any(abs(e - f) <= isotypic_tolerance for f in distinct):
-                distinct.append(complex(e))
+        # the units of the component: its eigenvalues in ascending order,
+        # two at a time (one copy of the rank-two type each), and the bands:
+        # runs of units each within the tolerance of the run's first
+        ascending = sorted(range(len(energies)),
+                           key=lambda k: (energies[k].real, energies[k].imag))
+        unit = 2 if len(ascending) % 2 == 0 else 1
+        runs, start = [], 0
+        while start < len(ascending):
+            stop = start + unit
+            while (stop < len(ascending)
+                   and abs(energies[ascending[stop]]
+                           - energies[ascending[start]])
+                   <= isotypic_tolerance):
+                stop += unit
+            runs.append(ascending[start:stop])
+            start = stop
+        distinct = [complex(np.mean(energies[run])) for run in runs]
         best = None
-        for energy in sorted(distinct, key=lambda v: (v.real, v.imag)):
-            picked = candidates[:, np.abs(energies - energy)
-                                <= isotypic_tolerance]
+        for energy, run in zip(distinct, runs):
+            picked = candidates[:, run]
             overlap = _subspace_overlap(original_frame[shared, :],
                                         picked[shared, :])
             if best is None or overlap > best["overlap"]:
@@ -3561,17 +4020,32 @@ def spectral_fingerprint_read(spacetime, kappa, beta, config,
                         "rank": int(picked.shape[1])}
         refinement.update({
             "isotypic_dimension": int(span.shape[1]),
-            "refined_bands": sorted(distinct, key=lambda v: (v.real, v.imag)),
-            "overlap": best["overlap"],
-            "refined_energy": best["energy"],
-            "refined_rank": best["rank"],
-            "energy_shift": float(
-                abs(best["energy"] - original["doublet_energy"])
-                / max(1.0, abs(original["doublet_energy"]))),
-            "held": bool(best["overlap"] >= overlap_floor
-                         and best["rank"] == 2)})
+            "refined_bands": distinct,
+        })
+        if best is None:
+            # the doublet's type does not occur in the refined action: there
+            # is no band to continue the doublet to
+            refinement.update({
+                "held": False,
+                "unread": "the isotypic component of the doublet's type on "
+                          "the refined cell is empty (the projector's trace "
+                          "is %.3g)" % trace.real})
+        else:
+            refinement.update({
+                "overlap": best["overlap"],
+                "refined_energy": best["energy"],
+                "refined_rank": best["rank"],
+                "energy_shift": float(
+                    abs(best["energy"] - original["doublet_energy"])
+                    / max(1.0, abs(original["doublet_energy"]))),
+                "held": bool(best["overlap"] >= overlap_floor
+                             and best["rank"] == 2)})
     else:
         refinement["held"] = False
+        refinement["unread"] = (
+            "no spinor doublet on the refined support: %s"
+            % nearest_doublet_text(fine["band_certificates"],
+                                   band_tolerance))
     result["refinement"] = refinement
     return result
 
@@ -3624,6 +4098,8 @@ def fingerprint_text(fingerprint):
     if "doublet_weight_shift" in l:
         relabeling += " (spectrum shift %.2g, doublet weight shift %.2g)" % (
             l["spectrum_shift"], l["doublet_weight_shift"])
+    elif l.get("unread"):
+        relabeling += " (%s)" % l["unread"]
     refinement = ("stable" if r["held"] else "unstable")
     if "overlap" in r:
         refinement += " (overlap %.4f, energy shift %.2g)" % (
@@ -3791,9 +4267,12 @@ def quark_conditions(spacetime, alignments, recursion, symmetry_residual,
     """The seven v16 quark conditions by name (`QuarkConditions`), from what a
     single-level synthesis measures: condition 3 from the anchor atlas read
     (`anchor_evidence`) and condition 7 from the spectral fingerprint read
-    (`fingerprint_evidence`). The spin reads of the sheets' aligned frames
-    (``alignments``, one per sheet) supply the protected base band and its
-    sector; every sheet must carry them. Anything that needs several
+    (`fingerprint_evidence`). The sheets' aligned frames (``alignments``,
+    one per sheet) supply the protected base band and its sector: the
+    reference doublet of each frame with its certificates
+    (`aligned_doublet_frame`, ``reference_doublet``), beside the monopole
+    number and the projective class of its spin read; every sheet must
+    carry them. Anything that needs several
     cobordism frames is left unmeasured and so reads "not evaluable", and so
     does every piece of evidence read from the recursion's completed turn
     when the recursion refused to take one (`recursion_read`). The number of
@@ -3818,8 +4297,7 @@ def quark_conditions(spacetime, alignments, recursion, symmetry_residual,
     attachment = obs.SheetAttachment.attachmentMatrix(
         SHEETS, [obs.ConnectingSimplex(t, t, 1.0) for t in range(SHEETS)],
         attachment_rank_tolerance)
-    doublets = [spin.bands[spin.doublet_index] if spin.half_integer_doublet
-                else None for spin in spins]
+    doublets = [a["reference_doublet"] for a in alignments]
     produced = "refusal" not in recursion
 
     def from_level(name, held, detail):
@@ -3855,7 +4333,7 @@ def quark_conditions(spacetime, alignments, recursion, symmetry_residual,
            % (isomorphism.squared_length_residual,
               isomorphism.connection_residual)),
          E("protected-base-band",
-           bool(all(d is not None and d.spinor_doublet for d in doublets)
+           bool(all(d["spinor_doublet"] for d in doublets)
                 and all(m.odd for m in monopoles)
                 and all(spin.cocycle.nontrivial for spin in spins)),
            "monopole numbers %s, cocycle nontrivial %s, commutator phases %s"
@@ -3863,9 +4341,9 @@ def quark_conditions(spacetime, alignments, recursion, symmetry_residual,
               [spin.cocycle.nontrivial for spin in spins],
               [spin.cocycle.commutator_phase for spin in spins])),
          E("base-band-sector",
-           bool(all(d is not None and d.coexact for d in doublets)),
-           "coexact residuals %s" % [d.coexact_residual if d is not None
-                                     else None for d in doublets]),
+           bool(all(d["coexact"] for d in doublets)),
+           "coexact residuals %s" % [d["coexact_residual"]
+                                     for d in doublets]),
          E("fibre-lift", symmetry_residual <= fibre_lift_tolerance,
            "the T-averaged h_1 (WP line 497) in the aligned frame is "
            "block-scalar on each doublet times the sheets to relative "
@@ -4139,7 +4617,25 @@ def ratios(records, tolerance=DECLARED_TIE_TOLERANCE):
       ambiguity: its sector is a Delta reading only when it restricts to the
       degenerate pair 2' + 2''; a 2 in its restriction is indistinguishable
       from spin 1/2 with triality.
+
+    Each pairing names, under ``nucleon_flags`` and ``delta_flags``, the
+    flags of the content each pole is read from that bear on the column
+    (`content_flags`): a ratio built from a flagged read says so beside its
+    value.
     """
+    flags_of = {}
+    for record in records:
+        if "content" not in record:
+            continue
+        for name in COLUMNS:
+            flags_of[(tuple(record["content"]), name)] = [
+                flag["name"] for flag in content_flags(record, name)]
+
+    def flagged(name, n, d):
+        return {"nucleon_flags": flags_of.get((tuple(n["content"]), name),
+                                              []),
+                "delta_flags": flags_of.get((tuple(d["content"]), name), [])}
+
     out = {}
     for name in COLUMNS:
         result = {}
@@ -4157,6 +4653,7 @@ def ratios(records, tolerance=DECLARED_TIE_TOLERANCE):
                 "delta_doublet_content": d["doublet_content"],
                 "delta_spin_j_j_plus_1": d["spin_j_j_plus_1"],
                 "delta_tied_pairs": _pair_labels(d["tied"]),
+                **flagged(name, n, d),
             })
         else:
             result["by_2T_reading"] = None
@@ -4175,6 +4672,7 @@ def ratios(records, tolerance=DECLARED_TIE_TOLERANCE):
                 "delta_is_a_delta_reading":
                     sorted(restriction_d) == sorted(["2'", "2''"]),
                 "delta_ambiguous_with_spin_half": "2" in restriction_d,
+                **flagged(name, n, d),
             })
         else:
             result["by_spin_lift"] = None
@@ -4487,10 +4985,20 @@ def _tie_text(r, role):
         for t in tied))
 
 
+def _ratio_flag_text(r):
+    """The flags of the contents a ratio is built from, as text; empty when
+    neither is flagged."""
+    parts = ["s_%s read from a flagged content (%s)" % (symbol, "; ".join(
+        r[role + "_flags"]))
+             for role, symbol in (("nucleon", "N"), ("delta", "D"))
+             if r.get(role + "_flags")]
+    return "".join("; " + part for part in parts)
+
+
 def ratio_lines(point_ratios, prefix=""):
     """The ratios of a set of records as text, one line per column and
     pairing, each naming the two (content, doublet content) pairs it
-    compares."""
+    compares and the flags of the contents they are read from."""
     lines = []
     for name in COLUMNS:
         for pairing in ("by_2T_reading", "by_spin_lift"):
@@ -4510,14 +5018,15 @@ def ratio_lines(point_ratios, prefix=""):
                 head + " s_N=%s (content %s, doublet content %s) s_D=%s "
                 "(content %s, doublet content %s) s_N/s_D=%s "
                 "|s_N|/|s_D|=%.6f Re/Re=%.6f; "
-                "target m_N/m_Delta=%.4f%s%s%s"
+                "target m_N/m_Delta=%.4f%s%s%s%s"
                 % (_complex_text(r["nucleon_pole"]), r["nucleon_content"],
                    r["nucleon_doublet_content"],
                    _complex_text(r["delta_pole"]), r["delta_content"],
                    r["delta_doublet_content"],
                    _complex_text(r["pole_ratio"]), r["modulus_ratio"],
                    r["real_part_ratio"], TARGET_MASS_RATIO, note,
-                   _tie_text(r, "nucleon"), _tie_text(r, "delta")))
+                   _tie_text(r, "nucleon"), _tie_text(r, "delta"),
+                   _ratio_flag_text(r)))
     return lines
 
 
@@ -4627,12 +5136,15 @@ def drive(config, progress=False, on_frame=None, stop_requested=None,
         monopole_support(), rotation_group(),
         declared_tolerance(config, "degeneracy_tolerance"),
         declared_tolerance(config, "certificate_tolerance"),
-        declared_tolerance(config, "character_tolerance"))
+        declared_tolerance(config, "character_tolerance"), certified=False)
     frames = []
     host = {
         "monopole": _monopole_record(declared["spin_read"]),
         "averaged_eigenvalues": declared["averaged_eigenvalues"],
         "reference_carrier": declared["reference_carrier"],
+        "reference_certified": declared["reference_certified"],
+        "reference_doublet": declared["reference_doublet"],
+        "trialities": declared["trialities"],
         "intertwining_residual": declared["intertwining_residual"],
     }
     if points_file is not None:
