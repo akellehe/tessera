@@ -76,9 +76,8 @@ GROWN_UNITS = (
     "connection U = det M carries the operator's units; the dimensionless "
     "phase rule is open, https://github.com/akellehe/tessera/issues/1312")
 PARTITION_ROUNDING = (
-    "the modularity search starts from an order of the coordinates hashed "
-    "from the exact bits of the graph's weights, so a change of the "
-    "operator's entries by one rounding changes the components it returns; "
+    "a change of the operator's entries by one part in 1e15 changes the "
+    "components the modularity search returns; "
     "theory(recursion): the level partition comes from a heuristic "
     "optimizer of an NP-hard objective, run alone, "
     "https://github.com/akellehe/tessera/issues/1314")
