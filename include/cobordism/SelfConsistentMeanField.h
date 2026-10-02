@@ -247,6 +247,10 @@ struct OccupiedBand {
   /// mode outside it, so that the band's projector depends on the basis the
   /// eigensolver chose inside that degenerate group.
   bool ambiguous = false;
+  /// Whether the band holds more particles than its rank,
+  /// \f$ n_b>r_b \f$. The read is made as declared: the covariance's
+  /// eigenvalue on the band is \f$ n_b/r_b>1 \f$.
+  bool overfilled = false;
   /// The band's Riesz projector at this point, \f$ V_bV_b^{-1} \f$ over its
   /// eigenvectors and the matching rows of the inverse eigenvector matrix,
   /// flat row-major.
@@ -285,6 +289,15 @@ struct BandRead {
   /// contour around the occupied bands has. Quiet NaN when either set is
   /// empty.
   double bandIsolation = 0.0;
+  /// Whether the eigenvector matrix of a block of the operator is singular
+  /// at the threshold of its LU decomposition: the operator is defective to
+  /// rounding there. The read is made with the inverse as computed, and
+  /// `eigenbasisReciprocalCondition` says how close to singular it is.
+  bool defective = false;
+  /// The smallest reciprocal condition number, over the operator's
+  /// decoupled blocks, of the block's eigenvector matrix; one for an empty
+  /// operator.
+  double eigenbasisReciprocalCondition = 1.0;
   /// Whether any occupied band crossed another (`OccupiedBand::crossed`).
   bool crossing = false;
   /// The smallest \f$ |\text{overlap}| \f$ over the occupied bands.
@@ -339,11 +352,14 @@ class BandFollower {
   /// occupied bands are chosen by the declared order when no reference is set
   /// or under `SortEveryIterate`, and are followed from the reference
   /// otherwise. The reference is not moved.
-  /// @throws std::invalid_argument when a declared band cannot hold its
-  ///   occupation, when more band occupations are declared than the spectrum
-  ///   has bands, when more modes are declared occupied than the operator has,
-  ///   or when the operator is defective, so that no Riesz projector follows
-  ///   from its eigenvectors.
+  /// A band that holds more particles than its rank is filled as declared
+  /// and marked (`OccupiedBand::overfilled`); an eigenvector matrix that is
+  /// singular at the threshold of its decomposition is inverted as computed
+  /// and marked (`BandRead::defective`).
+  /// @throws std::invalid_argument when more band occupations are declared
+  ///   than the spectrum has bands, when more modes are declared occupied
+  ///   than the operator has, or when the eigenvector matrix has no finite
+  ///   inverse, so that no Riesz projector has a value.
   /// @throws std::runtime_error when the eigendecomposition does not
   ///   converge.
   [[nodiscard]] BandRead read(

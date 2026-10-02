@@ -762,7 +762,7 @@ BandRead BandFollower::read(const std::vector<complexd> &operatorMatrix) const {
   Eigen::VectorXcd values = Eigen::VectorXcd::Zero(n);
   Eigen::MatrixXcd vectors = Eigen::MatrixXcd::Zero(n, n);
   Eigen::MatrixXcd inverse = Eigen::MatrixXcd::Zero(n, n);
-  bool defective = false;
+  bool withoutInverse = false;
   Eigen::Index first = 0;
   for (const std::vector<Eigen::Index> &block : decoupledBlocks(target)) {
     const auto size = static_cast<Eigen::Index>(block.size());
@@ -775,9 +775,19 @@ BandRead BandFollower::read(const std::vector<complexd> &operatorMatrix) const {
     if (solver.info() != Eigen::Success)
       throw std::runtime_error(
           "BandFollower: the operator's eigendecomposition did not converge");
-    const Eigen::FullPivLU<Eigen::MatrixXcd> lu(solver.eigenvectors());
-    defective = defective || !lu.isInvertible();
-    const Eigen::MatrixXcd partInverse = lu.inverse();
+    Eigen::FullPivLU<Eigen::MatrixXcd> lu(solver.eigenvectors());
+    out.eigenbasisReciprocalCondition =
+        std::min(out.eigenbasisReciprocalCondition, lu.rcond());
+    if (!lu.isInvertible()) {
+      // Singular at the decomposition's threshold: the read is made with
+      // the inverse every nonzero pivot gives, and says so. An exactly zero
+      // pivot leaves no inverse.
+      out.defective = true;
+      lu.setThreshold(0.0);
+    }
+    Eigen::MatrixXcd partInverse = Eigen::MatrixXcd::Zero(size, size);
+    if (lu.isInvertible()) partInverse = lu.inverse();
+    if (!lu.isInvertible() || !partInverse.allFinite()) withoutInverse = true;
     for (Eigen::Index mode = 0; mode < size; ++mode) {
       values(first + mode) = solver.eigenvalues()(mode);
       for (Eigen::Index row = 0; row < size; ++row) {
@@ -841,12 +851,6 @@ BandRead BandFollower::read(const std::vector<complexd> &operatorMatrix) const {
             "only " + std::to_string(groupRanks.size()) + " bands");
       for (std::size_t band = 0; band < occupations_.size(); ++band) {
         const double occupation = occupations_[band];
-        if (occupation > static_cast<double>(groupRanks[band]))
-          throw std::invalid_argument(
-              "BandFollower: band " + std::to_string(band) + " has rank " +
-              std::to_string(groupRanks[band]) +
-              " and cannot hold the declared occupation " +
-              std::to_string(occupation));
         if (occupation == 0.0) continue;
         Selected band_;
         band_.declaredIndex = band;
@@ -880,10 +884,10 @@ BandRead BandFollower::read(const std::vector<complexd> &operatorMatrix) const {
   }
 
   if (n > 0) {
-    if (defective)
+    if (withoutInverse)
       throw std::invalid_argument(
-          "BandFollower: the operator is defective, so no band projector is "
-          "available from its eigenbasis");
+          "BandFollower: the operator's eigenvector matrix has no finite "
+          "inverse, so no band projector has a value");
     out.eigenvalues.assign(values.data(), values.data() + n);
     out.eigenvectors = toFlat(vectors);
     out.leftEigenvectors = toFlat(inverse);
@@ -955,6 +959,7 @@ BandRead BandFollower::read(const std::vector<complexd> &operatorMatrix) const {
           (projector * previous).trace() / static_cast<double>(rank);
     }
     record.crossed = record.positions != record.declaredPositions;
+    record.overfilled = band.occupation > static_cast<double>(rank);
     out.bands.push_back(std::move(record));
   }
   // A band splits a degenerate group when one of its modes shares the group

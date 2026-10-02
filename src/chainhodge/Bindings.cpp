@@ -459,6 +459,7 @@ normalized or conjugated.)doc")
       .def_readonly("conditionEstimate", &CovarianceCertificate::conditionEstimate)
       .def_readonly("tolerance", &CovarianceCertificate::tolerance)
       .def_readonly("holds", &CovarianceCertificate::holds)
+      .def_readonly("failed", &CovarianceCertificate::failed)
       .def_readonly("gaugeSeed", &CovarianceCertificate::gaugeSeed)
       .def_readonly("checkedDegree", &CovarianceCertificate::checkedDegree);
 

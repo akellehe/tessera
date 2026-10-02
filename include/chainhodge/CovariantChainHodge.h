@@ -220,9 +220,13 @@ struct CovarianceCertificate {
   /// \f$ \tau = \kappa\,n\,\epsilon_m\,\mathrm{cond} \f$ with \f$ \kappa = 10 \f$,
   /// \f$ n = \max_k n_k \f$ and `conditionEstimate`.
   double tolerance{std::numeric_limits<double>::quiet_NaN()};
-  /// Whether every measured residual is within `tolerance` (the constructor
-  /// throws otherwise, so a measured certificate always holds).
+  /// Whether every measured residual is within `tolerance`. The instance is
+  /// built either way; `failed` names what is not.
   bool holds{false};
+  /// The measured properties whose residual exceeds `tolerance`, each as
+  /// its statement with its residual; empty when the certificate holds or
+  /// was not measured.
+  std::vector<std::string> failed{};
   std::uint64_t gaugeSeed{0};
   int checkedDegree{1};
 };
@@ -288,9 +292,12 @@ class CovariantChainHodge {
   /// Dress \p base by \p U. When \p measureCertificate is set (the default)
   /// Proposition 3 (i)–(vi) is measured here at every degree, with a
   /// deterministic random gauge and probe vectors from \p gaugeSeed, and
-  /// asserted at the certificate's tolerance.
-  /// @throws std::runtime_error, naming the property and its residual, when a
-  ///   measured residual exceeds the tolerance or a dressed metric is singular.
+  /// compared with the certificate's tolerance: the certificate says whether
+  /// every property holds there and names each one that does not, with its
+  /// residual (`CovarianceCertificate::holds`, `failed`). The instance is
+  /// built whatever the residuals are.
+  /// @throws std::runtime_error when a dressed metric is singular, so that
+  ///   the properties cannot be measured.
   CovariantChainHodge(const ChainHodge &base, Connection U, std::uint64_t gaugeSeed = 7,
                       bool measureCertificate = true);
 
