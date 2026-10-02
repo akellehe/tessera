@@ -552,10 +552,18 @@ SOLVE_OPTIONS = (
     ("pachner_moves", True,
      "whether the drive scores and commits Pachner moves of the base "
      "complex beside relaxing its geometry"),
-    ("move_lookahead", 1,
-     "the number of Pachner moves in the longest composition the drive "
-     "scores as a whole when no shorter one lowers the residual norm"),
-    ("move_candidates", 0,
+    ("combinatorial_depth", cell_solve.DECLARED_COMBINATORIAL_DEPTH,
+     "how many Pachner moves deep the drive searches for a sequence that "
+     "lowers the residual norm: when no single move does, it deepens to "
+     "sequences of two moves, then three, up to this many, each scored and "
+     "committed as a whole; 1 is single moves only"),
+    ("combinatorial_length", cell_solve.DECLARED_COMBINATORIAL_LENGTH,
+     "a fixed composition length for the search over Pachner moves: "
+     "sequences of exactly this many moves are searched first, and the "
+     "search backs off one move at a time only when nothing at the current "
+     "length lowers the residual norm; 0 keeps the deepening schedule of "
+     "the combinatorial depth, of which it is the alternative"),
+    ("candidate_moves", 0,
      "the number of Pachner moves drawn per update of the moves; 0 scores "
      "every move"),
     ("moment_stiffness_weight", 0.0,
@@ -593,6 +601,13 @@ def declared_solve_options(options=None):
     for key, value in (options or {}).items():
         out[key] = list(value) if isinstance(value, (tuple, list)) else value
     out["direction_order"] = checked_direction_order(out["direction_order"])
+    out["combinatorial_depth"], out["combinatorial_length"] = \
+        cell_solve.checked_schedule(out["combinatorial_depth"],
+                                    out["combinatorial_length"])
+    if int(out["candidate_moves"]) < 0:
+        raise ValueError("candidate_moves is how many Pachner moves are "
+                         "drawn per update, or 0 for every move; got %r"
+                         % (out["candidate_moves"],))
     if out["band_reference"] not in cell_solve.BAND_REFERENCES:
         raise ValueError("the band reference is one of %s; got %r"
                          % (", ".join(cell_solve.BAND_REFERENCES),
@@ -869,8 +884,12 @@ def solve_arguments(config):
         "direction_order": checked_direction_order(
             config.get("direction_order", DECLARED_DIRECTION_ORDER)),
         "moves": bool(config.get("pachner_moves", True)),
-        "move_lookahead": int(config.get("move_lookahead", 1)),
-        "move_candidates": int(config.get("move_candidates", 0)),
+        "combinatorial_depth": int(config.get(
+            "combinatorial_depth", cell_solve.DECLARED_COMBINATORIAL_DEPTH)),
+        "combinatorial_length": int(config.get(
+            "combinatorial_length",
+            cell_solve.DECLARED_COMBINATORIAL_LENGTH)),
+        "candidate_moves": int(config.get("candidate_moves", 0)),
         "iteration_limit": config.get("iteration_limit"),
         "update_limit": config.get("update_limit"),
         "time_limit_seconds": config.get("time_limit_seconds"),
@@ -2182,6 +2201,10 @@ def relaxation_record(report, drive,
         "drive_stop_reason": drive["stop_reason"],
         "iterations": int(drive["accepted_updates"]),
         "moves_committed": int(drive["moves_committed"]),
+        "pachner_moves": bool(drive["moves"]),
+        "combinatorial_depth": int(drive["combinatorial_depth"]),
+        "combinatorial_length": int(drive["combinatorial_length"]),
+        "candidate_moves": int(drive["candidate_moves"]),
         "complex_before": drive["complex_before"],
         "complex_after": drive["complex_after"],
         "complex_changed": bool(drive["changed"]),
@@ -5278,10 +5301,19 @@ def add_solve_arguments(parser):
                         action="store_false",
                         help="relax the geometry alone: the drive scores no "
                              "Pachner move (by default it scores every one)")
-    parser.add_argument("--move-lookahead", type=int, default=1,
-                        help="%s (default 1)" % meaning["move_lookahead"])
-    parser.add_argument("--move-candidates", type=int, default=0,
-                        help="%s (default 0)" % meaning["move_candidates"])
+    parser.add_argument("--combinatorial-depth", type=int,
+                        default=cell_solve.DECLARED_COMBINATORIAL_DEPTH,
+                        help="%s (default %d)"
+                             % (meaning["combinatorial_depth"],
+                                cell_solve.DECLARED_COMBINATORIAL_DEPTH))
+    parser.add_argument("--combinatorial-length", "--combinatorial-breadth",
+                        dest="combinatorial_length", type=int,
+                        default=cell_solve.DECLARED_COMBINATORIAL_LENGTH,
+                        help="%s (default %d)"
+                             % (meaning["combinatorial_length"],
+                                cell_solve.DECLARED_COMBINATORIAL_LENGTH))
+    parser.add_argument("--candidate-moves", type=int, default=0,
+                        help="%s (default 0)" % meaning["candidate_moves"])
     parser.add_argument("--moment-stiffness-weight", type=float, default=0.0,
                         help="%s (default 0)"
                              % meaning["moment_stiffness_weight"])

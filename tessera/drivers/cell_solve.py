@@ -78,6 +78,35 @@ MAXIMUM_DIRECTION_ORDER = 10
 BAND_REFERENCES = ("previous", "host")
 DECLARED_BAND_REFERENCE = "previous"
 
+#: The schedule of the engine's combinatorial search, as the emergence driver
+#: declares it: how many moves deep the search goes when no shorter sequence
+#: lowers the objective (one is single moves only), and a fixed composition
+#: length to try first, backing off one move at a time (zero keeps the
+#: deepening schedule). The two are alternatives.
+DECLARED_COMBINATORIAL_DEPTH = 1
+DECLARED_COMBINATORIAL_LENGTH = 0
+
+
+def checked_schedule(combinatorial_depth, combinatorial_length):
+    """The depth and the length of the combinatorial search as integers:
+    the depth at least one, the length at least zero, and a nonzero length
+    only with the declared depth, since the two select alternative
+    schedules."""
+    depth, length = int(combinatorial_depth), int(combinatorial_length)
+    if depth < 1:
+        raise ValueError("the combinatorial depth is at least 1; got %d"
+                         % depth)
+    if length < 0:
+        raise ValueError("the combinatorial length is zero or positive; got "
+                         "%d" % length)
+    if length > 0 and depth != DECLARED_COMBINATORIAL_DEPTH:
+        raise ValueError(
+            "the combinatorial depth and the combinatorial length select "
+            "alternative search schedules; a depth of %d would be ignored "
+            "with the length %d" % (depth, length))
+    return depth, length
+
+
 #: The stops of a drive, by name.
 STOP_STATIONARY = "no move and no scaled step lowers the residual norm"
 STOP_NO_STEP = "the step has no value at the point reached"
@@ -733,21 +762,29 @@ def cell_node(spacetime, objective, register_degrees=(1,)):
 
 
 def solve(spacetime, system, tolerance=1e-15, move_tolerance=1e-15,
-          direction_order=1, series=series_step, moves=True, move_lookahead=1,
-          move_candidates=0, iteration_limit=None, update_limit=None,
+          direction_order=1, series=series_step, moves=True,
+          combinatorial_depth=DECLARED_COMBINATORIAL_DEPTH,
+          combinatorial_length=DECLARED_COMBINATORIAL_LENGTH,
+          candidate_moves=0, iteration_limit=None, update_limit=None,
           time_limit_seconds=None, configure=None):
     """Drive the base complex ``spacetime`` to a stationary point of
     ``system`` with `MultiCobordism`, whose mechanics are used as they are.
 
     With ``moves`` the combined drive runs (`MultiCobordism.run`): every
     iteration scores every Pachner move of the base complex
-    (``move_candidates`` zero; a positive number draws that many) and, when
-    no single move lowers the residual norm, every composition of up to
-    ``move_lookahead`` of them, commits the best that lowers it by more than
-    ``move_tolerance``, and relaxes the geometry until no trial of its line
-    search lowers it by ``tolerance``. Without ``moves`` only the geometry
-    relaxes (`MultiCobordism.run_stage2`). The first scale of the line
-    search is one, the step itself.
+    (``candidate_moves`` zero; a positive number draws that many), commits
+    the best that lowers the residual norm by more than ``move_tolerance``,
+    and relaxes the geometry until no trial of its line search lowers it by
+    ``tolerance``. The search over compositions of moves is the engine's:
+    with ``combinatorial_depth`` d it deepens, when no single move lowers
+    the residual norm, to sequences of two moves, then three, up to d, each
+    scored and committed as a whole (its ``max_lookahead``); with
+    ``combinatorial_length`` n above zero it searches sequences of exactly n
+    moves first and backs off one move at a time (its
+    ``combinatorial_breadth``). The two are alternatives
+    (`checked_schedule`). Without ``moves`` only the geometry relaxes
+    (`MultiCobordism.run_stage2`). The first scale of the line search is
+    one, the step itself.
 
     No count and no time is declared by default. ``iteration_limit`` is the
     engine's number of iterations (each one move update and a relaxation;
@@ -762,6 +799,8 @@ def solve(spacetime, system, tolerance=1e-15, move_tolerance=1e-15,
     trace of the residual norm, the stop by name with its detail, the number
     of committed move updates and of accepted relaxation updates, the counts
     of the base complex before and after, and the seconds it took."""
+    depth, length = checked_schedule(combinatorial_depth,
+                                     combinatorial_length)
     objective = StationarityObjective(system, direction_order, series)
     node = cell_node(spacetime, objective)
     node.move_tolerance = move_tolerance
@@ -777,10 +816,12 @@ def solve(spacetime, system, tolerance=1e-15, move_tolerance=1e-15,
     try:
         if moves:
             trace = node.run(
-                max_iters=iteration_limit, n_candidate_moves=move_candidates,
+                max_iters=iteration_limit,
+                n_candidate_moves=int(candidate_moves),
                 grow_boundaries=False, beta=1.0, alpha0=1.0,
-                tolerance=tolerance, max_lookahead=int(move_lookahead),
-                relax_budget_per_move=update_limit, combinatorial_breadth=0)
+                tolerance=tolerance, max_lookahead=depth,
+                relax_budget_per_move=update_limit,
+                combinatorial_breadth=length)
         else:
             trace = node.run_stage2(beta=1.0, max_iters=iteration_limit,
                                     alpha0=1.0, tolerance=tolerance)
@@ -849,6 +890,10 @@ def solve(spacetime, system, tolerance=1e-15, move_tolerance=1e-15,
         "refusal": refusal,
         "moves_committed": committed,
         "accepted_updates": accepted,
+        "moves": bool(moves),
+        "combinatorial_depth": depth,
+        "combinatorial_length": length,
+        "candidate_moves": int(candidate_moves),
         "complex_before": before,
         "complex_after": complex_counts(final),
         "changed": sorted(top_cells(final)) != cells_before,

@@ -361,7 +361,8 @@ def test_the_solve_options_are_recorded_at_their_declared_values():
     config = bp.default_config()
     assert {key: config[key] for key, _, _ in bp.SOLVE_OPTIONS} == {
         "direction_order": 1, "band_reference": "previous",
-        "pachner_moves": True, "move_lookahead": 1, "move_candidates": 0,
+        "pachner_moves": True, "combinatorial_depth": 1,
+        "combinatorial_length": 0, "candidate_moves": 0,
         "moment_stiffness_weight": 0.0, "moment_stiffness_coefficients": [],
         "pinned_vertices": []}
     assert {key: config[key] for key, _, _ in bp.LIMITS} == {
@@ -371,6 +372,9 @@ def test_the_solve_options_are_recorded_at_their_declared_values():
     assert arguments["tolerance"] == 1e-15
     assert arguments["move_tolerance"] == 1e-15
     assert arguments["direction_order"] == 1 and arguments["moves"] is True
+    assert arguments["combinatorial_depth"] == 1
+    assert arguments["combinatorial_length"] == 0
+    assert arguments["candidate_moves"] == 0
     assert arguments["iteration_limit"] is None
     assert arguments["update_limit"] is None
     assert arguments["time_limit_seconds"] is None
@@ -379,13 +383,14 @@ def test_the_solve_options_are_recorded_at_their_declared_values():
 def test_the_solve_options_are_options_of_the_command_line():
     args = bp.build_parser().parse_args(
         ["run", "--direction-order", "4", "--band-reference", "host",
-         "--no-pachner-moves", "--move-lookahead", "2", "--move-candidates",
-         "5", "--moment-stiffness-weight", "0.5",
+         "--no-pachner-moves", "--combinatorial-depth", "2",
+         "--candidate-moves", "5", "--moment-stiffness-weight", "0.5",
          "--moment-stiffness-coefficients", "1", "2", "--pinned-vertices",
          "0", "1", "--update-limit", "7", "--step-tolerance", "1e-12"])
     assert bp.solve_options_from(args) == {
         "direction_order": 4, "band_reference": "host",
-        "pachner_moves": False, "move_lookahead": 2, "move_candidates": 5,
+        "pachner_moves": False, "combinatorial_depth": 2,
+        "combinatorial_length": 0, "candidate_moves": 5,
         "moment_stiffness_weight": 0.5,
         "moment_stiffness_coefficients": [1.0, 2.0], "pinned_vertices": [0, 1]}
     assert bp.limits_from(args)["update_limit"] == 7
@@ -396,6 +401,65 @@ def test_the_solve_options_are_options_of_the_command_line():
         bp.build_parser().parse_args(["run", "--direction-order", "11"])
     with pytest.raises(ValueError, match="unknown solve options"):
         bp.default_config(solve={"direction": 2})
+
+
+def test_the_depth_and_the_length_of_the_move_search_are_alternatives():
+    """The engine's two schedules over compositions of Pachner moves, under
+    the emergence driver's names: ``--combinatorial-depth`` deepens from
+    single moves, ``--combinatorial-length`` (alias
+    ``--combinatorial-breadth``) searches a fixed length first and backs
+    off. A nonzero length with a depth other than the declared one is
+    refused by name, as the emergence driver refuses it."""
+    assert cs.checked_schedule(3, 0) == (3, 0)
+    assert cs.checked_schedule(1, 4) == (1, 4)
+    with pytest.raises(ValueError, match="alternative search schedules"):
+        cs.checked_schedule(2, 3)
+    with pytest.raises(ValueError, match="at least 1"):
+        cs.checked_schedule(0, 0)
+    with pytest.raises(ValueError, match="zero or positive"):
+        cs.checked_schedule(1, -1)
+    for option in ("--combinatorial-length", "--combinatorial-breadth"):
+        args = bp.build_parser().parse_args(["run", option, "3"])
+        options = bp.solve_options_from(args)
+        assert options["combinatorial_length"] == 3
+        assert options["combinatorial_depth"] == 1
+        config = bp.default_config(solve=options)
+        assert bp.solve_arguments(config)["combinatorial_length"] == 3
+    with pytest.raises(ValueError, match="alternative search schedules"):
+        bp.default_config(solve={"combinatorial_depth": 2,
+                                 "combinatorial_length": 3})
+    with pytest.raises(ValueError, match="candidate_moves"):
+        bp.default_config(solve={"candidate_moves": -1})
+    args = R.build_parser().parse_args(
+        ["run", "--combinatorial-length", "2", "--pachner-length", "2"])
+    config = R.default_config(solve=bp.solve_options_from(args),
+                              pachner_length=args.pachner_length)
+    assert config["combinatorial_length"] == 2
+    assert config["pachner_length"] == 2
+
+
+def test_the_schedule_reaches_the_engine_and_the_record(monkeypatch):
+    """`cell_solve.solve` hands the depth to the engine as its
+    ``max_lookahead``, the length as its ``combinatorial_breadth`` and the
+    candidate count as its ``n_candidate_moves``, and records the three."""
+    base, _, system = _content_system()
+    seen = {}
+
+    def run(self, **arguments):
+        seen.update(arguments)
+        return [0.0]
+
+    monkeypatch.setattr(cob.MultiCobordism, "run", run)
+    drive = cs.solve(base, system, combinatorial_length=3, candidate_moves=7)
+    assert seen["max_lookahead"] == 1
+    assert seen["combinatorial_breadth"] == 3
+    assert seen["n_candidate_moves"] == 7
+    assert seen["alpha0"] == 1.0 and seen["max_iters"] is None
+    assert (drive["combinatorial_depth"], drive["combinatorial_length"],
+            drive["candidate_moves"], drive["moves"]) == (1, 3, 7, True)
+    seen.clear()
+    cs.solve(base, system, combinatorial_depth=4)
+    assert seen["max_lookahead"] == 4 and seen["combinatorial_breadth"] == 0
 
 
 def test_the_recursion_driver_carries_the_solve_options():
