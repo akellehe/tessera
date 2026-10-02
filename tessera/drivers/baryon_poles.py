@@ -3193,6 +3193,11 @@ def _content_reads(content, kappa, beta, config, started, spacetime, action,
     shift = fluctuations["shift"]
     constant = fluctuations["constant"]
     truncation = fluctuations["truncation"]
+    # the with-quartic read's flag is a flag of the content: it is counted
+    # among the flagged contents and named in the content's line
+    names = {flag["name"] for flag in flags}
+    flags = flags + [flag for flag in truncation.get("flags") or []
+                     if flag["name"] not in names]
 
     def many_body(carrier_matrix, coupling_matrices):
         declaration = cob.DressedFluctuationDeclaration()
@@ -3247,6 +3252,15 @@ def _content_reads(content, kappa, beta, config, started, spacetime, action,
             "carrier_content": carrier_content,
             "total_triality": int(triality),
             "sectors": {str(k): v for k, v in sector_reads.items()},
+            # the measurements of the spin split the sectors come from,
+            # keyed by j(j + 1) as the sectors are
+            "spin_split": {
+                name: ({str(k): v for k, v in value.items()}
+                       if isinstance(value, dict) else value)
+                for name, value in doublet_sector_read(
+                    doublet_content, trialities,
+                    declared_tolerance(
+                        config, "spin_sector_tolerance")).items()},
         })
 
     # the reads beside the poles: one without a value is flagged by name and
@@ -3331,6 +3345,9 @@ def _content_reads(content, kappa, beta, config, started, spacetime, action,
             "frames": [{
                 "trialities": a["trialities"],
                 "reference_carrier": a["reference_carrier"],
+                "reference_certified": a.get("reference_certified"),
+                "half_turn_trace_residual": a.get(
+                    "half_turn_trace_residual"),
                 "averaged_eigenvalues": a["averaged_eigenvalues"],
                 "intertwining_residual": a["intertwining_residual"],
             } for a in alignments],

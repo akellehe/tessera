@@ -127,6 +127,20 @@ def test_the_baryon_driver_adds_the_read_only_when_asked():
     assert plain["relaxation"]["symmetry"]["tetrahedral"]
     assert plain["relaxation"]["spin_frame"] == bp.SPIN_FRAME_OF_THE_CELL == \
         "the relaxed cell's own rotation group"
+    # the record carries the frame's certificate and the measurements of
+    # every doublet content's spin split
+    for sheet in plain["relaxation"]["frames"]:
+        assert sheet["reference_certified"] is True
+        assert sheet["half_turn_trace_residual"] is not None
+    for read in plain["doublet_reads"]:
+        split = read["spin_split"]
+        assert set(split["dimensions"]) == set(read["sectors"])
+        assert sum(split["dimensions"].values()) > 0
+        assert split["polynomial_residual"] < 1e-13
+    # the with-quartic read's flags are flags of the content
+    names = [flag["name"] for flag in plain["flags"]]
+    for flag in plain["quartic"]["truncation"]["flags"]:
+        assert flag["name"] in names
     config["isospin_doublet"] = True
     extended = bp.evaluate_content((1, 1, 1), 1.0, 1.0, config)
     read = extended["isospin_doublet"]
