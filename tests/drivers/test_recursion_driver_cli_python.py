@@ -66,7 +66,7 @@ CONTENTS = [
              HALF: _sector(HALF, 0, [6.0], [-2.0]),
              THREE: _sector(THREE, 0, [5.0 + 0.25j], [-1.0])}}],
      "relaxation": {"converged": False, "force_norm": 0.25,
-                    "iterations": 40},
+                    "accepted_updates": 40},
      "quark_conditions": {"certified": False, "conditions": [
          {"name": "persistent-cluster", "status": "Failed"}]},
      "isospin_doublet": {"covariant": {"status": "x", "found": False,
@@ -467,8 +467,8 @@ def test_progress_and_summary_are_printed_unless_quiet(stub_reads, capsys):
     assert "host cell [0, 1, 2, 3] content [0, 3, 0] (quarks per band of " \
         "h_1): no value: band 1 has rank 2" in out
     assert "content [3, 0, 0] (quarks per band of h_1): read; quark " \
-        "certified False; mean field converged False (force norm 0.25 after " \
-        "40 iterations)" in out
+        "certified False; solve converged False (force norm 0.25) after 40 " \
+        "accepted updates" in out
     # every quark condition's status closes the content's line
     assert "; quark conditions persistent-cluster Failed\n" in out
     # the tick's progress and the final summary both carry one line per
@@ -520,10 +520,10 @@ def test_the_frame_data_carries_every_pole_of_every_doublet_content():
     assert data["slots"] == [(0.0, "no value"), (2.0, "021"), (3.0, "111")]
     assert [g["label"] for g in data["groups"]] == ["0123\n030", group]
     # each group carries the solve behind it: the library names no value at
-    # 030, and the solve of 300 did not converge in its 40 iterations
+    # 030, and the solve of 300 did not converge in its 40 accepted updates
     assert [g["solve"] for g in data["groups"]] == [
-        {"state": "no value", "reason": None, "iterations": None},
-        {"state": "not converged", "reason": None, "iterations": 40}]
+        {"state": "no value", "reason": None, "accepted_updates": None},
+        {"state": "not converged", "reason": None, "accepted_updates": 40}]
     quasi_free = [r for r in data["ratios"] if r["column"] == "quasi_free"]
     # by 2T reading: the lowest pole of a sector restricting to a 2 is the
     # spin-3/2 pole of doublet content (0, 2, 1), whose sector restricts to
@@ -554,7 +554,7 @@ def test_the_drawn_frame_has_one_mark_per_pole():
         assert labels == ["no value", "021", "111"]
         # a callout over each group names its solve
         assert [t.get_text() for t in quasi_free.texts] == [
-            "\u2717 no value", "\u2717 not converged\n40 iterations"]
+            "\u2717 no value", "\u2717 not converged\n40 updates"]
     finally:
         plt.close(figure)
 

@@ -776,14 +776,13 @@ def test_a_solve_that_overflowed_the_double_has_no_value(monkeypatch):
     spacetime = bp.build_host()
     spacetime.getEdgeList().toVector()[3].setLength(complex(math.inf, 0.0))
     report = types.SimpleNamespace(kontsevich_segal_margin=math.pi)
-    drive = {"changed": False, "moves_committed": 0}
-    solve = {"converged": False, "force_norm": 1.0, "iterations": 7}
+    drive = {"spacetime": bp.build_base(8.0), "moves_committed": 0}
+    solve = {"converged": False, "force_norm": 1.0, "accepted_updates": 7}
     monkeypatch.setattr(bp, "relax_content",
                         lambda content, kappa, beta, config:
                         (spacetime, None, report, drive))
     monkeypatch.setattr(bp, "relaxation_record",
-                        lambda report, drive, hessian_reality_tolerance:
-                        dict(solve))
+                        lambda report, drive, *tolerances: dict(solve))
     name = "the squared lengths overflowed the double"
     assert name == bp.NO_VALUE_OVERFLOW
     message = (name + " (|z| is not finite on edge 3), so there is no "
@@ -801,38 +800,47 @@ def test_a_solve_that_overflowed_the_double_has_no_value(monkeypatch):
     assert record["relaxation"] == solve
     assert record["doublet_reads"] == []
     (line,) = bp.content_pair_lines(record, "  ")
-    assert line == ("  content [2, 0, 1]: no value: " + message + "; mean "
-                    "field converged False (force norm 1 after 7 iterations)")
+    assert line == ("  content [2, 0, 1]: no value: " + message + "; solve "
+                    "converged False (force norm 1) after 7 accepted updates")
     assert bp.point_lines(point)[0].startswith(
         "kappa=1 beta=1: 1 contents, 1 without a value, 0 flagged; ")
     assert bp.solve_state(record) == {
-        "state": "no value", "reason": "lengths overflowed", "iterations": 7}
+        "state": "no value", "reason": "lengths overflowed",
+        "accepted_updates": 7}
     _, _, slots = bp.pole_marks([("201", record)])
     assert slots == [(0.0, "no value")]
 
 
 def test_a_cell_a_committed_move_changed_has_no_value(monkeypatch):
     """The pole read is defined on the three-sheeted tetrahedron. A drive
-    that committed a Pachner move leaves a base complex that is not a
-    tetrahedron, and the three-sheeted complex of that base has no pole
-    read: `geometry_without_value` names it with the moves and the base
-    complex they left, `evaluate_content` raises `ReadWithoutValue`, and
-    `scan_point` records the content with that reason and no pole. The
-    drive is replaced by its record, a base of five vertices after one
-    committed move."""
+    whose committed Pachner moves leave a base complex that is not a
+    tetrahedron has no pole read: `geometry_without_value` names it with
+    the moves and the base complex they left, `evaluate_content` raises
+    `ReadWithoutValue`, and `scan_point` records the content with that
+    reason and no pole. The drive is replaced by its record with the base
+    it ended on, the tetrahedron after a 1-4 move: five vertices, ten edges
+    and four cells. The test is on the base itself: a base that is one
+    tetrahedron is read, whatever its vertices are called and however many
+    moves the drive committed."""
     import types
+
+    import tessera as T
 
     spacetime = bp.build_host()
     report = types.SimpleNamespace(kontsevich_segal_margin=math.pi)
-    drive = {"changed": True, "moves_committed": 1,
-             "complex_after": {"vertices": 5, "edges": 10, "cells": 4}}
-    solve = {"converged": False, "force_norm": 1.0, "iterations": 7}
+    moved = bp.build_base(8.0)
+    move = T.AddMove(moved, 0, False, T.PachnerMode.PreGeometric, False)
+    assert move.propose() and move.apply()
+    drive = {"spacetime": moved, "moves_committed": 1}
+    returned = {"spacetime": T.Spacetime.fromVertexTuples(
+        3, [[1, 2, 3, 4]], 1.0, 0.0), "moves_committed": 2}
+    assert bp.geometry_without_value(spacetime, returned) is None
+    solve = {"converged": False, "force_norm": 1.0, "accepted_updates": 7}
     monkeypatch.setattr(bp, "relax_content",
                         lambda content, kappa, beta, config:
                         (spacetime, None, report, drive))
     monkeypatch.setattr(bp, "relaxation_record",
-                        lambda report, drive, hessian_reality_tolerance:
-                        dict(solve))
+                        lambda report, drive, *tolerances: dict(solve))
     name = "the cell is not a tetrahedron after its Pachner moves"
     assert name == bp.NO_VALUE_MOVED
     message = (name + " (1 committed move updates left a base complex of 5 "
@@ -848,7 +856,8 @@ def test_a_cell_a_committed_move_changed_has_no_value(monkeypatch):
     assert record["failed"] == message and record["reason"] == name
     assert record["relaxation"] == solve and record["doublet_reads"] == []
     assert bp.solve_state(record) == {
-        "state": "no value", "reason": "cell moved", "iterations": 7}
+        "state": "no value", "reason": "cell moved",
+        "accepted_updates": 7}
 
 
 def test_the_elimination_rule_is_declared_and_recorded():
@@ -1528,7 +1537,7 @@ def test_a_relaxed_cell_without_the_tetrahedral_group_is_read_in_the_host_frame(
     # the plots mark a flagged content by its solve, as any other
     assert bp.solve_state(record) == {
         "state": "not converged", "reason": "no descent",
-        "iterations": relaxation["iterations"]}
+        "accepted_updates": relaxation["accepted_updates"]}
 
 
 def test_a_read_on_the_boundary_of_the_allowable_domain_is_flagged_by_name():
@@ -1582,8 +1591,8 @@ def test_a_read_on_the_boundary_of_the_allowable_domain_is_flagged_by_name():
     assert solve["converged"] is False
     stationary = "no move and no scaled step lowers the residual norm"
     assert solve["stop_reason"] == stationary
-    assert solve["iterations"] == 7 and solve["moves_committed"] == 0
-    assert len(solve["trace"]) > solve["iterations"]
+    assert solve["accepted_updates"] == 7 and solve["moves_committed"] == 0
+    assert len(solve["trace"]) > solve["accepted_updates"]
     assert solve["residual_trace"][-1] == pytest.approx(12.69, rel=1e-2)
     assert solve["largest_length_ratio"] == pytest.approx(29.41, rel=1e-2)
     assert all("jacobian_rank" in entry and "force_norm" in entry
@@ -1593,8 +1602,7 @@ def test_a_read_on_the_boundary_of_the_allowable_domain_is_flagged_by_name():
     lines = bp.point_lines(point)
     assert lines[0].startswith(
         "kappa=1 beta=1: 1 contents, 0 without a value, 1 flagged; ")
-    assert lines[1].startswith("  content [2, 0, 1] mean field converged "
-                               "False")
+    assert lines[1].startswith("  content [2, 0, 1] solve converged False")
     assert "; stopped: " + stationary + " (" in lines[1]
     assert "; flagged: not Kontsevich-Segal allowable (the geometry the " \
         "mean-field solve reached is not Kontsevich-Segal allowable" \
@@ -1604,7 +1612,7 @@ def test_a_read_on_the_boundary_of_the_allowable_domain_is_flagged_by_name():
     assert "; stopped: " + stationary + " (" in text
     assert bp.solve_state(record) == {
         "state": "not converged", "reason": "no descent",
-        "iterations": solve["iterations"]}
+        "accepted_updates": solve["accepted_updates"]}
 
 
 def test_pinning_every_power_sum_of_a_degenerate_fiber_at_the_declared_tolerances():
@@ -1677,7 +1685,7 @@ def test_the_declared_read_pins_the_eigenvalue_of_every_occupied_band():
     assert 1e-15 < solve["force_norm"] < 1e-12 and solve["converged"] is False
     assert solve["stop_reason"] == \
         "no move and no scaled step lowers the residual norm"
-    assert solve["iterations"] == drive["accepted_updates"] == 8
+    assert solve["accepted_updates"] == drive["accepted_updates"] == 8
     assert solve["moves_committed"] == 0
     assert solve["fiber_rank"] == 3
     assert solve["fiber_pinning"] == "eigenvalues"

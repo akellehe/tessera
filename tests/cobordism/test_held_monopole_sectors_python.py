@@ -30,7 +30,7 @@ def test_the_symmetric_host_relaxes_inside_its_sector():
     report = R.relax_level(spacetime, dict(config, kappa=1.0, beta=1.0), _sectors(1))
     assert report["converged"] and report["stop_reason"] == "converged"
     assert report["initial_residual"] == 0.0 and report["residual"] == 0.0
-    assert report["iterations"] == 0 and report["moves_committed"] == 0
+    assert report["accepted_updates"] == 0 and report["moves_committed"] == 0
     assert report["sector_monopole_numbers"] == [1, 1, 1]
     assert report["held_modulus_drift"] == 0.0
     assert report["undefined_points"] == 0

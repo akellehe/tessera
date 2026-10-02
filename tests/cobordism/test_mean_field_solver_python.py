@@ -145,7 +145,7 @@ def test_the_drive_takes_a_read_to_the_rounding_of_its_equations():
     assert not report.converged
     record = bp.relaxation_record(report, drive)
     assert record["stop_reason"] == cs.STOP_STATIONARY
-    assert record["iterations"] == drive["accepted_updates"]
+    assert record["accepted_updates"] == drive["accepted_updates"]
     assert record["method"] == \
         "MultiCobordism drive of the joint action's stationarity"
     # one step proposal per accepted update, and those that ended the drive
@@ -538,9 +538,9 @@ def test_a_read_that_stops_short_moves_at_every_update_and_says_why():
     record = bp.relaxation_record(report, drive)
     assert record["stop_reason"] == \
         "no move and no scaled step lowers the residual norm"
-    assert record["iterations"] == accepted
+    assert record["accepted_updates"] == accepted
     text = bp.relaxation_text(record)
-    assert text.startswith("mean field converged False (force norm ")
+    assert text.startswith("solve converged False (residual norm ")
     assert ("; stopped: no move and no scaled step lowers the residual norm "
             "(") in text
 
@@ -581,7 +581,7 @@ def test_a_declared_number_of_updates_ends_the_solve_by_name():
         "2) after 2 step proposals; the residual norm is ")
     record = bp.relaxation_record(report, drive)
     assert record["stop_reason"] == "a declared limit was reached"
-    assert record["iterations"] == 2
+    assert record["accepted_updates"] == 2
 
 
 def test_a_declared_time_ends_the_solve_by_name():

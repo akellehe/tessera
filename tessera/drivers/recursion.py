@@ -20,10 +20,13 @@ The host
 The base complex is a fan of ``--tetrahedra`` tetrahedra around the edge
 (0, 1): tetrahedron k has vertices (0, 1, 2 + k, 3 + k), so consecutive
 tetrahedra share a face. Every edge has squared length ``--edge-squared``.
-The declared default is two tetrahedra: with the host's bounding-cut sector
-held, the Newton solve on a fan of three or four tetrahedra stops at the
-sector boundary unconverged and says so, while the fan of two is stationary
-in it as built.
+The declared default is two tetrahedra, the fan whose declared fields are
+stationary as built with the host's bounding-cut sector held: the residual
+norm of its level is at rounding before the drive takes a step. The fans of
+three and of four start at residual norms of order one, and their drives end
+short of stationarity with the stop the engine names (no move and no scaled
+step lowers the residual norm), a part of the points their line searches
+score having no residual.
 Every tetrahedron carries a unit Dirac monopole (WP §11.1): the outward
 principal face angles theta_f, read in the outward orientation of
 `MonopoleSupport.tetrahedron(1)` on the tetrahedron's ascending vertices, are
@@ -101,8 +104,9 @@ At level l (a complex K_l of three sheets of a base complex):
    no dimensionless replacement has passed the level-0 and gauge checks. The
    grown cells are glued in ascending lexicographic order of their vertices.
    A cell is added only if the complex stays a manifold with boundary
-   (`SurgicalCone.validate`); a cell that fails is recorded with the
-   violation. An edge shared by several grown cells receives one value from
+   (`SurgicalCone.validate`); a cell that fails is read like any other,
+   recorded with its read and the violation, and left unattached. An edge
+   shared by several grown cells receives one value from
    each; the level carries their mean and reports their spread. The grown
    base then takes the combinatorial moves of the growth step
    (`pachner_stage`): a stage-1 search of `MultiCobordism` in unforced
@@ -138,9 +142,14 @@ At level l (a complex K_l of three sheets of a base complex):
    geometry, and its content is recorded as having no value, by name.
 
 The next tick runs on K_{l+1}. The recursion stops at a level with no grown
-3-simplex, at a level whose relaxation the library refuses and at a level
-whose turn of the Section 15 box has no value, and the tick's record says
-which and why (``stopped``).
+3-simplex, and at a level one of whose steps has no value: the level as
+built, its relaxation, its operator, the turn of the Section 15 box, or the
+interaction stage. The tick's record says which and why (``stopped``), and
+keeps every read the tick made: a tick whose turn has no value still reads
+its cells. A step that has no value is one at which the library or the
+driver raises one of `baryon_poles.NO_VALUE_ERRORS`; any other error is a
+defect of the code, and the drive writes what the tick reached to the points
+file before it raises it.
 
 The report is per doublet content
 ---------------------------------
@@ -401,16 +410,72 @@ def outward_faces(cell):
     return [(c[p], c[q], c[r]) for p, q, r in FIXTURE_FACES]
 
 
+def cell_orientations(cells):
+    """A coherent orientation of the cluster made of the tetrahedra
+    ``cells``: for each, +1 when its ascending vertex order has the
+    orientation of the cluster and -1 when it has the opposite one. The face
+    opposite the i-th ascending vertex of a tetrahedron carries the induced
+    sign (-1)^i, and two tetrahedra that share a face induce opposite
+    orientations on it, so across a shared face opposite the i-th vertex of
+    one and the j-th of the other the signs are related by
+    s' = -s (-1)^(i + j). The first tetrahedron of every connected
+    component, in the order given, is +1. A cluster with no coherent
+    orientation (a face of three tetrahedra, or a one-sided cluster) has no
+    outward faces, which is a ValueError that names the face."""
+    ordered = [tuple(sorted(c)) for c in cells]
+    owners = {}
+    for t, cell in enumerate(ordered):
+        for i in range(4):
+            face = tuple(v for k, v in enumerate(cell) if k != i)
+            owners.setdefault(face, []).append((t, i))
+    for face, shared in owners.items():
+        if len(shared) > 2:
+            raise ValueError(
+                "the face %s is shared by %d tetrahedra, so the cluster has "
+                "no coherent orientation" % (list(face), len(shared)))
+    signs = [0] * len(ordered)
+    for start in range(len(ordered)):
+        if signs[start]:
+            continue
+        signs[start] = 1
+        frontier = [start]
+        while frontier:
+            t = frontier.pop()
+            cell = ordered[t]
+            for i in range(4):
+                face = tuple(v for k, v in enumerate(cell) if k != i)
+                for other, j in owners[face]:
+                    if other == t:
+                        continue
+                    sign = -signs[t] * (-1) ** (i + j)
+                    if signs[other] == 0:
+                        signs[other] = sign
+                        frontier.append(other)
+                    elif signs[other] != sign:
+                        raise ValueError(
+                            "the tetrahedra on the face %s cannot be "
+                            "oriented coherently, so the cluster has no "
+                            "outward faces" % (list(face),))
+    return signs
+
+
 def bounding_cut(cells):
     """The bounding cut of the cluster made of ``cells``: every face of one of
-    its tetrahedra that no other of its tetrahedra shares, oriented outward. A
-    face two of the tetrahedra share is bulk and is not on the cut."""
+    its tetrahedra that no other of its tetrahedra shares, oriented outward
+    for the coherent orientation of the cluster (`cell_orientations`): the
+    face of `outward_faces` on a tetrahedron whose ascending order has the
+    cluster's orientation, and its reverse on one whose ascending order has
+    the opposite one. A face two of the tetrahedra share is bulk and is not
+    on the cut."""
+    signs = cell_orientations(cells)
     counts = {}
     for cell in cells:
         for face in outward_faces(cell):
             key = tuple(sorted(face))
             counts[key] = counts.get(key, 0) + 1
-    return [face for cell in cells for face in outward_faces(cell)
+    return [face if sign > 0 else (face[0], face[2], face[1])
+            for cell, sign in zip(cells, signs)
+            for face in outward_faces(cell)
             if counts[tuple(sorted(face))] == 1]
 
 
@@ -515,11 +580,18 @@ def relax_level(spacetime, config, sectors=None, count=None):
     identical exactly. Without it the drive runs on ``spacetime`` itself,
     every edge its own coordinate.
 
-    The relaxed fields are written to ``spacetime`` when the drive committed
-    no move. When it committed one, the cells changed and ``spacetime`` is
-    left as it was; the record's ``moved_base`` is then the base the drive
-    ended on (`base_fields`: cells, squared lengths, links, relabeling), and
-    None otherwise."""
+    The relaxed fields are written to ``spacetime`` when the base the drive
+    ended on has the cells it started with. When committed moves left other
+    cells, ``spacetime`` is left as it was; the record's ``moved_base`` is
+    then the base the drive ended on (`base_fields`: cells, squared lengths,
+    links, relabeling), and None otherwise.
+
+    The record's ``converged`` is `baryon_poles.solve_converged`: the
+    residual norm at the point the drive ended on (``residual``) at or below
+    the declared ``step_tolerance``. ``accepted_updates`` is the number of
+    relaxation updates the drive accepted; the engine's iterations, which
+    ``--iteration-limit`` counts, are each one update of the Pachner moves
+    and a relaxation of several such updates."""
     shared = count is not None
     sheets = SHEETS if shared else 1
     base = sheet_base(spacetime, count) if shared else spacetime
@@ -554,7 +626,8 @@ def relax_level(spacetime, config, sectors=None, count=None):
     action = end.relaxation.action
     reported = action.reported_value()
     updates = drive["objective"].updates
-    converged = residual <= bp.declared_tolerance(held, "step_tolerance")
+    converged = bp.solve_converged(
+        residual, bp.declared_tolerance(held, "step_tolerance"))
     moved_base = None
     if drive["changed"]:
         moved_base = base_fields(final)
@@ -577,7 +650,7 @@ def relax_level(spacetime, config, sectors=None, count=None):
         "stop_detail": str(drive["stop_detail"]),
         "initial_residual": initial,
         "residual": residual,
-        "iterations": int(drive["accepted_updates"]),
+        "accepted_updates": int(drive["accepted_updates"]),
         "moves_committed": int(drive["moves_committed"]),
         "pachner_moves": bool(drive["moves"]),
         "combinatorial_depth": int(drive["combinatorial_depth"]),
@@ -615,9 +688,24 @@ def relax_level(spacetime, config, sectors=None, count=None):
 # ------------------------------------------------------- the box on the base
 
 
+def proposition_three(instance):
+    """The covariance certificate of a `CovariantChainHodge` instance
+    (specification Proposition 3) as a record: whether every measured
+    property holds at the certificate's tolerance, the tolerance, and each
+    property that does not hold as the library states it, with its residual.
+    The instance is built and read whether or not the certificate holds."""
+    certificate = instance.certificate()
+    return {"holds": bool(certificate.holds),
+            "tolerance": float(certificate.tolerance),
+            "failed": [str(entry)
+                       for entry in getattr(certificate, "failed", [])]}
+
+
 def base_operator(cells, z, links):
     """The Whitney complex of the base, its canonical edges and top simplices,
-    the covariant chain-Hodge instance of sheet 0 and its h_1(z, U)."""
+    the covariant chain-Hodge instance of sheet 0 and its h_1(z, U), with
+    the covariance certificates of the instances of U and of U^{-1}
+    (`proposition_three`) under ``certificates``."""
     tuples = [sorted(c) for c in cells]
     complex_ = cob.ChainComplex.fromTopCells(tuples)
     edges = [tuple(e) for e in complex_.kSimplexVertices(1)]
@@ -631,6 +719,9 @@ def base_operator(cells, z, links):
     dual_operator = np.asarray(dual.covariantOperator(1))
     pencil, dual_pencil = covariant.pencil(1), dual.pencil(1)
     return {"complex": complex_, "edges": edges, "tops": tops,
+            "certificates": {
+                "connection": proposition_three(covariant),
+                "inverse_connection": proposition_three(dual)},
             "covariant": covariant, "operator": operator,
             "dual_operator": dual_operator,
             "pencil": np.asarray(pencil.A), "metric": np.asarray(pencil.B),
@@ -936,17 +1027,20 @@ def manifold_violation(cells):
 
 def grow(cells, pairing, transports, rank_tolerance=bp.DECLARED_TOLERANCE):
     """The grown-cell rule on every grown 3-simplex: lengths from the
-    inherited pairing, connection from det M. The cells are glued in
-    ascending lexicographic order of their vertices, and a cell is added only
-    if the complex of the cells added so far stays a manifold with boundary;
-    a cell that fails is recorded with the violation under ``"rejected"``.
-    ``rank_tolerance`` is the fraction of the largest pivot of a cell's
-    metric block at or below which a pivot counts as zero
-    (`GrownCellRule.invertVertexPairing`); a cell whose block is singular at
-    it is recorded with the rule's reason under ``"failed"``.
+    inherited pairing, connection from det M. ``rank_tolerance`` is the
+    fraction of the largest pivot of a cell's metric block at or below which
+    a pivot counts as zero (`GrownCellRule.invertVertexPairing`). A cell
+    whose rule has no value (a block singular at that tolerance, a transport
+    between two of its vertices that carries no connection) is recorded with
+    the library's reason under ``"failed"``. Every other cell is read. The
+    cells are attached in ascending lexicographic order of their vertices,
+    and a cell is attached only if the complex of the cells attached so far
+    stays a manifold with boundary (WP v18 §15); a cell that would break it
+    keeps its read and carries the violation under ``"rejected"``, and it
+    gives the next level no edge.
     Returns the per-cell reads and the per-edge fields of the next level
     (response-vertex labels)."""
-    reads, per_edge_z, glued = [], {}, []
+    reads, per_edge_z, glued, connections = [], {}, [], {}
     for cell in sorted(tuple(sorted(c)) for c in cells):
         index = list(cell)
         block = pairing[np.ix_(index, index)]
@@ -954,16 +1048,19 @@ def grow(cells, pairing, transports, rank_tolerance=bp.DECLARED_TOLERANCE):
         try:
             read = ch.GrownCellRule.invertVertexPairing(block,
                                                         rank_tolerance)
-        except ValueError as error:
+            for i, j in itertools.combinations(range(4), 2):
+                edge = (index[i], index[j])
+                if edge not in connections:
+                    forward = complex(ch.GrownCellRule.transportConnection(
+                        transports[edge]))
+                    backward = complex(ch.GrownCellRule.transportConnection(
+                        transports[edge[::-1]]))
+                    connections[edge] = (
+                        forward, float(abs(forward * backward - 1.0)))
+        except bp.NO_VALUE_ERRORS as error:
             entry["failed"] = str(error)
             reads.append(entry)
             continue
-        violation = manifold_violation(glued + [index])
-        if violation is not None:
-            entry["rejected"] = violation
-            reads.append(entry)
-            continue
-        glued.append(index)
         entry.update({
             "row_sum_defect": float(read.rowSumDefect),
             "asymmetry": float(read.asymmetry),
@@ -972,16 +1069,21 @@ def grow(cells, pairing, transports, rank_tolerance=bp.DECLARED_TOLERANCE):
             "squared_lengths": [complex(v) for v in read.squaredLengths],
             "frame_invariant_ratios": np.asarray(read.frameInvariantRatios),
         })
+        try:
+            violation = manifold_violation(glued + [index])
+        except bp.NO_VALUE_ERRORS as error:
+            violation = "the manifold test has no value: %s" % error
+        if violation is not None:
+            entry["rejected"] = violation
+            reads.append(entry)
+            continue
+        glued.append(index)
         for m, (i, j) in enumerate(itertools.combinations(range(4), 2)):
             per_edge_z.setdefault((index[i], index[j]), []).append(
                 complex(read.squaredLengths[m]))
         reads.append(entry)
-    links, groupoid = {}, {}
-    for (v, w) in per_edge_z:
-        forward = ch.GrownCellRule.transportConnection(transports[(v, w)])
-        backward = ch.GrownCellRule.transportConnection(transports[(w, v)])
-        links[(v, w)] = complex(forward)
-        groupoid[(v, w)] = float(abs(forward * backward - 1.0))
+    links = {edge: connections[edge][0] for edge in per_edge_z}
+    groupoid = {edge: connections[edge][1] for edge in per_edge_z}
     z = {e: complex(np.mean(values)) for e, values in per_edge_z.items()}
     spread = {e: float(max(abs(x - z[e]) for x in values) / abs(z[e]))
               if abs(z[e]) > 0 else 0.0 for e, values in per_edge_z.items()}
@@ -999,7 +1101,10 @@ def cell_reads(cells, z, links, config):
     preconditions of that read and in the frame of the declared symmetric
     host, flagged, when it does not (`baryon_poles.spin_frame`). Every cell's
     read names its contents with no value (``failed_contents``) and its
-    flagged contents (``flagged_contents``). A tetrahedron of the declared
+    flagged contents (``flagged_contents``). A cell whose read as a host has
+    no value before any content is reached (`baryon_poles.NO_VALUE_ERRORS`)
+    is recorded with the reason under ``failed`` and no content, and the
+    other cells are read. A tetrahedron of the declared
     level-0 host is a declared host of its own, so its four faces are its
     bounding cut and are held. A tetrahedron of a grown level is not
     declared, so nothing on it is held (``hold_cell_sectors``)."""
@@ -1030,13 +1135,21 @@ def cell_reads(cells, z, links, config):
                                 key for key, _, _ in bp.SOLVE_OPTIONS):
             if key in config:
                 cell_config[key] = config[key]
-        number = monopole_numbers(
-            [c], links,
-            bp.declared_tolerance(config, "certificate_tolerance"))[0]
-        cell_config["held_sectors"] = (
-            held_sectors([[0, 1, 2, 3]], [number], 4)
-            if config.get("hold_cell_sectors", True) else [])
-        point = bp.scan_point(config["kappa"], config["beta"], cell_config)
+        try:
+            number = monopole_numbers(
+                [c], links,
+                bp.declared_tolerance(config, "certificate_tolerance"))[0]
+            cell_config["held_sectors"] = (
+                held_sectors([[0, 1, 2, 3]], [number], 4)
+                if config.get("hold_cell_sectors", True) else [])
+            point = bp.scan_point(config["kappa"], config["beta"],
+                                  cell_config)
+        except bp.NO_VALUE_ERRORS as error:
+            out.append({"cell": c, "host_cell": host_cell,
+                        "failed": str(error), "failed_contents": [],
+                        "flagged_contents": [], "contents": [],
+                        "ratios": {}, "pole_table": {}})
+            continue
         out.append({"cell": c, "host_cell": host_cell,
                     "failed_contents": point["failed_contents"],
                     "flagged_contents": point["flagged_contents"],
@@ -1118,10 +1231,32 @@ def interaction_stage(base, partition, config):
     image-supported fibers for U and U^{-1}, the transports, the interaction
     graph, the grown 3-simplices and the grown-cell rule on each, and the
     locality certificate: the largest pairing and transport between two
-    response vertices whose image supports share no top simplex."""
-    fibers = fibers_for_partition(
-        base, partition, config["band_rank"],
-        bp.declared_tolerance(config, "recursion_tolerance"))
+    response vertices whose image supports share no top simplex.
+
+    A component whose fiber has no value (`baryon_poles.NO_VALUE_ERRORS`: a
+    band whose selection separates two eigenvalues that are equal exactly,
+    two geometric images that pair singularly, a singular restriction) is
+    not a response vertex: it is named under ``failed_components`` with its
+    edges and the reason, and the stage is made on the others, which
+    ``partition`` lists in the order of the response vertices."""
+    fibers = {key: [] for key in ("frames", "images", "lefts", "duals",
+                                  "dual_images", "reads")}
+    kept, failed = [], []
+    for index, part in enumerate(partition):
+        try:
+            one = fibers_for_partition(
+                base, [part], config["band_rank"],
+                bp.declared_tolerance(config, "recursion_tolerance"))
+        except bp.NO_VALUE_ERRORS as error:
+            failed.append({"component": index,
+                           "edges": ["%d-%d" % base["edges"][c]
+                                     for c in part],
+                           "failed": str(error)})
+            continue
+        kept.append(list(part))
+        for key in fibers:
+            fibers[key] += one[key]
+    partition = kept
     frames, images = fibers["frames"], fibers["images"]
     transports = transport_matrix(base["pencil"], images, fibers["lefts"])
     pairs = interaction_graph(partition, base["edges"], base["tops"])
@@ -1146,7 +1281,8 @@ def interaction_stage(base, partition, config):
             "fibers": fibers["reads"], "transports": transports,
             "pairs": pairs, "pairing": pairing, "reads": reads, "z": z,
             "links": links, "spread": spread, "groupoid": groupoid,
-            "locality": locality}
+            "locality": locality, "partition": partition,
+            "failed_components": failed}
 
 
 def persistent_components(level, edges, required):
@@ -1236,6 +1372,24 @@ def pachner_stage(cells, z, links, config):
     return cells_out, z_out, links_out, record
 
 
+def _counts():
+    """The counts of a tick's summary before any of them is read."""
+    return {"response_vertices": 0, "interactions": 0, "grown_cells": 0,
+            "failed_cells": 0, "rejected_cells": 0, "row_sum_defects": []}
+
+
+def _made(target, key, read, without_value):
+    """``target[key]`` is ``read()``; when the read has no value
+    (`baryon_poles.NO_VALUE_ERRORS`) it is None, and ``without_value[key]``
+    is the reason."""
+    try:
+        target[key] = read()
+    except bp.NO_VALUE_ERRORS as error:
+        target[key] = None
+        without_value[key] = str(error)
+    return target[key]
+
+
 def tick(index, cells, z, links, config):
     """One tick on the level whose base is ``cells`` with fields ``z`` and
     ``links``. Returns the tick's record and the next level's base (or None
@@ -1243,71 +1397,147 @@ def tick(index, cells, z, links, config):
     bounding cut is held; every later level is grown, and nothing on it is
     held.
 
-    A tick that cannot be completed is recorded with what it reached and why
-    it stopped (``stopped``), and returns no next level: a relaxation the
-    library refuses (``relaxation.failed``), and a turn of the Section 15 box
-    that has no value (``partition.failed``; for example a band whose
-    selection separates two eigenvalues that are equal exactly, or a level at
-    the dense crossover), whose record keeps the level and its
-    relaxation."""
+    A step of the tick that has no value (`baryon_poles.NO_VALUE_ERRORS`) is
+    recorded by name with the library's reason, every read that does not
+    depend on it is made, and the tick returns no next level, its record
+    saying where it stopped and why (``stopped``):
+
+    * the level as built (a link that is zero, a cluster with no coherent
+      orientation): ``stopped`` alone, with the level's fields as given;
+    * the relaxation (``relaxation.failed``; for example a face holonomy
+      outside the domain of the holonomy term): there is no relaxed level,
+      so nothing further is read;
+    * the relaxed level's operator, or the turn of the Section 15 box
+      (``partition.failed``; for example a band whose selection separates
+      two eigenvalues that are equal exactly, or a level at the dense
+      crossover): the level, its relaxation and the reads of its cells are
+      kept;
+    * the interaction stage (``interaction.failed``): the partition and the
+      reads of the cells are kept.
+
+    A read of the relaxed level that has no value (the monopole numbers, the
+    sheet isomorphism residual, the rule shift) is None, with the reason
+    under ``level.without_value``; the level's operator is read whether or
+    not its covariance certificate holds, and the certificates are recorded
+    under ``level.operator_certificates`` (`proposition_three`); a component
+    whose fiber has no value is
+    named under ``failed_components`` (`interaction_stage`); a cell whose
+    read has no value is recorded in ``reads`` with the reason
+    (`cell_reads`); and a growth step whose search has no value leaves the
+    grown base as it is, with the reason under ``pachner.failed``.
+
+    Any other error is a defect of the code: it is raised, carrying what the
+    tick reached as its ``tick_record`` attribute, which `drive` writes to
+    the points file."""
     started = time.time()
-    spacetime, count = build_level(cells, z, links)
+    record = {"tick": index, "summary": _counts(), "reads": []}
+    try:
+        following = _tick(record, index, cells, z, links, config)
+    except Exception as error:
+        record.setdefault("stopped", "the tick ended on an error: %s: %s"
+                          % (type(error).__name__, error))
+        record["seconds"] = time.time() - started
+        error.tick_record = record
+        raise
+    record["seconds"] = time.time() - started
+    return record, following
+
+
+def _tick(record, index, cells, z, links, config):
+    """The steps of `tick`, written into ``record`` as they are made; returns
+    the next level's base, or None."""
     declared = index == 0
     certificate_tolerance = bp.declared_tolerance(config,
                                                   "certificate_tolerance")
-    bulk_before = monopole_numbers(cells, links, certificate_tolerance)
-    cut = bounding_cut(cells) if declared else []
-    cut_before = cut_monopole_number(cut, links) if declared else None
-    held = {"faces": [list(f) for f in cut],
-            "monopole_number_before": cut_before}
+    cells_before = [sorted(c) for c in cells]
+    held = {"faces": [], "monopole_number_before": None}
+    level = record["level"] = {
+        "vertices": 1 + max(max(c) for c in cells),
+        "edges": len(z),
+        "tetrahedra": len(cells),
+        "cells": cells_before,
+        "cells_before": cells_before,
+        "squared_lengths": {"%d-%d" % e: v for e, v in z.items()},
+        "links": {"%d-%d" % e: v for e, v in links.items()},
+        "held_cut": held,
+    }
+    try:
+        spacetime, count = build_level(cells, z, links)
+        bulk_before = monopole_numbers(cells, links, certificate_tolerance)
+        cut = bounding_cut(cells) if declared else []
+        cut_before = cut_monopole_number(cut, links) if declared else None
+    except bp.NO_VALUE_ERRORS as error:
+        record["stopped"] = "the level has no value as built: %s" % error
+        return None
+    held["faces"] = [list(f) for f in cut]
+    held["monopole_number_before"] = cut_before
+    # the monopole numbers of the cells the level has before its relaxation
+    # (`cells_before`); a committed move leaves other cells, which
+    # `bulk_monopole_numbers_after` is read on (`cells`)
+    level["bulk_monopole_numbers_before"] = bulk_before
     try:
         relaxation = relax_level(
             spacetime, config,
             cut_sectors(cut, cut_before, count) if declared else [],
             count=count)
-    except ValueError as error:
-        # a declared refusal of the library (a face holonomy outside the
-        # domain of the holonomy term): the level has no stationary point to
-        # read, so the recursion stops here and says why
+    except bp.NO_VALUE_ERRORS as error:
+        # the library names no stationary point to read (for example a face
+        # holonomy outside the domain of the holonomy term), so the
+        # recursion stops here and says why
         triangles = _sorted_simplices(cells, 3)
-        holonomies = [links[(a, b)] * links[(b, c)] / links[(a, c)]
-                      for a, b, c in triangles]
-        record = {
-            "tick": index,
-            "level": {
-                "vertices": 1 + max(max(c) for c in cells),
-                "cells": [sorted(c) for c in cells],
-                "squared_lengths": {"%d-%d" % e: v for e, v in z.items()},
-                "links": {"%d-%d" % e: v for e, v in links.items()},
-                "face_holonomies": holonomies,
-                "held_cut": held,
-                "bulk_monopole_numbers_before": bulk_before,
-            },
-            "relaxation": {"failed": str(error)},
-            "summary": {"response_vertices": 0, "interactions": 0,
-                        "grown_cells": 0, "failed_cells": 0,
-                        "rejected_cells": 0, "row_sum_defects": []},
-            "reads": [],
-            "stopped": "the level's relaxation was refused: %s" % error,
-            "seconds": time.time() - started,
-        }
-        return record, None
+        level["face_holonomies"] = [
+            links[(a, b)] * links[(b, c)] / links[(a, c)]
+            for a, b, c in triangles]
+        record["relaxation"] = {"failed": str(error)}
+        record["stopped"] = "the level's relaxation was refused: %s" % error
+        return None
+    record["relaxation"] = relaxation
     moved_base = relaxation.pop("moved_base", None)
-    if moved_base is not None:
-        # a committed Pachner move changed the base: the level is the one
-        # the drive ended on, every sheet a copy of it, and the held cut is
-        # named by the vertices' new labels where they are still there
-        cells, moved_z, moved_links, relabel = moved_base
-        spacetime, count = build_level(cells, moved_z, moved_links)
-        relaxation["vertex_relabeling"] = {str(v): relabel[v]
-                                           for v in sorted(relabel)}
-        cut = [tuple(relabel[v] for v in face) for face in cut
-               if all(v in relabel for v in face)]
-        held["faces_after"] = [list(f) for f in cut]
-    fields = sheet_fields(spacetime, count)
-    base_z, base_links = fields[0]
+    try:
+        if moved_base is not None:
+            # committed Pachner moves left other cells: the level is the one
+            # the drive ended on, every sheet a copy of it. The held cut is
+            # carried by its vertices: a move of the four Pachner kinds
+            # changes no boundary face and removes no boundary vertex, so
+            # every face of the cut is a boundary face of the moved base,
+            # which the record checks (``faces_after_on_boundary``). A bulk
+            # vertex is named by its id, and the engine gives an inserted
+            # vertex the lowest free id, so an id of ``vertex_relabeling``
+            # names the same vertex before and after only where no removal
+            # freed it
+            cells, moved_z, moved_links, relabel = moved_base
+            spacetime, count = build_level(cells, moved_z, moved_links)
+            relaxation["vertex_relabeling"] = {str(v): relabel[v]
+                                               for v in sorted(relabel)}
+            kept_faces = [tuple(relabel[v] for v in face) for face in cut
+                          if all(v in relabel for v in face)]
+            owners = {}
+            for cell in cells:
+                for face in itertools.combinations(sorted(cell), 3):
+                    owners[face] = owners.get(face, 0) + 1
+            held["faces_after"] = [list(f) for f in kept_faces]
+            held["faces_after_on_boundary"] = (
+                len(kept_faces) == len(cut) and all(
+                    owners.get(tuple(sorted(f))) == 1 for f in kept_faces))
+            cut = kept_faces
+        fields = sheet_fields(spacetime, count)
+        base_z, base_links = fields[0]
+    except bp.NO_VALUE_ERRORS as error:
+        record["stopped"] = ("the relaxed level's fields have no value: %s"
+                             % error)
+        return None
+    without_value = {}
+    level.update({
+        "vertices": 1 + max(max(c) for c in cells),
+        "edges": len(_sorted_simplices(cells, 2)),
+        "tetrahedra": len(cells),
+        "cells": [sorted(c) for c in cells],
+        "squared_lengths": {"%d-%d" % e: v for e, v in base_z.items()},
+        "links": {"%d-%d" % e: v for e, v in base_links.items()},
+    })
     if declared:
-        held["monopole_number_after"] = cut_monopole_number(cut, base_links)
+        _made(held, "monopole_number_after",
+              lambda: cut_monopole_number(cut, base_links), without_value)
         held["sector_monopole_numbers_after"] = \
             relaxation["sector_monopole_numbers"]
     # the sheets are compared by their gauge-invariant data: squared lengths
@@ -1320,123 +1550,104 @@ def tick(index, cells, z, links, config):
         return (links_of_sheet[(a, b)] * links_of_sheet[(b, c)]
                 / links_of_sheet[(a, c)])
 
-    isomorphism = max(
-        max(max(abs(fields[t][0][e] - base_z[e]) / abs(base_z[e])
-                for e in base_z),
-            max(abs(holonomy(fields[t][1], f) - holonomy(base_links, f))
-                / abs(holonomy(base_links, f)) for f in triangles))
-        for t in range(1, SHEETS))
-    base = base_operator(cells, base_z, base_links)
-    level_fields = {
-        "vertices": 1 + max(max(c) for c in cells),
-        "edges": len(base["edges"]),
-        "tetrahedra": len(base["tops"]),
-        "cells": [sorted(c) for c in cells],
-        "squared_lengths": {"%d-%d" % e: v for e, v in base_z.items()},
-        "links": {"%d-%d" % e: v for e, v in base_links.items()},
-        "held_cut": held,
-        "bulk_monopole_numbers_before": bulk_before,
-        "bulk_monopole_numbers_after": monopole_numbers(
-            cells, base_links, certificate_tolerance),
-        "sheet_isomorphism_residual": float(isomorphism),
-        "rule_shift": level_rule_shift(
-            cells, base_z, base_links,
-            bp.declared_tolerance(config, "grown_cell_rank_tolerance")),
-    }
+    def isomorphism():
+        return float(max(
+            max(max(abs(fields[t][0][e] - base_z[e]) / abs(base_z[e])
+                    for e in base_z),
+                max(abs(holonomy(fields[t][1], f) - holonomy(base_links, f))
+                    / abs(holonomy(base_links, f)) for f in triangles))
+            for t in range(1, SHEETS)))
+
+    _made(level, "bulk_monopole_numbers_after",
+          lambda: monopole_numbers(cells, base_links, certificate_tolerance),
+          without_value)
+    _made(level, "sheet_isomorphism_residual", isomorphism, without_value)
+    _made(level, "rule_shift", lambda: level_rule_shift(
+        cells, base_z, base_links,
+        bp.declared_tolerance(config, "grown_cell_rank_tolerance")),
+        without_value)
+    if without_value:
+        level["without_value"] = without_value
+
+    # the Section 15 box on the base and the interaction stage
+    stage = None
+    step = "the level's operator has no value"
     try:
-        level = recursion_turn(base["operator"], config)
-    except (ValueError, RuntimeError) as error:
-        # the turn of the Section 15 box has no value on this level (the
-        # library names why): there is no partition, no fiber and no grown
-        # cell to carry on, so the recursion stops here and says why, with
-        # the level and its relaxation kept
-        record = {
-            "tick": index,
-            "level": level_fields,
-            "relaxation": relaxation,
-            "partition": {"failed": str(error)},
-            "summary": {
-                "held_cut_monopole_numbers": (
-                    [cut_before, held["monopole_number_after"]] if declared
-                    else None),
-                "bulk_monopole_numbers_before": bulk_before,
-                "bulk_monopole_numbers_after": level_fields[
-                    "bulk_monopole_numbers_after"],
-                "regge_structurally_zero": relaxation[
-                    "regge_structurally_zero"],
-                "rule_shift_on_level": max(
-                    (r["relative_shift"] for r in level_fields["rule_shift"]),
-                    default=None),
-                "response_vertices": 0, "interactions": 0,
-                "grown_cells": 0, "failed_cells": 0,
-                "rejected_cells": 0, "row_sum_defects": []},
-            "reads": [],
-            "stopped": "the recursion's turn has no value: %s" % error,
-            "seconds": time.time() - started,
-        }
-        return record, None
-    partition, rejected = persistent_components(
-        level, base["edges"], config["persistence_required"])
-    stage = interaction_stage(base, partition, config)
-    frames, pairs = stage["frames"], stage["pairs"]
-    transports = stage["transports"]
-    reads, next_z, next_links = stage["reads"], stage["z"], stage["links"]
-    spread, groupoid = stage["spread"], stage["groupoid"]
-    kept = [r for r in reads if "failed" not in r and "rejected" not in r]
-    gated = [r for r in reads if "rejected" in r]
-    record = {
-        "tick": index,
-        "level": level_fields,
-        "relaxation": relaxation,
-        "partition": level_record(level),
-        "response_components": partition,
-        "rejected_components": rejected,
-        "fibers": {
-            "pairing_defect": [f["pairing_defect"] for f in stage["fibers"]],
-            "isolation_gap": [f["isolation_gap"] for f in stage["fibers"]],
-            "projector_idempotency": [
-                f["projector_idempotency"] for f in stage["fibers"]],
-            "invariant_subspace_residual": [
-                f["invariant_subspace_residual"] for f in stage["fibers"]],
-            "accepted": [f["accepted"] for f in stage["fibers"]],
-            "restriction_determinant": [
-                f["restriction_determinant"] for f in stage["fibers"]],
-            "dual_eigenvalue_mismatch": [
-                f["dual_eigenvalue_mismatch"] for f in stage["fibers"]],
-        },
-        "locality": stage["locality"],
-        "interactions": sorted(pairs),
-        "transport_norms": {"%d-%d" % p: float(np.linalg.norm(
-            transports[p])) for p in sorted(pairs)},
-        "grown_cells": reads,
-        "grown_edges": {
-            "%d-%d" % e: {"squared_length": next_z[e],
-                          "cell_spread": spread[e],
-                          "connection": next_links[e],
-                          "groupoid_defect": groupoid[e]}
-            for e in sorted(next_z)},
-    }
+        base = base_operator(cells, base_z, base_links)
+        level["operator_certificates"] = base["certificates"]
+        step = "the recursion's turn has no value"
+        turn = recursion_turn(base["operator"], config)
+        turn_record = level_record(turn)
+        partition, rejected = persistent_components(
+            turn, base["edges"], config["persistence_required"])
+    except bp.NO_VALUE_ERRORS as error:
+        # there is no partition, no fiber and no grown cell to carry on, so
+        # the recursion stops here and says why, with the level, its
+        # relaxation and the reads of its cells kept
+        record["partition"] = {"failed": str(error)}
+        record["stopped"] = "%s: %s" % (step, error)
+    else:
+        record["partition"] = turn_record
+        record["response_components"] = partition
+        record["rejected_components"] = rejected
+        try:
+            stage = interaction_stage(base, partition, config)
+            fibers = stage["fibers"]
+            interaction = {
+                "response_components": stage["partition"],
+                "failed_components": stage["failed_components"],
+                "fibers": {key: [f[key] for f in fibers] for key in (
+                    "pairing_defect", "isolation_gap",
+                    "projector_idempotency", "invariant_subspace_residual",
+                    "accepted", "restriction_determinant",
+                    "dual_eigenvalue_mismatch")},
+                "locality": stage["locality"],
+                "interactions": sorted(stage["pairs"]),
+                "transport_norms": {
+                    "%d-%d" % p: float(np.linalg.norm(
+                        stage["transports"][p]))
+                    for p in sorted(stage["pairs"])},
+                "grown_cells": stage["reads"],
+                "grown_edges": {
+                    "%d-%d" % e: {"squared_length": stage["z"][e],
+                                  "cell_spread": stage["spread"][e],
+                                  "connection": stage["links"][e],
+                                  "groupoid_defect": stage["groupoid"][e]}
+                    for e in sorted(stage["z"])},
+            }
+        except bp.NO_VALUE_ERRORS as error:
+            stage = None
+            record["interaction"] = {"failed": str(error)}
+            record["stopped"] = ("the interaction stage has no value: %s"
+                                 % error)
+        else:
+            record.update(interaction)
+
+    # the reads of the level's cells need its cells and its fields alone
     reads_config = dict(config)
     reads_config["hold_cell_sectors"] = declared
     record["reads"] = cell_reads(cells, base_z, base_links, reads_config)
-    record["summary"] = {
+
+    grown = stage["reads"] if stage is not None else []
+    kept = [r for r in grown if "failed" not in r and "rejected" not in r]
+    summary = _counts()
+    summary.update({
         "held_cut_monopole_numbers": (
             [cut_before, held["monopole_number_after"]] if declared
             else None),
         "bulk_monopole_numbers_before": bulk_before,
-        "bulk_monopole_numbers_after": record["level"][
-            "bulk_monopole_numbers_after"],
+        "bulk_monopole_numbers_after": level["bulk_monopole_numbers_after"],
         "regge_structurally_zero": relaxation["regge_structurally_zero"],
         "rule_shift_on_level": max(
-            (r["relative_shift"] for r in record["level"]["rule_shift"]),
+            (r["relative_shift"] for r in level["rule_shift"] or []),
             default=None),
-        "rejected_components": len(rejected),
-        "response_vertices": len(frames),
-        "interactions": len(pairs),
-        "grown_cells": len(kept),
-        "failed_cells": sum(1 for r in reads if "failed" in r),
-        "rejected_cells": len(gated),
-        "row_sum_defects": [r["row_sum_defect"] for r in kept],
+        "operator_certificates_hold": (
+            all(c["holds"] for c in level["operator_certificates"].values())
+            if "operator_certificates" in level else None),
+        "rejected_components": len(record.get("rejected_components") or []),
+        "failed_components": len(record.get("failed_components") or []),
+        "failed_read_cells": sum(1 for cell in record["reads"]
+                                 if "failed" in cell),
         "quark_verdicts": [[_verdict_summary(c) for c in cell["contents"]]
                            for cell in record["reads"]],
         "isospin_doublet": [[_doublet_summary(c) for c in cell["contents"]]
@@ -1445,17 +1656,29 @@ def tick(index, cells, z, links, config):
                         quartic_truncation=_truncation_summary(c))
                    for c in cell["contents"]]
                   for cell in record["reads"]],
-    }
-    record["seconds"] = time.time() - started
+    })
+    if stage is not None:
+        summary.update({
+            "response_vertices": len(stage["frames"]),
+            "interactions": len(stage["pairs"]),
+            "grown_cells": len(kept),
+            "failed_cells": sum(1 for r in grown if "failed" in r),
+            "rejected_cells": sum(1 for r in grown if "rejected" in r),
+            "row_sum_defects": [r["row_sum_defect"] for r in kept],
+        })
+    record["summary"] = summary
+    if "stopped" in record:
+        return None
     if not kept:
         record["stopped"] = ("no grown 3-simplex: the flag complex of the "
                              "interaction graph has no four pairwise "
                              "interacting response vertices whose cell "
                              "could be glued")
-        return record, None
+        return None
+    next_z, next_links = stage["z"], stage["links"]
     used = sorted({v for r in kept for v in r["vertices"]})
     relabel = {v: i for i, v in enumerate(used)}
-    record["lineage"] = {str(v): relabel.get(v) for v in range(len(frames))}
+    lineage = {v: relabel.get(v) for v in range(len(stage["frames"]))}
     next_cells = [[relabel[v] for v in r["vertices"]] for r in kept]
     kept_edges = {tuple(sorted(e)) for r in kept
                   for e in itertools.combinations(r["vertices"], 2)}
@@ -1464,17 +1687,38 @@ def tick(index, cells, z, links, config):
     z_out = {e: next_z[src] for e, src in next_edges.items()}
     links_out = {e: next_links[src] for e, src in next_edges.items()}
     # the combinatorial moves on the grown base, before it is the next level
-    next_cells, z_out, links_out, record["pachner"] = pachner_stage(
-        next_cells, z_out, links_out, config)
+    before = {"vertices": len(used), "edges": len(z_out),
+              "cells": len(next_cells)}
+    try:
+        moved_cells, moved_z, moved_links, pachner = pachner_stage(
+            next_cells, z_out, links_out, config)
+    except bp.NO_VALUE_ERRORS as error:
+        # the search over the moves has no value on this base: the grown
+        # base is the next level as it is, and the record says why
+        pachner = {"failed": str(error),
+                   "updates": int(config.get("pachner_updates", 0)),
+                   "before": before, "after": dict(before), "changed": False}
+    else:
+        next_cells, z_out, links_out = moved_cells, moved_z, moved_links
+    record["pachner"] = pachner
+    # a response vertex's lineage names a vertex of the next level, so it
+    # takes the labels the growth step's moves leave (None for a vertex a
+    # move removed)
+    labels = pachner.get("vertex_relabeling")
+    record["lineage"] = {
+        str(v): (label if labels is None or label is None
+                 else labels.get(str(label)))
+        for v, label in lineage.items()}
     record["summary"]["pachner"] = {
-        "updates": record["pachner"]["updates"],
-        "changed": record["pachner"]["changed"],
-        "cells": [record["pachner"]["before"]["cells"],
-                  record["pachner"]["after"]["cells"]],
-        "objective": [record["pachner"].get("objective_before"),
-                      record["pachner"].get("objective_after")],
+        "updates": pachner["updates"],
+        "changed": pachner["changed"],
+        "cells": [pachner["before"]["cells"], pachner["after"]["cells"]],
+        "objective": [pachner.get("objective_before"),
+                      pachner.get("objective_after")],
     }
-    return record, (next_cells, z_out, links_out)
+    if "failed" in pachner:
+        record["summary"]["pachner"]["failed"] = pachner["failed"]
+    return next_cells, z_out, links_out
 
 
 
@@ -1575,7 +1819,11 @@ def drive(config, progress=False, on_frame=None, stop_requested=None,
           points_file=None):
     """Every tick. `on_frame(frames, index)` is called after each tick with
     the completed ticks; with `points_file` the configuration and the host are
-    its first line and every tick is appended the moment it completes."""
+    its first line and every tick is appended the moment it completes. A tick
+    that ends on an error which is not one of
+    `baryon_poles.NO_VALUE_ERRORS` is a defect of the code: what the tick
+    reached (the ``tick_record`` the error carries) is appended to the
+    points file, and the error is raised."""
     cells, z, links, connection = level_zero(config)
     host = {
         "cells": cells,
@@ -1598,7 +1846,13 @@ def drive(config, progress=False, on_frame=None, stop_requested=None,
         if stop_requested is not None and stop_requested():
             stopped = True
             break
-        record, state = tick(index, *state, config)
+        try:
+            record, state = tick(index, *state, config)
+        except Exception as error:
+            reached = getattr(error, "tick_record", None)
+            if reached is not None and points_file is not None:
+                _append_line(points_file, _reached(reached))
+            raise
         frames.append(record)
         if points_file is not None:
             _append_line(points_file, record)
@@ -1624,10 +1878,30 @@ def drive(config, progress=False, on_frame=None, stop_requested=None,
             "stopped": stopped}
 
 
+def _reached(record):
+    """What a tick reached before it ended on an error, as the points file
+    can hold it: the record with every entry that has no JSON form replaced
+    by its `repr`."""
+    def plain(value):
+        value = _jsonable(value)
+        if isinstance(value, dict):
+            return {key: plain(entry) for key, entry in value.items()}
+        if isinstance(value, list):
+            return [plain(entry) for entry in value]
+        if value is None or isinstance(value, (bool, int, float, str)):
+            return value
+        return repr(value)
+    return plain(record)
+
+
 def _notices(record):
-    """What a tick left out or refused, by name: a Regge term that is zero by
-    structure, components rejected for persistence, and grown cells rejected
-    by the manifold gate."""
+    """What a tick left out or flagged, by name: a Regge term that is zero
+    by structure, reads of the relaxed level that have no value, a
+    covariance certificate of the level's operator that does not hold,
+    components
+    rejected for persistence, components whose fiber has no value, grown
+    cells left unattached by the manifold gate, cells whose read has no
+    value, and a growth step whose search has no value."""
     lines = []
     relaxation = record.get("relaxation", {})
     if relaxation.get("regge_structurally_zero"):
@@ -1642,10 +1916,37 @@ def _notices(record):
             "%d required resolutions"
             % (rejected["component"], ", ".join(rejected["edges"]),
                rejected["persistence"], rejected["required"]))
+    for key, reason in sorted(((record.get("level") or {})
+                               .get("without_value") or {}).items()):
+        lines.append("the level's %s has no value: %s" % (key, reason))
+    for name, certificate in sorted(((record.get("level") or {})
+                                     .get("operator_certificates")
+                                     or {}).items()):
+        if not certificate["holds"]:
+            lines.append(
+                "the covariance certificate of the level's operator (%s) "
+                "does not hold at the tolerance %.3g, and the level is read "
+                "on it as built: %s"
+                % (name.replace("_", " "), certificate["tolerance"],
+                   "; ".join(certificate["failed"])
+                   or "the library names no property"))
+    for failed in record.get("failed_components", []):
+        lines.append("component %d (edges %s) is not a response vertex: its "
+                     "fiber has no value: %s"
+                     % (failed["component"], ", ".join(failed["edges"]),
+                        failed["failed"]))
     for cell in record.get("grown_cells", []):
         if "rejected" in cell:
             lines.append("grown cell %s rejected by the manifold gate: %s"
                          % (cell["vertices"], cell["rejected"]))
+    for cell in record.get("reads") or []:
+        if "failed" in cell:
+            lines.append("host cell %s has no read: %s"
+                         % (cell["cell"], cell["failed"]))
+    if "failed" in (record.get("pachner") or {}):
+        lines.append("the growth step's search over the Pachner moves has no "
+                     "value, and the grown base is the next level as it is: "
+                     "%s" % record["pachner"]["failed"])
     return lines
 
 
@@ -1893,12 +2194,18 @@ def render(result, path):
 
 
 def summary(result):
-    """Every tick as text. A tick that stopped says why: a relaxation the
-    library refused is one line, and a tick whose turn of the Section 15 box
-    has no value is reported up to its relaxation, then its stop."""
+    """Every tick as text. A tick that stopped says why: a level with no
+    value as built and a relaxation the library refused are one line each;
+    a tick whose operator, turn of the Section 15 box or interaction stage
+    has no value is reported with its level, its relaxation, what it read
+    before the stop and the reads of its cells, then its stop."""
     lines = ["mode: controlled synthesis; host monopole numbers %s"
              % result["host"]["monopole_numbers"]]
     for record in result["ticks"]:
+        if "relaxation" not in record:
+            lines.append("tick %d: stopped: %s"
+                         % (record["tick"], record.get("stopped")))
+            continue
         if "failed" in record["relaxation"]:
             lines.append("tick %d: the relaxation was refused: %s"
                          % (record["tick"], record["relaxation"]["failed"]))
@@ -1917,6 +2224,11 @@ def summary(result):
                if "stop_reason" in record["relaxation"] else "",
                level.get("bulk_monopole_numbers_before"),
                level.get("bulk_monopole_numbers_after")))
+        if level.get("cells_before") not in (None, level.get("cells")):
+            lines.append(
+                "  committed moves changed the level's cells: the numbers "
+                "before are of the cells %s, those after of the cells %s"
+                % (level["cells_before"], level["cells"]))
         lines += bp.term_trace_lines(record["relaxation"], "    ")
         held = level.get("held_cut") or {}
         if held.get("faces"):
@@ -1926,21 +2238,21 @@ def summary(result):
                    held.get("monopole_number_after")))
         for line in _notices(record):
             lines.append("  " + line)
-        p = record["partition"]
-        if "failed" in p:
-            lines.append("  stopped: " + record["stopped"])
-            continue
-        lines.append(
-            "  partition %s at resolution %g; fibers accepted %s; isolation "
-            "gaps %s; determinant residual %.3g"
-            % ([len(c) for c in p["partition"]], p["selected_resolution"],
-               p["bands_accepted"],
-               ["%.3g" % g for g in p["isolation_gaps"]],
-               p["determinant_residual"]))
-        lines.append(
-            "  %d response vertices, %d interactions, %d grown cells"
-            % (s["response_vertices"], s["interactions"], s["grown_cells"]))
-        for cell in record["grown_cells"]:
+        p = record.get("partition") or {}
+        if p and "failed" not in p:
+            lines.append(
+                "  partition %s at resolution %g; fibers accepted %s; "
+                "isolation gaps %s; determinant residual %.3g"
+                % ([len(c) for c in p["partition"]],
+                   p["selected_resolution"], p["bands_accepted"],
+                   ["%.3g" % g for g in p["isolation_gaps"]],
+                   p["determinant_residual"]))
+        if "grown_cells" in record:
+            lines.append(
+                "  %d response vertices, %d interactions, %d grown cells"
+                % (s["response_vertices"], s["interactions"],
+                   s["grown_cells"]))
+        for cell in record.get("grown_cells", []):
             if "failed" in cell:
                 lines.append("    cell %s failed: %s" % (cell["vertices"],
                                                          cell["failed"]))
@@ -2005,10 +2317,14 @@ def read_lines(record):
     (content, doublet content) pair with both spins and both columns
     (`baryon_poles.pair_line`); then the cell's labelled "lowest over" minima
     (`baryon_poles.lowest_lines`) and its ratios with the pairs they compare
-    (`baryon_poles.ratio_lines`)."""
+    (`baryon_poles.ratio_lines`). A cell whose read has no value is one line
+    with the reason."""
     lines = []
     for cell in record.get("reads") or []:
         prefix = "host cell %s " % (cell["cell"],)
+        if "failed" in cell:
+            lines.append("    %sno value: %s" % (prefix, cell["failed"]))
+            continue
         for c in cell["contents"]:
             lines.append("    " + _content_line(cell, c))
             lines += bp.term_trace_lines(c.get("relaxation"), "        ")

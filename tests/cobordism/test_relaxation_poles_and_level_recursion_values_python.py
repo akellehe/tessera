@@ -103,7 +103,7 @@ def test_the_run_level_is_stationary_as_built():
     record = R.relax_level(spacetime, config,
                            R.cut_sectors(cut, number, count))
     assert number == RUN.LEVEL_ZERO_CUT_MONOPOLE_NUMBER
-    assert record["converged"] and record["iterations"] == 0
+    assert record["converged"] and record["accepted_updates"] == 0
     assert record["stop_reason"] == "converged"
     assert record["moves_committed"] == 0 and not record["changed"]
     assert record["residual"] == record["initial_residual"]
@@ -129,7 +129,7 @@ def test_the_held_cut_is_kept_and_the_bulk_face_relaxes():
     cut = R.bounding_cut(cells)
     record = R.relax_level(spacetime, config,
                            R.cut_sectors(cut, 2, count))
-    assert record["converged"] and record["iterations"] == 3
+    assert record["converged"] and record["accepted_updates"] == 3
     assert record["residual_trace"][0] == pytest.approx(0.32304044103498514,
                                                         rel=1e-9)
     assert record["residual"] < 1e-14

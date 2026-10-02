@@ -171,7 +171,7 @@ def test_the_held_cut_keeps_its_monopole_number_through_relaxation():
     assert not report["converged"]
     assert report["stop_reason"] == \
         "no move and no scaled step lowers the residual norm"
-    assert report["iterations"] == 6 and report["moves_committed"] == 0
+    assert report["accepted_updates"] == 6 and report["moves_committed"] == 0
     assert report["initial_residual"] == pytest.approx(1.1474344287453948,
                                                        rel=1e-9)
     assert report["residual"] == pytest.approx(1.142131802188529, rel=1e-6)
@@ -188,7 +188,7 @@ def test_the_held_cut_keeps_its_monopole_number_through_relaxation():
     # without the hold the same relaxation leaves the sector
     free, _ = R.build_level(cells, z, links)
     released = R.relax_level(free, config)
-    assert released["residual"] < 1e-14 and released["iterations"] == 9
+    assert released["residual"] < 1e-14 and released["accepted_updates"] == 9
     assert released["undefined_points"] == 0
     assert R.cut_monopole_number(cut, R.sheet_fields(free, vertices)[0][1]) \
         == -1

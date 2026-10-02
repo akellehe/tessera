@@ -205,7 +205,7 @@ def test_a_relaxation_records_the_terms_only_when_asked():
         assert [t["name"] for t in terms] == TERMS + SUMS
     # the same drive either way: recording changes nothing
     assert traced["residual_trace"] == silent["residual_trace"]
-    assert traced["iterations"] == silent["iterations"] == 12
+    assert traced["accepted_updates"] == silent["accepted_updates"] == 12
     assert traced["moves_committed"] == 0 and not traced["converged"]
     assert traced["stop_reason"] == cs.STOP_STATIONARY
     assert traced["jacobian_ranks"] == [9] * 12 + [3] * 3
