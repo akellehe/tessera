@@ -5185,6 +5185,12 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
            "the block order of the Jacobian's rows.")
       .def("equation_count", &HolomorphicRelaxation::equationCount)
       .def("variable_count", &HolomorphicRelaxation::variableCount)
+      .def("variable_scales", &HolomorphicRelaxation::variableScales,
+           "The scale of every variable in the order of the Jacobian's "
+           "columns: the modulus of the squared length a length coordinate "
+           "carries (one when it is zero), and one for a link's increment "
+           "and a multiplier. The linearized system is decomposed with its "
+           "rows and columns multiplied by these.")
       .def("newton_step", &HolomorphicRelaxation::newtonStep,
            "The step that solves the system to first order about the current "
            "point (HolomorphicNewtonStep): the minimum-norm least-squares "

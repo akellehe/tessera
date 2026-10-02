@@ -497,8 +497,11 @@ struct SelfConsistentMeanFieldReport {
   std::size_t jacobianSize = 0;
   /// The rank of the joint Jacobian (the Jacobian of the self-consistent
   /// force, the covariance rebuilt at every node) at the point the solve
-  /// stopped at, decided at the geometry declaration's rank tolerance. The
-  /// gauge directions are its expected null space.
+  /// stopped at, decided at the geometry declaration's rank tolerance on
+  /// the Jacobian with its rows and columns multiplied by the variables'
+  /// scales (`HolomorphicRelaxation::variableScales`), as the step's is. The
+  /// gauge directions are its expected null space. The singular values
+  /// below are those of the scaled Jacobian.
   std::size_t jacobianRank = 0;
   /// Its largest singular value.
   double largestSingularValue = 0.0;

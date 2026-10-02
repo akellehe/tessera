@@ -159,11 +159,12 @@ struct HolomorphicRelaxationDeclaration {
   /// fixed external source.
   bool relaxMultipliers = true;
 
-  /// The relative threshold below which a singular value of the Jacobian counts
-  /// as zero in the minimum-norm solve of the linearized system: the rank is the
-  /// number of singular values \f$ \sigma_i>\tau\,\sigma_{\max} \f$, decided
-  /// on the singular values themselves and not on a pivoted-QR diagonal,
-  /// whose magnitudes only bracket them. The rank of the held faces'
+  /// The relative threshold below which a singular value of the scaled
+  /// Jacobian (`HolomorphicRelaxation::variableScales`) counts as zero in the
+  /// minimum-norm solve of the linearized system: the rank is the number of
+  /// singular values \f$ \sigma_i>\tau\,\sigma_{\max} \f$, decided on the
+  /// singular values themselves and not on a pivoted-QR diagonal, whose
+  /// magnitudes only bracket them. The rank of the held faces'
   /// coboundary, whose kernel is the link-modulus directions the held
   /// sectors leave free, is decided at the same threshold relative to that
   /// matrix's largest singular value.
@@ -275,8 +276,10 @@ struct HolomorphicNewtonStep {
   std::vector<std::complex<double>> step;
   /// \f$ \lVert R\rVert_2 \f$ at the point.
   double residualNorm = 0.0;
-  /// The numerical rank of \f$ J \f$: the number of its singular values above
-  /// `rankTolerance` times the largest.
+  /// The numerical rank of the scaled Jacobian \f$ DJD \f$
+  /// (`HolomorphicRelaxation::variableScales`): the number of its singular
+  /// values above `rankTolerance` times the largest. The singular values
+  /// reported below are those of \f$ DJD \f$.
   std::size_t jacobianRank = 0;
   /// The declared relative threshold of the rank decisions
   /// (`HolomorphicRelaxationDeclaration::rankTolerance`).
@@ -398,6 +401,23 @@ class HolomorphicLinearization {
 /// that keep the held moduli
 /// (`HolomorphicRelaxationDeclaration::heldSectors`).
 ///
+/// ## The units of the linearized system
+///
+/// The Jacobian's blocks carry different units: a length row is
+/// \f$ \partial S/\partial z \f$ and a length column multiplies a step of
+/// \f$ z \f$, while the link and multiplier rows and columns are
+/// dimensionless. On a cell whose squared lengths are of order
+/// \f$ 10^{9} \f$ the length blocks are \f$ 10^{-9} \f$ and
+/// \f$ 10^{-18} \f$ of the link block, and a rank decision on \f$ J \f$
+/// itself would count every singular value that involves a length as zero.
+/// The equation \f$ J\,d=-R \f$ is therefore solved as
+/// \f$ (DJD)\,y=-DR \f$, \f$ d=Dy \f$, with \f$ D \f$ the diagonal of
+/// `variableScales`: the modulus of the squared length for a length
+/// coordinate, one otherwise. Its length rows are \f$ |z|\,\partial S/
+/// \partial z \f$ and its length unknowns are \f$ dz/|z| \f$. It is the
+/// same equation, so where \f$ J \f$ has full rank the step is the same;
+/// the rank decision and the minimum norm are those of the scaled equation.
+///
 /// ## The Jacobian
 ///
 /// The Jacobian of the stationarity system is assembled analytically
@@ -513,6 +533,14 @@ class HolomorphicRelaxation {
   /// @throws std::invalid_argument, std::domain_error or std::runtime_error
   ///   when the residual or the Jacobian has no value at the point.
   [[nodiscard]] HolomorphicNewtonStep newtonStep() const;
+
+  /// The scale of every variable, in the order of `jacobian`'s columns: for
+  /// a relaxed squared length, the modulus of the squared length its
+  /// coordinate carries (the largest over the edges of a declared class; one
+  /// when every one of them is zero); one for a link's increment and for a
+  /// multiplier. The linearized system is decomposed with its rows and
+  /// columns multiplied by these (see the class documentation).
+  [[nodiscard]] std::vector<double> variableScales() const;
 
   /// The system linearized at the current point, for solves against several
   /// right-hand sides (`HolomorphicLinearization`). \p addedResidual and

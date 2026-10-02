@@ -613,7 +613,16 @@ void readJointJacobian(const JointAction &action,
   if (size == 0) return;
   const std::vector<complexd> flat = relaxation.jacobian();
   const Eigen::MatrixXcd jacobian = toMatrix(flat);
-  const Eigen::JacobiSVD<Eigen::MatrixXcd> svd(jacobian);
+  // The rank is read as the step's is: on the Jacobian with its rows and
+  // columns multiplied by the variables' scales
+  // (`HolomorphicRelaxation::variableScales`).
+  const std::vector<double> scales = relaxation.variableScales();
+  Eigen::VectorXd scale(static_cast<Eigen::Index>(size));
+  for (std::size_t index = 0; index < size; ++index)
+    scale(static_cast<Eigen::Index>(index)) = scales[index];
+  const Eigen::MatrixXcd scaled =
+      scale.asDiagonal() * jacobian * scale.asDiagonal();
+  const Eigen::JacobiSVD<Eigen::MatrixXcd> svd(scaled);
   const Eigen::VectorXd &singular = svd.singularValues();
   const double largest = singular.size() > 0 ? singular(0) : 0.0;
   Eigen::Index rank = 0;
