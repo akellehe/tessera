@@ -54,6 +54,9 @@ TOLERANCES = {
     "isospin_hermiticity_tolerance": 1e-12,
     "isospin_transport_leakage_tolerance": 1e-1,
     "isospin_intertwining_tolerance": 1e-6,
+    # the run compared no remainder of the quartic's expansion with a
+    # tolerance; one is the remainder as large as the term it follows
+    "truncation_tolerance": 1.0,
 }
 
 #: The run's coupling of the holonomy term, and the relative size below which
@@ -152,7 +155,3 @@ CONDITION_TWO_RECORD = {
     ],
 }
 
-#: The contents the run refused on host cell (0, 1, 2, 3), each with
-#: "SelfConsistentMeanField: band 2 has rank 2 and cannot hold the declared
-#: occupation 3.000000".
-REFUSED_ON_FIRST_CELL = [(0, 0, 3), (0, 3, 0), (3, 0, 0)]
