@@ -109,8 +109,9 @@ At level l (a complex K_l of three sheets of a base complex):
    emergence under the joint stationarity objective, the four Pachner kinds
    alone (no cone-out, cone-in or disposition move), run as the emergence
    driver runs its stage 1 but over every candidate move of the base
-   rather than a drawn sample (``--pachner-updates``, ``--pachner-depth``;
-   zero updates run none); the next level is built from the base that comes
+   rather than a drawn sample (``--pachner-updates``, ``--pachner-depth``,
+   ``--pachner-length``; zero updates run none); the next level is built
+   from the base that comes
    back;
 5. the reads, behind the certificate firewall: every tetrahedron of the base
    of K_l, read as a three-sheeted host of its own (``baryon_poles``), gives
@@ -203,9 +204,13 @@ DECLARED_BAND_RANK = 1
 #: (`emergence.DECLARED_STAGE1_ITERS`, `DECLARED_COMBINATORIAL_DEPTH`). Every
 #: update scores every candidate move of the base (the library's complete
 #: walk, `enumerate_move_specifications`), so no candidate count and no seed
-#: is declared. Zero updates run no move.
+#: is declared. Zero updates run no move. The length is the emergence
+#: driver's alternative schedule (`emergence.DECLARED_COMBINATORIAL_LENGTH`):
+#: sequences of exactly that many moves searched first, backing off one move
+#: at a time; zero keeps the deepening schedule of the depth.
 DECLARED_PACHNER_UPDATES = 1
 DECLARED_PACHNER_DEPTH = 1
+DECLARED_PACHNER_LENGTH = 0
 #: The degrees the joint stationarity objective is declared over on the base:
 #: the register degree and the Hodge degrees, the emergence driver's
 #: (`emergence.DECLARED_REGISTER_DEGREES`, `DECLARED_HODGE_DEGREES`).
@@ -574,6 +579,10 @@ def relax_level(spacetime, config, sectors=None, count=None):
         "residual": residual,
         "iterations": int(drive["accepted_updates"]),
         "moves_committed": int(drive["moves_committed"]),
+        "pachner_moves": bool(drive["moves"]),
+        "combinatorial_depth": int(drive["combinatorial_depth"]),
+        "combinatorial_length": int(drive["combinatorial_length"]),
+        "candidate_moves": int(drive["candidate_moves"]),
         "complex_before": drive["complex_before"],
         "complex_after": drive["complex_after"],
         "changed": bool(drive["changed"]),
@@ -1170,7 +1179,10 @@ def pachner_stage(cells, z, links, config):
     than a drawn sample: ``pachner_updates`` updates, each scoring every
     move and committing the best that lowers the objective by more than the
     config's ``move_tolerance``, deepening to ``pachner_depth``-move
-    sequences when no single move does. A proposed geometry is admissible
+    sequences when no single move does, or, with a ``pachner_length`` above
+    zero, searching sequences of exactly that many moves first and backing
+    off one move at a time (the two schedules are alternatives,
+    `cell_solve.checked_schedule`). A proposed geometry is admissible
     when its Kontsevich-Segal margin is at least minus the config's
     ``admissibility_tolerance``. The walk is
     complete and reproducible, so there is no seed. The base is one sheet;
@@ -1179,9 +1191,11 @@ def pachner_stage(cells, z, links, config):
     its vertices relabeled 0..n-1 (``vertex_relabeling`` in the record), with
     the stage's record; zero updates return the base as it is."""
     updates = int(config.get("pachner_updates", 0))
-    depth = int(config.get("pachner_depth", DECLARED_PACHNER_DEPTH))
+    depth, length = cell_solve.checked_schedule(
+        config.get("pachner_depth", DECLARED_PACHNER_DEPTH),
+        config.get("pachner_length", DECLARED_PACHNER_LENGTH))
     record = {
-        "updates": updates, "depth": depth,
+        "updates": updates, "depth": depth, "length": length,
         "candidates": "every candidate move of the base, scored in full",
         "moves": ("the four Pachner kinds; no cone-out, cone-in or "
                   "disposition move"),
@@ -1210,7 +1224,8 @@ def pachner_stage(cells, z, links, config):
     record["objective_before"] = float(node.objective())
     record["trace"] = [float(value) for value in node.run_stage1(
         max_steps=updates, n_candidate_moves=0,
-        grow_boundaries=False, max_lookahead=depth, combinatorial_breadth=0)]
+        grow_boundaries=False, max_lookahead=depth,
+        combinatorial_breadth=length)]
     record["objective_after"] = float(node.objective())
     cells_out, z_out, links_out, relabel = base_fields(node.spacetime())
     record["vertex_relabeling"] = {str(v): relabel[v]
@@ -1479,7 +1494,8 @@ def default_config(ticks=DECLARED_TICKS, tetrahedra=DECLARED_TETRAHEDRA,
                    fiber_pinning=bp.DECLARED_FIBER_PINNING, tolerances=None,
                    trace_terms=False,
                    pachner_updates=DECLARED_PACHNER_UPDATES,
-                   pachner_depth=DECLARED_PACHNER_DEPTH, limits=None,
+                   pachner_depth=DECLARED_PACHNER_DEPTH,
+                   pachner_length=DECLARED_PACHNER_LENGTH, limits=None,
                    villain_order=bp.DECLARED_VILLAIN_ORDER, solve=None):
     """The declared configuration, recorded with every run. ``max_cells``
     limits how many tetrahedra per tick are read as hosts, for quick checks;
@@ -1537,6 +1553,7 @@ def default_config(ticks=DECLARED_TICKS, tetrahedra=DECLARED_TETRAHEDRA,
                    "only if the complex stays a manifold with boundary"),
         "pachner_updates": int(pachner_updates),
         "pachner_depth": int(pachner_depth),
+        "pachner_length": int(pachner_length),
         "pachner_stage": ("stage-1 updates of MultiCobordism on each grown "
                           "level's base (one sheet) under the joint "
                           "stationarity objective, the four Pachner kinds "
@@ -2056,6 +2073,14 @@ def build_parser():
                      help="how many moves deep the search goes when no single "
                           "move lowers the objective (default %d)"
                           % DECLARED_PACHNER_DEPTH)
+    run.add_argument("--pachner-length", type=int,
+                     default=DECLARED_PACHNER_LENGTH,
+                     help="a fixed composition length for the growth step's "
+                          "search: sequences of exactly this many moves are "
+                          "searched first, backing off one move at a time; "
+                          "the alternative to --pachner-depth, 0 keeps the "
+                          "deepening schedule (default %d)"
+                          % DECLARED_PACHNER_LENGTH)
     run.add_argument("--json", default=None,
                      help="write every record here at the end; each tick is "
                           "also appended, as it completes, to "
@@ -2089,7 +2114,8 @@ def main(argv=None):
         fiber_pinning=args.fiber_pinning,
         tolerances=bp.tolerances_from(args), trace_terms=args.trace_terms,
         pachner_updates=args.pachner_updates,
-        pachner_depth=args.pachner_depth, limits=bp.limits_from(args),
+        pachner_depth=args.pachner_depth,
+        pachner_length=args.pachner_length, limits=bp.limits_from(args),
         solve=bp.solve_options_from(args),
         villain_order=args.villain_order)
     points_file = points_path(args.json) if args.json else None
