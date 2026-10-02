@@ -4698,13 +4698,23 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def_readonly("relative_first_tail",
                     &HolonomyTruncation::relativeFirstTail)
       .def_readonly("relative_second_tail",
-                    &HolonomyTruncation::relativeSecondTail);
+                    &HolonomyTruncation::relativeSecondTail)
+      .def_readonly("uncertified_faces",
+                    &HolonomyTruncation::uncertifiedFaces,
+                    "The number of faces at which |W_M| does not exceed its "
+                    "rounding bound.")
+      .def_readonly("smallest_certificate_margin",
+                    &HolonomyTruncation::smallestCertificateMargin,
+                    "The smallest |W_M| over its rounding bound over the "
+                    "faces.");
 
   py::class_<JointActionDeclaration>(m, "JointActionDeclaration",
       "Everything that fixes which action S(z, U, Gamma) a JointAction is: the "
       "carrier degree, the three coefficients, the carried covariance, the "
       "spectral constraints and the metric source. Plain data.")
       .def(py::init<>())
+      .def(py::init<const JointActionDeclaration &>(), py::arg("other"),
+           "A copy of another declaration.")
       .def_readwrite("carrier_degree", &JointActionDeclaration::carrierDegree,
                      "The simplicial degree k of the one-particle carrier. The "
                      "operator of the action is h = h_k(z, U) and Gamma is a "
@@ -5102,6 +5112,12 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      "The norm of the term's stationarity on the relaxed "
                      "coordinates; for action, the force norm the solve "
                      "reports.");
+
+  m.def("length_coordinate_scales", &lengthCoordinateScales,
+        py::arg("action"), py::arg("declaration"),
+        "The scale of every length coordinate of a system, in the order of "
+        "the Jacobian's length block: the modulus of the squared length the "
+        "coordinate carries (one when it is zero).");
 
   m.def("action_term_records", &actionTermRecords, py::arg("action"),
         py::arg("declaration"),

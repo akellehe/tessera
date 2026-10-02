@@ -677,9 +677,13 @@ def least_squares_multipliers(action, geometry):
     least of the stationarity equations they enter: those equations are
     linear in the multipliers, R = R_0 + G xi, so xi is the minimum-norm
     least-squares solution of G xi = -R_0, the singular values of G at or
-    below the declared rank tolerance times the largest counted as zero. It
-    is the rule `SelfConsistentMeanField.joint_system` installs the pinned
-    fiber's multipliers by."""
+    below the declared rank tolerance times the largest counted as zero.
+    The fit is of the equations in one unit: a length equation dS/dz times
+    the scale of its coordinate (`HolomorphicRelaxation.variable_scales`),
+    as the step's linear solve scales them, so that it is the same fit in
+    every unit of length. It is the rule
+    `SelfConsistentMeanField.joint_system` installs the pinned fiber's
+    multipliers by."""
     count = int(action.constraint_count())
 
     def geometric(multipliers):
@@ -693,12 +697,75 @@ def least_squares_multipliers(action, geometry):
     gradients = np.stack(
         [geometric([1.0 + 0j if k == j else 0j for k in range(count)]) - zero
          for j in range(count)], axis=1)
+    scales = np.asarray(
+        cob.HolomorphicRelaxation(action, geometry).variable_scales(),
+        dtype=float)[:len(zero)]
+    zero = scales * zero
+    gradients = scales[:, None] * gradients
     left, singular, right = np.linalg.svd(gradients, full_matrices=False)
     rank = (int(np.sum(singular > geometry.rank_tolerance * singular[0]))
             if len(singular) and singular[0] > 0.0 else 0)
     estimate = -(right[:rank].conj().T
                  @ ((left[:, :rank].conj().T @ zero) / singular[:rank]))
     return [complex(x) for x in estimate]
+
+
+class ReggeStart:
+    """The geometry the continued Regge sheets of a drive start from
+    (`JointActionDeclaration.regge_start_squared_lengths`): the squared
+    length of every edge of the base complex where the drive began, named by
+    the edge's two base vertices. A system builds a new `JointAction` at
+    every point it scores; each one is declared this start, so the Regge
+    term is read on one continued sheet from the drive's start to its end.
+    An edge a Pachner move creates has no start: at a point that is scored
+    it starts at the squared length it has there, and from the first
+    accepted point that has it, at the squared length it was accepted
+    with."""
+
+    def __init__(self):
+        self._squared = None
+
+    @staticmethod
+    def _of(base):
+        return {(min(a, b), max(a, b)): complex(length * length)
+                for a, b, length, _ in edge_fields(base)}
+
+    def begin(self, base):
+        """The start is the geometry ``base`` holds."""
+        self._squared = self._of(base)
+
+    @property
+    def begun(self):
+        return self._squared is not None
+
+    def accept(self, base):
+        """An accepted point: an edge without a start takes its squared
+        length there."""
+        if self._squared is None:
+            return
+        for edge, squared in self._of(base).items():
+            self._squared.setdefault(edge, squared)
+
+    def declared(self, declaration, support):
+        """A copy of ``declaration`` with the start of every edge of a
+        sheeted support's complex, when a drive has begun and the
+        declaration names no start of its own; ``declaration`` itself
+        otherwise. The declaration given is never written to: one object can
+        be the declaration of every point of a drive, scored from several
+        threads."""
+        if (self._squared is None
+                or len(declaration.regge_start_squared_lengths)):
+            return declaration
+        declaration = cob.JointActionDeclaration(declaration)
+        start = []
+        for a, b, length, _ in edge_fields(support.spacetime):
+            if support.sheets != 1:
+                a = support.base_vertices[a % support.count]
+                b = support.base_vertices[b % support.count]
+            start.append(self._squared.get((min(a, b), max(a, b)),
+                                           complex(length * length)))
+        declaration.regge_start_squared_lengths = start
+        return declaration
 
 
 class GeometricSystem:
@@ -711,18 +778,28 @@ class GeometricSystem:
     fields, the support's edge classes and orientations, the held sectors on
     its sheets). When the declaration relaxes the multipliers of constraints
     the action declares, they are the least-squares ones at every point
-    (`least_squares_multipliers`), as a content's are."""
+    (`least_squares_multipliers`), as a content's are. ``begin(base)``
+    declares the geometry the Regge sheets of a drive start from
+    (`ReggeStart`); `solve` calls it with the complex it is given."""
 
     def __init__(self, declare, geometry_of, sheets):
         self._declare = declare
         self._geometry_of = geometry_of
         self.sheets = int(sheets)
+        self.regge_start = ReggeStart()
+
+    def begin(self, base):
+        """A drive begins at ``base``: its Regge sheets start there."""
+        self.regge_start.begin(base)
+
+    def _action(self, support):
+        return cob.JointAction(support.spacetime, self.regge_start.declared(
+            self._declare(support.spacetime), support))
 
     def point(self, base):
         support = sheeted_support(base, self.sheets)
         geometry = self._geometry_of(support)
-        action = cob.JointAction(support.spacetime,
-                                 self._declare(support.spacetime))
+        action = self._action(support)
         if geometry.relax_multipliers and action.constraint_count() > 0:
             action.set_multipliers(least_squares_multipliers(action,
                                                              geometry))
@@ -733,13 +810,12 @@ class GeometricSystem:
         """An accepted point. Nothing is carried from one to the next; when
         the geometry declaration records terms, every term of the action
         there is returned (`cobordism.action_term_records`)."""
+        self.regge_start.accept(base)
         support = sheeted_support(base, self.sheets)
         geometry = self._geometry_of(support)
         if not geometry.record_terms:
             return None
-        action = cob.JointAction(support.spacetime,
-                                 self._declare(support.spacetime))
-        return cob.action_term_records(action, geometry)
+        return cob.action_term_records(self._action(support), geometry)
 
 
 class ContentSystem:
@@ -758,7 +834,9 @@ class ContentSystem:
     the declared order, and where the pinned fiber's targets and unit are
     read when the declaration gives none: they are numbers of the host, the
     same on every complex afterwards. ``band_reference`` says where the
-    bands are followed from afterwards (`BAND_REFERENCES`)."""
+    bands are followed from afterwards (`BAND_REFERENCES`). The Regge sheets
+    of a drive start at the host (`ReggeStart`), or at the complex
+    ``begin(base)`` is given."""
 
     def __init__(self, declare, mean_field_of, host, sheets,
                  band_reference=DECLARED_BAND_REFERENCE):
@@ -771,6 +849,8 @@ class ContentSystem:
         self.band_reference = band_reference
         self._targets = None
         self._scale = 0.0
+        self.regge_start = ReggeStart()
+        self.regge_start.begin(host)
         field, action, support = self._field(host)
         start = field.iterate()
         declared = self._mean_field_of(support)
@@ -802,10 +882,17 @@ class ContentSystem:
             declaration.fiber_moment_scale = self._scale
         return declaration
 
+    def begin(self, base):
+        """A drive begins at ``base``: its Regge sheets start there."""
+        self.regge_start.begin(base)
+
+    def _action(self, support):
+        return cob.JointAction(support.spacetime, self.regge_start.declared(
+            self._declare(support.spacetime), support))
+
     def _field(self, base):
         support = sheeted_support(base, self.sheets)
-        action = cob.JointAction(support.spacetime,
-                                 self._declare(support.spacetime))
+        action = self._action(support)
         return (cob.SelfConsistentMeanField(
             action, self._declaration(support)), action, support)
 
@@ -838,8 +925,7 @@ class ContentSystem:
     def point(self, base):
         support = sheeted_support(base, self.sheets)
         declaration = self._declaration(support)
-        action = cob.JointAction(support.spacetime,
-                                 self._declare(support.spacetime))
+        action = self._action(support)
         field = cob.SelfConsistentMeanField(action, declaration)
         reference, _ = self._reference(support, action)
         return _point(field.joint_system(reference), declaration.geometry,
@@ -858,6 +944,7 @@ class ContentSystem:
     def accept(self, base):
         """An accepted point: its measurements, and the reference moved to
         its bands when they are followed from the last accepted point."""
+        self.regge_start.accept(base)
         step, cells = self.iterate(base)
         self._covariance = covariance_of(step.bands)
         if self.band_reference == "previous":
@@ -1221,6 +1308,10 @@ def solve(spacetime, system, tolerance=1e-15, move_tolerance=1e-15,
     ``configure(node)`` may declare a pinned region or a spectral-moment
     stiffness on the node before the drive; none is declared otherwise.
 
+    The Regge term is read on the sheets continued from the geometry
+    ``spacetime`` holds when the drive begins (``system.begin``,
+    `ReggeStart`).
+
     Returns the drive's record: the base complex it ended on (``spacetime``;
     a committed move replaces the object), the node and the objective, the
     trace of the residual norm (the engine's; for a drive an error or a
@@ -1233,6 +1324,10 @@ def solve(spacetime, system, tolerance=1e-15, move_tolerance=1e-15,
     and after, and the seconds it took."""
     depth, length = checked_schedule(combinatorial_depth,
                                      combinatorial_length)
+    # the drive begins here: the system's Regge sheets start at this geometry
+    begin = getattr(system, "begin", None)
+    if begin is not None:
+        begin(spacetime)
     objective = StationarityObjective(system, direction_order, series)
     node = cell_node(spacetime, objective)
     node.move_tolerance = move_tolerance
