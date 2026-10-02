@@ -432,7 +432,8 @@ def test_the_options_one_driver_offers_and_the_other_does_not():
     assert flags(bp) - flags(R) == {"--isospin-doublet"}
     assert flags(R) - flags(bp) == {
         "--band-rank", "--contents", "--max-cells", "--pachner-depth",
-        "--pachner-length", "--pachner-objective", "--pachner-updates",
+        "--pachner-candidate-moves", "--pachner-length",
+        "--pachner-objective", "--pachner-updates",
         "--persistence-required",
         "--resolutions", "--tetrahedra", "--ticks"}
     registry = {"--" + key.replace("_", "-") for key, *_ in

@@ -50,9 +50,11 @@ PARTITION_WEIGHT = (
     "gauge group, and the paper says the effective components do not, "
     "https://github.com/akellehe/tessera/issues/1360")
 GROWTH_BRANCH = (
-    "fix(drivers): the growth step scores the Regge term on a branch cut, "
-    "where the sign of a rounding-size imaginary part decides it, "
-    "https://github.com/akellehe/tessera/issues/1361")
+    "under --pachner-objective engine the growth step scores the Regge term "
+    "on the principal sheet, on a branch cut where the sign of a "
+    "rounding-size imaginary part decides it "
+    "(https://github.com/akellehe/tessera/issues/1361); the declared "
+    "objective, joint-action, reads it on the continued sheet")
 BASE_VERTEX = (
     "the twisted incidences and the dressed Whitney metrics transport "
     "between the base vertices b(sigma) = min sigma of two cells along the "
@@ -88,9 +90,17 @@ REPRESENTATIVE = (
     "by the Whitney metric and their magnitude graphs have different "
     "partitions")
 GROWTH_GAUGE = (
-    "the Hodge term of the growth step's objective "
-    "(JointStationarityObjective) changes under a gauge transformation "
-    "whose moduli are not one")
+    "under --pachner-objective engine the Hodge term of the growth step's "
+    "objective (JointStationarityObjective) changes under a gauge "
+    "transformation whose moduli are not one; the declared objective, "
+    "joint-action, does not")
+
+#: The growth step's objectives: the declared one, and the engine's with
+#: the defect a test of it exposes.
+def _objectives(reason):
+    return [pytest.param("joint-action", id="joint-action"),
+            pytest.param("engine", id="engine", marks=pytest.mark.xfail(
+                strict=True, reason=reason))]
 
 
 def _config():
@@ -872,15 +882,16 @@ def test_the_growth_objective_is_the_same_under_a_unit_modulus_gauge():
     assert abs(moved - reference) < 1e-9 * abs(reference)
 
 
-@pytest.mark.xfail(strict=True, reason=GROWTH_GAUGE)
-def test_the_growth_objective_is_the_same_under_a_complex_gauge():
+@pytest.mark.parametrize("objective", _objectives(GROWTH_GAUGE))
+def test_the_growth_objective_is_the_same_under_a_complex_gauge(objective):
     """The objective of the growth step is a function of the level and not
-    of the gauge of its links. Measured on the level grown at tick 0: a
-    gauge transformation whose moduli are not one moves the objective from
-    3.1517 to 3.1600, all of it in the Hodge term (the spectral entropy is
-    read on the singular values of the operator, which a unit-modulus gauge
-    transformation keeps and another does not)."""
-    config = R.default_config()
+    of the gauge of its links. Measured on the level grown at tick 0: the
+    stationarity of the joint action is 33.4178200400092 on the level and
+    on a gauge copy whose moduli are not one; the engine's objective moves
+    from 3.1517 to 3.1600, all of it in the Hodge term (the spectral
+    entropy is read on the singular values of the operator, which a
+    unit-modulus gauge transformation keeps and another does not)."""
+    config = R.default_config(pachner_objective=objective)
     z, links = dict(RUN.GROWN_SQUARED_LENGTHS), dict(RUN.GROWN_LINKS)
     reference = _growth_objective(z, links, config)
     rng = np.random.default_rng(5)
@@ -889,13 +900,16 @@ def test_the_growth_objective_is_the_same_under_a_complex_gauge():
     assert abs(moved - reference) < 1e-9 * abs(reference)
 
 
-@pytest.mark.xfail(strict=True, reason=GROWTH_BRANCH)
-def test_the_growth_objective_does_not_turn_on_a_rounding_of_a_length():
+@pytest.mark.parametrize("objective", _objectives(GROWTH_BRANCH))
+def test_the_growth_objective_does_not_turn_on_a_rounding_of_a_length(
+        objective):
     """The squared lengths of the level grown at tick 0 are real up to
-    rounding on eight of its ten edges. Measured: with those imaginary
-    parts set to zero the objective is 4.0067; with one of them at +1e-16
-    it is 2.91, 2.94, 3.50, 4.24, 4.28 or 8.97, depending on the edge."""
-    config = R.default_config()
+    rounding on eight of its ten edges. Measured: the stationarity of the
+    joint action is the same number whatever the sign of one of those
+    imaginary parts; the engine's objective is 4.0067 with them set to
+    zero, and with one of them at +1e-16 it is 2.91, 2.94, 3.50, 4.24, 4.28
+    or 8.97, depending on the edge."""
+    config = R.default_config(pachner_objective=objective)
     links = dict(RUN.GROWN_LINKS)
     real = {edge: complex(value.real,
                           value.imag if abs(value.imag) > 1e-10 else 0.0)
