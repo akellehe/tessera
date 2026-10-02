@@ -110,7 +110,10 @@ At level l (a complex K_l of three sheets of a base complex):
    each; the level carries their mean and reports their spread. The grown
    base then takes the combinatorial moves of the growth step
    (`pachner_stage`): a stage-1 search of `MultiCobordism` in unforced
-   emergence under the joint stationarity objective, the four Pachner kinds
+   emergence under the declared objective (``--pachner-objective``,
+   `PACHNER_OBJECTIVES`: the engine's joint stationarity objective, or the
+   stationarity of the joint action over the level's sheets), the four
+   Pachner kinds
    alone (no cone-out, cone-in or disposition move), run as the emergence
    driver runs its stage 1 but over every candidate move of the base
    rather than a drawn sample (``--pachner-updates``, ``--pachner-depth``,
@@ -220,6 +223,17 @@ DECLARED_BAND_RANK = 1
 DECLARED_PACHNER_UPDATES = 1
 DECLARED_PACHNER_DEPTH = 1
 DECLARED_PACHNER_LENGTH = 0
+#: The objective the growth step's search scores a base with
+#: (``--pachner-objective``). ``engine`` is `JointStationarityObjective`: the
+#: Regge action in its dual form with every dihedral angle on its principal
+#: sheet, and the Hodge spectral entropies. A grown level whose squared
+#: lengths are real to rounding lies on the cuts of that sheet, where the
+#: sign of an imaginary part at rounding selects the value. ``joint-action``
+#: is the stationarity of the joint action the level's relaxation descends
+#: (`cell_solve.StationarityObjective` over the level's sheets), whose Regge
+#: term is read on the continued sheet and has one value there.
+PACHNER_OBJECTIVES = ("engine", "joint-action")
+DECLARED_PACHNER_OBJECTIVE = "engine"
 #: The degrees the joint stationarity objective is declared over on the base:
 #: the register degree and the Hodge degrees, the emergence driver's
 #: (`emergence.DECLARED_REGISTER_DEGREES`, `DECLARED_HODGE_DEGREES`).
@@ -569,6 +583,27 @@ def base_fields(spacetime):
     return cells, z, links, relabel
 
 
+def level_system(base, config, sectors, sheets):
+    """The stationarity system of the joint action on the sheeted support of
+    a level's base complex (`cell_solve.GeometricSystem`), the declared
+    monopole sectors held on the sheets of ``base`` as it stands, with the
+    configuration that carries them."""
+    host = cell_solve.sheeted_support(base, sheets)
+    held = dict(config)
+    held["held_sectors"] = list(sectors or [])
+    villain_order = bp.declared_villain_order(config)
+
+    def declare(complex_):
+        return bp.action_declaration(
+            complex_, config["kappa"], config["beta"],
+            config["regge_hinges"], villain_order=villain_order)
+
+    def geometry_of(support):
+        return bp.support_geometry(held, support, host)
+
+    return cell_solve.GeometricSystem(declare, geometry_of, sheets), held
+
+
 def relax_level(spacetime, config, sectors=None, count=None):
     """Step 1: the level driven to holomorphic stationarity of the joint
     action by `MultiCobordism` (`cell_solve.solve`), its Pachner moves
@@ -595,20 +630,7 @@ def relax_level(spacetime, config, sectors=None, count=None):
     shared = count is not None
     sheets = SHEETS if shared else 1
     base = sheet_base(spacetime, count) if shared else spacetime
-    host = cell_solve.sheeted_support(base, sheets)
-    held = dict(config)
-    held["held_sectors"] = list(sectors or [])
-    villain_order = bp.declared_villain_order(config)
-
-    def declare(complex_):
-        return bp.action_declaration(
-            complex_, config["kappa"], config["beta"],
-            config["regge_hinges"], villain_order=villain_order)
-
-    def geometry_of(support):
-        return bp.support_geometry(held, support, host)
-
-    system = cell_solve.GeometricSystem(declare, geometry_of, sheets)
+    system, held = level_system(base, config, sectors, sheets)
     start = system.point(base)
     start_moduli = start.relaxation.held_log_moduli()
     initial = float(np.linalg.norm(start.relaxation.residual()))
@@ -1304,11 +1326,22 @@ def persistent_components(level, edges, required):
     return accepted, rejected
 
 
+def checked_pachner_objective(name):
+    """The growth step's objective by name, one of `PACHNER_OBJECTIVES`."""
+    if name not in PACHNER_OBJECTIVES:
+        raise ValueError("the growth step's objective is one of %s; got %r"
+                         % (", ".join(PACHNER_OBJECTIVES), name))
+    return name
+
+
 def pachner_stage(cells, z, links, config):
     """The combinatorial moves of the growth step, on the next level's base:
-    a stage-1 search of `MultiCobordism` in unforced emergence under
+    a stage-1 search of `MultiCobordism` in unforced emergence under the
+    config's ``pachner_objective`` (`PACHNER_OBJECTIVES`): the engine's
     `JointStationarityObjective` (the Regge action and the Hodge spectral
-    entropies stationary at one metric), restricted to the four Pachner
+    entropies stationary at one metric), or the stationarity of the joint
+    action over the level's sheets, nothing held, which is the objective of
+    the level's relaxation. The search is restricted to the four Pachner
     kinds: no cone-out, cone-in or disposition move, so the base stays the
     manifold it is, with the boundary it has. It runs as the emergence
     driver runs its stage 1, over every candidate move of the base rather
@@ -1330,14 +1363,20 @@ def pachner_stage(cells, z, links, config):
     depth, length = cell_solve.checked_schedule(
         config.get("pachner_depth", DECLARED_PACHNER_DEPTH),
         config.get("pachner_length", DECLARED_PACHNER_LENGTH))
+    name = checked_pachner_objective(
+        config.get("pachner_objective", DECLARED_PACHNER_OBJECTIVE))
     record = {
         "updates": updates, "depth": depth, "length": length,
         "candidates": "every candidate move of the base, scored in full",
         "moves": ("the four Pachner kinds; no cone-out, cone-in or "
                   "disposition move"),
-        "objective": ("joint stationarity: the Regge action and the Hodge "
-                      "spectral entropies of degrees %s stationary at one "
-                      "metric" % (list(PACHNER_HODGE_DEGREES),)),
+        "objective_name": name,
+        "objective": (
+            "joint stationarity: the Regge action and the Hodge spectral "
+            "entropies of degrees %s stationary at one metric"
+            % (list(PACHNER_HODGE_DEGREES),) if name == "engine" else
+            "the norm of the joint action's stationarity residual over the "
+            "level's %d sheets, nothing held" % SHEETS),
         "before": {"vertices": 1 + max(max(c) for c in cells),
                    "edges": len(z), "cells": len(cells)},
     }
@@ -1347,13 +1386,19 @@ def pachner_stage(cells, z, links, config):
         return cells, z, links, record
     spacetime, _ = build_level(cells, z, links, sheets=1)
     MC = cob.MultiCobordism
-    node = MC(spacetime, [], [], list(PACHNER_REGISTER_DEGREES), 1.0, 0, 0,
-              False)
-    node.set_objective(cob.JointStationarityObjective())
-    node.set_hodge_degrees(list(PACHNER_HODGE_DEGREES))
-    node.set_simulation_mode(MC.SimulationMode.EMERGENCE,
-                             MC.EmergenceSubmode.STRICT)
-    node.should_propose_surgery = False
+    if name == "engine":
+        node = MC(spacetime, [], [], list(PACHNER_REGISTER_DEGREES), 1.0, 0,
+                  0, False)
+        node.set_objective(cob.JointStationarityObjective())
+        node.set_hodge_degrees(list(PACHNER_HODGE_DEGREES))
+        node.set_simulation_mode(MC.SimulationMode.EMERGENCE,
+                                 MC.EmergenceSubmode.STRICT)
+        node.should_propose_surgery = False
+    else:
+        system, _ = level_system(spacetime, config, [], SHEETS)
+        objective = cell_solve.StationarityObjective(system)
+        objective.begin()
+        node = cell_solve.cell_node(spacetime, objective)
     node.move_tolerance = bp.declared_tolerance(config, "move_tolerance")
     node.admissibility_tolerance = bp.declared_tolerance(
         config, "admissibility_tolerance")
@@ -1739,7 +1784,8 @@ def default_config(ticks=DECLARED_TICKS, tetrahedra=DECLARED_TETRAHEDRA,
                    trace_terms=False,
                    pachner_updates=DECLARED_PACHNER_UPDATES,
                    pachner_depth=DECLARED_PACHNER_DEPTH,
-                   pachner_length=DECLARED_PACHNER_LENGTH, limits=None,
+                   pachner_length=DECLARED_PACHNER_LENGTH,
+                   pachner_objective=DECLARED_PACHNER_OBJECTIVE, limits=None,
                    villain_order=bp.DECLARED_VILLAIN_ORDER, solve=None):
     """The declared configuration, recorded with every run. ``max_cells``
     limits how many tetrahedra per tick are read as hosts, for quick checks;
@@ -1798,9 +1844,10 @@ def default_config(ticks=DECLARED_TICKS, tetrahedra=DECLARED_TETRAHEDRA,
         "pachner_updates": int(pachner_updates),
         "pachner_depth": int(pachner_depth),
         "pachner_length": int(pachner_length),
+        "pachner_objective": checked_pachner_objective(pachner_objective),
         "pachner_stage": ("stage-1 updates of MultiCobordism on each grown "
-                          "level's base (one sheet) under the joint "
-                          "stationarity objective, the four Pachner kinds "
+                          "level's base (one sheet) under the declared "
+                          "pachner_objective, the four Pachner kinds "
                           "alone: no cone-out, cone-in or disposition move; "
                           "every candidate move of the base scored, no "
                           "sample and no seed; zero updates run none"),
@@ -2397,6 +2444,17 @@ def build_parser():
                           "the alternative to --pachner-depth, 0 keeps the "
                           "deepening schedule (default %d)"
                           % DECLARED_PACHNER_LENGTH)
+    run.add_argument("--pachner-objective", choices=PACHNER_OBJECTIVES,
+                     default=DECLARED_PACHNER_OBJECTIVE,
+                     help="what the growth step's search scores a base with: "
+                          "engine, the Regge action on the principal sheet "
+                          "of its dihedral angles with the Hodge spectral "
+                          "entropies, whose value on a level with squared "
+                          "lengths real to rounding depends on the signs of "
+                          "their imaginary parts; joint-action, the "
+                          "stationarity of the joint action the level's "
+                          "relaxation descends, on the continued sheet "
+                          "(default %s)" % DECLARED_PACHNER_OBJECTIVE)
     run.add_argument("--json", default=None,
                      help="write every record here at the end; each tick is "
                           "also appended, as it completes, to "
@@ -2431,7 +2489,9 @@ def main(argv=None):
         tolerances=bp.tolerances_from(args), trace_terms=args.trace_terms,
         pachner_updates=args.pachner_updates,
         pachner_depth=args.pachner_depth,
-        pachner_length=args.pachner_length, limits=bp.limits_from(args),
+        pachner_length=args.pachner_length,
+        pachner_objective=args.pachner_objective,
+        limits=bp.limits_from(args),
         solve=bp.solve_options_from(args),
         villain_order=args.villain_order)
     points_file = points_path(args.json) if args.json else None
