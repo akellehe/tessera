@@ -71,6 +71,45 @@ std::vector<complexd> toFlat(const Eigen::MatrixXcd &matrix) {
   return flat;
 }
 
+/// The exactly decoupled blocks of a square matrix: the connected components
+/// of the graph that joins two indices when either entry between them is not
+/// zero. Each block lists its indices in ascending order, and the blocks are
+/// in the order of their smallest index.
+std::vector<std::vector<Eigen::Index>> decoupledBlocks(
+    const Eigen::MatrixXcd &matrix) {
+  const Eigen::Index n = matrix.rows();
+  std::vector<Eigen::Index> root(static_cast<std::size_t>(n));
+  std::iota(root.begin(), root.end(), Eigen::Index{0});
+  const auto find = [&root](Eigen::Index index) {
+    while (root[static_cast<std::size_t>(index)] != index)
+      index = root[static_cast<std::size_t>(index)];
+    return index;
+  };
+  const complexd zero{0.0, 0.0};
+  for (Eigen::Index i = 0; i < n; ++i)
+    for (Eigen::Index j = i + 1; j < n; ++j) {
+      if (matrix(i, j) == zero && matrix(j, i) == zero) continue;
+      const Eigen::Index a = find(i);
+      const Eigen::Index b = find(j);
+      // the smaller root stays, so a block is named by its smallest index
+      if (a != b)
+        root[static_cast<std::size_t>(std::max(a, b))] = std::min(a, b);
+    }
+  std::vector<std::vector<Eigen::Index>> blocks;
+  std::vector<Eigen::Index> blockOf(static_cast<std::size_t>(n), -1);
+  for (Eigen::Index i = 0; i < n; ++i) {
+    const Eigen::Index top = find(i);
+    if (blockOf[static_cast<std::size_t>(top)] < 0) {
+      blockOf[static_cast<std::size_t>(top)] =
+          static_cast<Eigen::Index>(blocks.size());
+      blocks.emplace_back();
+    }
+    blocks[static_cast<std::size_t>(blockOf[static_cast<std::size_t>(top)])]
+        .push_back(i);
+  }
+  return blocks;
+}
+
 /// \f$ \lVert\Gamma^2-\Gamma\rVert_F \f$, the Gaussianity certificate both
 /// emergence sub-modes report. Exactly zero for a spectral projector, up to the
 /// rounding of the eigendecomposition it was formed from.
@@ -705,15 +744,40 @@ BandRead BandFollower::read(const std::vector<complexd> &operatorMatrix) const {
   const Eigen::Index n = target.rows();
   const bool ascending = order_ == OccupationOrder::AscendingRealPart;
 
-  Eigen::VectorXcd values;
-  Eigen::MatrixXcd vectors;
-  if (n > 0) {
-    const Eigen::ComplexEigenSolver<Eigen::MatrixXcd> solver(target);
+  // Each exactly decoupled block of the operator is decomposed on its own:
+  // an eigenvector is then supported on one block, and blocks that are equal
+  // entry for entry (the sheets of a sheeted support) have equal eigenvalues
+  // and equal eigenvectors, so the degeneracy the copies give is exact. One
+  // decomposition of the whole matrix separates the copies of an eigenvalue
+  // by its rounding. The modes are in the order of the blocks.
+  Eigen::VectorXcd values = Eigen::VectorXcd::Zero(n);
+  Eigen::MatrixXcd vectors = Eigen::MatrixXcd::Zero(n, n);
+  Eigen::MatrixXcd inverse = Eigen::MatrixXcd::Zero(n, n);
+  bool defective = false;
+  Eigen::Index first = 0;
+  for (const std::vector<Eigen::Index> &block : decoupledBlocks(target)) {
+    const auto size = static_cast<Eigen::Index>(block.size());
+    Eigen::MatrixXcd part(size, size);
+    for (Eigen::Index row = 0; row < size; ++row)
+      for (Eigen::Index column = 0; column < size; ++column)
+        part(row, column) = target(block[static_cast<std::size_t>(row)],
+                                   block[static_cast<std::size_t>(column)]);
+    const Eigen::ComplexEigenSolver<Eigen::MatrixXcd> solver(part);
     if (solver.info() != Eigen::Success)
       throw std::runtime_error(
           "BandFollower: the operator's eigendecomposition did not converge");
-    values = solver.eigenvalues();
-    vectors = solver.eigenvectors();
+    const Eigen::FullPivLU<Eigen::MatrixXcd> lu(solver.eigenvectors());
+    defective = defective || !lu.isInvertible();
+    const Eigen::MatrixXcd partInverse = lu.inverse();
+    for (Eigen::Index mode = 0; mode < size; ++mode) {
+      values(first + mode) = solver.eigenvalues()(mode);
+      for (Eigen::Index row = 0; row < size; ++row) {
+        const Eigen::Index index = block[static_cast<std::size_t>(row)];
+        vectors(index, first + mode) = solver.eigenvectors()(row, mode);
+        inverse(first + mode, index) = partInverse(mode, row);
+      }
+    }
+    first += size;
   }
   // The declared order, stable so that equal keys keep the solver's order.
   std::vector<Eigen::Index> order(static_cast<std::size_t>(n));
@@ -806,14 +870,11 @@ BandRead BandFollower::read(const std::vector<complexd> &operatorMatrix) const {
         selected[band].declaredPositions = reference_[band].declaredPositions;
   }
 
-  Eigen::MatrixXcd inverse;
   if (n > 0) {
-    const Eigen::FullPivLU<Eigen::MatrixXcd> lu(vectors);
-    if (!lu.isInvertible())
+    if (defective)
       throw std::invalid_argument(
           "BandFollower: the operator is defective, so no band projector is "
           "available from its eigenbasis");
-    inverse = lu.inverse();
     out.eigenvalues.assign(values.data(), values.data() + n);
     out.eigenvectors = toFlat(vectors);
     out.leftEigenvectors = toFlat(inverse);
