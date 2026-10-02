@@ -361,6 +361,29 @@ def test_an_eigenbasis_near_a_defect_reports_its_condition():
         assert 0.1 / eps < largest < 10.0 / eps
 
 
+@pytest.mark.parametrize("unit", [1e-9, 1.0, 1e9])
+def test_the_bands_are_grouped_the_same_in_every_unit(unit):
+    """The band tolerance is relative to the operator's largest eigenvalue
+    modulus, so an operator and its multiple group alike. Two eigenvalues a
+    part in 1e12 of the largest apart are two bands at the declared
+    tolerance 1e-15 and one band at 1e-10, in the unit 1e-9, 1 and 1e9; a
+    floor in the operator's own unit would join them at 1e-9."""
+    values = np.array([1.0, 1.0 + 4e-12, 2.0, 4.0])
+    operator = unit * np.diag(values).astype(complex)
+    read = _follower([1.0], cob.BandSelection.Continuation).read(
+        list(operator.reshape(-1)))
+    assert list(read.ranks) == [1, 1, 1, 1]
+    read = _follower([1.0], cob.BandSelection.Continuation, 1e-10).read(
+        list(operator.reshape(-1)))
+    assert list(read.ranks) == [2, 1, 1]
+    # eigenvalues near zero are grouped at the same absolute distance as
+    # the others: the unit is the operator's, not the eigenvalue's
+    operator = unit * np.diag([0.0, 4e-12, 2.0, 4.0]).astype(complex)
+    read = _follower([1.0], cob.BandSelection.Continuation, 1e-10).read(
+        list(operator.reshape(-1)))
+    assert list(read.ranks) == [2, 1, 1]
+
+
 def test_a_band_of_three_sheets_is_followed_across_another():
     """Three identical sheets, as on the recursion's host: every band has one
     mode per sheet, rank three. The operator is built here as a Kronecker

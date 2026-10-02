@@ -488,14 +488,16 @@ class TheLogarithmBranchTest(unittest.TestCase):
         below = character.logarithm(-1.2 - 1e-9j)
         self.assertLess(abs(above - below), 1e-7)
 
-    def test_a_zero_of_w_is_refused(self):
+    def test_a_zero_of_w_is_not_certified_and_its_logarithm_is_refused(self):
         """The infinite series vanishes at -q and -1/q, q = exp(-1 / 1.6).
         At beta = 0.8 the order-ten sum differs from it there by its tail,
         2 exp(-121 / 1.6) (1/q)^11 = 3e-30, far below the rounding bound
         6.8e-15 times the sum of the moduli of the terms, so W_M is not
-        certified nonzero at either point: the ratio DW_M / W_M has no value
-        at -q, and the radial path from -1 to -1/q ends on the zero, where
-        no step is certified."""
+        certified nonzero at either point. The radial path from -1 to -1/q
+        ends on the zero, where no step is certified, and the logarithm has
+        no value there. The ratio DW_M / W_M at -q is formed with the sum as
+        computed, which is its rounding, wherever that sum is not exactly
+        zero."""
         beta = 0.8
         q = math.exp(-1.0 / (2.0 * beta))
         character = cob.VillainCharacter(beta)
@@ -505,8 +507,32 @@ class TheLogarithmBranchTest(unittest.TestCase):
             self.assertFalse(cob.VillainCharacter.certified_nonzero(series))
         with self.assertRaisesRegex(ValueError, "meets a zero of W_M"):
             character.logarithm(complex(-1.0 / q, 0.0))
-        with self.assertRaisesRegex(ValueError, "not certified nonzero"):
-            character.first_derivative(complex(-q, 0.0))
+        _assert_derivative_as_summed(self, character, complex(-q, 0.0))
+
+
+def _assert_derivative_as_summed(case, character, point):
+    """The first derivative of the potential at ``point`` is
+    -beta_V DW_M / W_M with the sum as computed: the same multiple of
+    ``series.first / series.value`` as at a point far from every zero. Where
+    the computed sum is exactly zero the ratio has no value and the library
+    says so."""
+    series = character.series(point)
+    if complex(series.value) == 0j:
+        with case.assertRaisesRegex(ValueError, "exactly zero"):
+            character.first_derivative(point)
+        with case.assertRaisesRegex(ValueError, "exactly zero"):
+            character.second_derivative(point)
+        return
+    clear = character.series(1.1 + 0.05j)
+    weight = character.first_derivative(1.1 + 0.05j) / (clear.first
+                                                        / clear.value)
+    value = character.first_derivative(point)
+    case.assertTrue(math.isfinite(value.real) and math.isfinite(value.imag))
+    expected = weight * series.first / series.value
+    case.assertLess(abs(value - expected), 1e-12 * abs(expected))
+    second = character.second_derivative(point)
+    case.assertTrue(math.isfinite(second.real)
+                    and math.isfinite(second.imag))
 
 
 class TheRoundingBoundCertifiesTheWeightTest(unittest.TestCase):
@@ -585,7 +611,8 @@ class TheRoundingBoundCertifiesTheWeightTest(unittest.TestCase):
         delta = 1e-13 (1.3e-14, below the bound) and on at delta = 1e-12
         (1.3e-13, above it). At every displacement the certificate equals
         the comparison of the computed modulus with the bound, and the
-        derivatives are refused exactly where it fails."""
+        derivatives are formed with the sum as computed on both sides of
+        it, and have no value only where that sum is exactly zero."""
         character = cob.VillainCharacter(1.0)
         zeros = _zeros(character)
         zero = min(zeros, key=lambda z: abs(z + math.exp(0.5)))
@@ -597,8 +624,8 @@ class TheRoundingBoundCertifiesTheWeightTest(unittest.TestCase):
         self.assertLess(abs(at_zero.value), 1e-15)
         self.assertAlmostEqual(abs(at_zero.first), 0.128, delta=1e-3)
         self.assertFalse(cob.VillainCharacter.certified_nonzero(at_zero))
-        with self.assertRaisesRegex(ValueError, "not certified nonzero"):
-            character.second_derivative(complex(zero.real, 0.0))
+        _assert_derivative_as_summed(self, character,
+                                     complex(zero.real, 0.0))
         verdicts = {}
         for exponent in range(4, 17):
             delta = 10.0 ** -exponent
@@ -611,11 +638,7 @@ class TheRoundingBoundCertifiesTheWeightTest(unittest.TestCase):
             if certified:
                 self.assertAlmostEqual(
                     abs(series.value) / delta, 0.128, delta=1e-3)
-                character.first_derivative(point)
-            else:
-                with self.assertRaisesRegex(ValueError,
-                                            "not certified nonzero"):
-                    character.first_derivative(point)
+            _assert_derivative_as_summed(self, character, point)
         self.assertEqual([e for e in range(4, 17) if verdicts[e]],
                          list(range(4, 13)))
 
@@ -941,6 +964,17 @@ class TheLogarithmWhereTheWeightIsSmallTest(unittest.TestCase):
         reported = at_rest.reported_value()
         self.assertFalse(reported.available)
         self.assertIn("does not exceed its bound", reported.unavailable)
+
+
+class TheTruncationReadCountsTheUncertifiedFacesTest(unittest.TestCase):
+    """`JointAction.holonomy_truncation` says at how many faces the weight
+    does not exceed its rounding bound, and the smallest ratio of the two."""
+
+    def test_a_sphere_away_from_the_zeros_has_no_uncertified_face(self):
+        action = cob.JointAction(sphere3(phase=_flux), _declaration())
+        read = action.holonomy_truncation()
+        self.assertEqual(read.uncertified_faces, 0)
+        self.assertGreater(read.smallest_certificate_margin, 1e10)
 
 
 class TheRelaxationAwayFromTheZerosTest(unittest.TestCase):

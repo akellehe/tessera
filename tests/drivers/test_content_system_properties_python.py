@@ -296,14 +296,7 @@ def test_the_multipliers_are_the_least_squares_ones(key, scale, posed):
 
 @pytest.mark.parametrize("key", [
     FIRST_CELL, SECOND_CELL,
-    pytest.param(CELL_OF_2026_10_01, marks=pytest.mark.xfail(
-        strict=True, reason=(
-            "on the three-sheeted support of this cell the bands at the "
-            "host read ranks 3, 2 and 1: fix(cobordism): the band follower "
-            "splits the exact degeneracy of the sheets by the rounding of "
-            "one dense eigendecomposition, https://github.com/akellehe/"
-            "tessera/issues/1356")),
-        id="the cell of 2026-10-01")])
+    pytest.param(CELL_OF_2026_10_01, id="the cell of 2026-10-01")])
 def test_three_sheets_pose_three_times_the_equations_of_one(key):
     """The content (1, 1, 1) on three sheets fills every band with one
     particle over three modes, one per sheet, which is the content
@@ -343,13 +336,6 @@ def _logarithmic_residuals(scale):
             float(np.linalg.norm(residual[count:2 * count])))
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "the multipliers are the least squares of the residual in dS/dz and "
-    "U dS/dU together, whose relative weight is the unit of the squared "
-    "lengths, so a dilation changes them: fix(cobordism): the step's rank "
-    "decision is taken in units that depend on the squared lengths, and on "
-    "a dilated cell it discards the length equations, "
-    "https://github.com/akellehe/tessera/issues/1358"))
 def test_a_dilation_leaves_the_pinned_system_as_it_is():
     """With the eigenvalue of every occupied band pinned, the mean-field
     force is a combination of the constraints' gradients and the
@@ -357,11 +343,12 @@ def test_a_dilation_leaves_the_pinned_system_as_it_is():
     term and the constraints, which do not change under a dilation of the
     cell (the constraints are band eigenvalues in the fiber's own unit).
     The equations in the logarithmic coordinates, z_e dS/dz_e and
-    U_e dS/dU_e, are then the same at every scale. Measured at the
-    displaced point of (0123, 111): 1.948 and 0.2915 at squared lengths of
-    order 8, and 5.296 and 2.8e-14 at order 8e9, where the least squares
-    weighs the length rows by 1e-10; with the least squares taken in
-    z dS/dz they are 0.918 and 0.559 at both."""
+    U_e dS/dU_e, are then the same at every scale: the multipliers are the
+    least squares of the equations in those coordinates
+    (`SelfConsistentMeanField.joint_system`,
+    `cell_solve.least_squares_multipliers`). Measured at the displaced
+    point of (0123, 111): 0.918 and 0.559 at squared lengths of order 8 and
+    of order 8e9."""
     lengths, links = _logarithmic_residuals(1.0)
     dilated_lengths, dilated_links = _logarithmic_residuals(1e9)
     assert dilated_lengths == pytest.approx(lengths, rel=1e-8)
@@ -510,12 +497,6 @@ def _regge_declaration(start=None):
     return declaration
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "`cell_solve` builds the joint action anew at every point it scores and "
-    "declares no `regge_start_squared_lengths`, so the continued Regge "
-    "sheets start at the real projection of the point scored and not of "
-    "the geometry the solve starts from; where that projection leaves the "
-    "Euclidean domain the residual is read on another sheet"))
 def test_a_solve_reads_the_regge_term_on_the_sheet_of_its_start():
     """A solve that starts at the regular boundary of the 4-simplex
     (squared lengths 8) and scores the point where the squared length of
@@ -525,8 +506,9 @@ def test_a_solve_reads_the_regge_term_on_the_sheet_of_its_start():
     which `JointActionDeclaration.regge_start_squared_lengths` declares
     (WP specification section 4.2: for complex data the branch is fixed by
     continuation from a Euclidean reference). Measured: the residual norm
-    is 54.66 at the point the solve scores and 2.184 on the continued
-    sheets."""
+    is 2.184 on the continued sheets, and 54.66 on the sheets that start at
+    the point itself, which is what a system gives before a drive has
+    begun."""
     geometry = cob.HolomorphicRelaxationDeclaration()
     geometry.relax_lengths = True
     geometry.relax_links = False
@@ -540,8 +522,49 @@ def test_a_solve_reads_the_regge_term_on_the_sheet_of_its_start():
         lambda a, b: 33.0 + 0.5j if (a, b) == (0, 1) else 8.0)
     continued = cob.HolomorphicRelaxation(
         cob.JointAction(scored, _regge_declaration(started)), geometry)
+    restarted = np.linalg.norm(system.point(scored).relaxation.residual())
+    assert restarted == pytest.approx(54.66, rel=1e-3)
+    system.begin(start)
     assert _relative(system.point(scored).relaxation.residual(),
                      continued.residual()) < 1e-12
+    assert np.linalg.norm(continued.residual()) == pytest.approx(2.184,
+                                                                 rel=1e-3)
+
+
+def test_an_edge_a_move_creates_starts_where_it_is_accepted():
+    """The start of a drive names the edges of the complex it began on. An
+    edge it does not name starts at the squared length it has at the point
+    scored, and, once a point that has it is accepted, at the squared length
+    it was accepted with; the edges the drive began with keep their
+    start."""
+    start = cs.ReggeStart()
+    assert not start.begun
+    base = _regge_sphere(lambda a, b: 8.0)
+    start.begin(base)
+    assert start.begun
+    moved = _regge_sphere(lambda a, b: 9.0 + 0.25j)
+    support = cs.sheeted_support(moved, 1)
+    declared = start.declared(_regge_declaration(), support)
+    assert list(declared.regge_start_squared_lengths) == [8.0 + 0j] * 10
+    # a declaration with a start of its own keeps it, and is not copied
+    own = _regge_declaration([7.0 + 0j] * 10)
+    assert start.declared(own, support) is own
+    # an edge the start does not name
+    fresh = cs.ReggeStart()
+    fresh.begin(T.Spacetime.fromVertexTuples(3, [[0, 1, 2, 3]], 1.0, 0.0))
+    declared = fresh.declared(_regge_declaration(), support)
+    expected = [1.0 + 0j if max(a, b) < 4 else complex(length * length)
+                for a, b, length, _ in cs.edge_fields(moved)]
+    np.testing.assert_allclose(
+        np.asarray(declared.regge_start_squared_lengths), expected,
+        rtol=1e-15)
+    fresh.accept(moved)
+    later = _regge_sphere(lambda a, b: 20.0)
+    declared = fresh.declared(_regge_declaration(),
+                              cs.sheeted_support(later, 1))
+    np.testing.assert_allclose(
+        np.asarray(declared.regge_start_squared_lengths), expected,
+        rtol=1e-15)
 
 
 # ------------------------------------------------- the count of the fiber's

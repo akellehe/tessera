@@ -4713,6 +4713,8 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       "carrier degree, the three coefficients, the carried covariance, the "
       "spectral constraints and the metric source. Plain data.")
       .def(py::init<>())
+      .def(py::init<const JointActionDeclaration &>(), py::arg("other"),
+           "A copy of another declaration.")
       .def_readwrite("carrier_degree", &JointActionDeclaration::carrierDegree,
                      "The simplicial degree k of the one-particle carrier. The "
                      "operator of the action is h = h_k(z, U) and Gamma is a "
