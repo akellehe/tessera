@@ -79,6 +79,10 @@ quarks in each of the three lowest bands of the covariant operator h_1, see
    changed is not a tetrahedron and has no pole read. A geometry that is not Kontsevich-Segal
    allowable is read like any other, and the content's record carries the
    flag "not Kontsevich-Segal allowable" with the margin ("Flags" below).
+   The drive itself excludes no geometry for its margin: the engine's
+   Kontsevich-Segal admissibility gate is off unless ``--admissibility-gate``
+   declares it, and with it a candidate move or a trial of the line search
+   whose margin is below minus the admissibility tolerance is not scored.
    A geometry whose squared lengths overflowed the double is not finite, so
    it has no pole to read, and the content's record says so by name;
 2. runs one turn of the level recursion (`LevelRecursion`) and reads the fibre
@@ -426,7 +430,8 @@ TOLERANCES = (
      "the stationarity equations to be committed"),
     ("admissibility_tolerance",
      "the Kontsevich-Segal margin, in radians, down to minus which a "
-     "geometry proposed by a Pachner move is admissible"),
+     "geometry is admissible under the engine's admissibility gate; it acts "
+     "only with --admissibility-gate"),
     ("isospin_grouping_tolerance",
      "the relative width within which eigenvalues form one band of the "
      "isospin-doublet detector"),
@@ -622,6 +627,13 @@ SOLVE_OPTIONS = (
     ("pinned_vertices", (),
      "base vertices the drive holds: an edge both of whose endpoints are "
      "pinned keeps its squared length and its link; none by default"),
+    ("admissibility_gate", False,
+     "whether the drive applies the engine's Kontsevich-Segal admissibility "
+     "gate: with it, a candidate Pachner move and a trial of the line search "
+     "whose geometry has a Kontsevich-Segal margin below minus the "
+     "admissibility tolerance is not scored; without it, every candidate "
+     "and every trial is scored and the margin of the geometry reached is "
+     "reported"),
 )
 
 
@@ -935,13 +947,18 @@ def support_geometry(config, support, host):
 def node_configuration(config):
     """What the config declares on the `MultiCobordism` node of a solve
     before its drive, as the function `cell_solve.solve` calls with the
-    node: the admissibility tolerance of the engine's Kontsevich-Segal gate,
+    node: whether the engine's Kontsevich-Segal admissibility gate is
+    applied (``admissibility_gate``, off unless declared: a drive scores
+    every candidate move and every trial of the line search whatever its
+    margin) and the tolerance the gate uses when it is,
     and, when declared, a spectral-moment stiffness about the host
     (``moment_stiffness_weight`` with ``moment_stiffness_coefficients``, the
     engine's `set_moment_stiffness` on the degree-1 operator) and a pinned
     region (``pinned_vertices``, base vertices whose edges the engine holds).
     Neither a stiffness nor a pinned region is declared by default."""
     def configure(node):
+        node.admissibility_gate = bool(config.get("admissibility_gate",
+                                                  False))
         node.admissibility_tolerance = declared_tolerance(
             config, "admissibility_tolerance")
         weight = float(config.get("moment_stiffness_weight") or 0.0)
@@ -6602,6 +6619,10 @@ def add_solve_arguments(parser):
                         help=meaning["moment_stiffness_coefficients"])
     parser.add_argument("--pinned-vertices", type=int, nargs="+", default=[],
                         help=meaning["pinned_vertices"])
+    parser.add_argument("--admissibility-gate", action="store_true",
+                        help="apply the engine's Kontsevich-Segal "
+                             "admissibility gate in every drive: %s (off by "
+                             "default)" % meaning["admissibility_gate"])
 
 
 def solve_options_from(args):

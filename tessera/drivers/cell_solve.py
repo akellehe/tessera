@@ -60,6 +60,17 @@ halving the scale as its line search does until a trial lowers ||R|| by the
 tolerance. Every trial is judged on ||R|| itself, evaluated from the full
 equations; the order of the step is the order of the proposal alone.
 
+The engine's Kontsevich-Segal admissibility gate
+(`MultiCobordism.admissibility_gate`) is off unless a caller's ``configure``
+sets it: a drive scores every candidate move that leaves a manifold and
+every trial of its line search, whatever the Kontsevich-Segal margin of the
+geometry is, and a caller reads the margin of the geometry the drive ends on
+(`HodgeLaplacian.kontsevichSegalMargin`). With the gate set, a geometry
+whose margin is below minus the node's admissibility tolerance is outside
+the configuration space: a candidate move that leads to one is not scored,
+and a trial of the line search that lands on one is not scored and the scale
+is halved.
+
 A complex on which the declared system is not posed has no residual and
 scores infinite, with the reason kept (`StationarityObjective.undefined`): a
 point at which the action or its bands have no value, and a point at which a
