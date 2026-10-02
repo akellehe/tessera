@@ -9,6 +9,7 @@
 #include <cmath>
 #include <limits>
 #include <numeric>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -36,6 +37,45 @@ std::vector<complexd> toFlat(const Eigen::MatrixXcd &matrix) {
       flat[static_cast<std::size_t>(row * matrix.cols() + column)] =
           matrix(row, column);
   return flat;
+}
+
+// The exactly decoupled blocks of a square matrix: the connected components
+// of the graph that joins two indices when either entry between them is not
+// zero. Each block lists its indices in ascending order, and the blocks are
+// in the order of their smallest index.
+std::vector<std::vector<Eigen::Index>> decoupledBlocks(
+    const Eigen::MatrixXcd &matrix) {
+  const Eigen::Index n = matrix.rows();
+  std::vector<Eigen::Index> root(static_cast<std::size_t>(n));
+  std::iota(root.begin(), root.end(), Eigen::Index{0});
+  const auto find = [&root](Eigen::Index index) {
+    while (root[static_cast<std::size_t>(index)] != index)
+      index = root[static_cast<std::size_t>(index)];
+    return index;
+  };
+  const complexd zero{0.0, 0.0};
+  for (Eigen::Index i = 0; i < n; ++i)
+    for (Eigen::Index j = i + 1; j < n; ++j) {
+      if (matrix(i, j) == zero && matrix(j, i) == zero) continue;
+      const Eigen::Index a = find(i);
+      const Eigen::Index b = find(j);
+      // the smaller root stays, so a block is named by its smallest index
+      if (a != b)
+        root[static_cast<std::size_t>(std::max(a, b))] = std::min(a, b);
+    }
+  std::vector<std::vector<Eigen::Index>> blocks;
+  std::vector<Eigen::Index> blockOf(static_cast<std::size_t>(n), -1);
+  for (Eigen::Index i = 0; i < n; ++i) {
+    const Eigen::Index top = find(i);
+    if (blockOf[static_cast<std::size_t>(top)] < 0) {
+      blockOf[static_cast<std::size_t>(top)] =
+          static_cast<Eigen::Index>(blocks.size());
+      blocks.emplace_back();
+    }
+    blocks[static_cast<std::size_t>(blockOf[static_cast<std::size_t>(top)])]
+        .push_back(i);
+  }
+  return blocks;
 }
 
 // The position of the pair (a, b) with a <= b in the row-major upper triangle
@@ -129,12 +169,65 @@ DressedFluctuation::DressedFluctuation(DressedFluctuationDeclaration declaration
 
   const Eigen::MatrixXcd carrier =
       toMatrix(declaration_.carrier, dimension_, dimension_);
-  const Eigen::ComplexEigenSolver<Eigen::MatrixXcd> solver(carrier);
-  if (solver.info() != Eigen::Success)
+  // Each exactly decoupled block of the carrier is decomposed on its own: a
+  // mode is then supported on one block, and blocks that are equal entry for
+  // entry (the sheets of a sheeted support) have equal eigenvalues and equal
+  // modes, so the degeneracy the copies give is exact. One decomposition of
+  // the whole matrix separates the copies of an eigenvalue by its rounding,
+  // and a state whose occupied modes end inside such a group then has
+  // particle-hole energies that are rounding and a polarization that is the
+  // reciprocal of rounding. The frame of right modes of each block is
+  // inverted as computed: when it is singular at the declared tolerance the
+  // carrier is defective to that tolerance, the instance says so
+  // (`carrierDefective`), and the left frame is the inverse every nonzero
+  // pivot gives. An exactly zero pivot leaves no inverse. The reciprocal
+  // condition is estimated with every nonzero pivot counted, as the inverse
+  // is formed.
+  const auto carrierOrder = static_cast<Eigen::Index>(dimension_);
+  Eigen::VectorXcd values = Eigen::VectorXcd::Zero(carrierOrder);
+  Eigen::MatrixXcd vectors = Eigen::MatrixXcd::Zero(carrierOrder, carrierOrder);
+  Eigen::MatrixXcd inverse = Eigen::MatrixXcd::Zero(carrierOrder, carrierOrder);
+  bool withoutInverse = false;
+  Eigen::Index first = 0;
+  for (const std::vector<Eigen::Index> &block : decoupledBlocks(carrier)) {
+    const auto size = static_cast<Eigen::Index>(block.size());
+    Eigen::MatrixXcd part(size, size);
+    for (Eigen::Index row = 0; row < size; ++row)
+      for (Eigen::Index column = 0; column < size; ++column)
+        part(row, column) = carrier(block[static_cast<std::size_t>(row)],
+                                    block[static_cast<std::size_t>(column)]);
+    const Eigen::ComplexEigenSolver<Eigen::MatrixXcd> solver(part);
+    if (solver.info() != Eigen::Success)
+      throw std::invalid_argument(
+          "DressedFluctuation: the carrier operator has no eigendecomposition, "
+          "so its modes cannot be split into occupied and empty ones");
+    Eigen::FullPivLU<Eigen::MatrixXcd> factor(solver.eigenvectors());
+    factor.setThreshold(declaration_.tolerance);
+    if (!factor.isInvertible()) defective_ = true;
+    factor.setThreshold(0.0);
+    const bool invertible = factor.isInvertible();
+    const double reciprocal = invertible ? factor.rcond() : 0.0;
+    modeFrameReciprocalCondition_ =
+        std::min(modeFrameReciprocalCondition_,
+                 std::isfinite(reciprocal) ? reciprocal : 0.0);
+    Eigen::MatrixXcd partInverse = Eigen::MatrixXcd::Zero(size, size);
+    if (invertible) partInverse = factor.inverse();
+    if (!invertible || !partInverse.allFinite()) withoutInverse = true;
+    for (Eigen::Index mode = 0; mode < size; ++mode) {
+      values(first + mode) = solver.eigenvalues()(mode);
+      for (Eigen::Index row = 0; row < size; ++row) {
+        const Eigen::Index index = block[static_cast<std::size_t>(row)];
+        vectors(index, first + mode) = solver.eigenvectors()(row, mode);
+        inverse(first + mode, index) = partInverse(mode, row);
+      }
+    }
+    first += size;
+  }
+  if (withoutInverse)
     throw std::invalid_argument(
-        "DressedFluctuation: the carrier operator has no eigendecomposition, so "
-        "its modes cannot be split into occupied and empty ones");
-  const Eigen::VectorXcd values = solver.eigenvalues();
+        "DressedFluctuation: the frame of the carrier operator's right modes "
+        "has no finite inverse, so the carrier has no matched pair of left and "
+        "right mode frames");
   std::vector<Eigen::Index> order(static_cast<std::size_t>(values.size()));
   std::iota(order.begin(), order.end(), Eigen::Index{0});
   const bool byRealPart =
@@ -148,23 +241,16 @@ DressedFluctuation::DressedFluctuation(DressedFluctuationDeclaration declaration
                      }
                      return std::abs(values(a)) < std::abs(values(b));
                    });
-  Eigen::MatrixXcd right(static_cast<Eigen::Index>(dimension_),
-                         static_cast<Eigen::Index>(dimension_));
+  // The modes in the declared occupation order; equal keys keep the order of
+  // the blocks, so the order does not turn on the eigensolver's rounding.
+  Eigen::MatrixXcd right(carrierOrder, carrierOrder);
+  Eigen::MatrixXcd left(carrierOrder, carrierOrder);
   eigenvalues_.resize(dimension_);
   for (std::size_t column = 0; column < dimension_; ++column) {
-    right.col(static_cast<Eigen::Index>(column)) =
-        solver.eigenvectors().col(order[column]);
+    right.col(static_cast<Eigen::Index>(column)) = vectors.col(order[column]);
+    left.row(static_cast<Eigen::Index>(column)) = inverse.row(order[column]);
     eigenvalues_[column] = values(order[column]);
   }
-  // The rank of the frame of right modes at the declared tolerance: a pivot
-  // at or below that fraction of the largest is zero.
-  Eigen::FullPivLU<Eigen::MatrixXcd> factor(right);
-  factor.setThreshold(declaration_.tolerance);
-  if (!factor.isInvertible())
-    throw std::invalid_argument(
-        "DressedFluctuation: the carrier operator is defective, so it carries "
-        "no matched pair of left and right mode frames");
-  const Eigen::MatrixXcd left = factor.inverse();
   rightModes_ = toFlat(right);
   leftModes_ = toFlat(left);
 
@@ -222,6 +308,47 @@ std::vector<complexd> DressedFluctuation::particleHoleEnergies() const {
   return energies;
 }
 
+bool DressedFluctuation::carrierDefective() const noexcept { return defective_; }
+
+double DressedFluctuation::modeFrameReciprocalCondition() const noexcept {
+  return modeFrameReciprocalCondition_;
+}
+
+double DressedFluctuation::smallestRelativeGap() const {
+  double largest = 0.0;
+  for (const complexd &value : eigenvalues_)
+    largest = std::max(largest, std::abs(value));
+  double smallest = std::numeric_limits<double>::infinity();
+  for (std::size_t occupied = 0; occupied < declaration_.occupiedModes;
+       ++occupied)
+    for (std::size_t empty = declaration_.occupiedModes; empty < dimension_;
+         ++empty)
+      smallest = std::min(
+          smallest, std::abs(eigenvalues_[empty] - eigenvalues_[occupied]));
+  if (!std::isfinite(smallest) || largest == 0.0)
+    return std::numeric_limits<double>::quiet_NaN();
+  return smallest / largest;
+}
+
+double DressedFluctuation::poleProximity(complexd frequency) const {
+  const complexd broadening{0.0, -declaration_.continuumBroadening};
+  double nearest = std::numeric_limits<double>::infinity();
+  bool measured = false;
+  for (std::size_t occupied = 0; occupied < declaration_.occupiedModes;
+       ++occupied)
+    for (std::size_t empty = declaration_.occupiedModes; empty < dimension_;
+         ++empty) {
+      const complexd gap =
+          eigenvalues_[empty] - eigenvalues_[occupied] + broadening;
+      const double size = std::norm(gap) + std::norm(frequency);
+      if (size == 0.0) return 0.0;
+      nearest = std::min(nearest,
+                         std::abs(gap * gap - frequency * frequency) / size);
+      measured = true;
+    }
+  return measured ? nearest : std::numeric_limits<double>::quiet_NaN();
+}
+
 std::vector<complexd> DressedFluctuation::modeCurrents(std::size_t index) const {
   if (index >= fluctuations_)
     throw std::out_of_range("DressedFluctuation::modeCurrents: " +
@@ -247,14 +374,15 @@ std::vector<complexd> DressedFluctuation::paramagnetic(
       const complexd gap =
           eigenvalues_[empty] - eigenvalues_[occupied] + broadening;
       const complexd denominator = gap * gap - frequency * frequency;
-      if (std::abs(denominator) <=
-          declaration_.tolerance *
-              std::max(1.0, std::abs(gap * gap) + std::abs(frequency * frequency)))
+      // The polarization has no value where a denominator is zero. Anywhere
+      // else it has one, however near a pole the frequency is; how near is
+      // `poleProximity`.
+      if (denominator == complexd{0.0, 0.0})
         throw std::domain_error(
-            "DressedFluctuation::paramagnetic: the requested frequency sits on "
-            "the particle-hole energy of the pair (" +
+            "DressedFluctuation::paramagnetic: the requested frequency is the "
+            "particle-hole energy of the pair (" +
             std::to_string(occupied) + ", " + std::to_string(empty) +
-            "), where the polarization has a pole and no finite value");
+            "), where the polarization has a pole and no value");
       const complexd weight = gap / denominator;
       for (std::size_t a = 0; a < fluctuations_; ++a)
         for (std::size_t b = 0; b < fluctuations_; ++b) {
@@ -394,9 +522,16 @@ std::vector<CollectiveMode> DressedFluctuation::collectiveModes() const {
   // eigenvalues of (pencil - shift * mass)^{-1} mass, shifted back. The shift
   // is needed because the dressed stiffness is singular at zero frequency
   // whenever a pure-gauge direction exists, which is exactly the Ward identity.
-  double scale = std::max(1.0, bare.norm());
+  // The unit of the frequency axis: the largest particle-hole energy. The
+  // shift is placed in it and the reciprocal of an infinite eigenvalue is
+  // read against it. When every particle-hole energy is zero the pencil has
+  // no energy of its own and its norm is the one scale present; a pencil
+  // that is zero has no mode.
+  double scale = 0.0;
   for (const complexd &energy : channelEnergy)
     scale = std::max(scale, std::abs(energy));
+  if (scale == 0.0) scale = pencil.norm();
+  if (scale == 0.0) return modes;
   const std::vector<complexd> candidateShifts{
       complexd{0.3719, 0.2341}, complexd{-0.6131, 0.4517},
       complexd{1.2837, -0.7193}, complexd{-1.9043, -1.1287}};
@@ -436,15 +571,9 @@ std::vector<CollectiveMode> DressedFluctuation::collectiveModes() const {
     // A vanishing reciprocal is an infinite eigenvalue of the pencil, which the
     // deflated geometric block contributes and which is no frequency at all:
     // a reciprocal at or below the declared tolerance in the unit of the
-    // pencil's scale is read as zero.
+    // largest particle-hole energy is read as zero.
     if (std::abs(reciprocal) * scale <= declaration_.tolerance) continue;
     const complexd frequency = shift + complexd{1.0, 0.0} / reciprocal;
-    bool onParticleHoleEnergy = false;
-    for (const complexd &energy : channelEnergy)
-      if (std::abs(frequency - energy) <= declaration_.tolerance * scale ||
-          std::abs(frequency + energy) <= declaration_.tolerance * scale)
-        onParticleHoleEnergy = true;
-    if (onParticleHoleEnergy) continue;
 
     Eigen::VectorXcd geometric =
         solver.eigenvectors().col(index).head(fluctuations);
@@ -456,18 +585,21 @@ std::vector<CollectiveMode> DressedFluctuation::collectiveModes() const {
     // The residual is measured against the size of the two terms that cancel
     // at a pole, the bare-plus-diamagnetic stiffness and the polarization,
     // and not against the dressed stiffness itself, which is what vanishes
-    // there.
-    Eigen::MatrixXcd polarization;
+    // there. A candidate whose frequency is a particle-hole energy exactly
+    // is reported with its residual unmeasured, since the polarization has
+    // no value there; where both terms are zero the dressed stiffness is
+    // zero and the null-vector equation holds exactly.
+    double residual = Certificate::kUnmeasured;
     try {
-      polarization =
+      const Eigen::MatrixXcd polarization =
           toMatrix(paramagnetic(frequency), fluctuations_, fluctuations_);
+      const Eigen::MatrixXcd dressed = bare - polarization;
+      const double cancellationScale = bare.norm() + polarization.norm();
+      residual = cancellationScale == 0.0
+                     ? 0.0
+                     : (dressed * geometric).norm() / cancellationScale;
     } catch (const std::domain_error &) {
-      continue;
     }
-    const Eigen::MatrixXcd dressed = bare - polarization;
-    const double cancellationScale = bare.norm() + polarization.norm();
-    if (cancellationScale == 0.0) continue;
-    const double residual = (dressed * geometric).norm() / cancellationScale;
 
     CollectiveMode mode;
     mode.frequency = frequency;
@@ -511,8 +643,11 @@ std::vector<CollectiveMode> DressedFluctuation::collectiveModes() const {
 ManyBodySpaceRead DressedFluctuation::effectiveAction(
     const std::vector<complexd> &clusterFrame,
     const std::vector<complexd> &clusterDualFrame, std::size_t particles,
-    std::size_t dimensionCap) const {
-  if (declaration_.bareStiffness.empty())
+    std::optional<std::size_t> dimensionCap) const {
+  // With no retained fluctuation the elimination integrates out nothing and
+  // the effective action is the one-body term. With retained fluctuations
+  // and no bare stiffness there is nothing to invert.
+  if (fluctuations_ > 0 && declaration_.bareStiffness.empty())
     throw std::invalid_argument(
         "DressedFluctuation::effectiveAction: the elimination inverts the bare "
         "stiffness A, and none is declared");
@@ -543,13 +678,21 @@ ManyBodySpaceRead DressedFluctuation::effectiveAction(
         "DressedFluctuation::effectiveAction: " + std::to_string(particles) +
         " particles do not fit in a fiber of rank " + std::to_string(rank));
 
+  // The dimension is rank choose particles; a declared cap is compared with
+  // it before the space is enumerated.
+  if (dimensionCap) {
+    long double dimension = 1.0L;
+    for (std::size_t term = 1; term <= particles; ++term)
+      dimension = dimension * static_cast<long double>(rank - particles + term) /
+                  static_cast<long double>(term);
+    if (dimension > static_cast<long double>(*dimensionCap) + 0.5L)
+      throw std::length_error(
+          "DressedFluctuation::effectiveAction: the " +
+          std::to_string(particles) + "-particle space of a rank-" +
+          std::to_string(rank) + " fiber has dimension above the declared cap "
+          "of " + std::to_string(*dimensionCap));
+  }
   const auto basis = subsets(rank, particles);
-  if (basis.size() > dimensionCap)
-    throw std::length_error(
-        "DressedFluctuation::effectiveAction: the " + std::to_string(particles) +
-        "-particle space of a rank-" + std::to_string(rank) +
-        " fiber has dimension " + std::to_string(basis.size()) +
-        ", above the declared cap of " + std::to_string(dimensionCap));
 
   ManyBodySpaceRead read;
   read.particles = particles;
@@ -614,20 +757,45 @@ ManyBodySpaceRead DressedFluctuation::effectiveAction(
   const Eigen::MatrixXcd oneBody = secondQuantize(carrier);
   read.oneBody = toFlat(oneBody);
 
+  const auto order = static_cast<Eigen::Index>(basis.size());
+  if (fluctuations_ == 0) {
+    // Nothing is eliminated: no stiffness is inverted, the quartic and its
+    // two parts are zero, and the effective action is the one-body term. A
+    // 0 x 0 stiffness has no condition number.
+    const Eigen::MatrixXcd none = Eigen::MatrixXcd::Zero(order, order);
+    read.quartic = toFlat(none);
+    read.inducedOneBody = toFlat(none);
+    read.normalOrderedQuartic = toFlat(none);
+    read.effectiveAction = toFlat(oneBody);
+    read.stiffnessConditioning = std::numeric_limits<double>::quiet_NaN();
+    read.stiffnessReciprocalCondition =
+        std::numeric_limits<double>::quiet_NaN();
+    read.certificate = Certificate::structureExact(
+        CertificateDomain::Static, CertificateRegime::ComplexSymmetricPencil,
+        read.framePairingDefect, 1.0, declaration_.tolerance);
+    return read;
+  }
+
   const Eigen::MatrixXcd stiffness =
       toMatrix(declaration_.bareStiffness, fluctuations_, fluctuations_);
   read.stiffnessAsymmetry =
       stiffness.norm() == 0.0
           ? 0.0
           : (stiffness - stiffness.transpose()).norm() / stiffness.norm();
-  // The rank of the bare stiffness at the declared tolerance, as the rank of
-  // the mode frame is decided.
+  // The bare stiffness is inverted as computed. When it is singular at the
+  // declared tolerance (a pivot at or below that fraction of the largest)
+  // the read says so (`stiffnessSingular`) and is made with the inverse every
+  // nonzero pivot gives; an exactly zero pivot leaves no inverse. The
+  // reciprocal condition is estimated with every nonzero pivot counted, as
+  // the inverse is formed.
   Eigen::FullPivLU<Eigen::MatrixXcd> factor(stiffness);
   factor.setThreshold(declaration_.tolerance);
-  if (!factor.isInvertible())
-    throw std::invalid_argument(
-        "DressedFluctuation::effectiveAction: the declared bare stiffness is "
-        "singular, so the fluctuation cannot be eliminated at its saddle");
+  read.stiffnessSingular = !factor.isInvertible();
+  factor.setThreshold(0.0);
+  const bool invertible = factor.isInvertible();
+  const double reciprocal = invertible ? factor.rcond() : 0.0;
+  read.stiffnessReciprocalCondition =
+      std::isfinite(reciprocal) ? reciprocal : 0.0;
   const auto fluctuationOrder = static_cast<Eigen::Index>(fluctuations_);
   const Eigen::MatrixXcd identity =
       Eigen::MatrixXcd::Identity(fluctuationOrder, fluctuationOrder);
@@ -635,10 +803,16 @@ ManyBodySpaceRead DressedFluctuation::effectiveAction(
   // R is the number of retained fluctuations rather than any many-body
   // dimension, so the response is formed once and no four-index tensor is ever
   // built.
-  const Eigen::MatrixXcd response = factor.solve(identity);
+  Eigen::MatrixXcd response =
+      Eigen::MatrixXcd::Zero(fluctuationOrder, fluctuationOrder);
+  if (invertible) response = factor.solve(identity);
+  if (!invertible || !response.allFinite())
+    throw std::invalid_argument(
+        "DressedFluctuation::effectiveAction: the declared bare stiffness has "
+        "no finite inverse, so the fluctuation cannot be eliminated at its "
+        "saddle");
   read.stiffnessConditioning = stiffness.norm() * response.norm();
 
-  const auto order = static_cast<Eigen::Index>(basis.size());
   std::vector<Eigen::MatrixXcd> lifted(fluctuations_);
   for (std::size_t index = 0; index < fluctuations_; ++index)
     lifted[index] = secondQuantize(currents[index]);

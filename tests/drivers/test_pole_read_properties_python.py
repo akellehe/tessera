@@ -187,14 +187,6 @@ def test_the_null_space_of_a_stiffness_does_not_depend_on_its_unit(unit):
     assert _relative(reference, unit * rebuilt) < 1e-12
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "PencilSchur::feshbach forms the Drazin inverse as "
-    "(P_II + Pi_0)^-1 (I - Pi_0): the projector is added to P_II without "
-    "its unit, so the solve is conditioned by the unit of the stiffness. "
-    "For a stiffness of size 1e-9 the inverse agrees with A^D / c to "
-    "5.5e-8 and A A^D A - A is 2.2e-8 of A; for 1e9 the agreement is "
-    "6.2e-7. The driver's induced displacement, one-body shift and "
-    "constant are formed with this inverse"))
 @pytest.mark.parametrize("unit", [1e-9, 1e9])
 def test_the_drazin_inverse_carries_the_unit_of_the_stiffness(unit):
     """(c A)^D = A^D / c."""
@@ -432,13 +424,6 @@ def test_the_polarization_carries_the_unit_of_the_carrier(unit):
     assert _relative(unit * _polarization(1.0), _polarization(unit)) < 1e-12
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "DressedFluctuation::paramagnetic refuses a particle-hole pair whose "
-    "gap squared is at or below tolerance * max(1, gap^2 + omega^2): the "
-    "floor of one is in the unit of the carrier, so a carrier of size 1e-8 "
-    "or less (a cell whose squared lengths are 1e8 or more) has no "
-    "polarization at the declared tolerance 1e-15, and its Ward read is "
-    "unmeasured (48 of the 50 reads of tick 1 of the run of 2026-10-01)"))
 def test_the_polarization_of_a_small_carrier_has_a_value():
     assert _relative(1e-9 * _polarization(1.0), _polarization(1e-9)) < 1e-12
 
@@ -459,11 +444,6 @@ def test_the_ward_identity_holds_on_the_fixture():
     assert read["paramagnetic_alone"] > 1e-2
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "the Ward read of a cell whose squared lengths are of order 1e9 is "
-    "unmeasured: DressedFluctuation::paramagnetic compares the "
-    "particle-hole gaps with a floor in the unit of the carrier (see "
-    "test_the_polarization_of_a_small_carrier_has_a_value)"))
 def test_the_ward_identity_is_read_on_a_dilated_cell():
     """The identity (D - Pi(0)) g = 0 is homogeneous in the carrier, so it
     is read on the fixture with its squared lengths multiplied by 1e9 as it
@@ -963,14 +943,6 @@ def _zero_solve_config(content, cell, **declared):
     return config
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "with --eliminate lengths the stiffness of a lone tetrahedron is zero "
-    "by structure and the elimination integrates out nothing "
-    "(drazin_elimination: a 0 by 0 reduced stiffness and no coupling); "
-    "evaluate_content hands that empty stiffness to "
-    "DressedFluctuation::effectiveAction, which refuses it (\"the "
-    "elimination inverts the bare stiffness A, and none is declared\"), so "
-    "every content of every cell is recorded without a value"))
 def test_the_lengths_only_elimination_is_read_through_the_driver():
     config = _zero_solve_config((1, 1, 1), CUBE_ROOT_CELL,
                                 elimination="lengths")
