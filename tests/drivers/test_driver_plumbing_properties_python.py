@@ -55,7 +55,8 @@ SENTINEL_LIMITS = {"iteration_limit": 7, "update_limit": 5,
                    "time_limit_seconds": 2.5}
 SENTINEL_SOLVE = {"direction_order": 3, "band_reference": "host",
                   "pachner_moves": False, "combinatorial_depth": 1,
-                  "combinatorial_length": 2, "candidate_moves": 4}
+                  "combinatorial_length": 2, "candidate_moves": 4,
+                  "admissibility_gate": True}
 
 
 class _Reached(Exception):
@@ -70,7 +71,8 @@ def _sentinel_arguments():
             "--fiber-pinning", "power-sums", "--fiber-moments", "bands",
             "--trace-terms", "--direction-order", "3", "--band-reference",
             "host", "--no-pachner-moves", "--combinatorial-length", "2",
-            "--candidate-moves", "4", "--iteration-limit", "7",
+            "--candidate-moves", "4", "--admissibility-gate",
+            "--iteration-limit", "7",
             "--update-limit", "5", "--time-limit-seconds", "2.5"]
     for key, value in SENTINEL_TOLERANCES.items():
         argv += ["--" + key.replace("_", "-"), repr(value)]

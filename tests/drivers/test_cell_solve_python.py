@@ -364,7 +364,7 @@ def test_the_solve_options_are_recorded_at_their_declared_values():
         "pachner_moves": True, "combinatorial_depth": 1,
         "combinatorial_length": 0, "candidate_moves": 0,
         "moment_stiffness_weight": 0.0, "moment_stiffness_coefficients": [],
-        "pinned_vertices": []}
+        "pinned_vertices": [], "admissibility_gate": False}
     assert {key: config[key] for key, _, _ in bp.LIMITS} == {
         "iteration_limit": None, "update_limit": None,
         "time_limit_seconds": None}
@@ -392,7 +392,8 @@ def test_the_solve_options_are_options_of_the_command_line():
         "pachner_moves": False, "combinatorial_depth": 2,
         "combinatorial_length": 0, "candidate_moves": 5,
         "moment_stiffness_weight": 0.5,
-        "moment_stiffness_coefficients": [1.0, 2.0], "pinned_vertices": [0, 1]}
+        "moment_stiffness_coefficients": [1.0, 2.0], "pinned_vertices": [0, 1],
+        "admissibility_gate": False}
     assert bp.limits_from(args)["update_limit"] == 7
     assert bp.tolerances_from(args)["step_tolerance"] == 1e-12
     config = bp.default_config(solve=bp.solve_options_from(args))

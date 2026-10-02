@@ -1615,7 +1615,9 @@ assertion. Every pairing is the transpose.)doc")
            "Where every Hodge operator this node scores takes its metric from.")
       .def("geometryAdmissible", &MultiCobordism::geometryAdmissible, py::arg("spacetime"),
            "Whitney pencil: whether the geometry lies in the closure of the Kontsevich-Segal "
-           "allowable domain (margin >= 0); always true under DiagonalWeights.")
+           "allowable domain (margin >= 0 to within the admissibility tolerance); always true "
+           "under DiagonalWeights. A measurement: it excludes nothing unless admissibility_gate "
+           "is set.")
       .def_static("betti", &MultiCobordism::betti, py::arg("st"))
       .def_static("emergent_holes", &MultiCobordism::emergentHoles,
                   py::arg("st"), py::arg("k"))
@@ -2417,10 +2419,25 @@ assertion. Every pairing is the transpose.)doc")
       .def_property("admissibility_tolerance",
                     &MultiCobordism::admissibilityTolerance,
                     &MultiCobordism::setAdmissibilityTolerance,
-                    "The admissibility tolerance of the Whitney-pencil "
-                    "configuration space: a geometry is a member when its "
-                    "Kontsevich-Segal margin is at least minus this amount, "
-                    "in radians. 1e-15 by default.")
+                    "The admissibility tolerance: a geometry is read as "
+                    "inside the closure of the Kontsevich-Segal allowable "
+                    "domain when its margin is at least minus this amount, "
+                    "in radians. It decides what the admissibility gate "
+                    "excludes when admissibility_gate is set, and nothing "
+                    "otherwise. 1e-15 by default.")
+      .def_property("admissibility_gate",
+                    &MultiCobordism::admissibilityGate,
+                    &MultiCobordism::setAdmissibilityGate,
+                    "Whether the drive applies the Kontsevich-Segal "
+                    "admissibility gate. False by default: every candidate "
+                    "complex of the stage-1 search that passes the manifold "
+                    "gate and every trial of the stage-2 line search is "
+                    "scored, whatever its Kontsevich-Segal margin. True: a "
+                    "geometry for which geometryAdmissible is false is "
+                    "outside the configuration space, so a candidate move "
+                    "that leads to one is rejected before it is scored and "
+                    "a line-search trial that lands on one is not scored "
+                    "and the step is halved.")
       .def_property("should_propose_surgery",
                     &MultiCobordism::shouldProposeSurgery,
                     &MultiCobordism::setShouldProposeSurgery,

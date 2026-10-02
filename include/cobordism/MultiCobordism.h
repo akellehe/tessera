@@ -431,16 +431,38 @@ class MultiCobordism {
     return metricSource_;
   }
 
-  /// Configuration-space admissibility of a geometry under the Whitney pencil:
-  /// the closure of the Kontsevich–Segal allowable domain, i.e. margin
-  /// \f$ \ge 0 \f$ to within the declared admissibility tolerance
+  /// Whether a geometry lies in the closure of the Kontsevich–Segal allowable
+  /// domain under the Whitney pencil: its margin
+  /// (`HodgeLaplacian::kontsevichSegalMargin`,
+  /// \f$ \min_T(\pi-\sum_i|\arg\lambda_i(g_T)|) \f$ over the top simplices)
+  /// is \f$ \ge 0 \f$ to within the declared admissibility tolerance
   /// (`setAdmissibilityTolerance`), the rounding of the arguments the margin
   /// is formed from. The real Lorentzian boundary, margin exactly zero, is
-  /// admitted and certified as the boundary. This is not a clamp, back-off or
-  /// penalty: a proposal outside the domain is not a member of the
-  /// configuration space, as a non-manifold proposal is not. Always true under
-  /// `DiagonalWeights`.
+  /// inside. Always true under `DiagonalWeights`. A measurement: it excludes
+  /// nothing unless the admissibility gate is declared (`setAdmissibilityGate`).
   [[nodiscard]] bool geometryAdmissible(const std::shared_ptr<Spacetime> &spacetime) const;
+
+  /// Whether the drive applies the Kontsevich–Segal admissibility gate. Off
+  /// unless declared.
+  ///
+  /// Off, no proposal is excluded for its margin: every candidate complex of
+  /// the stage-1 search that passes the manifold gate is scored by the
+  /// objective, and every trial of the stage-2 line search is scored, whatever
+  /// `geometryAdmissible` says of it. The margin of a geometry the drive
+  /// reaches is then a number a caller reads and reports.
+  ///
+  /// On, a geometry for which `geometryAdmissible` is false is treated as
+  /// outside the configuration space: a candidate move that leads to one is
+  /// rejected before it is scored, as a non-manifold candidate is, and a
+  /// trial of the line search that lands on one is not scored and the step is
+  /// halved, as a non-improving trial is. Under `DiagonalWeights` the gate
+  /// excludes nothing either way.
+  [[nodiscard]] bool admissibilityGate() const noexcept {
+    return admissibilityGate_;
+  }
+  void setAdmissibilityGate(bool admissibilityGate) noexcept {
+    admissibilityGate_ = admissibilityGate;
+  }
 
   /// Whether the Regge term is included in the objective.
   [[nodiscard]] bool einsteinHilbertEnabled() const noexcept {
@@ -765,9 +787,11 @@ class MultiCobordism {
   ///   a number.
   void setMoveTolerance(double moveTolerance);
 
-  /// The admissibility tolerance of the Whitney-pencil configuration space: a
-  /// geometry is a member when its Kontsevich-Segal margin is at least minus
-  /// this amount, in radians (`geometryAdmissible`). Defaults to 1e-15.
+  /// The admissibility tolerance: a geometry is read as inside the closure
+  /// of the Kontsevich-Segal allowable domain when its margin is at least
+  /// minus this amount, in radians (`geometryAdmissible`). It decides what
+  /// the admissibility gate excludes when the gate is declared
+  /// (`setAdmissibilityGate`), and nothing otherwise. Defaults to 1e-15.
   [[nodiscard]] double admissibilityTolerance() const {
     return admissibilityTolerance_;
   }
@@ -3248,6 +3272,9 @@ class MultiCobordism {
   /// The Kontsevich-Segal margin, in radians, down to minus which a geometry
   /// is admissible under the Whitney pencil (`setAdmissibilityTolerance`).
   double admissibilityTolerance_ = 1e-15;
+  /// Whether the drive excludes a geometry that is not admissible
+  /// (`setAdmissibilityGate`). Off unless declared.
+  bool admissibilityGate_ = false;
   /// Set by `runStage2`: true when its last call stopped on the
   /// absolute-tolerance stationarity test, false when it hit the iteration
   /// budget.

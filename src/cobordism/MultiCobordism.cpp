@@ -2916,9 +2916,11 @@ bool MultiCobordism::applyMoveSpecification(
            .dualComplexValid()
            .first)
     return false;
-  // Under the Whitney pencil the configuration space is the closure of the
-  // Kontsevich–Segal allowable domain; a proposal outside it is not a member.
-  return geometryAdmissible(spacetime);
+  // With the admissibility gate declared, the configuration space under the
+  // Whitney pencil is the closure of the Kontsevich–Segal allowable domain and
+  // a proposal outside it is not a member. Without it, which is the default,
+  // the proposal is scored whatever its margin is.
+  return !admissibilityGate_ || geometryAdmissible(spacetime);
 }
 
 bool MultiCobordism::geometryAdmissible(const std::shared_ptr<Spacetime> &spacetime) const {
@@ -3925,10 +3927,11 @@ bool MultiCobordism::stage2Update(double beta, double tolerance,
       // paid for, and the accepted state would not be a descent of the whole
       // objective.
       setPhases(phases - trialStepScale * phaseDescentDirection);
-      if (!geometryAdmissible(spacetime_)) {
-        // Outside the closure of the allowable domain: not a configuration,
-        // so it is not scored; the step is shortened exactly as a non-improving
-        // trial is.
+      if (admissibilityGate_ && !geometryAdmissible(spacetime_)) {
+        // The admissibility gate is declared and the trial is outside the
+        // closure of the allowable domain: not a configuration, so it is not
+        // scored; the step is shortened exactly as a non-improving trial is.
+        // Without the gate the trial is scored like any other.
         CLOG(INFO_LEVEL, "Trial geometry not Kontsevich-Segal admissible; shortening the step.");
         trialStepScale *= 0.5;
         continue;

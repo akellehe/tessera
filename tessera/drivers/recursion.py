@@ -696,6 +696,11 @@ def relax_level(spacetime, config, sectors=None, count=None):
         "changed": bool(drive["changed"]),
         "moved_base": moved_base,
         "residual_trace": list(drive["trace"]),
+        # the margin of the base the drive ended on; the drive excludes no
+        # geometry for it unless the admissibility gate is declared
+        "kontsevich_segal_margin": float(
+            cob.HodgeLaplacian.kontsevichSegalMargin(final)),
+        "admissibility_gate": bool(held.get("admissibility_gate", False)),
         "undefined_points": len(drive["objective"].undefined),
         "sector_monopole_numbers": list(
             end.relaxation.sector_monopole_numbers()),
@@ -1364,9 +1369,12 @@ def pachner_stage(cells, z, links, config):
     sequences when no single move does, or, with a ``pachner_length`` above
     zero, searching sequences of exactly that many moves first and backing
     off one move at a time (the two schedules are alternatives,
-    `cell_solve.checked_schedule`). A proposed geometry is admissible
-    when its Kontsevich-Segal margin is at least minus the config's
-    ``admissibility_tolerance``. The walk is
+    `cell_solve.checked_schedule`). No candidate is excluded for its
+    Kontsevich-Segal margin unless the config declares the engine's
+    admissibility gate (``admissibility_gate``, off by default), under
+    which a proposed geometry is admissible when its margin is at least
+    minus the config's ``admissibility_tolerance``; the margin of the base
+    the search ends on is in the record either way. The walk is
     complete and reproducible, so there is no seed. The base is one sheet;
     the level is rebuilt from it
     with every sheet identical. Returns the base after the committed moves,
@@ -1390,6 +1398,7 @@ def pachner_stage(cells, z, links, config):
         "moves": ("the four Pachner kinds; no cone-out, cone-in or "
                   "disposition move"),
         "objective_name": name,
+        "admissibility_gate": bool(config.get("admissibility_gate", False)),
         "objective": (
             "joint stationarity: the Regge action and the Hodge spectral "
             "entropies of degrees %s stationary at one metric"
@@ -1421,6 +1430,7 @@ def pachner_stage(cells, z, links, config):
         objective.begin()
         node = cell_solve.cell_node(spacetime, objective)
     node.move_tolerance = bp.declared_tolerance(config, "move_tolerance")
+    node.admissibility_gate = bool(config.get("admissibility_gate", False))
     node.admissibility_tolerance = bp.declared_tolerance(
         config, "admissibility_tolerance")
     record["objective_before"] = float(node.objective())
@@ -1429,6 +1439,10 @@ def pachner_stage(cells, z, links, config):
         grow_boundaries=False, max_lookahead=depth,
         combinatorial_breadth=length)]
     record["objective_after"] = float(node.objective())
+    # the margin of the base the search ends on: a number of the record,
+    # which excludes nothing unless the admissibility gate is declared
+    record["kontsevich_segal_margin"] = float(
+        cob.HodgeLaplacian.kontsevichSegalMargin(node.spacetime()))
     cells_out, z_out, links_out, relabel = base_fields(node.spacetime())
     record["vertex_relabeling"] = {str(v): relabel[v]
                                    for v in sorted(relabel)}
