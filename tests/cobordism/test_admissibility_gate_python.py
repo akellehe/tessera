@@ -44,8 +44,8 @@ def _tetrahedron(squared):
 def test_the_gate_is_off_unless_declared():
     """A node applies no admissibility gate until one is declared, whatever
     its metric source; the admissibility tolerance is declared beside it."""
-    for source in (HL.MetricSource.WhitneyPencil,
-                   HL.MetricSource.DiagonalWeights):
+    for source in (cob.HodgeMetricSource.WhitneyPencil,
+                   cob.HodgeMetricSource.DiagonalWeights):
         node = MC(_tetrahedron(8.0), [], [], [1], metric_source=source)
         assert node.admissibility_gate is False
         assert node.admissibility_tolerance == 1e-15
@@ -64,7 +64,7 @@ def test_admissibility_is_a_measurement_whatever_the_gate():
     assert HL.kontsevichSegalMargin(inside) == pytest.approx(math.pi)
     assert HL.kontsevichSegalMargin(outside) == pytest.approx(-2 * math.pi)
     node = MC(inside, [], [], [1],
-              metric_source=HL.MetricSource.WhitneyPencil)
+              metric_source=cob.HodgeMetricSource.WhitneyPencil)
     for gate in (False, True):
         node.admissibility_gate = gate
         assert node.geometryAdmissible(inside)
@@ -166,7 +166,7 @@ class _TowardMinusOne(cob.CobordismObjective):
 
 
 def _one_update(gate):
-    spacetime = _tetrahedron(1.0)
+    spacetime = _tetrahedron(2.0)
     objective = _TowardMinusOne()
     node = cs.cell_node(spacetime, objective)
     node.admissibility_gate = gate
@@ -176,11 +176,12 @@ def _one_update(gate):
 
 
 def test_without_the_gate_a_trial_outside_the_domain_is_scored():
-    """From squared lengths 1 the full step lands on squared lengths -1.
+    """From squared lengths 2 the full step lands on squared lengths -1.
     Without the gate that trial is scored and accepted, since it lowers the
-    scalar from 24 to 0, and the geometry reached has margin -2 pi. With the
-    gate the trial is not scored: the step is halved until the trial is
-    inside the domain, and the geometry reached has margin pi."""
+    scalar from 54 to 0, and the geometry reached has margin -2 pi. With the
+    gate the trial is not scored: the step is halved, the trial at squared
+    lengths 1/2 is inside the domain and is accepted, and the geometry
+    reached has margin pi."""
     scored, final, margin = _one_update(False)
     assert -1.0 in scored
     np.testing.assert_allclose(final, -1.0, atol=1e-14)
@@ -188,7 +189,7 @@ def test_without_the_gate_a_trial_outside_the_domain_is_scored():
 
     scored, final, margin = _one_update(True)
     assert min(scored) > 0.0
-    assert np.all(final.real > 0.0) and np.all(final.real < 1.0)
+    np.testing.assert_allclose(final, 0.5, atol=1e-14)
     assert margin == pytest.approx(math.pi)
 
 

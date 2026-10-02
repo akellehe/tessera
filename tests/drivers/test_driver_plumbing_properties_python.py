@@ -170,8 +170,10 @@ def _solve_options_are_the_sentinels(options):
     options["configure"](node)
     assert node.admissibility_tolerance == \
         SENTINEL_TOLERANCES["admissibility_tolerance"]
+    assert node.admissibility_gate is True
     # no stiffness and no pinned region is declared on the node by default
-    assert set(vars(node)) == {"admissibility_tolerance"}
+    assert set(vars(node)) == {"admissibility_gate",
+                               "admissibility_tolerance"}
 
 
 def test_the_command_line_reaches_the_level_relaxation(monkeypatch):
