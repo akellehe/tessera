@@ -233,6 +233,10 @@ DECLARED_PACHNER_LENGTH = 0
 #: (`cell_solve.StationarityObjective` over the level's sheets), whose Regge
 #: term is read on the continued sheet and has one value there.
 PACHNER_OBJECTIVES = ("engine", "joint-action")
+#: The hinges of the primal Regge sum of every level's and every cell's
+#: action (``--regge-hinges``): the interior hinges, or all of them.
+REGGE_HINGES = ("interior", "all")
+DECLARED_REGGE_HINGES = "interior"
 DECLARED_PACHNER_OBJECTIVE = "engine"
 #: The degrees the joint stationarity objective is declared over on the base:
 #: the register degree and the Hodge degrees, the emergence driver's
@@ -1770,6 +1774,43 @@ def _tick(record, index, cells, z, links, config):
 # ------------------------------------------------------------------ the drive
 
 
+def checked_run(ticks, tetrahedra, kappa, beta, resolutions, band_rank,
+                persistence_required, max_cells, pachner_updates,
+                pachner_depth, pachner_length):
+    """The declarations of a run that have no meaning, each named: a count
+    that is negative, a coupling that is zero or not finite (the action
+    carries 1/kappa), an empty window of resolutions or a resolution that is
+    not positive, a band without a mode, and a schedule of the growth step
+    that `cell_solve.checked_schedule` does not accept."""
+    def whole(name, value, least):
+        if int(value) != value or int(value) < least:
+            raise ValueError("%s is an integer of at least %d; got %r"
+                             % (name, least, value))
+
+    whole("the number of ticks", ticks, 0)
+    whole("the number of tetrahedra of the declared host", tetrahedra, 1)
+    whole("the band rank", band_rank, 1)
+    whole("the number of updates of the growth step", pachner_updates, 0)
+    if persistence_required is not None:
+        whole("the number of resolutions a component persists across",
+              persistence_required, 0)
+    if max_cells is not None:
+        whole("the number of cells read per tick", max_cells, 0)
+    for name, value in (("kappa", kappa), ("beta", beta)):
+        if not math.isfinite(value):
+            raise ValueError("%s is a finite number; got %r" % (name, value))
+    if kappa == 0:
+        raise ValueError("kappa is not zero: the action carries 1/kappa")
+    resolutions = list(resolutions)
+    if not resolutions:
+        raise ValueError("the window of resolutions has no resolution in it")
+    for resolution in resolutions:
+        if not (math.isfinite(resolution) and resolution > 0):
+            raise ValueError("a resolution is a positive finite number; got "
+                             "%r" % (resolution,))
+    cell_solve.checked_schedule(pachner_depth, pachner_length)
+
+
 def default_config(ticks=DECLARED_TICKS, tetrahedra=DECLARED_TETRAHEDRA,
                    kappa=DECLARED_KAPPA, beta=DECLARED_BETA,
                    resolutions=DECLARED_RESOLUTIONS,
@@ -1786,7 +1827,8 @@ def default_config(ticks=DECLARED_TICKS, tetrahedra=DECLARED_TETRAHEDRA,
                    pachner_depth=DECLARED_PACHNER_DEPTH,
                    pachner_length=DECLARED_PACHNER_LENGTH,
                    pachner_objective=DECLARED_PACHNER_OBJECTIVE, limits=None,
-                   villain_order=bp.DECLARED_VILLAIN_ORDER, solve=None):
+                   villain_order=bp.DECLARED_VILLAIN_ORDER, solve=None,
+                   regge_hinges=DECLARED_REGGE_HINGES):
     """The declared configuration, recorded with every run. ``max_cells``
     limits how many tetrahedra per tick are read as hosts, for quick checks;
     it changes no number of the cells it keeps. ``persistence_required`` is
@@ -1801,8 +1843,16 @@ def default_config(ticks=DECLARED_TICKS, tetrahedra=DECLARED_TETRAHEDRA,
     (`baryon_poles.DECLARED_VILLAIN_ORDER`); it is carried into every level's
     action and every cell's config. ``solve`` sets any of
     `baryon_poles.SOLVE_OPTIONS` by key, for the drive of every level's
-    relaxation and of every cell's solve."""
+    relaxation and of every cell's solve. ``regge_hinges`` names the hinges
+    of the primal Regge sum of every level's and every cell's action.
+
+    A declaration that has no meaning is named here, before a tick is
+    computed (`checked_run`)."""
+    checked_run(ticks, tetrahedra, kappa, beta, resolutions, band_rank,
+                persistence_required, max_cells, pachner_updates,
+                pachner_depth, pachner_length)
     config = bp.default_config(kappas=[kappa], betas=[beta],
+                               regge_hinges=regge_hinges,
                                edge_squared=edge_squared,
                                elimination=elimination,
                                selected_contents=selected_contents,
@@ -2417,7 +2467,15 @@ def build_parser():
                      help="squared edge length of level 0 (default %g)"
                           % DECLARED_EDGE_SQUARED)
     run.add_argument("--eliminate", choices=bp.ELIMINATIONS,
-                     default=bp.DECLARED_ELIMINATION)
+                     default=bp.DECLARED_ELIMINATION,
+                     help="the fluctuations the Section 7 quartic eliminates "
+                          "in every cell's read, as in baryon_poles "
+                          "(default %s)" % bp.DECLARED_ELIMINATION)
+    run.add_argument("--regge-hinges", choices=REGGE_HINGES,
+                     default=DECLARED_REGGE_HINGES,
+                     help="hinges of the primal Regge sum of every level's "
+                          "and every cell's action (default %s)"
+                          % DECLARED_REGGE_HINGES)
     run.add_argument("--contents", type=int, nargs=3, action="append",
                      default=None, metavar=("N1", "N2", "N3"),
                      help="a content to read on every cell (repeatable; "
@@ -2491,6 +2549,7 @@ def main(argv=None):
         pachner_depth=args.pachner_depth,
         pachner_length=args.pachner_length,
         pachner_objective=args.pachner_objective,
+        regge_hinges=args.regge_hinges,
         limits=bp.limits_from(args),
         solve=bp.solve_options_from(args),
         villain_order=args.villain_order)
