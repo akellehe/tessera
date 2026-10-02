@@ -280,6 +280,14 @@ class WhitneyMass {
       const cobordism::ChainComplex &K, const SquaredLengths &s, int k,
       std::size_t edgeIndex, Branch branch = Branch::Continuation);
 
+  /// \f$ \partial M_k/\partial s_e \f$ for every edge, one sparse matrix per
+  /// edge in canonical order, from one pass over the top simplices. Each is
+  /// entry for entry the matrix `assembleDerivative` gives for that edge: the
+  /// blocks are scattered in the same order.
+  [[nodiscard]] static std::vector<SparseMatrix> assembleDerivatives(
+      const cobordism::ChainComplex &K, const SquaredLengths &s, int k,
+      Branch branch = Branch::Continuation);
+
   /// The directional derivative \f$ D_v M_k = \sum_e v_e\,\partial M_k/\partial s_e \f$
   /// along the squared-length direction \p direction (one entry per edge, in
   /// canonical order), on \f$ M_k \f$'s pattern.

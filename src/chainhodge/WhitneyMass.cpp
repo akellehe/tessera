@@ -844,6 +844,37 @@ SparseMatrix WhitneyMass::assembleDerivative(const cobordism::ChainComplex &K,
   return D;
 }
 
+std::vector<SparseMatrix> WhitneyMass::assembleDerivatives(const cobordism::ChainComplex &K,
+                                                           const SquaredLengths &s, int k,
+                                                           Branch branch) {
+  checkInputs(K, s, k);
+  const int n = static_cast<int>(K.numSimplices(k));
+  const std::size_t edges = K.numSimplices(1);
+  // One triplet list per edge, filled block by block in the order
+  // `assembleDerivative` fills the list of its one edge, so that each matrix
+  // sums the same entries in the same order.
+  std::vector<std::vector<Eigen::Triplet<Complex>>> trip(edges);
+  for (const auto &b : topSimplexBlocks(K, s, k, branch, true)) {
+    const int nf = static_cast<int>(b.cellIndices.size());
+    for (std::size_t m = 0; m < b.edgeIndices.size(); ++m) {
+      auto &list = trip[static_cast<std::size_t>(b.edgeIndices[m])];
+      for (int p = 0; p < nf; ++p)
+        for (int q = 0; q < nf; ++q)
+          list.emplace_back(b.cellIndices[static_cast<std::size_t>(p)],
+                            b.cellIndices[static_cast<std::size_t>(q)], b.derivative[m](p, q));
+    }
+  }
+  std::vector<SparseMatrix> out;
+  out.reserve(edges);
+  for (std::size_t edge = 0; edge < edges; ++edge) {
+    SparseMatrix D(n, n);
+    D.setFromTriplets(trip[edge].begin(), trip[edge].end());
+    D.makeCompressed();
+    out.push_back(std::move(D));
+  }
+  return out;
+}
+
 SparseMatrix WhitneyMass::assembleDirectionalDerivative(const cobordism::ChainComplex &K,
                                                         const SquaredLengths &s, int k,
                                                         const std::vector<Complex> &direction,

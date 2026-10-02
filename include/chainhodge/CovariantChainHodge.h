@@ -9,6 +9,7 @@
 #include <limits>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <utility>
@@ -669,6 +670,16 @@ class CovariantChainHodge {
                                                           std::uint64_t x, std::uint64_t y);
   struct DerivativeWorkspace;
   mutable std::vector<std::shared_ptr<DerivativeWorkspace>> workspace_;
+  // The dressed length derivatives of M_j^U in every edge, per degree, formed
+  // from one pass over the top simplices the first time one of them is asked
+  // for (`dressedLengthDerivative`) and kept. Guarded by the mutex, which
+  // copies of the instance share with the slots.
+  mutable std::vector<std::shared_ptr<const std::vector<SparseMatrix>>> lengthDerivatives_;
+  std::shared_ptr<std::mutex> lengthDerivativesMutex_;
+  // d M_j^U / d s_e for the edge at canonical index `edgeIndex`: read from
+  // the kept derivatives of degree j below the dense crossover, assembled
+  // for the one edge at or above it. Thread-safe.
+  [[nodiscard]] SparseMatrix dressedLengthDerivative(int j, std::size_t edgeIndex) const;
   // The projector, right frame, and projector certificates of one instance on
   // a contour (no dual, no pairing): what `band` computes for U and for U^{-1}.
   struct ProjectorRead {

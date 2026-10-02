@@ -280,6 +280,8 @@ CovariantChainHodge::CovariantChainHodge(const ChainHodge &base, Connection U, s
   }
   factor_.assign(static_cast<std::size_t>(d) + 1, nullptr);
   workspace_.assign(static_cast<std::size_t>(d) + 1, nullptr);
+  lengthDerivatives_.assign(static_cast<std::size_t>(d) + 1, nullptr);
+  lengthDerivativesMutex_ = std::make_shared<std::mutex>();
   cert_.gaugeSeed = gaugeSeed;
   if (measureCertificate) measureSparseIdentities(gaugeSeed);
 }
@@ -379,24 +381,41 @@ Eigen::MatrixXcd CovariantChainHodge::assembleDerivative(
 Eigen::MatrixXcd CovariantChainHodge::covariantOperatorDerivative(int k, std::size_t edgeIndex) const {
   if (k < 0 || k > dimension()) throw std::invalid_argument("CovariantChainHodge: degree out of range");
   const int d = dimension();
-  const auto &K = base_->complex();
-  const auto &s = base_->squaredLengths();
-  const Branch branch = base_->branch();
+  if (edgeIndex >= base_->complex().numSimplices(1))
+    throw std::invalid_argument("CovariantChainHodge: edge index out of range");
   SparseMatrix dMkm1, dMk, dMkp1;
-  if (k >= 1) {
-    const auto &b = base_vertex_[static_cast<std::size_t>(k) - 1];
-    dMkm1 = dress(WhitneyMass::assembleDerivative(K, s, k - 1, edgeIndex, branch), b, b, U_);
-  }
-  {
-    const auto &b = base_vertex_[static_cast<std::size_t>(k)];
-    dMk = dress(WhitneyMass::assembleDerivative(K, s, k, edgeIndex, branch), b, b, U_);
-  }
-  if (k < d) {
-    const auto &b = base_vertex_[static_cast<std::size_t>(k) + 1];
-    dMkp1 = dress(WhitneyMass::assembleDerivative(K, s, k + 1, edgeIndex, branch), b, b, U_);
-  }
+  if (k >= 1) dMkm1 = dressedLengthDerivative(k - 1, edgeIndex);
+  dMk = dressedLengthDerivative(k, edgeIndex);
+  if (k < d) dMkp1 = dressedLengthDerivative(k + 1, edgeIndex);
   return assembleDerivative(k, k >= 1 ? &dMkm1 : nullptr, &dMk, k < d ? &dMkp1 : nullptr,
                             nullptr, nullptr, nullptr, nullptr);
+}
+
+SparseMatrix CovariantChainHodge::dressedLengthDerivative(int j, std::size_t edgeIndex) const {
+  const auto &b = base_vertex_[static_cast<std::size_t>(j)];
+  const auto &K = base_->complex();
+  if (edgeIndex >= K.numSimplices(1))
+    throw std::invalid_argument("CovariantChainHodge: edge index out of range");
+  // At or above the dense crossover the derivatives of every edge are not
+  // kept (one sparse matrix per edge): the one edge is assembled.
+  if (base_->size(j) >= base_->crossoverDimension())
+    return dress(WhitneyMass::assembleDerivative(K, base_->squaredLengths(), j, edgeIndex, base_->branch()),
+                 b, b, U_);
+  std::shared_ptr<const std::vector<SparseMatrix>> kept;
+  {
+    const std::lock_guard<std::mutex> lock(*lengthDerivativesMutex_);
+    auto &slot = lengthDerivatives_[static_cast<std::size_t>(j)];
+    if (!slot) {
+      // One pass over the top simplices gives the derivative in every edge;
+      // `WhitneyMass::assembleDerivative` makes the same pass for one edge.
+      std::vector<SparseMatrix> all =
+          WhitneyMass::assembleDerivatives(K, base_->squaredLengths(), j, base_->branch());
+      for (SparseMatrix &D : all) D = dress(D, b, b, U_);
+      slot = std::make_shared<const std::vector<SparseMatrix>>(std::move(all));
+    }
+    kept = slot;
+  }
+  return (*kept)[edgeIndex];
 }
 
 CovariantChainHodge::LengthDirection CovariantChainHodge::lengthDirection(
@@ -443,10 +462,7 @@ Eigen::MatrixXcd CovariantChainHodge::covariantOperatorSecondDerivative(const Le
   const Branch branch = base_->branch();
   if (edgeIndex >= K.numSimplices(1))
     throw std::invalid_argument("CovariantChainHodge: edge index out of range");
-  const auto dressedFirst = [&](int j) {
-    const auto &b = base_vertex_[static_cast<std::size_t>(j)];
-    return dress(WhitneyMass::assembleDerivative(K, s, j, edgeIndex, branch), b, b, U_);
-  };
+  const auto dressedFirst = [&](int j) { return dressedLengthDerivative(j, edgeIndex); };
   // h = M_k A P B + C M_{k+1} D Q with P = (M_{k-1}^U)^{-1}, Q = (M_k^U)^{-1};
   // only the metrics depend on the lengths. E = d/ds_e, V = D_v, S = D_v d/ds_e.
   const int n = base_->size(k);
@@ -486,9 +502,7 @@ Eigen::MatrixXcd CovariantChainHodge::covariantOperatorSecondDerivative(const Le
 
 SparseMatrix CovariantChainHodge::dressedDerivative(int k, std::size_t edgeIndex) const {
   if (k < 0 || k > dimension()) throw std::invalid_argument("CovariantChainHodge: degree out of range");
-  const auto &b = base_vertex_[static_cast<std::size_t>(k)];
-  return dress(WhitneyMass::assembleDerivative(base_->complex(), base_->squaredLengths(), k, edgeIndex,
-                                              base_->branch()), b, b, U_);
+  return dressedLengthDerivative(k, edgeIndex);
 }
 
 SparseMatrix CovariantChainHodge::dressedPhaseDerivative(int k, std::size_t edgeIndex) const {
@@ -689,7 +703,7 @@ Eigen::MatrixXcd CovariantChainHodge::covariantOperatorMixedDerivative(int k, st
   auto metricFactor = [&](int j) {
     const auto &b = base_vertex_[static_cast<std::size_t>(j)];
     const SparseMatrix &M = dressed_[static_cast<std::size_t>(j)];
-    const SparseMatrix dM = dress(WhitneyMass::assembleDerivative(K, s, j, lengthEdge, branch), b, b, U_);
+    const SparseMatrix dM = dressedLengthDerivative(j, lengthEdge);
     ProductFactor f;
     f.value = Eigen::MatrixXcd(M);
     f.da = Eigen::MatrixXcd(dM);

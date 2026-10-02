@@ -159,6 +159,12 @@ Reference: Whitney, "Geometric Integration Theory", 1957.)doc")
            py::arg("complex"), py::arg("squared_lengths"), py::arg("k"), py::arg("edge_index"),
            py::arg("branch") = Branch::Continuation,
            "dM_k/ds_e for the edge at the given canonical index, sparse.")
+      .def_static("assembleDerivatives", &WhitneyMass::assembleDerivatives,
+           py::arg("complex"), py::arg("squared_lengths"), py::arg("k"),
+           py::arg("branch") = Branch::Continuation,
+           "dM_k/ds_e for every edge, one sparse matrix per edge in canonical order, from one "
+           "pass over the top simplices; each equals assembleDerivative of that edge entry for "
+           "entry.")
       .def_static("assembleDirectionalDerivative", &WhitneyMass::assembleDirectionalDerivative,
            py::arg("complex"), py::arg("squared_lengths"), py::arg("k"), py::arg("direction"),
            py::arg("branch") = Branch::Continuation,

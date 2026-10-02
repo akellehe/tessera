@@ -16,6 +16,7 @@
 #include <limits>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -837,6 +838,27 @@ struct HodgeLaplacian::WhitneyState {
     const Eigen::VectorXd &d = signs[static_cast<std::size_t>(k)];
     return d.asDiagonal() * ref * d.asDiagonal();
   }
+  /// \f$ h = h_k(s,U) \f$ and its image \f$ L_z = (M^U)^{-1} h M^U \f$ in the
+  /// reference basis: what every per-edge derivative of \f$ L_z \f$ is formed
+  /// from. Formed once per degree for this geometry and kept. Thread-safe.
+  struct OperatorImage {
+    Eigen::MatrixXcd h;
+    Eigen::MatrixXcd Lz;
+  };
+  [[nodiscard]] std::shared_ptr<const OperatorImage> operatorImage(int k) const {
+    const std::lock_guard<std::mutex> lock(imageMutex_);
+    if (images_.size() <= static_cast<std::size_t>(k)) images_.resize(static_cast<std::size_t>(k) + 1);
+    auto &slot = images_[static_cast<std::size_t>(k)];
+    if (!slot) {
+      auto image = std::make_shared<OperatorImage>();
+      image->h = op->covariantOperator(k);
+      image->Lz = op->applyG(k, Eigen::MatrixXcd(image->h * op->dressed(k)));
+      slot = std::move(image);
+    }
+    return slot;
+  }
+  mutable std::mutex imageMutex_;
+  mutable std::vector<std::shared_ptr<const OperatorImage>> images_;
   /// \f$ \partial L_z/\partial s_e \f$ in the stored basis for the edge at
   /// canonical index `edge`, given \f$ h = h_k(s,U) \f$ and
   /// \f$ L_z = (M^U)^{-1} h M^U \f$ in the reference basis:
@@ -1237,9 +1259,8 @@ std::vector<std::complex<double>> HodgeLaplacian::laplacianGradient(
                                                std::complex<double>{0.0, 0.0});
     }
     // d L_z = M^{-1} [ -dM L_z + dh M + h dM ] with L_z = M^{-1} h M.
-    const Eigen::MatrixXcd h = w.op->covariantOperator(k);
-    const Eigen::MatrixXcd Lz = w.op->applyG(k, Eigen::MatrixXcd(h * w.op->dressed(k)));
-    dL = w.lengthDerivative(k, it->second, h, Lz);
+    const auto image = w.operatorImage(k);
+    dL = w.lengthDerivative(k, it->second, image->h, image->Lz);
   } else {
     const LaplacianDerivativeWorkspace workspace(*st_, k, weightConvention_);
     dL = workspace.gradient(ea, eb);
@@ -1268,9 +1289,10 @@ std::vector<std::complex<double>> HodgeLaplacian::laplacianPhaseGradient(
                                         std::complex<double>{0.0, 0.0});
   const auto it = w.edgeIndex.find(edgeKeyOf(ea, eb));
   if (it == w.edgeIndex.end() || nk == 0) return out;
-  const Eigen::MatrixXcd h = w.op->covariantOperator(k);
+  const auto image = w.operatorImage(k);
+  const Eigen::MatrixXcd &h = image->h;
   const chainhodge::SparseMatrix &M = w.op->dressed(k);
-  const Eigen::MatrixXcd Lz = w.op->applyG(k, Eigen::MatrixXcd(h * M));
+  const Eigen::MatrixXcd &Lz = image->Lz;
   const chainhodge::SparseMatrix dM = w.op->dressedPhaseDerivative(k, it->second);
   const Eigen::MatrixXcd dh = w.op->covariantOperatorPhaseDerivative(k, it->second);
   const Eigen::MatrixXcd inner = -Eigen::MatrixXcd(dM * Lz) + Eigen::MatrixXcd(dh * M) + Eigen::MatrixXcd(h * dM);
@@ -1359,9 +1381,10 @@ std::vector<std::complex<double>> HodgeLaplacian::laplacianPhaseHessian(
   const auto ib = w.edgeIndex.find(edgeKeyOf(b1, b2));
   if (ia == w.edgeIndex.end() || ib == w.edgeIndex.end() || nk == 0) return out;
   const chainhodge::CovariantChainHodge &op = *w.op;
-  const Eigen::MatrixXcd h = op.covariantOperator(k);
+  const auto image = w.operatorImage(k);
+  const Eigen::MatrixXcd &h = image->h;
   const chainhodge::SparseMatrix &M = op.dressed(k);
-  const Eigen::MatrixXcd Lz = op.applyG(k, Eigen::MatrixXcd(h * M));
+  const Eigen::MatrixXcd &Lz = image->Lz;
   // The first derivatives on each edge, of the pencil's operator, of its
   // metric and of L_z itself.
   const chainhodge::SparseMatrix Ma = op.dressedPhaseDerivative(k, ia->second);
@@ -1403,9 +1426,10 @@ std::vector<std::complex<double>> HodgeLaplacian::laplacianMixedDerivative(
   const auto jf = w.edgeIndex.find(edgeKeyOf(f1, f2));
   if (ie == w.edgeIndex.end() || jf == w.edgeIndex.end() || nk == 0) return out;
   const chainhodge::CovariantChainHodge &op = *w.op;
-  const Eigen::MatrixXcd h = op.covariantOperator(k);
+  const auto image = w.operatorImage(k);
+  const Eigen::MatrixXcd &h = image->h;
   const chainhodge::SparseMatrix &M = op.dressed(k);
-  const Eigen::MatrixXcd Lz = op.applyG(k, Eigen::MatrixXcd(h * M));
+  const Eigen::MatrixXcd &Lz = image->Lz;
   const chainhodge::SparseMatrix Me = op.dressedDerivative(k, ie->second);
   const chainhodge::SparseMatrix Mf = op.dressedPhaseDerivative(k, jf->second);
   const Eigen::MatrixXcd he = op.covariantOperatorDerivative(k, ie->second);
