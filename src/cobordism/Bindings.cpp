@@ -6083,6 +6083,16 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      "||A - A^T||_F / ||A||_F of the bare stiffness.")
       .def_readwrite("stiffness_conditioning",
                      &ManyBodySpaceRead::stiffnessConditioning)
+      .def_readwrite("stiffness_singular",
+                     &ManyBodySpaceRead::stiffnessSingular,
+                     "Whether the bare stiffness is singular at the declared "
+                     "tolerance; the read is made with the inverse as "
+                     "computed.")
+      .def_readwrite("stiffness_reciprocal_condition",
+                     &ManyBodySpaceRead::stiffnessReciprocalCondition,
+                     "The reciprocal condition number of the bare stiffness, "
+                     "with every nonzero pivot counted; NaN when no "
+                     "fluctuation is retained.")
       .def_readwrite("certificate", &ManyBodySpaceRead::certificate);
 
   py::class_<DressedFluctuation>(m, "DressedFluctuation",
@@ -6117,6 +6127,22 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def("particle_hole_energies", &DressedFluctuation::particleHoleEnergies,
            "The bare excitation energies Delta = lambda_n - lambda_m, one per "
            "pair of an occupied m with an empty n, occupied-major.")
+      .def("carrier_defective", &DressedFluctuation::carrierDefective,
+           "Whether a block's frame of right modes is singular at the "
+           "declared tolerance; every read is made with the left frame as "
+           "computed.")
+      .def("mode_frame_reciprocal_condition",
+           &DressedFluctuation::modeFrameReciprocalCondition,
+           "The smallest reciprocal condition number of a block's frame of "
+           "right modes, with every nonzero pivot counted.")
+      .def("smallest_relative_gap", &DressedFluctuation::smallestRelativeGap,
+           "The smallest particle-hole energy in the unit of the carrier's "
+           "largest eigenvalue modulus; NaN without a particle-hole pair.")
+      .def("pole_proximity", &DressedFluctuation::poleProximity,
+           py::arg("frequency") = std::complex<double>{0.0, 0.0},
+           "min |Delta^2 - w^2| / (|Delta|^2 + |w|^2) over the particle-hole "
+           "pairs: the relative distance of w from the nearest pole of the "
+           "polarization.")
       .def("mode_currents", &DressedFluctuation::modeCurrents, py::arg("index"),
            "V^-1 O_a V, the current matrix of one fluctuation in the carrier's "
            "mode basis, flat row-major in the declared occupation order.")
@@ -6124,7 +6150,9 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
            "D, the diamagnetic term, flat row-major R by R.")
       .def("paramagnetic", &DressedFluctuation::paramagnetic,
            py::arg("frequency") = std::complex<double>{0.0, 0.0},
-           "Pi(w), the paramagnetic polarization, flat row-major R by R.")
+           "Pi(w), the paramagnetic polarization, flat row-major R by R. It "
+           "has no value only where a denominator Delta^2 - w^2 is exactly "
+           "zero.")
       .def("dressed_stiffness", &DressedFluctuation::dressedStiffness,
            py::arg("frequency") = std::complex<double>{0.0, 0.0},
            "A_eff(w) = A + D - Pi(w), flat row-major R by R.")
@@ -6144,15 +6172,17 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def("collective_modes", &DressedFluctuation::collectiveModes,
            "The poles of A_eff(w)^-1, ascending by (Re w, Im w). A candidate "
            "whose geometric component vanishes is an uncoupled particle-hole "
-           "excitation rather than a pole and is not reported.")
+           "excitation rather than a pole and is not reported; every other "
+           "one is reported with its residual, unmeasured (NaN) when its "
+           "frequency is a particle-hole energy exactly.")
       .def("effective_action", &DressedFluctuation::effectiveAction,
            py::arg("cluster_frame"), py::arg("cluster_dual_frame"),
            py::arg("particles") = std::size_t{3},
-           py::arg("dimension_cap") =
-               DressedFluctuation::kDefaultManyBodyDimensionCap,
+           py::arg("dimension_cap") = std::optional<std::size_t>{},
            "S_eff on the N-particle space of a cluster fiber. The frames are "
            "the fiber's right frame (n by r) and its algebraic dual (r by n); "
-           "empty frames declare the whole carrier space.");
+           "empty frames declare the whole carrier space. No cap on the "
+           "dimension is declared by default.");
 
   py::class_<MappingCylinderDeclaration>(m, "MappingCylinderDeclaration",
       "The three pieces of data one tick of the recursion is built from: the "

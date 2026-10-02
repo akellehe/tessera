@@ -6,6 +6,8 @@
 
 #include <complex>
 #include <cstddef>
+#include <limits>
+#include <optional>
 #include <vector>
 
 #include "cobordism/Certificate.h"
@@ -67,7 +69,8 @@ struct DressedFluctuationDeclaration {
   ///
   /// An empty vector declares a zero bare stiffness, which is the case in which
   /// the whole stiffness of the fluctuation is the one the fermions induce.
-  /// `effectiveAction` then has nothing to invert and refuses.
+  /// `effectiveAction` then has nothing to invert and no value, unless no
+  /// fluctuation is retained at all, where it eliminates nothing.
   std::vector<std::complex<double>> bareStiffness;
 
   /// How many modes of \f$ h_0 \f$ the quasi-free state occupies. The
@@ -96,10 +99,12 @@ struct DressedFluctuationDeclaration {
   /// The relative tolerance the certificates of this instance hold against, the
   /// threshold below which a candidate collective mode's geometric component
   /// counts as zero and the reciprocal of a pencil eigenvalue, in the unit of
-  /// the pencil's scale, is the zero of an infinite eigenvalue, and the
-  /// fraction of the largest pivot at or below which a pivot of the frame of
-  /// right modes, or of the bare stiffness, is zero in the decision that the
-  /// carrier is defective or the stiffness singular.
+  /// the largest particle-hole energy, is the zero of an infinite eigenvalue,
+  /// and the fraction of the largest pivot at or below which a pivot of the
+  /// frame of right modes, or of the bare stiffness, is zero in the mark that
+  /// the carrier is defective or the stiffness singular. Every comparison is
+  /// relative to the size of the data it is made on: none has a floor in the
+  /// unit of the carrier or of the stiffness.
   double tolerance = 1e-15;
 };
 
@@ -146,6 +151,9 @@ struct CollectiveMode {
   /// the measured relative residual of the null-vector equation this mode
   /// solves, taken against the size of the two terms that cancel at the pole
   /// rather than against the dressed stiffness, which is what vanishes there.
+  /// Zero when both terms are zero, where the dressed stiffness is zero and
+  /// the equation holds exactly. Quiet NaN (unmeasured) when the frequency is
+  /// a particle-hole energy exactly, where the polarization has no value.
   double residual = 0.0;
 
   /// The mode's certificate. The pole search is an exact algebraic
@@ -227,8 +235,22 @@ struct ManyBodySpaceRead {
   /// assumes.
   double stiffnessAsymmetry = 0.0;
 
-  /// The condition estimate of the solve against \f$ A \f$.
+  /// The condition estimate of the solve against \f$ A \f$,
+  /// \f$ \lVert A\rVert_F\lVert A^{-1}\rVert_F \f$. Quiet NaN when no
+  /// fluctuation is retained, where no stiffness is inverted.
   double stiffnessConditioning = 0.0;
+
+  /// Whether \f$ A \f$ is singular at the declared tolerance: a pivot of its
+  /// full-pivoting LU decomposition is at or below that fraction of the
+  /// largest. The read is made all the same, with the inverse every nonzero
+  /// pivot gives, and `stiffnessReciprocalCondition` says how close to
+  /// singular \f$ A \f$ is.
+  bool stiffnessSingular = false;
+
+  /// The reciprocal condition number of \f$ A \f$ in the 1-norm, estimated
+  /// from its LU decomposition with every nonzero pivot counted. Quiet NaN
+  /// when no fluctuation is retained.
+  double stiffnessReciprocalCondition = 1.0;
 
   /// The certificate of the elimination: `StructureExact` given the verified
   /// premises above, with the residual of the solve against \f$ A \f$.
@@ -346,16 +368,19 @@ struct ManyBodySpaceRead {
 /// ever formed.
 class DressedFluctuation {
  public:
-  /// The largest \f$ N \f$-particle dimension `effectiveAction` will
-  /// materialize before refusing. The matrices it builds are dense and there
-  /// are four of them, so the cap is on the dimension rather than on the fiber
-  /// rank.
-  static constexpr std::size_t kDefaultManyBodyDimensionCap = 4096;
-
   /// Build the dressed fluctuation problem.
   ///
   /// The eigendecomposition of the carrier is taken once here, so every read
-  /// below is a cheap assembly over the stored modes.
+  /// below is a cheap assembly over the stored modes. Each exactly decoupled
+  /// block of the carrier (the connected components of its nonzero pattern)
+  /// is decomposed on its own, so that equal blocks, such as the sheets of a
+  /// sheeted support, give equal eigenvalues and modes bit for bit and every
+  /// mode is supported on one block; modes with equal keys of the declared
+  /// occupation order keep the order of the blocks.
+  ///
+  /// A frame of right modes that is singular at the declared tolerance is
+  /// inverted as computed and the instance says so (`carrierDefective`,
+  /// `modeFrameReciprocalCondition`).
   ///
   /// @param declaration The carrier, the couplings, the second derivatives, the
   ///   bare stiffness and the occupation rule.
@@ -364,9 +389,9 @@ class DressedFluctuation {
   ///   \f$ n\times n \f$, when the second derivatives are present but are not
   ///   \f$ R(R+1)/2 \f$ of them, when the bare stiffness is present but is not
   ///   \f$ R\times R \f$, when more modes are declared occupied than the
-  ///   carrier has, when the declared broadening is negative, or when the
-  ///   carrier has no eigenbasis, for which no occupied/empty splitting of the
-  ///   modes exists.
+  ///   carrier has, when the declared broadening is negative, when the
+  ///   eigendecomposition does not converge, or when the frame of right modes
+  ///   has no finite inverse, for which no left frame exists.
   explicit DressedFluctuation(DressedFluctuationDeclaration declaration);
 
   /// The declaration this instance was built from.
@@ -396,6 +421,33 @@ class DressedFluctuation {
   /// bare energies.
   [[nodiscard]] std::vector<std::complex<double>> particleHoleEnergies() const;
 
+  /// Whether the frame of right modes of a block of the carrier is singular at
+  /// the declared tolerance: a pivot of its full-pivoting LU decomposition is
+  /// at or below that fraction of the largest, so the carrier is defective to
+  /// that tolerance. Every read is made all the same, with the left frame
+  /// every nonzero pivot gives.
+  [[nodiscard]] bool carrierDefective() const noexcept;
+
+  /// The smallest reciprocal condition number, over the carrier's decoupled
+  /// blocks, of the block's frame of right modes, in the 1-norm, estimated
+  /// from its LU decomposition with every nonzero pivot counted.
+  [[nodiscard]] double modeFrameReciprocalCondition() const noexcept;
+
+  /// \f$ \min_{m,n}|\Delta_{nm}|/\max_k|\lambda_k| \f$: the smallest
+  /// particle-hole energy in the unit of the carrier's largest eigenvalue
+  /// modulus. The static polarization is a sum of terms
+  /// \f$ 1/\Delta_{nm} \f$, so this is how near the declared state is to one
+  /// whose occupied modes end inside a degenerate level. Quiet NaN when the
+  /// state has no particle-hole pair or every eigenvalue is zero.
+  [[nodiscard]] double smallestRelativeGap() const;
+
+  /// \f$ \min_{m,n}|\Delta_{nm}^2-\omega^2|/(|\Delta_{nm}|^2+|\omega|^2) \f$,
+  /// with the declared broadening in \f$ \Delta \f$: the relative distance
+  /// of \p frequency from the nearest pole of the polarization. It is one at
+  /// zero frequency unless a particle-hole energy is zero, and zero at a
+  /// pole. Quiet NaN when the state has no particle-hole pair.
+  [[nodiscard]] double poleProximity(std::complex<double> frequency) const;
+
   /// \f$ (V^{-1}O_aV) \f$, the current matrix of the \p index-th fluctuation in
   /// the carrier's mode basis, flat row-major \f$ n\times n \f$ in the declared
   /// occupation order. Its \f$ (m,n) \f$ entry is the transpose-paired matrix
@@ -410,10 +462,15 @@ class DressedFluctuation {
   [[nodiscard]] std::vector<std::complex<double>> diamagnetic() const;
 
   /// \f$ \Pi(\omega) \f$, the paramagnetic polarization, flat row-major
-  /// \f$ R\times R \f$.
-  /// @throws std::domain_error when \p frequency coincides with a
-  ///   particle-hole energy to within the declared tolerance, where the
-  ///   polarization has a pole and no finite value to report.
+  /// \f$ R\times R \f$. It has a value wherever no denominator
+  /// \f$ \Delta_{nm}^2-\omega^2 \f$ is zero; how near \p frequency is to a
+  /// pole is `poleProximity`. Every term is \f$ O_aO_b/\Delta \f$, so
+  /// \f$ \Pi \f$ of the carrier \f$ c\,h_0 \f$ with the couplings
+  /// \f$ c\,O_a \f$ at the frequency \f$ c\,\omega \f$ is \f$ c\,\Pi \f$
+  /// for every \f$ c \f$.
+  /// @throws std::domain_error when a denominator is exactly zero: the
+  ///   frequency is a particle-hole energy, where the polarization has a pole
+  ///   and no value.
   [[nodiscard]] std::vector<std::complex<double>> paramagnetic(
       std::complex<double> frequency = {0.0, 0.0}) const;
 
@@ -465,10 +522,21 @@ class DressedFluctuation {
   /// \f$ (\operatorname{Re}\omega,\operatorname{Im}\omega) \f$. A candidate
   /// whose geometric component is smaller than the declared tolerance is an
   /// uncoupled particle-hole excitation rather than a pole of the propagator
-  /// and is not reported. Every other candidate is reported with its measured
-  /// null-vector residual (`CollectiveMode::residual`) and its certificate,
-  /// which says whether the dressed stiffness confirms the eigenvalue the
-  /// linearization produced at the declared tolerance.
+  /// and is not reported, and an eigenvalue of the pencil whose reciprocal
+  /// about the shift is at or below the declared tolerance in the unit of
+  /// the largest particle-hole energy is an infinite one, which is no
+  /// frequency. Every other candidate is reported with its measured
+  /// null-vector residual (`CollectiveMode::residual`), its distance from the
+  /// nearest particle-hole energy (`CollectiveMode::continuumDistance`) and
+  /// its certificate, which says whether the dressed stiffness confirms the
+  /// eigenvalue the linearization produced at the declared tolerance.
+  ///
+  /// The shift of the pencil is placed in the unit of the largest
+  /// particle-hole energy (the norm of the pencil when every one is zero),
+  /// so the modes of the carrier \f$ c\,h_0 \f$ with the couplings
+  /// \f$ c\,O_a \f$, the second derivatives \f$ c\,\partial_a\partial_bh \f$
+  /// and the bare stiffness \f$ c\,A \f$ are \f$ c \f$ times those of
+  /// \f$ h_0 \f$, for every \f$ c \f$.
   [[nodiscard]] std::vector<CollectiveMode> collectiveModes() const;
 
   /// The effective action of the exact elimination on the \p particles-particle
@@ -484,17 +552,28 @@ class DressedFluctuation {
   ///   under the same convention.
   /// @param particles \f$ N \f$, the number of particles. Three is the
   ///   whitepaper's three-particle space of a baryon.
-  /// @param dimensionCap The largest \f$ \binom{r}{N} \f$ this call will
-  ///   materialize.
+  /// @param dimensionCap A declared largest \f$ \binom{r}{N} \f$ this call
+  ///   will materialize. None is declared by default: the four dense matrices
+  ///   of the read are built at whatever dimension the fiber and the particle
+  ///   number give.
+  ///
+  /// With no retained fluctuation the elimination integrates out nothing: the
+  /// quartic and its two parts are zero and the effective action is the
+  /// one-body term. A bare stiffness that is singular at the declared
+  /// tolerance is inverted as computed and the read says so
+  /// (`ManyBodySpaceRead::stiffnessSingular`,
+  /// `ManyBodySpaceRead::stiffnessReciprocalCondition`).
   /// @throws std::invalid_argument when a frame has the wrong size, when the
   ///   two frames disagree on \f$ r \f$, when \p particles exceeds \f$ r \f$,
-  ///   or when no bare stiffness is declared, which leaves nothing to invert;
-  ///   std::length_error when \f$ \binom{r}{N} \f$ exceeds \p dimensionCap.
+  ///   when fluctuations are retained and no bare stiffness is declared, which
+  ///   leaves nothing to invert, or when the bare stiffness has no finite
+  ///   inverse; std::length_error when \f$ \binom{r}{N} \f$ exceeds a
+  ///   declared \p dimensionCap.
   [[nodiscard]] ManyBodySpaceRead effectiveAction(
       const std::vector<std::complex<double>> &clusterFrame,
       const std::vector<std::complex<double>> &clusterDualFrame,
       std::size_t particles = 3,
-      std::size_t dimensionCap = kDefaultManyBodyDimensionCap) const;
+      std::optional<std::size_t> dimensionCap = std::nullopt) const;
 
  private:
   struct Modes;
@@ -507,6 +586,10 @@ class DressedFluctuation {
   std::vector<std::complex<double>> rightModes_;   // V, n x n row-major
   std::vector<std::complex<double>> leftModes_;    // V^{-1}, n x n row-major
   std::vector<std::complex<double>> eigenvalues_;  // ordered
+  // Whether a block's frame of right modes is singular at the declared
+  // tolerance, and the smallest reciprocal condition of a block's frame.
+  bool defective_ = false;
+  double modeFrameReciprocalCondition_ = 1.0;
   // (V^{-1} O_a V) for every declared fluctuation, in declaration order.
   std::vector<std::vector<std::complex<double>>> modeCurrents_;
   // The assembled diamagnetic term, built once.

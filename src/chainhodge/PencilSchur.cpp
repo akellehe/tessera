@@ -212,9 +212,21 @@ FeshbachResult PencilSchur::feshbach(const Eigen::MatrixXcd &A, const Eigen::Mat
     out.projectorTrace = Pi0.trace();
     out.resonantSpace = N;
     out.resonantLeftSpace = NL;
-    // P_II^D = (P_II + Pi_0)^{-1} (I - Pi_0): the inverse on the complementary
-    // invariant subspace, zero on the generalized eigenspace.
-    Eigen::PartialPivLU<Eigen::MatrixXcd> shifted(PII + Pi0);
+    // P_II^D = (P_II + u Pi_0)^{-1} (I - Pi_0) for every u != 0: the inverse
+    // on the complementary invariant subspace, zero on the generalized
+    // eigenspace. The projector is dimensionless and P_II is not, so u is
+    // the unit of P_II, its spectral radius: the shifted block then has the
+    // eigenvalue u on the generalized eigenspace beside the excluded
+    // eigenvalues of P_II, whose moduli lie between the disc and u, and its
+    // conditioning does not depend on the unit P_II is expressed in. A block
+    // whose eigenvalues are all zero has no spectral radius to offer; its
+    // norm is its unit, and the zero block, whose Drazin inverse is zero
+    // whatever u is, takes one.
+    double unit = spectralRadius;
+    if (unit == 0.0) unit = PII.norm();
+    if (unit == 0.0) unit = 1.0;
+    out.drazinUnit = unit;
+    Eigen::PartialPivLU<Eigen::MatrixXcd> shifted(PII + unit * Pi0);
     out.interiorInverse = shifted.solve(out.rangeProjector);
     const Eigen::MatrixXcd &PD = out.interiorInverse;
     const double scaleIB = std::max(PIB.norm(), kTiny);
@@ -373,15 +385,12 @@ FeshbachResult PencilSchur::sparseFeshbach(const SparseMatrix &A, const SparseMa
   // A sparse LU reveals no rank, and a determinant is no measure of singularity
   // at this size: the scale-free quantity the factorization does offer is the
   // residual of the solve it was asked for, and a block that cannot solve its
-  // own interface load is a resonance.
-  if (!(out.solveResidual <= solveTolerance))
-    throw std::runtime_error(
-        "PencilSchur::sparseFeshbach: the interior solve at this shift has relative residual " +
-        std::to_string(out.solveResidual) + ", above the declared " +
-        std::to_string(solveTolerance) +
-        ": the interior block is numerically singular here, an interior resonance. Read it with "
-        "the dense PencilSchur::feshbach, which carries the Drazin inverse, its Riesz projectors "
-        "and the resonant reduction");
+  // own interface load to the declared tolerance is numerically singular at
+  // this shift, an interior resonance. The complement is formed from the
+  // solve as it stands and says so; the dense PencilSchur::feshbach carries
+  // the Drazin inverse, its Riesz projectors and the resonant reduction.
+  out.solveTolerance = solveTolerance;
+  out.solveHolds = out.solveResidual <= solveTolerance;
   out.response = PBB - PBI * X;
   out.responseDeterminant = out.response.fullPivLu().determinant();
   out.constraintModes = Eigen::MatrixXcd::Zero(n, nb);
@@ -455,13 +464,24 @@ SurrogateResult PencilSchur::craigBampton(const Eigen::MatrixXcd &A, const Eigen
     }
   Eigen::MatrixXcd retained(ni, 0);
   if (ni > 0) {
+    // The interior metric is inverted as computed. When it is singular at the
+    // rank tolerance the surrogate says so and does not certify; an exactly
+    // zero pivot leaves no inverse and no fixed-interface spectrum.
     Eigen::FullPivLU<Eigen::MatrixXcd> metricLu(MII);
     metricLu.setThreshold(rankTolerance);
-    if (!metricLu.isInvertible())
+    out.interiorMetricSingular = !metricLu.isInvertible();
+    metricLu.setThreshold(0.0);
+    const bool metricInvertible = metricLu.isInvertible();
+    const double metricReciprocal = metricInvertible ? metricLu.rcond() : 0.0;
+    out.interiorMetricReciprocalCondition =
+        std::isfinite(metricReciprocal) ? metricReciprocal : 0.0;
+    Eigen::MatrixXcd interiorOperator = Eigen::MatrixXcd::Zero(ni, ni);
+    if (metricInvertible) interiorOperator = metricLu.solve(AII);
+    if (!metricInvertible || !interiorOperator.allFinite())
       throw std::runtime_error(
-          "PencilSchur::craigBampton: the interior chain metric M_II is singular, so the "
-          "fixed-interface pencil (A_II, M_II) has no spectrum to retain modes from");
-    Eigen::ComplexEigenSolver<Eigen::MatrixXcd> interiorSolver(metricLu.solve(AII), true);
+          "PencilSchur::craigBampton: the interior chain metric M_II has no finite inverse, so "
+          "the fixed-interface pencil (A_II, M_II) has no spectrum to retain modes from");
+    Eigen::ComplexEigenSolver<Eigen::MatrixXcd> interiorSolver(interiorOperator, true);
     if (interiorSolver.info() != Eigen::Success)
       throw std::runtime_error(
           "PencilSchur::craigBampton: the fixed-interface eigensolve did not converge");
@@ -495,14 +515,23 @@ SurrogateResult PencilSchur::craigBampton(const Eigen::MatrixXcd &A, const Eigen
 
   const int reducedDim = static_cast<int>(out.basis.cols());
   if (reducedDim > 0) {
+    // The reduced metric is inverted as computed, under the same rule.
     Eigen::FullPivLU<Eigen::MatrixXcd> reducedLu(out.reduced.M);
     reducedLu.setThreshold(rankTolerance);
-    if (!reducedLu.isInvertible())
+    out.reducedMetricSingular = !reducedLu.isInvertible();
+    reducedLu.setThreshold(0.0);
+    const bool reducedInvertible = reducedLu.isInvertible();
+    const double reducedReciprocal = reducedInvertible ? reducedLu.rcond() : 0.0;
+    out.reducedMetricReciprocalCondition =
+        std::isfinite(reducedReciprocal) ? reducedReciprocal : 0.0;
+    Eigen::MatrixXcd reducedOperator = Eigen::MatrixXcd::Zero(reducedDim, reducedDim);
+    if (reducedInvertible) reducedOperator = reducedLu.solve(out.reduced.A);
+    if (!reducedInvertible || !reducedOperator.allFinite())
       throw std::runtime_error(
-          "PencilSchur::craigBampton: the reduced chain metric V^T M V is singular, so the "
-          "reduction basis is degenerate and its spectrum is not the surrogate spectrum; widen "
-          "the retention radius or move the shift off the interior spectrum");
-    Eigen::ComplexEigenSolver<Eigen::MatrixXcd> reducedSolver(reducedLu.solve(out.reduced.A), true);
+          "PencilSchur::craigBampton: the reduced chain metric V^T M V has no finite inverse, "
+          "so the reduction basis is degenerate and the reduced pair has no spectrum; widen the "
+          "retention radius or move the shift off the interior spectrum");
+    Eigen::ComplexEigenSolver<Eigen::MatrixXcd> reducedSolver(reducedOperator, true);
     if (reducedSolver.info() != Eigen::Success)
       throw std::runtime_error("PencilSchur::craigBampton: the reduced eigensolve did not converge");
     const Eigen::VectorXcd values = reducedSolver.eigenvalues();
@@ -583,9 +612,22 @@ SurrogateResult PencilSchur::craigBampton(const Eigen::MatrixXcd &A, const Eigen
   }
   const bool separated = out.discardedModeSeparation > 0.0;
   const bool bounded = worstBound <= tolerance;
-  out.certified = everyPairHolds && separated && bounded;
+  const bool metricsRegular = !out.interiorMetricSingular && !out.reducedMetricSingular;
+  out.certified = everyPairHolds && separated && bounded && metricsRegular;
   if (!out.certified) {
-    if (!separated)
+    if (out.interiorMetricSingular)
+      out.refusal =
+          "the interior chain metric M_II is singular at the declared rank tolerance "
+          "(reciprocal condition " + std::to_string(out.interiorMetricReciprocalCondition) +
+          "), so the fixed-interface spectrum the retained modes come from is read with the "
+          "metric's inverse as computed";
+    else if (out.reducedMetricSingular)
+      out.refusal =
+          "the reduced chain metric V^T M V is singular at the declared rank tolerance "
+          "(reciprocal condition " + std::to_string(out.reducedMetricReciprocalCondition) +
+          "), so the reduction basis is degenerate to that tolerance; widen the retention "
+          "radius or move the shift off the interior spectrum";
+    else if (!separated)
       out.refusal =
           "a discarded fixed-interface mode lies inside the declared window (separation " +
           std::to_string(out.discardedModeSeparation) +
