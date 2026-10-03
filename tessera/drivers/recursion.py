@@ -640,7 +640,11 @@ def relax_level(spacetime, config, sectors=None, count=None):
 
     The record's ``converged`` is `baryon_poles.solve_converged`: the
     residual norm at the point the drive ended on (``residual``) at or below
-    the declared ``step_tolerance``. ``accepted_updates`` is the number of
+    the declared ``step_tolerance``. It is the norm the drive minimised: with
+    a declared spectral-moment stiffness, the residual of the action with
+    the stiffness (``residual_includes_stiffness``). At the start, where the
+    stiffness is declared, its gradient vanishes, so ``initial_residual`` is
+    the action's alone. ``accepted_updates`` is the number of
     relaxation updates the drive accepted; the engine's iterations, which
     ``--iteration-limit`` counts, are each one update of the Pachner moves
     and a relaxation of several such updates."""
@@ -657,7 +661,9 @@ def relax_level(spacetime, config, sectors=None, count=None):
     drive = cell_solve.solve(base, system, **bp.solve_arguments(held))
     final = drive["spacetime"]
     end = system.point(final)
-    residual = float(np.linalg.norm(end.relaxation.residual()))
+    # the norm the drive minimised: with a declared stiffness, its gradient
+    # is in the residual
+    residual, with_stiffness = drive["objective"].residual_norm(final)
     end_moduli = end.relaxation.held_log_moduli()
     drift = (max((abs(a - b) for a, b in zip(end_moduli, start_moduli)),
                  default=0.0)
@@ -692,6 +698,7 @@ def relax_level(spacetime, config, sectors=None, count=None):
         "stop_detail": str(drive["stop_detail"]),
         "initial_residual": initial,
         "residual": residual,
+        "residual_includes_stiffness": with_stiffness,
         "accepted_updates": int(drive["accepted_updates"]),
         "moves_committed": int(drive["moves_committed"]),
         "pachner_moves": bool(drive["moves"]),
@@ -708,7 +715,12 @@ def relax_level(spacetime, config, sectors=None, count=None):
         "kontsevich_segal_margin": float(
             cob.HodgeLaplacian.kontsevichSegalMargin(final)),
         "admissibility_gate": bool(held.get("admissibility_gate", False)),
+        # the scored complexes without a residual, in all and by reason:
+        # a candidate move or a trial of the line search on which the
+        # declared system or a declared stiffness has no value
         "undefined_points": len(drive["objective"].undefined),
+        "undefined_reasons": cell_solve.undefined_reasons(
+            drive["objective"].undefined),
         "sector_monopole_numbers": list(
             end.relaxation.sector_monopole_numbers()),
         "held_modulus_drift": float(drift),
@@ -2506,7 +2518,12 @@ def build_parser():
     run.add_argument("--resolutions", type=float, nargs="+",
                      default=list(DECLARED_RESOLUTIONS),
                      help="modularity resolutions of the persistent partition "
-                          "(default %s)" % (DECLARED_RESOLUTIONS,))
+                          "of each level's box; they reach the level's box "
+                          "alone, and the recursion read of every cell "
+                          "(its quark condition 1) is taken at the "
+                          "library's own resolutions, which its record "
+                          "names under resolutions (default %s)"
+                          % (DECLARED_RESOLUTIONS,))
     run.add_argument("--persistence-required", type=int, default=None,
                      help="how many adjacent declared resolutions a component "
                           "must persist across to become a response vertex "
@@ -2616,7 +2633,7 @@ def main(argv=None):
         villain_order=args.villain_order)
     # what the run's numbers depend on beside its declarations: the command
     # line, the commit, the thread count and the linear algebra library
-    config["environment"] = bp.environment_record()
+    config["environment"] = bp.environment_record(argv)
     points_file = points_path(args.json) if args.json else None
     result = (drive_live(config, progress=not args.quiet,
                          points_file=points_file, keep_open=True)

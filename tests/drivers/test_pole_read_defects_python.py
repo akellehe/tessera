@@ -543,10 +543,13 @@ def test_a_run_records_its_environment(monkeypatch):
     monkeypatch.setenv("OMP_NUM_THREADS", "3")
     monkeypatch.delenv("MKL_NUM_THREADS", raising=False)
     record = bp.environment_record()
-    assert set(record) == {"argv", "threads", "processors",
-                           "linear_algebra", "python", "numpy", "package",
-                           "checkout"}
+    assert set(record) == {"argv", "arguments", "threads", "processors",
+                           "runtimes", "linear_algebra", "python", "numpy",
+                           "package", "module", "checkout"}
     assert record["argv"] and all(isinstance(a, str) for a in record["argv"])
+    assert record["arguments"] == record["argv"][1:]
+    assert bp.environment_record(["run", "--quiet"])["arguments"] == \
+        ["run", "--quiet"]
     assert record["threads"]["OMP_NUM_THREADS"] == "3"
     assert record["threads"]["MKL_NUM_THREADS"] is None
     assert record["processors"] == os.cpu_count()

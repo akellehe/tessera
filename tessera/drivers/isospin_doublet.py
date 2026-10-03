@@ -113,8 +113,29 @@ def _status(read):
     }
 
 
+def unread_tolerances(read):
+    """The tolerances of the detector that decided nothing in ``read``
+    (`baryon_poles.ISOSPIN_NEEDS`, by config key), each with what it needs
+    and the read did not have: the span tolerance without a doublet
+    candidate followed to a further frame or resolution, the transport
+    tolerances without a transport between two frames, and the member
+    splitting and occupation tolerances without an observed doublet. On
+    the one frame `declaration` gives the detector it is all seven."""
+    followed = bool(read.candidates) and (len(read.frames) > 1
+                                          or len(read.resolutions) > 0)
+    transported = any(len(c.transports) > 0 for c in read.candidates)
+    observed = any(c.observed for c in read.candidates)
+    had = {bp.ISOSPIN_NEEDS["isospin_span_tolerance"]: followed,
+           bp.ISOSPIN_NEEDS["isospin_transport_leakage_tolerance"]:
+               transported,
+           bp.ISOSPIN_NEEDS["isospin_occupation_tolerance"]: observed}
+    return {key: "no %s in this read" % need
+            for key, need in bp.ISOSPIN_NEEDS.items() if not had[need]}
+
+
 def record(read):
-    """A JSON-able record of one `IsospinDoubletRead`."""
+    """A JSON-able record of one `IsospinDoubletRead`, with the tolerances
+    of the detector that decided nothing in it (`unread_tolerances`)."""
     frames = []
     for frame in read.frames:
         frames.append({
@@ -171,6 +192,7 @@ def record(read):
         "falsifier_10_refinement_measured":
             bool(read.multiplicity_refinement_measured),
         "summary": read.summary,
+        "unread_tolerances": unread_tolerances(read),
     }
 
 
@@ -222,12 +244,15 @@ def drive(kappas=None, betas=None, contents=None,
     relaxed host. ``villain_order`` is the order the Villain weight is summed
     to; ``tolerances`` sets any of `baryon_poles.TOLERANCES` by key and
     ``limits`` declares any of `baryon_poles.LIMITS` by key; the values of
-    every one are recorded in the result."""
+    every one are recorded in the result. A content that is not one of the
+    ten (`baryon_poles.checked_contents`) is refused with the config,
+    before anything is computed."""
     villain_order = bp.checked_villain_order(villain_order)
     config = bp.default_config(kappas or list(bp.DECLARED_KAPPAS),
                                betas or list(bp.DECLARED_BETAS),
                                edge_squared, tolerances=tolerances,
-                               limits=limits, villain_order=villain_order)
+                               limits=limits, villain_order=villain_order,
+                               selected_contents=contents)
     actions, spinorial = symmetry(
         bp.declared_tolerance(config, "certificate_tolerance"))
     result = {
@@ -245,7 +270,7 @@ def drive(kappas=None, betas=None, contents=None,
     if kappas:
         for kappa in kappas:
             for beta in (betas or list(bp.DECLARED_BETAS)):
-                for content in (contents or config["contents"]):
+                for content in config["contents"]:
                     carrier, report = relaxed_carrier(content, kappa, beta,
                                                       config)
                     entry = {"kappa": kappa, "beta": beta,
@@ -282,15 +307,23 @@ def build_parser():
     commands = parser.add_subparsers(dest="command", required=True)
     run = commands.add_parser("run", help="read the declared host, and "
                                           "optionally relaxed hosts")
-    run.add_argument("--kappa", type=float, nargs="+", default=None)
-    run.add_argument("--beta", type=float, nargs="+", default=None)
+    run.add_argument("--kappa", type=float, nargs="+", default=None,
+                     help="kappa = 8 pi G of each relaxed host; without it "
+                          "only the declared host is read")
+    run.add_argument("--beta", type=float, nargs="+", default=None,
+                     help="beta of the holonomy term of each relaxed host "
+                          "(default %s)" % (list(bp.DECLARED_BETAS),))
     run.add_argument("--content", type=int, nargs=3, action="append",
                      default=None, help="a content (quarks per band); "
                                         "repeatable; default all ten")
     run.add_argument("--edge-squared", type=float,
-                     default=bp.DECLARED_EDGE_SQUARED)
+                     default=bp.DECLARED_EDGE_SQUARED,
+                     help="the squared edge length of the declared host "
+                          "(default %g)" % bp.DECLARED_EDGE_SQUARED)
     bp.add_action_arguments(run)
-    run.add_argument("--json", default=None)
+    run.add_argument("--json", default=None,
+                     help="write the record here, with the environment of "
+                          "the run")
     bp.add_tolerance_arguments(run)
     bp.add_limit_arguments(run)
     run.add_argument("--quiet", action="store_true")
@@ -303,6 +336,9 @@ def main(argv=None):
                    progress=not args.quiet, villain_order=args.villain_order,
                    tolerances=bp.tolerances_from(args),
                    limits=bp.limits_from(args))
+    # what the read depends on beside its declarations: the command line,
+    # the commit, the thread counts and the linear algebra libraries
+    result["environment"] = bp.environment_record(argv)
     if args.json:
         with open(args.json, "w") as handle:
             json.dump(bp._jsonable(result), handle, indent=1,
