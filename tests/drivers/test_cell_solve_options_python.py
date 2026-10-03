@@ -515,10 +515,9 @@ STIFFNESS_EXCLUDES_MOVES = (
     "the stiffness reference is the moments of the complex the stiffness "
     "was declared on, and every Pachner move of a tetrahedral complex "
     "changes its number of edges, so with a stiffness declared every "
-    "candidate move scores infinite; fix(drivers): a declared moment "
-    "stiffness enters the cell solve without its link derivatives and "
-    "excludes every Pachner move, "
-    "https://github.com/akellehe/tessera/issues/1370")
+    "candidate move scores infinite; theory(drivers): the reference of a "
+    "declared spectral-moment stiffness on a complex a Pachner move "
+    "changed, https://github.com/akellehe/tessera/issues/1415")
 
 
 def _drive_with_moves(monkeypatch, weight):

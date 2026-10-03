@@ -28,14 +28,6 @@ from tessera.drivers import cell_solve as cs
 PRE = T.PachnerMode.PreGeometric
 FAN = [[0, 1, 2, 3], [0, 1, 3, 4], [0, 1, 2, 4], [0, 2, 3, 5]]
 
-LEAVES_THE_COLLAPSED_EDGE = (
-    "IFlipMove::apply (src/spacetime/pachner/IFlipMove.cpp) removes the "
-    "cells around the collapsed edge and leaves the edge in the edge list, "
-    "in no cell; the fix on this branch is C++ not yet built into the "
-    "module; fix(drivers): a declared moment stiffness enters the cell "
-    "solve without its link derivatives and excludes every Pachner move, "
-    "https://github.com/akellehe/tessera/issues/1370")
-
 
 def _complex(cells, seed=7):
     """The cells with a seeded squared length near 8 and a seeded phase on
@@ -84,7 +76,6 @@ def test_a_move_leaves_only_edges_of_cells(cells, moves):
     assert listed == of_cells == operator
 
 
-@pytest.mark.xfail(strict=True, reason=LEAVES_THE_COLLAPSED_EDGE)
 @pytest.mark.parametrize("cells, moves", [
     (FAN, [(T.IFlipMove, PRE, False)]),
     ([[0, 1, 2, 3], [1, 2, 3, 4]], [(T.FlipMove, PRE, False),
@@ -116,7 +107,6 @@ def test_a_rolled_back_3_2_move_restores_every_edge():
     assert sorted(cs.edge_fields(spacetime)) == before
 
 
-@pytest.mark.xfail(strict=True, reason=LEAVES_THE_COLLAPSED_EDGE)
 def test_the_complex_a_3_2_move_makes_has_a_residual():
     """The cell solve scores the complex the 3-2 move makes on the fan: its
     sheeted support carries every listed edge, and the residual norm of the
