@@ -701,7 +701,12 @@ def relax_level(spacetime, config, sectors=None, count=None):
         "kontsevich_segal_margin": float(
             cob.HodgeLaplacian.kontsevichSegalMargin(final)),
         "admissibility_gate": bool(held.get("admissibility_gate", False)),
+        # the scored complexes without a residual, in all and by reason:
+        # a candidate move or a trial of the line search on which the
+        # declared system or a declared stiffness has no value
         "undefined_points": len(drive["objective"].undefined),
+        "undefined_reasons": cell_solve.undefined_reasons(
+            drive["objective"].undefined),
         "sector_monopole_numbers": list(
             end.relaxation.sector_monopole_numbers()),
         "held_modulus_drift": float(drift),

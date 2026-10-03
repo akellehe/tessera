@@ -415,7 +415,11 @@ def moment_stiffness_derivatives(spacetime, degree, reference, coefficients,
 
     Returns the gradient (2 |E| entries) and the Hessian (2 |E| by 2 |E|, or
     None). Raises ValueError when the reference is not of this complex's
-    cells, in which case the stiffness has no value here."""
+    number of cells, in which case the stiffness has no value here. The
+    reference carries no names of cells: on a complex with as many cells as
+    the reference's, the moments of each cell are read against the
+    reference's entries at its place in the operator's order of the cells,
+    whichever cells the reference was read on."""
     hodge = cob.HodgeLaplacian(spacetime)
     orders = len(coefficients)
     edges = len(edge_fields(spacetime))

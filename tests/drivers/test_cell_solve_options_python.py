@@ -504,6 +504,167 @@ def test_a_stiffness_has_no_value_on_a_complex_with_other_cells():
     assert cs.undefined_reasons(objective.undefined) == {reason: 1}
 
 
+# the reason a complex one Pachner move made from a tetrahedron has no
+# stiffness, the reference being the tetrahedron's six edges at two orders
+NO_STIFFNESS_AFTER_A_MOVE = (
+    "the spectral-moment stiffness has no value on this complex: its "
+    "reference, the moments of the complex it was declared on, has 12 "
+    "entries, and the degree-1 operator here has 10 cells at 2 orders")
+
+STIFFNESS_EXCLUDES_MOVES = (
+    "the stiffness reference is the moments of the complex the stiffness "
+    "was declared on, and every Pachner move of a tetrahedral complex "
+    "changes its number of edges, so with a stiffness declared every "
+    "candidate move scores infinite; fix(drivers): a declared moment "
+    "stiffness enters the cell solve without its link derivatives and "
+    "excludes every Pachner move, "
+    "https://github.com/akellehe/tessera/issues/1370")
+
+
+def _drive_with_moves(monkeypatch, weight):
+    """The drive of the base as built, which is stationary (residual norm
+    zero), with its Pachner moves and, with a nonzero ``weight``, a
+    stiffness at two orders declared through the driver's configuration.
+    Returns the drive's record and, by the number of base edges of the
+    complex scored, every score the engine asked for."""
+    scores = {}
+    terms = cs.StationarityObjective.terms
+
+    def scored(self, context):
+        out = terms(self, context)
+        scores.setdefault(len(cs.edge_fields(context.spacetime)), []).append(
+            out.joint_action_stationarity)
+        return out
+
+    monkeypatch.setattr(cs.StationarityObjective, "terms", scored)
+    config = _config(moment_stiffness_weight=weight,
+                     moment_stiffness_coefficients=[1.0, 0.5] if weight
+                     else [])
+    base = bp.build_base(8.0)
+    drive = cs.solve(base, _system(base, config), moves=True,
+                     configure=bp.node_configuration(config))
+    monkeypatch.setattr(cs.StationarityObjective, "terms", terms)
+    return drive, scores
+
+
+def test_with_a_stiffness_the_move_of_a_tetrahedron_has_no_value(
+        monkeypatch):
+    """Ticket #1370 as it stands. The one candidate move of the base, the
+    1-4 move, takes its six edges to ten. Without a stiffness the engine
+    scores it 32.2 and the drive commits nothing, the base being stationary;
+    with a stiffness declared the candidate has no stiffness, scores
+    infinite, and the drive's record keeps the reason. The drive is the
+    same otherwise: it commits no move and ends where it began."""
+    plain, plain_scores = _drive_with_moves(monkeypatch, 0.0)
+    assert plain["undefined_reasons"] == {}
+    assert plain_scores[10] == [pytest.approx(32.21, rel=1e-3)]
+    drive, scores = _drive_with_moves(monkeypatch, 1e-6)
+    assert drive["node"].moment_stiffness_weight == 1e-6
+    assert scores[10] == [math.inf]
+    assert drive["undefined_reasons"] == {NO_STIFFNESS_AFTER_A_MOVE: 1}
+    assert all(score == 0.0 for score in scores[6])
+    for record in (plain, drive):
+        assert record["moves_committed"] == 0
+        assert record["complex_after"] == record["complex_before"]
+        assert record["trace"] == [0.0]
+
+
+@pytest.mark.xfail(strict=True, reason=STIFFNESS_EXCLUDES_MOVES)
+def test_with_a_stiffness_a_candidate_move_is_scored(monkeypatch):
+    """A declared stiffness excludes no Pachner move: the base's candidate
+    move has a residual with the stiffness as it has without one."""
+    drive, scores = _drive_with_moves(monkeypatch, 1e-6)
+    assert drive["undefined_reasons"] == {}
+    assert all(math.isfinite(score) for score in scores[10])
+
+
+def _four_cells(cells, phases):
+    """A complex of the given cells on vertices 0..5 with squared length 8
+    on every edge and the given phase on each ascending edge."""
+    complex_ = T.Spacetime.fromVertexTuples(3, cells, 1.0, 0.0)
+    for edge in complex_.getEdgeList().toVector():
+        a = int(edge.getSource().getId())
+        b = int(edge.getTarget().getId())
+        edge.setLength(cmath.sqrt(8.0))
+        phase = phases[(min(a, b), max(a, b))]
+        edge.setPhase(phase if a < b else -phase)
+    return complex_
+
+
+def test_a_stiffness_is_read_by_place_on_other_edges_of_its_number():
+    """Ticket #1370 as it stands, for compositions of moves. Three cells
+    around the edge (0, 1) and a fourth on the face (0, 2, 3): the 3-2 move
+    on (0, 1) and then the 2-3 move on (0, 2, 3) trade the edge (0, 1) for
+    (4, 5), thirteen edges before and after. The reference is the moments
+    of the declared complex in the operator's order of its cells, which is
+    not the order of its edge list: the declared complex built from its
+    cells in another order has the stiffness zero there. On the complex
+    the two moves make, which has the declared number of edges, the
+    stiffness has a value: the moments of each of its edges are read
+    against those of the edge at the same place of the declared complex."""
+    rng = np.random.default_rng(5)
+    phases = {(a, b): 0.1 * rng.normal()
+              for a in range(6) for b in range(a + 1, 6)}
+    cells = [[0, 1, 2, 3], [0, 1, 3, 4], [0, 1, 2, 4], [0, 2, 3, 5]]
+    coefficients = [1.0, 0.5]
+    declared = _four_cells(cells, phases)
+    reference = list(cob.HodgeLaplacian(declared).localSpectralMoments(1, 2))
+    reordered = _four_cells(cells[::-1], phases)
+    assert [e[:2] for e in cs.edge_fields(reordered)] != \
+        [e[:2] for e in cs.edge_fields(declared)]
+    gradient, _ = cs.moment_stiffness_derivatives(reordered, 1, reference,
+                                                  coefficients, False)
+    assert np.linalg.norm(gradient) == 0.0
+    assert cob.HodgeLaplacian(reordered).spectralMomentStiffness(
+        1, reference, coefficients) == 0.0
+
+    moved = _four_cells([[1, 2, 3, 4], [0, 2, 4, 5], [0, 3, 4, 5],
+                         [2, 3, 4, 5]], phases)
+    edges = {tuple(sorted(e[:2])) for e in cs.edge_fields(moved)}
+    assert len(edges) == 13 and (0, 1) not in edges and (4, 5) in edges
+    gradient, _ = cs.moment_stiffness_derivatives(moved, 1, reference,
+                                                  coefficients, False)
+    assert np.linalg.norm(gradient) > 0.0
+    moments = np.asarray(cob.HodgeLaplacian(moved).localSpectralMoments(1, 2))
+    deviation = (moments - np.asarray(reference)).reshape(13, 2)
+    by_place = 0.5 * np.sum(np.asarray(coefficients) * deviation ** 2)
+    assert cob.HodgeLaplacian(moved).spectralMomentStiffness(
+        1, reference, coefficients) == pytest.approx(by_place, rel=1e-13)
+
+
+def test_the_level_and_the_content_record_the_reasons():
+    """The records the drivers write keep, beside the number of scored
+    complexes without a residual, the reasons (`cell_solve.undefined_reasons`
+    of the drive's objective). With a stiffness declared, the level of the
+    base as built records its one candidate move as without a stiffness;
+    so does the content (0, 3, 0) of the recorded run's first cell, whose
+    record counts the reasons of its line search's trials with it."""
+    from tessera.drivers import recursion as R
+    from tests.drivers import _recursion_run_2026_09_23 as RUN
+
+    stiffness = {"moment_stiffness_weight": 1e-6,
+                 "moment_stiffness_coefficients": [1.0, 0.5]}
+    cells, z, links, _ = R.base_fields(bp.build_base(8.0))
+    spacetime, count = R.build_level(cells, z, links)
+    config = R.default_config()
+    config.update(stiffness)
+    level = R.relax_level(spacetime, config, [], count=count)
+    assert level["undefined_reasons"] == {NO_STIFFNESS_AFTER_A_MOVE: 1}
+    assert level["undefined_points"] == 1 and level["moves_committed"] == 0
+
+    config = bp.default_config([1.0], [1.0], selected_contents=[(0, 3, 0)])
+    config["host_cell"] = RUN.HOST_CELLS[(0, 1, 2, 3)]
+    config["held_sectors"] = R.held_sectors([[0, 1, 2, 3]], [1], 4)
+    config.update(stiffness)
+    _, _, report, drive = bp.relax_content((0, 3, 0), 1.0, 1.0, config)
+    content = bp.relaxation_record(report, drive)
+    assert content["undefined_reasons"] == drive["undefined_reasons"]
+    assert content["undefined_reasons"][NO_STIFFNESS_AFTER_A_MOVE] == 1
+    assert sum(content["undefined_reasons"].values()) == \
+        content["undefined_points"]
+    assert content["moves_committed"] == 0
+
+
 # ---------------------------------------------- band places across a move
 
 
