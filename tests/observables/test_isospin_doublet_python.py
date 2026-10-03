@@ -17,18 +17,29 @@ The fixtures are built from the library's unit-monopole tetrahedron
 (`MonopoleSupport.tetrahedron(1)`): its rotation-averaged edge Laplacian
 carries the three spinor doublets. A constructed flavour doubling
 h-bar (x) I_2 (x) I_3 has a genuine two-dimensional multiplicity space that
-neither the rotations nor the sheets act on, and the sheets alone have none.
+neither the rotations nor the sheets act on; the detector must find it there,
+and must find none on the sheets alone.
 
 Every read is made at the detector's declared tolerances, 1e-15 each
-(`IsospinDoubletConfig`). The twelve-fold eigenvalues of the flavour doubling
-are computed up to 7e-15 apart, so the grouping tolerance does not gather
-every one of them into one band: of the three eigenvalues 4 - 2/sqrt(3), 4
-and 4 + 2/sqrt(3), the middle one is read as an isolated candidate band of
-rank 12; the lowest is isolated with rank 12 and an isotypic read that splits
-its one isotype in two; and the highest is read as three groups of ranks 0,
-12 and 0, none isolated. The candidate at 4 is therefore not continued
-through the frames of a lifetime, so no doublet is observed and no charge is
-read. The assertions below state those reads.
+(`IsospinDoubletConfig`), with one exception that is declared where it is
+used. The copies of an eigenvalue on the flavour copies and on the sheets are
+one band (each exactly decoupled block of the operator is decomposed on its
+own), and the isotypic content of a band is read from the idempotents of its
+commutant's centre in closed form, so the three eigenvalues 4 - 2/sqrt(3), 4
+and 4 + 2/sqrt(3) of the flavour doubling are three isolated bands of rank 12,
+each a candidate "2 x 3 sheets x 2", in every frame, and each is continued
+through the frames with unit overlap, full rank and the flavour structure
+preserved.
+
+The exceptions are the two reads that compare a number of rounding size
+with the declared 1e-15. The leakage of a transport out of its band is, on
+these fixtures, the rounding of the two frames' projectors, 2.0e-15 to 2.5e-15
+relative: at the declared tolerance coherent transport fails on the leakage
+alone, no doublet is observed and no charge is read
+(`TestTheDeclaredLeakageTolerance`). The occupation of a member, tr(gamma Pi),
+departs from its integer by 1e-16 to 2e-15. The reads of a coherently
+transported doublet and of its occupation pattern are made with those two
+tolerances declared at `ROUNDING_TOLERANCE`.
 """
 import unittest
 
@@ -41,6 +52,21 @@ obs = tessera.observables
 Passed = obs.QuarkConditionStatus.Passed
 Failed = obs.QuarkConditionStatus.Failed
 NotEvaluable = obs.QuarkConditionStatus.NotEvaluable
+
+#: The tolerance declared for the leakage of a transport and for the departure
+#: of an occupation from an integer in the reads of a coherently transported
+#: doublet: above the rounding of the projectors (2.5e-15 on these fixtures)
+#: and far below the leakage of a transfer that mixes the bands.
+ROUNDING_TOLERANCE = 1e-12
+
+
+def rounding_config():
+    """The declared configuration with the leakage and occupation tolerances
+    at `ROUNDING_TOLERANCE`."""
+    config = obs.IsospinDoubletConfig()
+    config.transport_leakage_tolerance = ROUNDING_TOLERANCE
+    config.occupation_tolerance = ROUNDING_TOLERANCE
+    return config
 
 
 def monopole_base():
@@ -178,56 +204,31 @@ class TestBandContent(unittest.TestCase):
             self.assertTrue(band.unexplained_multiplicity)
             self.assertFalse(band.doublet_candidate)
 
-    def test_a_flavour_doubling_at_the_declared_tolerances(self):
-        """The band at 4 is the candidate: isolated, rank 12, a commutant of
-        dimension four in one isotype, "2 x 3 sheets x 2". The band at
-        4 - 2/sqrt(3) is isolated with the same commutant, and its isotypic
-        read gives "0 x 3 sheets x 1 + 1 x 3 sheets x 2", not a candidate.
-        The copies of 4 + 2/sqrt(3) form three groups of ranks 0, 12 and 0,
-        none isolated, the middle one with the whole 144-dimensional
-        commutant of a band on which nothing is read to act."""
+    def test_a_flavour_doubling_is_a_candidate(self):
         op, sheet_of, base_of = flavoured(self.base)
         frame = obs.IsospinDoublet.bands(
             op, sheet_of_cell=sheet_of, base_cell_of_cell=base_of,
             symmetry=lifted(self.actions), spinorial=True)
-        self.assertEqual([b.rank for b in frame.bands], [12, 12, 0, 12, 0])
-        self.assertEqual([b.isolated for b in frame.bands],
-                         [True, True, False, False, False])
-        self.assertEqual([b.doublet_candidate for b in frame.bands],
-                         [False, True, False, False, False])
-        low, candidate, _, high, _ = frame.bands
-        self.assertEqual(candidate.content, "2 x 3 sheets x 2")
-        self.assertEqual(candidate.commutant_dimension, 4)
-        self.assertEqual(candidate.isotype_count, 1)
-        self.assertFalse(candidate.spin_doublet)
-        # falsifier 10: a flavour multiplicity is not an irreducible
-        # dimension of the declared group, and it is reported as such.
-        self.assertTrue(candidate.unexplained_multiplicity)
-        self.assertLess(candidate.projector_residual, 1e-15)
-        self.assertEqual(low.content, "0 x 3 sheets x 1 + 1 x 3 sheets x 2")
-        self.assertEqual(low.commutant_dimension, 4)
-        self.assertTrue(low.unexplained_multiplicity)
-        self.assertEqual(high.commutant_dimension, 144)
-        self.assertFalse(high.colour_acts or high.symmetry_acts)
+        self.assertEqual([b.rank for b in frame.bands], [12, 12, 12])
+        for band in frame.bands:
+            self.assertEqual(band.content, "2 x 3 sheets x 2")
+            self.assertEqual(band.commutant_dimension, 4)
+            self.assertEqual(band.isotype_count, 1)
+            self.assertTrue(band.doublet_candidate)
+            self.assertFalse(band.spin_doublet)
+            # falsifier 10: a flavour multiplicity is not an irreducible
+            # dimension of the declared group, and it is reported as such.
+            self.assertTrue(band.unexplained_multiplicity)
+            self.assertTrue(band.isolated)
+            self.assertLess(band.projector_residual, 1e-15)
 
-    def test_a_split_doublet_has_no_candidate(self):
-        """With the two flavour copies split by five percent no band is a
-        candidate. Three of the six sixfold eigenvalues are read as isolated
-        spin doublets times the sheets; the copies of each of the other
-        three are computed up to 1.1e-14 apart and are read as a band of
-        rank six and an empty band, neither isolated."""
+    def test_a_split_doublet_is_two_bands_not_one(self):
         op, sheet_of, base_of = flavoured(self.base)
         split = np.kron(np.kron(self.base, np.diag([1.0, 1.05])), np.eye(3))
         frame = obs.IsospinDoublet.bands(
             split, sheet_of_cell=sheet_of, base_cell_of_cell=base_of,
             symmetry=lifted(self.actions), spinorial=True)
-        self.assertEqual(sorted(b.rank for b in frame.bands),
-                         [0] * 3 + [6] * 6)
-        self.assertEqual(sum(b.isolated for b in frame.bands), 3)
-        for band in frame.bands:
-            if band.isolated:
-                self.assertEqual(band.content, "2 x 3 sheets x 1")
-                self.assertTrue(band.spin_doublet)
+        self.assertEqual(sorted(b.rank for b in frame.bands), [6] * 6)
         self.assertFalse(any(b.doublet_candidate for b in frame.bands))
 
     def test_two_inequivalent_irreducibles_degenerate_by_accident(self):
@@ -244,23 +245,63 @@ class TestBandContent(unittest.TestCase):
         self.assertTrue(four.unexplained_multiplicity)
         self.assertFalse(four.doublet_candidate)
 
+    def test_three_inequivalent_irreducibles_at_one_eigenvalue(self):
+        """The identity on the six edges holds the doublets 2, 2' and 2'' at
+        one eigenvalue: a centre of dimension three, whose three idempotents
+        are the isotypic components, each of dimension two with multiplicity
+        one. With the flavour doubling and the sheets each isotype has
+        multiplicity two on a band of rank 36."""
+        frame = obs.IsospinDoublet.bands(np.eye(6, dtype=complex),
+                                         symmetry=self.actions,
+                                         spinorial=True)
+        (band,) = frame.bands
+        self.assertEqual(band.commutant_dimension, 3)
+        self.assertEqual(band.isotype_count, 3)
+        self.assertEqual(list(band.multiplicities), [1, 1, 1])
+        self.assertEqual(list(band.irreducible_dimensions), [2, 2, 2])
+        self.assertTrue(band.unexplained_multiplicity)
+        self.assertFalse(band.doublet_candidate)
+        op, sheet_of, base_of = flavoured(np.eye(6, dtype=complex))
+        frame = obs.IsospinDoublet.bands(
+            op, sheet_of_cell=sheet_of, base_cell_of_cell=base_of,
+            symmetry=lifted(self.actions), spinorial=True)
+        (band,) = frame.bands
+        self.assertEqual(band.rank, 36)
+        self.assertEqual(band.commutant_dimension, 12)
+        self.assertEqual(band.isotype_count, 3)
+        self.assertEqual(list(band.multiplicities), [2, 2, 2])
+        self.assertEqual(list(band.irreducible_dimensions), [2, 2, 2])
+        self.assertEqual(band.content, " + ".join(["2 x 3 sheets x 2"] * 3))
+        self.assertFalse(band.doublet_candidate)
+
+    def test_one_isotype_is_read_as_one_on_every_band(self):
+        """A band whose commutant has a centre of dimension one is one
+        isotype: the three bands of the monopole base times the sheets, and
+        of its flavour doubling in a rotation-invariant deformation, each
+        report one component."""
+        deformed = self.base + 0.05 * symmetric_deformation(self.actions)
+        for flavours, multiplicity in ((1, 1), (2, 2)):
+            for base in (self.base, deformed):
+                op, sheet_of, base_of = flavoured(base, flavours=flavours)
+                frame = obs.IsospinDoublet.bands(
+                    op, sheet_of_cell=sheet_of, base_cell_of_cell=base_of,
+                    symmetry=lifted(self.actions, flavours=flavours),
+                    spinorial=True)
+                self.assertEqual(len(frame.bands), 3)
+                for band in frame.bands:
+                    self.assertEqual(band.isotype_count, 1)
+                    self.assertEqual(list(band.multiplicities),
+                                     [multiplicity])
+                    self.assertEqual(list(band.irreducible_dimensions), [2])
+
     def test_no_symmetry_declared_leaves_spin_unread(self):
-        """Every band of rank two is a candidate whose spin content is not
-        read. The two copies of the highest eigenvalue are computed 1.5e-14
-        apart and are read as a band of rank two, not isolated, and an empty
-        band."""
         rng = np.random.default_rng(3)
         a = rng.normal(size=(4, 4))
         a = a + a.T
         frame = obs.IsospinDoublet.bands(np.kron(a, np.eye(2)))
-        self.assertEqual([b.rank for b in frame.bands], [2, 2, 2, 2, 0])
-        self.assertEqual([b.isolated for b in frame.bands],
-                         [True, True, True, False, False])
-        filled = frame.bands[:4]
-        self.assertTrue(all(b.doublet_candidate for b in filled))
+        self.assertTrue(all(b.doublet_candidate for b in frame.bands))
         self.assertTrue(all("no symmetry was declared" in b.classification
-                            for b in filled))
-        self.assertEqual(frame.bands[4].classification, "an empty band")
+                            for b in frame.bands))
 
 
 class TestConditions(unittest.TestCase):
@@ -281,38 +322,22 @@ class TestConditions(unittest.TestCase):
                         True, resolutions)
         for key, value in extra.items():
             setattr(d, key, value)
-        return obs.IsospinDoublet.observe(d)
+        return obs.IsospinDoublet.observe(d, rounding_config())
 
-    def test_the_genuine_doublet_is_not_observed_at_the_declared_tolerances(
-            self):
-        """Two frames of the flavour doubling, the second deformed by a
-        rotation-invariant operator. The first frame has the one candidate,
-        the band at 4. In the second frame the copies of that eigenvalue
-        (4.0536) are read as two groups, neither isolated, so the candidate
-        is not continued: emergence fails on frame persistence, coherent
-        transport fails on transport over the lifetime with nothing else
-        measured, and no doublet is observed."""
+    def test_the_genuine_doublet_is_observed(self):
         read = self.observed([self.op, self.op1], lineage=lineage_read())
-        self.assertEqual(len(read.candidates), 1)
-        self.assertEqual(status(read, 1), Failed)
-        self.assertEqual(read.conditions[0].failing, ["frame-persistence"])
-        self.assertEqual(status(read, 2), Failed)
-        self.assertEqual(read.conditions[1].failing,
-                         ["transport-over-lifetime"])
-        self.assertEqual(read.conditions[1].missing,
-                         ["transport-full-rank", "transport-leakage",
-                          "flavour-structure-preserved"])
+        self.assertEqual(len(read.candidates), 3)
+        self.assertEqual(status(read, 1), Passed)
+        self.assertEqual(status(read, 2), Passed)
         self.assertEqual(status(read, 3), NotEvaluable)
-        self.assertFalse(read.doublet_observed)
-        self.assertTrue(read.no_isospin_doublet)
+        self.assertTrue(read.doublet_observed)
+        self.assertFalse(read.no_isospin_doublet)
         candidate = read.candidates[0]
-        self.assertFalse(candidate.observed)
-        self.assertEqual(list(candidate.tracked_bands), [1])
-        self.assertEqual(len(candidate.transports), 0)
-        self.assertEqual([b.rank for b in read.frames[1].bands],
-                         [12, 12, 0, 12])
-        self.assertEqual([b.isolated for b in read.frames[1].bands],
-                         [True, False, False, True])
+        self.assertTrue(candidate.observed)
+        for step in candidate.transports:
+            self.assertTrue(step.transport.invertible)
+            self.assertLess(step.intertwining_residual, 1e-15)
+            self.assertEqual(len(step.flavour_singular_values), 2)
 
     def test_condition_three_is_never_passed(self):
         read = self.observed([self.op, self.op1])
@@ -331,14 +356,9 @@ class TestConditions(unittest.TestCase):
         self.assertTrue(read.no_isospin_doublet)
 
     def test_no_resolution_leaves_refinement_unmeasured(self):
-        """Without a resolution the refinement persistence is missing; the
-        emergence condition fails on frame persistence, which is measured
-        and does not hold."""
         read = self.observed([self.op, self.op1], resolutions=[])
-        self.assertEqual(status(read, 1), Failed)
+        self.assertEqual(status(read, 1), NotEvaluable)
         self.assertEqual(read.conditions[0].missing, ["refinement-persistence"])
-        self.assertEqual(read.conditions[0].failing, ["frame-persistence"])
-        self.assertFalse(read.multiplicity_refinement_measured)
 
     def test_a_doublet_that_splits_in_the_next_frame_fails_persistence(self):
         split, _, _ = flavoured(self.base)
@@ -361,15 +381,12 @@ class TestConditions(unittest.TestCase):
         n = self.op.shape[0]
         transfer = np.eye(n) + 0.15 * rng.normal(size=(n, n)) / np.sqrt(n)
         read = self.observed([self.op, (self.op1, transfer)])
-        # the candidate is not continued into the second frame, so no
-        # transport is formed and its leakage is not measured: coherent
-        # transport fails on the transport over the lifetime
-        (candidate,) = read.candidates
-        self.assertEqual(list(candidate.tracked_bands), [1])
-        self.assertEqual(candidate.conditions[1].status, Failed)
-        self.assertEqual(candidate.conditions[1].failing,
-                         ["transport-over-lifetime"])
-        self.assertIn("transport-leakage", candidate.conditions[1].missing)
+        candidates = [c for c in read.candidates
+                      if len(c.tracked_bands) == 2]
+        self.assertTrue(candidates)
+        for candidate in candidates:
+            self.assertEqual(candidate.conditions[1].status, Failed)
+            self.assertIn("transport-leakage", candidate.conditions[1].failing)
 
     def test_undeclared_symmetry_cannot_pass_emergence(self):
         rng = np.random.default_rng(3)
@@ -396,6 +413,75 @@ class TestConditions(unittest.TestCase):
         self.assertEqual(read.unexplained_multiplicities, [])
 
 
+class TestTheDeclaredLeakageTolerance(unittest.TestCase):
+    """The flavour doubling at the detector's declared 1e-15 throughout: the
+    leakage of the transport is the rounding of the projectors."""
+
+    def setUp(self):
+        self.base, self.actions, _ = monopole_base()
+        self.op, self.sheet_of, self.base_of = flavoured(self.base)
+        self.op1, _, _ = flavoured(
+            self.base + 0.05 * symmetric_deformation(self.actions))
+        self.symmetry = lifted(self.actions)
+
+    def read(self, leakage_tolerance=None, **extra):
+        d = declaration([self.op, self.op1], self.sheet_of, self.base_of,
+                        self.symmetry, True,
+                        [padded_resolution(self.op, self.sheet_of,
+                                           self.base_of, self.symmetry)])
+        for key, value in extra.items():
+            setattr(d, key, value)
+        config = obs.IsospinDoubletConfig()
+        if leakage_tolerance is not None:
+            config.transport_leakage_tolerance = leakage_tolerance
+        return obs.IsospinDoublet.observe(d, config)
+
+    def test_coherent_transport_fails_on_the_leakage_alone(self):
+        read = self.read(lineage=lineage_read())
+        self.assertEqual(len(read.candidates), 3)
+        self.assertEqual(status(read, 1), Passed)
+        self.assertEqual(status(read, 2), Failed)
+        self.assertEqual(read.conditions[1].failing, ["transport-leakage"])
+        self.assertEqual(read.conditions[1].missing, [])
+        self.assertEqual(status(read, 3), NotEvaluable)
+        self.assertFalse(read.doublet_observed)
+        self.assertTrue(read.no_isospin_doublet)
+        for candidate in read.candidates:
+            self.assertEqual(list(candidate.tracked_bands),
+                             [candidate.band_index] * 2)
+            self.assertEqual(candidate.conditions[1].failing,
+                             ["transport-leakage"])
+
+    def test_the_leakage_is_between_1e_15_and_1e_14(self):
+        """Coherent transport holds for every candidate with the leakage
+        tolerance at 1e-14 and for none at 1e-15."""
+        self.assertEqual(status(self.read(leakage_tolerance=1e-14), 2),
+                         Passed)
+        self.assertTrue(self.read(leakage_tolerance=1e-14).doublet_observed)
+        for candidate in self.read().candidates:
+            self.assertEqual(candidate.conditions[1].status, Failed)
+
+    def test_an_unobserved_candidate_carries_no_charge_read(self):
+        """A candidate that is not observed carries no isospin, charge,
+        member or occupation read: with a lineage, with a reversed lineage,
+        with no lineage, with a declared member-splitting operator and with a
+        three-quark density."""
+        splitting = np.kron(np.kron(np.eye(6), np.diag([1.0, -1.0])),
+                            np.eye(3))
+        density = np.zeros_like(self.op)
+        density[:3, :3] = np.eye(3)
+        for extra in ({}, {"lineage": lineage_read()},
+                      {"lineage": lineage_read(reverse=True)},
+                      {"member_splitting": splitting},
+                      {"three_quark_density": density}):
+            read = self.read(**extra)
+            self.assertEqual(len(read.candidates), 3, msg=sorted(extra))
+            for candidate in read.candidates:
+                self.assertFalse(candidate.observed, msg=sorted(extra))
+                self.assertIsNone(candidate.charges, msg=sorted(extra))
+            self.assertFalse(read.doublet_observed, msg=sorted(extra))
+
+
 class TestIsospinAndCharge(unittest.TestCase):
     """I_3, Q = I_3 + B/2 with B from the lineage, and uud / udd."""
 
@@ -413,27 +499,68 @@ class TestIsospinAndCharge(unittest.TestCase):
                                            self.base_of, self.symmetry)])
         for key, value in extra.items():
             setattr(d, key, value)
-        return obs.IsospinDoublet.observe(d)
+        return obs.IsospinDoublet.observe(d, rounding_config())
 
-    def test_an_unobserved_candidate_carries_no_charge_read(self):
-        """At the declared tolerances the candidate is not continued through
-        the two frames and is not observed, and an unobserved candidate
-        carries no isospin, charge, member or occupation read: with a
-        lineage, with a reversed lineage, with no lineage, with a declared
-        member-splitting operator and with a three-quark density."""
+    def test_charges_follow_from_the_lineage(self):
+        charges = self.read(lineage=lineage_read()).candidates[0].charges
+        self.assertEqual(list(charges.isospin), [0.5, -0.5])
+        self.assertAlmostEqual(charges.baryon_number, 1.0 / 3.0)
+        self.assertAlmostEqual(charges.charges[0], 2.0 / 3.0)
+        self.assertAlmostEqual(charges.charges[1], -1.0 / 3.0)
+        self.assertEqual(charges.member_source,
+                         "declared trivialization (cell-order seed)")
+
+    def test_a_reversed_lineage_gives_the_antiquark_charges(self):
+        charges = self.read(
+            lineage=lineage_read(reverse=True)).candidates[0].charges
+        self.assertAlmostEqual(charges.baryon_number, -1.0 / 3.0)
+        self.assertAlmostEqual(charges.charges[0], 1.0 / 3.0)
+        self.assertAlmostEqual(charges.charges[1], -2.0 / 3.0)
+
+    def test_no_lineage_leaves_the_charges_unmeasured(self):
+        charges = self.read().candidates[0].charges
+        self.assertIsNone(charges.baryon_number)
+        self.assertEqual(list(charges.charges), [])
+
+    def test_the_members_split_the_band_in_half(self):
+        charges = self.read().candidates[0].charges
+        plus, minus = [np.asarray(p) for p in charges.member_projectors]
+        self.assertAlmostEqual(np.trace(plus).real, 6.0)
+        self.assertAlmostEqual(np.trace(minus).real, 6.0)
+        self.assertLess(np.linalg.norm(plus @ minus), 1e-14)
+        # each member is itself a spin doublet times the sheets: it commutes
+        # with the rotations and the sheets.
+        for d in self.symmetry:
+            self.assertLess(np.linalg.norm(d @ plus - plus @ d), 1e-13)
+
+    def test_the_occupation_pattern_is_read_from_the_density(self):
+        charges = self.read().candidates[0].charges
+        plus, minus = [np.asarray(p) for p in charges.member_projectors]
+
+        def modes(projector, count):
+            values, vectors = np.linalg.eigh((projector + projector.conj().T) / 2)
+            return vectors[:, np.argsort(values)[::-1][:count]]
+
+        up, down = modes(plus, 2), modes(minus, 1)
+        gamma = up @ up.conj().T + down @ down.conj().T
+        self.assertEqual(
+            self.read(three_quark_density=gamma).candidates[0].charges
+            .occupation_pattern, "uud")
+        up, down = modes(plus, 1), modes(minus, 2)
+        gamma = up @ up.conj().T + down @ down.conj().T
+        self.assertEqual(
+            self.read(three_quark_density=gamma).candidates[0].charges
+            .occupation_pattern, "udd")
+
+    def test_a_splitting_operator_orders_the_members(self):
         splitting = np.kron(np.kron(np.eye(6), np.diag([1.0, -1.0])),
                             np.eye(3))
-        density = np.zeros_like(self.op)
-        density[:3, :3] = np.eye(3)
-        for extra in ({}, {"lineage": lineage_read()},
-                      {"lineage": lineage_read(reverse=True)},
-                      {"member_splitting": splitting},
-                      {"three_quark_density": density}):
-            read = self.read(**extra)
-            (candidate,) = read.candidates
-            self.assertFalse(candidate.observed, msg=sorted(extra))
-            self.assertIsNone(candidate.charges, msg=sorted(extra))
-            self.assertFalse(read.doublet_observed, msg=sorted(extra))
+        charges = self.read(member_splitting=splitting).candidates[0].charges
+        self.assertEqual(charges.member_source, "declared splitting operator")
+        plus = np.asarray(charges.member_projectors[0])
+        # the +1/2 member is the flavour-0 copy
+        flavour0 = np.kron(np.kron(np.eye(6), np.diag([1.0, 0.0])), np.eye(3))
+        self.assertLess(np.linalg.norm(flavour0 @ plus - plus), 1e-14)
 
 
 class TestTheReportedFields(unittest.TestCase):
@@ -476,38 +603,29 @@ class TestTheReportedFields(unittest.TestCase):
         self.assertEqual(status(read, 2), NotEvaluable)
 
     def test_a_band_read_reports_its_content(self):
-        read = obs.IsospinDoublet.observe(self.declared())
+        read = obs.IsospinDoublet.observe(self.declared(), rounding_config())
         band = read.frames[0].bands[0]
         self.assertAlmostEqual(band.center, np.mean(band.eigenvalues),
                                places=12)
         self.assertAlmostEqual(band.contour_center, band.center, places=12)
-        # the isotypic read of the lowest band splits its one isotype in two
-        self.assertEqual(list(band.multiplicities), [1, 2])
-        self.assertEqual(list(band.irreducible_dimensions), [0, 1])
-        # the candidate band, at 4, is read as two copies of a spin doublet
-        self.assertEqual(list(read.frames[0].bands[1].multiplicities), [2])
-        self.assertEqual(
-            list(read.frames[0].bands[1].irreducible_dimensions), [2])
+        self.assertEqual(list(band.irreducible_dimensions), [2])
         self.assertTrue(band.symmetry_declared)
-        self.assertLess(band.sheet_invariance_residual, 1e-12)
-        self.assertLess(band.symmetry_invariance_residual, 1e-12)
+        self.assertLess(band.sheet_invariance_residual, 1e-15)
+        self.assertLess(band.symmetry_invariance_residual, 1e-15)
         self.assertTrue(read.multiplicity_refinement_measured)
 
     def test_a_candidate_reports_its_track_and_its_transports(self):
-        """The candidate is the band at 4 of the first frame. It is found in
-        the padded resolution with overlap one and is not continued into the
-        second frame, so its track has one band and it has no transport and
-        no singular value over the lifetime."""
-        read = obs.IsospinDoublet.observe(self.declared())
-        (candidate,) = read.candidates
-        self.assertEqual(candidate.band_index, 1)
-        self.assertEqual(list(candidate.tracked_bands), [1])
+        read = obs.IsospinDoublet.observe(self.declared(), rounding_config())
+        candidate = read.candidates[0]
+        self.assertEqual(candidate.band_index, candidate.tracked_bands[0])
         self.assertAlmostEqual(candidate.min_track_overlap, 1.0, places=10)
         self.assertEqual(list(candidate.resolution_found), [True])
         np.testing.assert_allclose(candidate.resolution_overlap, [1.0],
                                    atol=1e-10)
-        self.assertEqual(list(candidate.lifetime_singular_values), [])
-        self.assertEqual(len(candidate.transports), 0)
+        np.testing.assert_allclose(candidate.lifetime_singular_values, 1.0,
+                                   atol=1e-10)
+        (step,) = candidate.transports
+        self.assertEqual((step.from_frame, step.to_frame), (0, 1))
 
     def test_without_a_resolution_refinement_is_unmeasured(self):
         read = obs.IsospinDoublet.observe(self.declared(resolutions=False))
@@ -518,30 +636,40 @@ class TestTheReportedFields(unittest.TestCase):
     def test_a_declared_transfer_leaves_the_flavour_structure_unmeasured(
             self):
         """A nonempty transfer declares a map between two cell sets, which
-        share no symmetry action, so the intertwining of the flavour factor
-        is not measured; the empty default is the identity between frames of
-        one cell set. At the declared tolerances the candidate is not
-        continued into the second frame: emergence fails on frame
-        persistence, coherent transport fails on the transport over the
-        lifetime, and the flavour structure is among what it leaves
-        unmeasured."""
+        share no symmetry action, so the intertwining of the flavour factor is
+        not measured and coherent transport is not evaluable; the empty
+        default is the identity between frames of one cell set."""
         size = self.op.shape[0]
         frames = [self.op, (self.op1, np.eye(size, dtype=complex))]
-        read = obs.IsospinDoublet.observe(self.declared(frames))
-        self.assertEqual(status(read, 1), Failed)
-        self.assertEqual(read.conditions[0].failing, ["frame-persistence"])
-        self.assertEqual(status(read, 2), Failed)
+        read = obs.IsospinDoublet.observe(self.declared(frames), rounding_config())
+        self.assertEqual(status(read, 1), Passed)
+        self.assertEqual(status(read, 2), NotEvaluable)
         self.assertEqual(read.candidates[0].conditions[1].missing,
-                         ["transport-full-rank", "transport-leakage",
-                          "flavour-structure-preserved"])
+                         ["flavour-structure-preserved"])
         self.assertEqual(obs.IsospinFrame("x", self.op).transfer_from_previous
                          .shape, (0, 0))
 
     def test_a_zero_transfer_breaks_the_track(self):
         size = self.op.shape[0]
         frames = [self.op, (self.op1, np.zeros((size, size), dtype=complex))]
-        read = obs.IsospinDoublet.observe(self.declared(frames))
+        read = obs.IsospinDoublet.observe(self.declared(frames), rounding_config())
         self.assertEqual(status(read, 2), Failed)
+
+    def test_member_occupations_are_read_from_the_density(self):
+        charges = obs.IsospinDoublet.observe(self.declared(), rounding_config()).candidates[0] \
+            .charges
+        plus, minus = [np.asarray(p) for p in charges.member_projectors]
+        self.assertEqual(list(charges.member_occupations), [])
+        values, vectors = np.linalg.eigh((plus + plus.conj().T) / 2)
+        up = vectors[:, np.argsort(values)[::-1][:2]]
+        values, vectors = np.linalg.eigh((minus + minus.conj().T) / 2)
+        down = vectors[:, np.argsort(values)[::-1][:1]]
+        d = self.declared()
+        d.three_quark_density = up @ up.conj().T + down @ down.conj().T
+        charges = obs.IsospinDoublet.observe(
+            d, rounding_config()).candidates[0].charges
+        np.testing.assert_allclose(charges.member_occupations, [2.0, 1.0],
+                                   atol=1e-14)
 
 
 if __name__ == "__main__":

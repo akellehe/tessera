@@ -69,15 +69,15 @@ def test_the_declared_tolerances_reach_the_detector(monkeypatch):
                    for _, field in bp.ISOSPIN_TOLERANCES)
     del configs[:]
     result = iso.main(["run", "--quiet", "--isospin-grouping-tolerance",
-                       "1e-8", "--isospin-isotypic-tolerance", "1e-6",
+                       "1e-8", "--isospin-commutant-tolerance", "1e-6",
                        "--update-limit", "3"])
     assert result["tolerances"]["isospin_grouping_tolerance"] == 1e-8
-    assert result["tolerances"]["isospin_isotypic_tolerance"] == 1e-6
+    assert result["tolerances"]["isospin_commutant_tolerance"] == 1e-6
     assert result["tolerances"]["isospin_projector_tolerance"] == 1e-15
     assert result["limits"]["update_limit"] == 3
     for config in configs:
         assert config.grouping_tolerance == 1e-8
-        assert config.isotypic_tolerance == 1e-6
+        assert config.commutant_tolerance == 1e-6
         assert config.projector_tolerance == 1e-15
 
 
@@ -127,17 +127,14 @@ def test_main_reads_the_declared_host_and_writes_the_json(tmp_path):
 
 
 def test_main_prints_every_band_unless_quiet(capsys):
-    """Every band of both reads is printed. At the declared grouping
-    tolerance 1e-15 the covariant operator of the declared host reads seven
-    bands, not its six rank-three eigenvalues: the three eigenvalues at
-    20.6346 are computed 2.5e-14 apart, 1.1e-15 of the largest eigenvalue
-    modulus, and form two groups. The T-averaged operator reads its three
-    bands."""
+    """Every band of both reads is printed: the six rank-three eigenvalues
+    of the covariant operator of the declared host, and the three bands of
+    the T-averaged operator."""
     iso.main(["run"])
     out = capsys.readouterr().out
     assert out.count("declared host covariant:") == 1
     assert out.count("declared host t_averaged:") == 1
-    assert out.count("    band ") == 7 + 3
+    assert out.count("    band ") == 6 + 3
     assert out.count("emergence Failed") == 2
     iso.main(["run", "--quiet"])
     assert capsys.readouterr().out == ""

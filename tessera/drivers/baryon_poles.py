@@ -445,11 +445,6 @@ TOLERANCES = (
     ("isospin_commutant_tolerance",
      "the relative eigenvalue cut of the null space of the commutator map "
      "and of the centre of the commutant in the isospin-doublet detector"),
-    ("isospin_isotypic_tolerance",
-     "the relative width within which eigenvalues of the commutant's generic "
-     "central element form one isotypic component, and the relative "
-     "singular-value cut of the rank of each isotypic block, in the "
-     "isospin-doublet detector"),
     ("isospin_hermiticity_tolerance",
      "the relative departure of an operator from its adjoint at or below "
      "which the isospin-doublet detector reads it in the Hermitian regime"),
@@ -491,7 +486,6 @@ ISOSPIN_TOLERANCES = (
     ("isospin_projector_tolerance", "projector_tolerance"),
     ("isospin_invariance_tolerance", "invariance_tolerance"),
     ("isospin_commutant_tolerance", "commutant_tolerance"),
-    ("isospin_isotypic_tolerance", "isotypic_tolerance"),
     ("isospin_hermiticity_tolerance", "hermiticity_tolerance"),
     ("isospin_transport_leakage_tolerance", "transport_leakage_tolerance"),
     ("isospin_intertwining_tolerance", "intertwining_tolerance"),

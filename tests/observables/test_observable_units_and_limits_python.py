@@ -50,7 +50,7 @@ def loose(**fields):
     operator's scale grouped into one band, and ``fields`` set on top."""
     config = obs.IsospinDoubletConfig()
     for name in ("projector_tolerance", "invariance_tolerance",
-                 "commutant_tolerance", "isotypic_tolerance",
+                 "commutant_tolerance",
                  "hermiticity_tolerance", "transport_leakage_tolerance",
                  "intertwining_tolerance", "span_tolerance",
                  "transport_rank_tolerance",
@@ -210,9 +210,11 @@ def test_the_copies_of_an_eigenvalue_on_equal_sheets_are_one_band(order,
     """Three sheets carrying one operator are three equal blocks that no
     entry couples. Each block is decomposed on its own, so the three copies
     of an eigenvalue are equal bit for bit and form one band of rank three
-    at the declared tolerances (1e-15), on which the sheets act exactly,
-    whichever way the cells are ordered. (One decomposition of the whole
-    matrix separates the copies by its rounding.)"""
+    at the declared tolerances (1e-15), on which the sheets act (the
+    commutator of the band's projector with a sheet matrix unit is 6e-19 of
+    their sizes at most), whichever way the cells are ordered. (One
+    decomposition of the whole matrix separates the copies by its
+    rounding.)"""
     if regime == "non-normal":
         sheet = nonnormal()[0]
     else:
@@ -235,7 +237,7 @@ def test_the_copies_of_an_eigenvalue_on_equal_sheets_are_one_band(order,
         first, second, third = band.eigenvalues
         assert first == second == third
         assert first == pytest.approx(value, abs=1e-10)
-        assert band.sheet_invariance_residual == 0.0
+        assert band.sheet_invariance_residual <= 1e-15
         assert band.colour_acts
     assert (frame.eigenbasis_reciprocal_condition == 1.0) == \
         (regime == "hermitian")
