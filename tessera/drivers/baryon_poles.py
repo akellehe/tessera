@@ -258,6 +258,7 @@ of the order-M sums from their infinite series (``holonomy_truncation``).
 
 import argparse
 import cmath
+import ctypes
 import itertools
 import json
 import math
@@ -498,6 +499,28 @@ ISOSPIN_TOLERANCES = (
     ("isospin_occupation_tolerance", "occupation_tolerance"),
 )
 
+#: The tolerances of the isospin-doublet detector that decide something only
+#: beyond one frame's bands, by config key, with what each needs: a doublet
+#: candidate followed to a further frame or resolution (the span tolerance),
+#: a transport between two frames (the transport tolerances), or an observed
+#: doublet, which needs quark conditions 1 and 2 to pass and so a transport
+#: (the member splitting and the occupation). Every driver gives the detector
+#: one frame and no further resolution (`isospin_doublet.declaration`), and
+#: none of these decides anything there: `add_tolerance_arguments` says so in
+#: each option's help, and every read records the ones that decided nothing
+#: in it (`isospin_doublet.unread_tolerances`).
+ISOSPIN_NEEDS = {
+    "isospin_span_tolerance":
+        "a doublet candidate followed to a further frame or resolution",
+    "isospin_transport_leakage_tolerance": "a transport between two frames",
+    "isospin_intertwining_tolerance": "a transport between two frames",
+    "isospin_transport_rank_tolerance": "a transport between two frames",
+    "isospin_singular_value_grouping_tolerance":
+        "a transport between two frames",
+    "isospin_member_splitting_tolerance": "an observed doublet",
+    "isospin_occupation_tolerance": "an observed doublet",
+}
+
 
 def declared_tolerance(config, key):
     """The tolerance ``key`` (`TOLERANCES`) of a config, or the declared
@@ -520,15 +543,20 @@ def isospin_doublet_config(config=None):
 
 def declared_tolerances(tolerances=None):
     """Every tolerance of `TOLERANCES` at its declared value, with those of
-    ``tolerances`` (a mapping by key) in their place; a key outside
-    `TOLERANCES` is refused."""
+    ``tolerances`` (a mapping by key) in their place. A key outside
+    `TOLERANCES`, and a tolerance that is negative or not a finite number,
+    has no meaning and is refused."""
     out = {key: DECLARED_TOLERANCE for key, _ in TOLERANCES}
     unknown = sorted(set(tolerances or {}) - set(out))
     if unknown:
         raise ValueError("unknown tolerances %s; the declared ones are %s"
                          % (unknown, [key for key, _ in TOLERANCES]))
-    out.update({key: float(value)
-                for key, value in (tolerances or {}).items()})
+    for key, value in (tolerances or {}).items():
+        value = float(value)
+        if not (math.isfinite(value) and value >= 0.0):
+            raise ValueError("a tolerance is a finite number that is not "
+                             "negative; got %s = %r" % (key, value))
+        out[key] = value
     return out
 
 
@@ -613,14 +641,23 @@ SOLVE_OPTIONS = (
      "the number of Pachner moves drawn per update of the moves; 0 scores "
      "every move"),
     ("moment_stiffness_weight", 0.0,
-     "the weight of a spectral-moment stiffness of the degree-1 operator "
-     "about the host, added to the action on every sheet; 0 declares none"),
+     "the weight of a spectral-moment stiffness of the degree-1 operator, "
+     "added to the action on every sheet, about the geometry each solve "
+     "starts from: the engine records the local moments of the base "
+     "complex its drive starts on, a content's base cell (one tetrahedron) "
+     "in either driver and, in the recursion driver, also the level's base "
+     "complex; 0 declares none"),
     ("moment_stiffness_coefficients", (),
      "the coefficients of the stiffness's moments of orders 1, 2, ..., "
      "needed with a nonzero weight"),
     ("pinned_vertices", (),
-     "base vertices the drive holds: an edge both of whose endpoints are "
-     "pinned keeps its squared length and its link; none by default"),
+     "vertex ids the drive holds, read as the ids of the base complex of "
+     "every solve the option reaches, the same ids on each: a content's "
+     "base cell (one tetrahedron, its local vertices 0 to 3) in either "
+     "driver and, in the recursion driver, also the level's base complex "
+     "(its own vertex ids); an edge both of whose endpoints are pinned "
+     "keeps its squared length and its link, and an id that is not a "
+     "vertex of a complex holds nothing on it; none by default"),
     ("admissibility_gate", False,
      "whether the drive applies the engine's Kontsevich-Segal admissibility "
      "gate: with it, a candidate Pachner move and a trial of the line search "
@@ -3729,7 +3766,10 @@ def recursion_read(spacetime, config):
     declared dense crossover, or when a level is reduced to nothing; a
     refusal is recorded here as it is, with the number of completed turns
     and no band, so that quark condition 1 reads "not evaluable"
-    (`quark_conditions`) instead of failing the content."""
+    (`quark_conditions`) instead of failing the content. The turn is taken
+    at the declaration's own resolutions, the library's, whatever window of
+    resolutions a run declares for its level's box; the record names them
+    (``resolutions``)."""
     declaration = cob.LevelRecursionDeclaration()
     bands = cob.RecursionBandDeclaration()
     bands.selection = cob.RecursionBandSelection.LowestModes
@@ -3738,6 +3778,7 @@ def recursion_read(spacetime, config):
     declaration.tolerance = declared_tolerance(config, "recursion_tolerance")
     declaration.rank_tolerance = declared_tolerance(
         config, "quotient_rank_tolerance")
+    resolutions = [float(r) for r in declaration.resolutions]
     recursion = None
     try:
         recursion = cob.LevelRecursion.overSpacetime(
@@ -3746,10 +3787,12 @@ def recursion_read(spacetime, config):
     except ValueError as refusal:
         return {"levels": int(recursion.level_count())
                 if recursion is not None else 0,
+                "resolutions": resolutions,
                 "refusal": str(refusal)}
     level = recursion.level(0)
     return {
         "levels": int(recursion.level_count()),
+        "resolutions": resolutions,
         "partition": [list(p) for p in level.partition],
         "band_ranks": [int(b.rank) for b in level.bands],
         "bands_accepted": [bool(b.accepted) for b in level.bands],
@@ -5523,6 +5566,22 @@ def point_lines(point):
     return lines
 
 
+def checked_couplings(kappas, betas):
+    """The couplings of a scan, each named when it has no value: an empty
+    list, a kappa or a beta that is not a finite number, and a kappa of
+    zero (the action carries 1/kappa)."""
+    kappas, betas = list(kappas), list(betas)
+    for name, values in (("kappa", kappas), ("beta", betas)):
+        if not values:
+            raise ValueError("the scan declares no %s" % name)
+        for value in values:
+            if not math.isfinite(float(value)):
+                raise ValueError("%s is a finite number; got %r"
+                                 % (name, value))
+    if any(float(kappa) == 0.0 for kappa in kappas):
+        raise ValueError("kappa is not zero: the action carries 1/kappa")
+
+
 def default_config(kappas=DECLARED_KAPPAS, betas=DECLARED_BETAS,
                    edge_squared=DECLARED_EDGE_SQUARED,
                    regge_hinges="interior", selected_contents=None,
@@ -5540,10 +5599,14 @@ def default_config(kappas=DECLARED_KAPPAS, betas=DECLARED_BETAS,
     declared. ``villain_order`` is the order the Villain weight of the
     holonomy term is summed to (`DECLARED_VILLAIN_ORDER`). ``solve`` sets
     any of `SOLVE_OPTIONS` by key; the others are recorded at their declared
-    values. A content that is not one of the ten (`checked_contents`), and a
-    name of the hinges, the elimination, the band selection or the fiber
-    pinning that is not declared, has no value and is refused here, before
-    anything is computed."""
+    values. A content that is not one of the ten (`checked_contents`), a
+    coupling that has no value (`checked_couplings`), a tolerance that is
+    negative or not finite (`declared_tolerances`), and a name of the
+    hinges, the elimination, the band selection or the fiber pinning that
+    is not declared, has no value and is refused here, before anything is
+    computed."""
+    kappas, betas = list(kappas), list(betas)
+    checked_couplings(kappas, betas)
     checked_regge_hinges(regge_hinges)
     if elimination not in ELIMINATIONS:
         raise ValueError("the elimination is one of %s; got %r"
@@ -5630,13 +5693,100 @@ def _git_commit(directory):
         return {"root": root, "ref": None, "commit": None}
 
 
-def environment_record():
+#: The symbol prefixes and suffixes of OpenBLAS's queries: the system's
+#: build (``openblas_``), the builds numpy and scipy bundle
+#: (``scipy_openblas_``), and their 64-bit-integer builds (suffix ``64_``).
+_OPENBLAS_SYMBOLS = (("openblas_", ""), ("openblas_", "64_"),
+                     ("scipy_openblas_", ""), ("scipy_openblas_", "64_"))
+
+#: The threading of an OpenBLAS build, by what `openblas_get_parallel`
+#: returns.
+_OPENBLAS_THREADING = {0: "sequential", 1: "pthreads", 2: "openmp"}
+
+#: The file names of the libraries `loaded_runtimes` asks about.
+_RUNTIME_NAMES = ("blas", "lapack", "omp", "mkl", "blis")
+
+
+def _openblas_report(library):
+    """What an OpenBLAS build reports of itself, or None when ``library``
+    has no OpenBLAS query."""
+    for prefix, suffix in _OPENBLAS_SYMBOLS:
+        try:
+            threads = getattr(library, prefix + "get_num_threads" + suffix)
+        except AttributeError:
+            continue
+        threads.restype = ctypes.c_int
+        report = {"kind": "openblas", "threads": int(threads())}
+        for key, name, kind in (("threading", "get_parallel", ctypes.c_int),
+                                ("configuration", "get_config",
+                                 ctypes.c_char_p),
+                                ("core", "get_corename", ctypes.c_char_p)):
+            try:
+                query = getattr(library, prefix + name + suffix)
+            except AttributeError:
+                continue
+            query.restype = kind
+            value = query()
+            report[key] = (_OPENBLAS_THREADING.get(value, value)
+                           if kind is ctypes.c_int
+                           else (value or b"").decode(errors="replace"))
+        return report
+    return None
+
+
+def loaded_runtimes():
+    """Every BLAS, LAPACK and OpenMP runtime loaded in the process, as each
+    reports itself when asked: its file, and for an OpenBLAS build the
+    number of threads it runs, its threading, its configuration and its
+    core; for an OpenMP runtime the number of threads a parallel region
+    takes (``omp_get_max_threads``). A process holds as many builds as its
+    extensions bring (numpy's, scipy's, and the one the package's module is
+    linked to), and each rounds with its own threads. A runtime with no
+    query known here is listed with its file alone. The libraries are those
+    the process maps (``/proc/self/maps``); where that list is not
+    available, the record says why and lists none."""
+    try:
+        with open("/proc/self/maps") as handle:
+            files = sorted({line.split()[-1] for line in handle
+                            if len(line.split()) >= 6})
+    except OSError as error:
+        return {"unread": "the process's libraries are not listed here: %s"
+                          % error}
+    out = []
+    for path in files:
+        name = os.path.basename(path)
+        if not (name.startswith("lib") and ".so" in name
+                and any(part in name for part in _RUNTIME_NAMES)):
+            continue
+        report = {"file": path}
+        try:
+            library = ctypes.CDLL(path, mode=os.RTLD_NOLOAD | os.RTLD_LAZY)
+        except OSError as error:
+            report["unread"] = str(error)
+            out.append(report)
+            continue
+        found = _openblas_report(library)
+        if found is None and hasattr(library, "omp_get_max_threads"):
+            query = library.omp_get_max_threads
+            query.restype = ctypes.c_int
+            found = {"kind": "openmp", "threads": int(query())}
+        report.update(found or {"kind": None})
+        out.append(report)
+    return out
+
+
+def environment_record(arguments=None):
     """What a run's numbers depend on beside its configuration, recorded
-    once in the header of its files: the command line as run (``argv``),
+    once in the header of its files: the process's command line (``argv``)
+    and the arguments the driver parsed (``arguments``, those given to its
+    ``main``, or the command line's after the program when none is given);
     the thread counts the environment declares (``OMP_NUM_THREADS`` and the
-    linear algebra library's own variables, None for one that is not set)
-    with the number of processors, the linear algebra numpy is built on,
-    the versions of Python, numpy and the package, and the commit of the
+    linear algebra libraries' own variables, None for one that is not set)
+    with the number of processors; every BLAS, LAPACK and OpenMP runtime
+    loaded in the process with the number of threads it reports
+    (`loaded_runtimes`); the linear algebra numpy is built on
+    (``linear_algebra``); the versions of Python, numpy and the package,
+    the file of the package's compiled module, and the commit of the
     checkout the package is imported from (`_git_commit`). Decisions taken
     at the declared tolerances on values that differ in their last bits
     between thread counts depend on these."""
@@ -5649,18 +5799,23 @@ def environment_record():
             for name in ("blas", "lapack") if name in build}
     except (TypeError, AttributeError):
         linear_algebra = {}
+    module = getattr(getattr(T, "_tessera", None), "__file__", None)
     return {
         "argv": [str(argument) for argument in sys.argv],
+        "arguments": [str(argument) for argument in
+                      (sys.argv[1:] if arguments is None else arguments)],
         "threads": {name: os.environ.get(name)
                     for name in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS",
-                                 "MKL_NUM_THREADS")},
+                                 "GOTO_NUM_THREADS", "MKL_NUM_THREADS")},
         "processors": os.cpu_count(),
+        "runtimes": loaded_runtimes(),
         "linear_algebra": linear_algebra,
         "python": sys.version.split()[0],
         "numpy": np.__version__,
         "package": str(getattr(T, "__version__", None)
                        or getattr(getattr(T, "_tessera", None),
                                   "__version__", None) or "unknown"),
+        "module": os.path.realpath(module) if module else None,
         "checkout": _git_commit(os.path.dirname(os.path.abspath(
             T.__file__))),
     }
@@ -6553,21 +6708,31 @@ def add_action_arguments(parser):
 
 
 def _tolerance(text):
-    """A positive number, for the tolerance options."""
+    """A positive finite number, for the tolerance options."""
     try:
         value = float(text)
     except ValueError:
         value = 0.0
-    if not value > 0.0:
+    if not (math.isfinite(value) and value > 0.0):
         raise argparse.ArgumentTypeError(
-            "a tolerance is a positive number; got %r" % text)
+            "a tolerance is a positive finite number; got %r" % text)
     return value
 
 
 def add_tolerance_arguments(parser):
     """One option per tolerance of the stack (`TOLERANCES`), each defaulting
-    to `DECLARED_TOLERANCE`, for both drivers. None changes an equation."""
+    to `DECLARED_TOLERANCE`, for every driver. None changes an equation. The
+    help of a tolerance of the isospin-doublet detector that decides nothing
+    on the one frame every driver gives the detector (`ISOSPIN_NEEDS`) says
+    so."""
     for key, meaning in TOLERANCES:
+        if key in ISOSPIN_NEEDS:
+            meaning = (
+                "%s; it decides something only with %s, and every driver "
+                "gives the detector one frame and no further resolution, so "
+                "in these drivers it decides nothing and every isospin read "
+                "names it under unread_tolerances"
+                % (meaning, ISOSPIN_NEEDS[key]))
         parser.add_argument("--" + key.replace("_", "-"), dest=key,
                             type=_tolerance, default=DECLARED_TOLERANCE,
                             help="%s (default %g)" % (meaning,
@@ -6721,7 +6886,7 @@ def main(argv=None):
         config["isospin_doublet"] = True
     # what the numbers of the run depend on beside the configuration,
     # written once in the header
-    config["environment"] = environment_record()
+    config["environment"] = environment_record(argv)
     points_file = points_path(args.json) if args.json else None
     result = (drive_live(config, progress=not args.quiet,
                          points_file=points_file, keep_open=True)

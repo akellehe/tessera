@@ -2492,7 +2492,12 @@ def build_parser():
     run.add_argument("--resolutions", type=float, nargs="+",
                      default=list(DECLARED_RESOLUTIONS),
                      help="modularity resolutions of the persistent partition "
-                          "(default %s)" % (DECLARED_RESOLUTIONS,))
+                          "of each level's box; they reach the level's box "
+                          "alone, and the recursion read of every cell "
+                          "(its quark condition 1) is taken at the "
+                          "library's own resolutions, which its record "
+                          "names under resolutions (default %s)"
+                          % (DECLARED_RESOLUTIONS,))
     run.add_argument("--persistence-required", type=int, default=None,
                      help="how many adjacent declared resolutions a component "
                           "must persist across to become a response vertex "
@@ -2602,7 +2607,7 @@ def main(argv=None):
         villain_order=args.villain_order)
     # what the run's numbers depend on beside its declarations: the command
     # line, the commit, the thread count and the linear algebra library
-    config["environment"] = bp.environment_record()
+    config["environment"] = bp.environment_record(argv)
     points_file = points_path(args.json) if args.json else None
     result = (drive_live(config, progress=not args.quiet,
                          points_file=points_file, keep_open=True)
