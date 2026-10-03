@@ -81,6 +81,12 @@ accepted point (or at the host, when so declared), which are carried by
 cell: on a complex a move has changed, a reference projector is read on the
 cells that complex shares with the reference's, and a cell the reference
 does not have carries no weight in it.
+
+A cell is named across the complexes of a drive by the drive's names of its
+vertices (`VertexNames`), not by the engine's vertex ids: the engine gives a
+vertex a move inserts the lowest id no vertex of the complex holds, so an id
+a removal freed can return on another vertex, and a name is never given to
+two vertices.
 """
 import math
 import threading
@@ -274,15 +280,21 @@ def sectors_on(sectors, host, support):
     return out
 
 
-def support_cells(support, degree=1):
+def support_cells(support, degree=1, names=None):
     """The carrier cells of a sheeted support in the operator's mode order,
     each named by its sheet and its base vertices, a name that a Pachner
-    move elsewhere on the base complex leaves as it is."""
+    move elsewhere on the base complex leaves as it is. With ``names`` (a
+    dict from each base vertex id to its name, `VertexNames.of`) a base
+    vertex is named by its name, in ascending order of the names; without,
+    by its id."""
+    if names is None:
+        names = {v: v for v in support.base_vertices}
     if support.sheets == 1:
-        return [(0, cell) for cell in carrier_cells(support.spacetime,
-                                                    degree)]
+        return [(0, tuple(sorted(names[v] for v in cell)))
+                for cell in carrier_cells(support.spacetime, degree)]
     return [(cell[0] // support.count,
-             tuple(support.base_vertices[v % support.count] for v in cell))
+             tuple(sorted(names[support.base_vertices[v % support.count]]
+                          for v in cell)))
             for cell in carrier_cells(support.spacetime, degree)]
 
 
@@ -721,28 +733,103 @@ def least_squares_multipliers(action, geometry):
     return [complex(x) for x in estimate]
 
 
+def vertex_ids(base):
+    """The vertex ids of a base complex, ascending."""
+    return sorted({v for a, b, _, _ in edge_fields(base) for v in (a, b)}
+                  | {v for cell in top_cells(base) for v in cell})
+
+
+class VertexNames:
+    """The names of the vertices of the base complexes a drive passes
+    through: one name per vertex for the whole drive, never given to two.
+
+    The engine gives a vertex a 1-4 move inserts the lowest id that no
+    vertex of the complex holds (`Spacetime::nextFreeVertexId` on a complex
+    `MultiCobordism` rebuilds from its cells), so after a 4-1 move freed an
+    id, a later insertion gives that id to another vertex. The vertices of
+    the complex a drive begins on are named by their ids. A vertex keeps its
+    name from one accepted point to the next while its id is held at both;
+    a vertex whose id is not held at the last accepted point takes a new
+    name, above every name given before, in ascending order of the ids.
+
+    The accepted points of a drive are the points its steps are proposed
+    from (`StationarityObjective.direction`): the engine proposes a step
+    after every move update, so between two accepted points lies one
+    committed move update. At the declared combinatorial depth and length of
+    one that update is one move, which inserts or removes at most one
+    vertex, so an id held at two consecutive accepted points names one
+    vertex. An update of several moves (a combinatorial depth or length
+    above one) is one step from one accepted point to the next, and an id
+    it frees and gives back within it keeps its name."""
+
+    def __init__(self):
+        self._names = None
+        self._next = 0
+
+    def begin(self, base):
+        """The drive begins at ``base``: each of its vertices is named by its
+        id, and a vertex met later takes a name above every name given
+        before."""
+        ids = vertex_ids(base)
+        # the bound first: a complex named meanwhile takes names above it
+        self._next = max([self._next] + [v + 1 for v in ids])
+        self._names = {v: v for v in ids}
+
+    @property
+    def begun(self):
+        return self._names is not None
+
+    def of(self, ids):
+        """The name of each of the vertex ids ``ids`` of a complex met after
+        the last accepted point (a dict from id to name); each id is its own
+        name before the drive begins."""
+        ids = sorted(int(v) for v in ids)
+        if self._names is None:
+            return {v: v for v in ids}
+        out = {v: self._names[v] for v in ids if v in self._names}
+        fresh = [v for v in ids if v not in self._names]
+        out.update({v: self._next + k for k, v in enumerate(fresh)})
+        return out
+
+    def accept(self, base):
+        """An accepted point: its vertices are named (`of`), and their names
+        are the ones a later complex is named from."""
+        if self._names is None:
+            self.begin(base)
+            return
+        names = self.of(vertex_ids(base))
+        self._next = max([self._next] + [name + 1 for name in names.values()])
+        self._names = names
+
+
 class ReggeStart:
     """The geometry the continued Regge sheets of a drive start from
     (`JointActionDeclaration.regge_start_squared_lengths`): the squared
     length of every edge of the base complex where the drive began, named by
-    the edge's two base vertices. A system builds a new `JointAction` at
-    every point it scores; each one is declared this start, so the Regge
-    term is read on one continued sheet from the drive's start to its end.
-    An edge a Pachner move creates has no start: at a point that is scored
-    it starts at the squared length it has there, and from the first
-    accepted point that has it, at the squared length it was accepted
+    the drive's names of the edge's two base vertices (``names``, a
+    `VertexNames` this start begins and advances). A system builds a new
+    `JointAction` at every point it scores; each one is declared this start,
+    so the Regge term is read on one continued sheet from the drive's start
+    to its end. An edge a Pachner move creates has no start: at a point that
+    is scored it starts at the squared length it has there, and from the
+    first accepted point that has it, at the squared length it was accepted
     with."""
 
     def __init__(self):
         self._squared = None
+        self.names = VertexNames()
 
-    @staticmethod
-    def _of(base):
-        return {(min(a, b), max(a, b)): complex(length * length)
-                for a, b, length, _ in edge_fields(base)}
+    def _of(self, base):
+        names = self.names.of(vertex_ids(base))
+        out = {}
+        for a, b, length, _ in edge_fields(base):
+            a, b = names[a], names[b]
+            out[(min(a, b), max(a, b))] = complex(length * length)
+        return out
 
     def begin(self, base):
         """The start is the geometry ``base`` holds."""
+        self.names.begin(base)
         self._squared = self._of(base)
 
     @property
@@ -752,6 +839,7 @@ class ReggeStart:
     def accept(self, base):
         """An accepted point: an edge without a start takes its squared
         length there."""
+        self.names.accept(base)
         if self._squared is None:
             return
         for edge, squared in self._of(base).items():
@@ -768,11 +856,13 @@ class ReggeStart:
                 or len(declaration.regge_start_squared_lengths)):
             return declaration
         declaration = cob.JointActionDeclaration(declaration)
+        names = self.names.of(support.base_vertices)
         start = []
         for a, b, length, _ in edge_fields(support.spacetime):
             if support.sheets != 1:
                 a = support.base_vertices[a % support.count]
                 b = support.base_vertices[b % support.count]
+            a, b = names[a], names[b]
             start.append(self._squared.get((min(a, b), max(a, b)),
                                            complex(length * length)))
         declaration.regge_start_squared_lengths = start
@@ -791,13 +881,21 @@ class GeometricSystem:
     the action declares, they are the least-squares ones at every point
     (`least_squares_multipliers`), as a content's are. ``begin(base)``
     declares the geometry the Regge sheets of a drive start from
-    (`ReggeStart`); `solve` calls it with the complex it is given."""
+    (`ReggeStart`); `solve` calls it with the complex it is given. The
+    vertices of the complexes a drive passes through are named by
+    ``vertex_names`` (`VertexNames`)."""
 
     def __init__(self, declare, geometry_of, sheets):
         self._declare = declare
         self._geometry_of = geometry_of
         self.sheets = int(sheets)
         self.regge_start = ReggeStart()
+
+    @property
+    def vertex_names(self):
+        """The drive's names of the vertices (`VertexNames`), begun and
+        advanced with the Regge start."""
+        return self.regge_start.names
 
     def begin(self, base):
         """A drive begins at ``base``: its Regge sheets start there."""
@@ -847,7 +945,10 @@ class ContentSystem:
     same on every complex afterwards. ``band_reference`` says where the
     bands are followed from afterwards (`BAND_REFERENCES`). The Regge sheets
     of a drive start at the host (`ReggeStart`), or at the complex
-    ``begin(base)`` is given."""
+    ``begin(base)`` is given. A carrier cell is named by its sheet and the
+    names of its base vertices (``vertex_names``, `VertexNames`), so a cell
+    of one complex is a cell of another only when the drive has the same
+    vertices at both."""
 
     def __init__(self, declare, mean_field_of, host, sheets,
                  band_reference=DECLARED_BAND_REFERENCE):
@@ -874,10 +975,11 @@ class ContentSystem:
             # are solved in
             self._targets = [complex(constraint.target)
                              for constraint in pinned.moment_constraints]
-        self.reference_cells = support_cells(
-            support, action.declaration.carrier_degree)
+        self.reference_cells = self._cells(support, action)
         self.reference = references_of(start.bands)
         self._covariance = covariance_of(start.bands)
+        # the cells the covariance of the last accepted point is over
+        self._covariance_cells = self.reference_cells
         # the places each band is declared at, per complex (named by its
         # carrier cells): on the host, where the bands are chosen; on any
         # other complex, where the first measurement there finds them
@@ -893,6 +995,12 @@ class ContentSystem:
             declaration.fiber_moment_scale = self._scale
         return declaration
 
+    @property
+    def vertex_names(self):
+        """The drive's names of the vertices (`VertexNames`), begun and
+        advanced with the Regge start."""
+        return self.regge_start.names
+
     def begin(self, base):
         """A drive begins at ``base``: its Regge sheets start there."""
         self.regge_start.begin(base)
@@ -900,6 +1008,12 @@ class ContentSystem:
     def _action(self, support):
         return cob.JointAction(support.spacetime, self.regge_start.declared(
             self._declare(support.spacetime), support))
+
+    def _cells(self, support, action):
+        """The carrier cells of a support, named by the drive's names of
+        their base vertices."""
+        return support_cells(support, action.declaration.carrier_degree,
+                             self.vertex_names.of(support.base_vertices))
 
     def _field(self, base):
         support = sheeted_support(base, self.sheets)
@@ -910,7 +1024,7 @@ class ContentSystem:
     def _reference(self, support, action):
         """The reference bands read on a support's carrier cells, with the
         cells."""
-        cells = support_cells(support, action.declaration.carrier_degree)
+        cells = self._cells(support, action)
         return (reference_on(cells, self.reference_cells, self.reference),
                 cells)
 
@@ -945,11 +1059,11 @@ class ContentSystem:
     def iterate(self, base):
         """The measurements of a point (`SelfConsistentMeanField.iterate`),
         its bands followed from the reference and its covariance change taken
-        from the last accepted point's, with the point's carrier cells."""
+        from the last accepted point's when the point has its cells (none
+        otherwise), with the point's carrier cells."""
         field, action, support = self._field(base)
         reference, cells = self._measured_reference(field, support, action)
-        previous = (self._covariance
-                    if len(self._covariance) == len(cells) ** 2 else [])
+        previous = self._covariance if cells == self._covariance_cells else []
         return field.iterate(reference, previous), cells
 
     def accept(self, base):
@@ -958,6 +1072,7 @@ class ContentSystem:
         self.regge_start.accept(base)
         step, cells = self.iterate(base)
         self._covariance = covariance_of(step.bands)
+        self._covariance_cells = cells
         if self.band_reference == "previous":
             self.reference_cells = cells
             self.reference = references_of(step.bands)
@@ -1332,7 +1447,10 @@ def solve(spacetime, system, tolerance=1e-15, move_tolerance=1e-15,
     with its detail, the number of committed move updates and of accepted
     relaxation updates, how many scored complexes had no residual for each
     reason (``undefined_reasons``), the counts of the base complex before
-    and after, and the seconds it took."""
+    and after, the drive's names of the vertices of the base complex it
+    ended on (``vertex_names``, a dict from vertex id to name,
+    `VertexNames`; None for a system that names none), and the seconds it
+    took."""
     depth, length = checked_schedule(combinatorial_depth,
                                      combinatorial_length)
     # the drive begins here: the system's Regge sheets start at this geometry
@@ -1370,6 +1488,7 @@ def solve(spacetime, system, tolerance=1e-15, move_tolerance=1e-15,
         refusal = str(error)
     seconds = time.time() - started
     final = node.spacetime()
+    names = getattr(system, "vertex_names", None)
     updates = objective.updates
     last = updates[-1] if updates else None
     if limit is not None or refusal is not None:
@@ -1448,6 +1567,8 @@ def solve(spacetime, system, tolerance=1e-15, move_tolerance=1e-15,
         "candidate_moves": int(candidate_moves),
         "complex_before": before,
         "complex_after": complex_counts(final),
+        "vertex_names": (None if names is None
+                         else names.of(vertex_ids(final))),
         "changed": sorted(top_cells(final)) != cells_before,
         "seconds": seconds,
     }
