@@ -107,7 +107,8 @@ def test_main_reads_the_declared_host_and_writes_the_json(tmp_path):
     assert result["relaxed"] == [] and result["spinorial"] is True
     document = json.loads(path.read_text())
     assert set(document) == {"declared_host", "spinorial", "relaxed",
-                             "villain_order", "tolerances", "limits"}
+                             "villain_order", "tolerances", "limits",
+                             "environment"}
     assert document["villain_order"] == bp.DECLARED_VILLAIN_ORDER
     assert document["tolerances"] == {
         key: 1e-15 for key, _ in bp.TOLERANCES}
