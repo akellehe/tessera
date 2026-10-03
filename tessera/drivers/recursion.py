@@ -631,8 +631,12 @@ def relax_level(spacetime, config, sectors=None, count=None):
     The relaxed fields are written to ``spacetime`` when the base the drive
     ended on has the cells it started with. When committed moves left other
     cells, ``spacetime`` is left as it was; the record's ``moved_base`` is
-    then the base the drive ended on (`base_fields`: cells, squared lengths,
-    links, relabeling), and None otherwise.
+    then the base the drive ended on (`base_fields`: cells, squared lengths
+    and links on its vertices relabeled 0..n-1), with the relabeling keyed
+    by the drive's name of each vertex (`cell_solve.VertexNames`): a vertex
+    of the level as built is named by its id there, and a vertex the drive
+    inserted by a name above every id of the level as built, so that no key
+    names two vertices; None otherwise.
 
     The record's ``converged`` is `baryon_poles.solve_converged`: the
     residual norm at the point the drive ended on (``residual``) at or below
@@ -671,7 +675,10 @@ def relax_level(spacetime, config, sectors=None, count=None):
         residual, bp.declared_tolerance(held, "step_tolerance"))
     moved_base = None
     if drive["changed"]:
-        moved_base = base_fields(final)
+        cells, z, links, relabel = base_fields(final)
+        names = drive["vertex_names"]
+        moved_base = (cells, z, links,
+                      {names[v]: label for v, label in relabel.items()})
     elif shared:
         stored = {}
         for a, b, length, phase in cell_solve.edge_fields(final):
@@ -1588,19 +1595,24 @@ def _tick(record, index, cells, z, links, config):
     try:
         if moved_base is not None:
             # committed Pachner moves left other cells: the level is the one
-            # the drive ended on, every sheet a copy of it. The held cut is
-            # carried by its vertices: a move of the four Pachner kinds
+            # the drive ended on, every sheet a copy of it, on its vertices
+            # relabeled 0..n-1. ``vertex_relabeling`` takes each vertex from
+            # the drive's name to its id on the moved level: a name that is
+            # an id of ``cells_before`` names that vertex, and a vertex the
+            # drive inserted has a name above every id of ``cells_before``
+            # (`cell_solve.VertexNames`), so no name stands for two vertices;
+            # ``cells_after`` names the moved level's cells so. The held cut
+            # is carried by its vertices: a move of the four Pachner kinds
             # changes no boundary face and removes no boundary vertex, so
             # every face of the cut is a boundary face of the moved base,
-            # which the record checks (``faces_after_on_boundary``). A bulk
-            # vertex is named by its id, and the engine gives an inserted
-            # vertex the lowest free id, so an id of ``vertex_relabeling``
-            # names the same vertex before and after only where no removal
-            # freed it
+            # which the record checks (``faces_after_on_boundary``)
             cells, moved_z, moved_links, relabel = moved_base
             spacetime, count = build_level(cells, moved_z, moved_links)
             relaxation["vertex_relabeling"] = {str(v): relabel[v]
                                                for v in sorted(relabel)}
+            name_of = {label: name for name, label in relabel.items()}
+            level["cells_after"] = [sorted(name_of[v] for v in cell)
+                                    for cell in cells]
             kept_faces = [tuple(relabel[v] for v in face) for face in cut
                           if all(v in relabel for v in face)]
             owners = {}
@@ -2369,11 +2381,13 @@ def summary(result):
                if "stop_reason" in record["relaxation"] else "",
                level.get("bulk_monopole_numbers_before"),
                level.get("bulk_monopole_numbers_after")))
-        if level.get("cells_before") not in (None, level.get("cells")):
+        if level.get("cells_after") is not None:
             lines.append(
                 "  committed moves changed the level's cells: the numbers "
-                "before are of the cells %s, those after of the cells %s"
-                % (level["cells_before"], level["cells"]))
+                "before are of the cells %s, those after of the cells %s "
+                "(by the drive's vertex names; on the level's vertices %s)"
+                % (level["cells_before"], level["cells_after"],
+                   level["cells"]))
         lines += bp.term_trace_lines(record["relaxation"], "    ")
         held = level.get("held_cut") or {}
         if held.get("faces"):
