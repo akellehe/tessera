@@ -2845,7 +2845,11 @@ def relaxation_record(report, drive,
         "complex_after": drive["complex_after"],
         "complex_changed": bool(drive["changed"]),
         "residual_trace": list(drive["trace"]),
+        # the scored complexes without a residual, in all and by reason:
+        # a candidate move or a trial of the line search on which the
+        # declared system or a declared stiffness has no value
         "undefined_points": len(objective.undefined),
+        "undefined_reasons": cell_solve.undefined_reasons(objective.undefined),
         "seconds": float(drive["seconds"]),
         "force_norm": float(report.force_norm),
         "covariance_change": (float(measured[-1].covariance_change)

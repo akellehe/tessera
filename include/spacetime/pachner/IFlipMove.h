@@ -4,6 +4,7 @@
 #ifndef TESSERA_PACHNER_IFLIPMOVE_H
 #define TESSERA_PACHNER_IFLIPMOVE_H
 
+#include <complex>
 #include <memory>
 #include <random>
 #include <vector>
@@ -88,6 +89,16 @@ private:
   // staleness-bug rationale).
   std::vector<VertexPtrs> createdSimplexVerts_;
   Edges createdEdges_;
+  // The edge the move collapses, named by the proposal. apply() removes it,
+  // since no cell holds it afterwards, and keeps its endpoints, its complex
+  // length and its U(1) phase so that rollback() restores it exactly: an
+  // EdgePtr is not enough, EdgeList::remove frees the slot.
+  EdgePtr collapsedEdge_ = nullptr;
+  VertexPtr collapsedSource_ = nullptr;
+  VertexPtr collapsedTarget_ = nullptr;
+  std::complex<double> collapsedLength_{};
+  std::complex<double> collapsedPhase_{};
+  bool collapsedRemoved_ = false;
 };
 
 }  // namespace tessera

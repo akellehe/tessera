@@ -199,10 +199,14 @@ class TestEdgeInventoryDeltas(unittest.TestCase):
 
     Locked-in behavior:
 
-    * ``add``, ``flip``, ``iflip``, ``shift`` — edge fingerprint set
-      monotonically grows.  ``Spacetime::removeSimplex`` does not
-      cascade-delete edges, and ``createSimplex`` deduplicates against
-      ``EdgeList`` by fingerprint, so these moves only ever insert.
+    * ``add``, ``flip``, ``shift`` — edge fingerprint set monotonically
+      grows.  ``Spacetime::removeSimplex`` does not cascade-delete edges,
+      and ``createSimplex`` deduplicates against ``EdgeList`` by
+      fingerprint, so these moves only ever insert.
+
+    * ``iflip`` — removes exactly one edge, the one it collapses, which no
+      cell holds after the move (``IFlipMove::apply``), and inserts the
+      edges its new cells need.
 
     * ``remove`` — deletes exactly the edges incident to the dropped
       vertex (CDT.cpp:321-337).  After a successful remove, the edge
@@ -210,27 +214,27 @@ class TestEdgeInventoryDeltas(unittest.TestCase):
 
     The PachnerMove rollback design has to know these:
     AddMove/FlipMove/IFlipMove/ShiftMove track which edges they freshly
-    inserted (so rollback removes them).  RemoveMove must additionally
-    capture the deleted edges' (source, target, squaredLength) so
-    rollback can reinsert them.
+    inserted (so rollback removes them).  RemoveMove and IFlipMove
+    additionally capture the deleted edges' endpoints, complex length and
+    phase so rollback can reinsert them.
     """
 
     def _edge_fps(self, st):
         return frozenset(hash(e) for e in st.getEdgeList().toVector())
 
     def _check_monotonic_for(self, cdt, st, move_names, n_calls=80):
-        """For the given move types only, assert edge fingerprint set
-        is monotonically non-decreasing across accepted calls."""
+        """For the given move types only, assert that an accepted call
+        removes no edge, or, for ``iflip``, exactly the one it collapses."""
         for _ in range(n_calls):
             for move_name in move_names:
                 before = self._edge_fps(st)
                 accepted = getattr(cdt, move_name)()
                 after = self._edge_fps(st)
                 if accepted:
-                    self.assertTrue(
-                        before.issubset(after),
-                        f"{move_name}() removed {len(before - after)} "
-                        f"edge(s); these moves are documented to only add"
+                    removed = len(before - after)
+                    self.assertEqual(
+                        removed, 1 if move_name == "iflip" else 0,
+                        f"{move_name}() removed {removed} edge(s)"
                     )
                 else:
                     self.assertEqual(
