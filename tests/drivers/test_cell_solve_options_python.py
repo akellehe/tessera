@@ -558,8 +558,11 @@ def test_with_a_stiffness_the_move_of_a_tetrahedron_has_no_value(
     plain, plain_scores = _drive_with_moves(monkeypatch, 0.0)
     assert plain["undefined_reasons"] == {}
     assert plain_scores[10] == [pytest.approx(32.21, rel=1e-3)]
+    assert plain["objective"].stiffness_cells == {}
     drive, scores = _drive_with_moves(monkeypatch, 1e-6)
     assert drive["node"].moment_stiffness_weight == 1e-6
+    assert drive["objective"].stiffness_cells == {
+        1: cs.stiffness_cells(bp.build_base(8.0), 1)}
     assert scores[10] == [math.inf]
     assert drive["undefined_reasons"] == {NO_STIFFNESS_AFTER_A_MOVE: 1}
     assert all(score == 0.0 for score in scores[6])
@@ -591,17 +594,18 @@ def _four_cells(cells, phases):
     return complex_
 
 
-def test_a_stiffness_is_read_by_place_on_other_edges_of_its_number():
-    """Ticket #1370 as it stands, for compositions of moves. Three cells
-    around the edge (0, 1) and a fourth on the face (0, 2, 3): the 3-2 move
-    on (0, 1) and then the 2-3 move on (0, 2, 3) trade the edge (0, 1) for
-    (4, 5), thirteen edges before and after. The reference is the moments
-    of the declared complex in the operator's order of its cells, which is
-    not the order of its edge list: the declared complex built from its
-    cells in another order has the stiffness zero there. On the complex
-    the two moves make, which has the declared number of edges, the
-    stiffness has a value: the moments of each of its edges are read
-    against those of the edge at the same place of the declared complex."""
+def test_a_stiffness_has_no_value_on_other_edges_of_its_number():
+    """The stiffness reference is of the cells of the complex it was
+    declared on. Three cells around the edge (0, 1) and a fourth on the face
+    (0, 2, 3): the 3-2 move on (0, 1) and then the 2-3 move on (0, 2, 3)
+    trade the edge (0, 1) for (4, 5), thirteen edges before and after. The
+    cells of the reference are the operator's, in its order, which is not
+    the order of the edge list: the declared complex built from its cells in
+    another order has the declared cells and the stiffness zero. On the
+    complex the two moves make, which has the declared number of edges and
+    other edges, the stiffness has no value when the declared cells are
+    given, and the objective told them scores it infinite with the reason.
+    Without the cells the reference is read place by place."""
     rng = np.random.default_rng(5)
     phases = {(a, b): 0.1 * rng.normal()
               for a in range(6) for b in range(a + 1, 6)}
@@ -609,19 +613,42 @@ def test_a_stiffness_is_read_by_place_on_other_edges_of_its_number():
     coefficients = [1.0, 0.5]
     declared = _four_cells(cells, phases)
     reference = list(cob.HodgeLaplacian(declared).localSpectralMoments(1, 2))
+    declared_cells = cs.stiffness_cells(declared, 1)
+    assert len(declared_cells) == 13 and declared_cells == sorted(
+        declared_cells)
     reordered = _four_cells(cells[::-1], phases)
     assert [e[:2] for e in cs.edge_fields(reordered)] != \
         [e[:2] for e in cs.edge_fields(declared)]
-    gradient, _ = cs.moment_stiffness_derivatives(reordered, 1, reference,
-                                                  coefficients, False)
+    assert cs.stiffness_cells(reordered, 1) == declared_cells
+    gradient, _ = cs.moment_stiffness_derivatives(
+        reordered, 1, reference, coefficients, False, declared_cells)
     assert np.linalg.norm(gradient) == 0.0
     assert cob.HodgeLaplacian(reordered).spectralMomentStiffness(
         1, reference, coefficients) == 0.0
 
     moved = _four_cells([[1, 2, 3, 4], [0, 2, 4, 5], [0, 3, 4, 5],
                          [2, 3, 4, 5]], phases)
-    edges = {tuple(sorted(e[:2])) for e in cs.edge_fields(moved)}
+    edges = cs.stiffness_cells(moved, 1)
     assert len(edges) == 13 and (0, 1) not in edges and (4, 5) in edges
+    reason = ("the spectral-moment stiffness has no value on this complex: "
+              "its reference is of the 13 degree-1 cells of the complex it "
+              "was declared on, and 1 of those are not cells here")
+    with pytest.raises(ValueError) as raised:
+        cs.moment_stiffness_derivatives(moved, 1, reference, coefficients,
+                                        False, declared_cells)
+    assert str(raised.value) == reason
+    objective = cs.StationarityObjective(_system(declared, _config()))
+    objective.declare_stiffness(declared, [1])
+    assert objective.stiffness_cells == {1: declared_cells}
+    scores = [objective.terms(_stiffness_context(
+        complex_, reference, coefficients, 1e-6)).joint_action_stationarity
+        for complex_ in (declared, reordered, moved)]
+    assert math.isfinite(scores[0])
+    assert scores[1] == pytest.approx(scores[0], rel=1e-13)
+    assert scores[2] == math.inf
+    assert objective.undefined == [reason]
+
+    # without the cells, the reference is read place by place
     gradient, _ = cs.moment_stiffness_derivatives(moved, 1, reference,
                                                   coefficients, False)
     assert np.linalg.norm(gradient) > 0.0
@@ -630,6 +657,48 @@ def test_a_stiffness_is_read_by_place_on_other_edges_of_its_number():
     by_place = 0.5 * np.sum(np.asarray(coefficients) * deviation ** 2)
     assert cob.HodgeLaplacian(moved).spectralMomentStiffness(
         1, reference, coefficients) == pytest.approx(by_place, rel=1e-13)
+
+
+def test_the_level_records_the_residual_its_drive_minimised():
+    """The level's residual, and with it ``converged``, is the norm its
+    drive minimised. On the level of the displaced base with a stiffness of
+    weight 1e-6 the drive ends at 1.3e-15, the norm of the residual of the
+    action with the stiffness, where the action's residual alone is 2.1e-7;
+    the record says the stiffness is in it. Without a stiffness the record's
+    residual is the action's, and says so."""
+    from tessera.drivers import recursion as R
+
+    coefficients = [1.0, 0.5]
+    for weight in (1e-6, 0.0):
+        cells, z, links, _ = R.base_fields(_displaced_base())
+        spacetime, count = R.build_level(cells, z, links)
+        reference = list(cob.HodgeLaplacian(R.sheet_base(
+            spacetime, count)).localSpectralMoments(1, 2))
+        config = R.default_config()
+        config.update({"moment_stiffness_weight": weight,
+                       "moment_stiffness_coefficients":
+                       coefficients if weight else []})
+        record = R.relax_level(spacetime, config, [], count=count)
+        assert record["moved_base"] is None
+        end = R.sheet_base(spacetime, count)
+        system, _ = R.level_system(end, config, [], R.SHEETS)
+        point = system.point(end)
+        action = np.asarray(point.relaxation.residual())
+        added, _ = cs.StationarityObjective(system)._stiffness(
+            point, _stiffness_context(end, reference, coefficients, weight),
+            False)
+        total = np.linalg.norm(action + np.asarray(added)) if weight \
+            else np.linalg.norm(action)
+        assert record["residual_includes_stiffness"] is bool(weight)
+        assert record["residual"] == pytest.approx(total, rel=1e-9)
+        assert record["residual"] < 1e-14
+        assert record["converged"] == bp.solve_converged(
+            record["residual"],
+            bp.declared_tolerance(config, "step_tolerance"))
+        if weight:
+            assert np.linalg.norm(action) > 1e-8
+        else:
+            assert record["residual"] == np.linalg.norm(action)
 
 
 def test_the_level_and_the_content_record_the_reasons():

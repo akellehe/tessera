@@ -40,8 +40,8 @@ the system on all of its sheets:
   and its Hessian to J (`moment_stiffness_derivatives`), so that the scalar
   stays the residual norm of one action. Its reference is the one the node
   holds, taken on the complex the stiffness was declared on; a complex with
-  another number of cells has no stiffness and no residual. None is
-  declared by default;
+  other cells of a declared degree has no stiffness and no residual. None
+  is declared by default;
 * a pinned region declared on the node (`MultiCobordism.declare_pinned_region`)
   holds the squared length and the link of every base edge with both ends in
   it: the engine leaves those edges where they are, and the step is the one
@@ -385,8 +385,18 @@ def series_step(point, linearization, order):
                                             dtype=complex)))))
 
 
+def stiffness_cells(spacetime, degree):
+    """The cells of degree ``degree`` of a complex in the order of its
+    operator's rows (`ChainComplex.kSimplexVertices` of the complex its top
+    cells make), each as its ascending vertex ids: the cells the local
+    spectral moments, and so a stiffness reference, are listed by."""
+    return [tuple(int(v) for v in cell) for cell in
+            cob.ChainComplex.fromSpacetime(spacetime).kSimplexVertices(
+                int(degree))]
+
+
 def moment_stiffness_derivatives(spacetime, degree, reference, coefficients,
-                                 hessian=True):
+                                 hessian=True, cells=None):
     """The gradient and, with ``hessian``, the Hessian of the spectral-moment
     stiffness of a complex,
 
@@ -414,12 +424,12 @@ def moment_stiffness_derivatives(spacetime, degree, reference, coefficients,
     whose only term is tr(G L)).
 
     Returns the gradient (2 |E| entries) and the Hessian (2 |E| by 2 |E|, or
-    None). Raises ValueError when the reference is not of this complex's
-    number of cells, in which case the stiffness has no value here. The
-    reference carries no names of cells: on a complex with as many cells as
-    the reference's, the moments of each cell are read against the
-    reference's entries at its place in the operator's order of the cells,
-    whichever cells the reference was read on."""
+    None). ``cells`` are the cells the reference was read on
+    (`stiffness_cells` of the complex it was declared on). Raises ValueError
+    when the reference is not of this complex's number of cells, or, with
+    ``cells``, not of its cells: the stiffness has no value here. Without
+    ``cells`` the reference is read place by place in the operator's order
+    of the cells, whichever cells it was read on."""
     hodge = cob.HodgeLaplacian(spacetime)
     orders = len(coefficients)
     edges = len(edge_fields(spacetime))
@@ -436,6 +446,16 @@ def moment_stiffness_derivatives(spacetime, degree, reference, coefficients,
             "reference, the moments of the complex it was declared on, has "
             "%d entries, and the degree-%d operator here has %d cells at %d "
             "orders" % (len(reference), int(degree), size, orders))
+    if cells is not None:
+        declared = [tuple(int(v) for v in cell) for cell in cells]
+        here = stiffness_cells(spacetime, degree)
+        if here != declared:
+            raise ValueError(
+                "the spectral-moment stiffness has no value on this complex: "
+                "its reference is of the %d degree-%d cells of the complex it "
+                "was declared on, and %d of those are not cells here"
+                % (len(declared), int(degree),
+                   len(set(declared) - set(here))))
     deviation = moments.reshape(size, orders) - np.asarray(
         reference, dtype=complex).reshape(size, orders)
     declaration = cob.JointActionDeclaration()
@@ -1026,6 +1046,13 @@ class StationarityObjective(cob.CobordismObjective):
         self._deadline = None
         self._seconds = None
         self._thread = None
+        #: The cells of each degree of the node's spectral-moment stiffness
+        #: on the complex it was declared on (`declare_stiffness`), by
+        #: degree; empty when not told.
+        self.stiffness_cells = {}
+        # the node's stiffness as the engine hands it to every scoring:
+        # weight, degrees, coefficients and reference
+        self._stiffness_declared = None
 
     def begin(self, time_limit_seconds=None):
         """Start the clock of a drive run from the calling thread. A
@@ -1038,6 +1065,38 @@ class StationarityObjective(cob.CobordismObjective):
         self._seconds = time_limit_seconds
         self._deadline = (None if time_limit_seconds is None
                           else time.monotonic() + float(time_limit_seconds))
+
+    def declare_stiffness(self, spacetime, degrees):
+        """Tell the objective the complex its node's spectral-moment
+        stiffness was declared on: the cells of each declared degree there
+        (`stiffness_cells`) are the cells its reference is of, and a complex
+        with other cells of that degree has no stiffness
+        (`moment_stiffness_derivatives`)."""
+        self.stiffness_cells = {int(degree): stiffness_cells(spacetime, degree)
+                                for degree in degrees}
+
+    def residual_norm(self, spacetime):
+        """The norm a drive minimises at the base complex ``spacetime``: the
+        residual of the declared system there, with the gradient of the
+        node's spectral-moment stiffness added when one is declared, as the
+        engine hands it to every scoring. Returns the norm and whether a
+        stiffness is in it. Raises ValueError where the system or the
+        stiffness has no value."""
+        point = self._system.point(spacetime)
+        residual = np.asarray(point.relaxation.residual(), dtype=complex)
+        if self._stiffness_declared is None:
+            return float(np.linalg.norm(residual)), False
+        weight, degrees, coefficients, references = self._stiffness_declared
+        context = cob.ObjectiveContext()
+        context.spacetime = spacetime
+        context.moment_stiffness_weight = weight
+        context.moment_stiffness_degrees = list(degrees)
+        context.moment_stiffness_coefficients = list(coefficients)
+        context.moment_stiffness_reference = [list(r) for r in references]
+        added, _ = self._stiffness(point, context, False)
+        if len(added):
+            residual = residual + np.asarray(added)
+        return float(np.linalg.norm(residual)), True
 
     def hold(self, regions):
         """Tell the objective the pinned regions of its node, as vertex
@@ -1218,8 +1277,13 @@ class StationarityObjective(cob.CobordismObjective):
         the node, once per sheet, in the squared lengths and the links that
         the system relaxes (`moment_stiffness_derivatives`). Empty when no
         stiffness is declared or neither field is relaxed."""
-        weight = (float(context.moment_stiffness_weight)
-                  * point.support.sheets)
+        declared = float(context.moment_stiffness_weight)
+        if declared != 0.0:
+            self._stiffness_declared = (
+                declared, list(context.moment_stiffness_degrees),
+                list(context.moment_stiffness_coefficients),
+                [list(r) for r in context.moment_stiffness_reference])
+        weight = declared * point.support.sheets
         if weight == 0.0 or not (point.lengths or point.links):
             return [], []
         spacetime = context.spacetime
@@ -1230,7 +1294,8 @@ class StationarityObjective(cob.CobordismObjective):
         for degree, reference in zip(context.moment_stiffness_degrees,
                                      context.moment_stiffness_reference):
             part, second = moment_stiffness_derivatives(
-                spacetime, degree, list(reference), coefficients, jacobian)
+                spacetime, degree, list(reference), coefficients, jacobian,
+                self.stiffness_cells.get(int(degree)))
             gradient += weight * part
             if jacobian:
                 hessian += weight * second
@@ -1321,7 +1386,9 @@ def solve(spacetime, system, tolerance=1e-15, move_tolerance=1e-15,
     relaxation updates after each move update, and ``time_limit_seconds`` a
     wall-clock time read by the objective (`StationarityObjective.begin`).
     ``configure(node)`` may declare a pinned region or a spectral-moment
-    stiffness on the node before the drive; none is declared otherwise.
+    stiffness on the node before the drive; none is declared otherwise. A
+    stiffness declared there is of the cells of ``spacetime``
+    (`StationarityObjective.declare_stiffness`).
 
     The Regge term is read on the sheets continued from the geometry
     ``spacetime`` holds when the drive begins (``system.begin``,
@@ -1349,6 +1416,9 @@ def solve(spacetime, system, tolerance=1e-15, move_tolerance=1e-15,
     if configure is not None:
         configure(node)
     objective.hold([vertices for _, vertices in node.pinned_regions()])
+    if node.moment_stiffness_weight != 0.0:
+        # the node declared its stiffness on this complex
+        objective.declare_stiffness(spacetime, node.moment_stiffness_degrees)
     before = complex_counts(spacetime)
     cells_before = sorted(top_cells(spacetime))
     started = time.time()

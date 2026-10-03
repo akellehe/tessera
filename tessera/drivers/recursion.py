@@ -636,7 +636,11 @@ def relax_level(spacetime, config, sectors=None, count=None):
 
     The record's ``converged`` is `baryon_poles.solve_converged`: the
     residual norm at the point the drive ended on (``residual``) at or below
-    the declared ``step_tolerance``. ``accepted_updates`` is the number of
+    the declared ``step_tolerance``. It is the norm the drive minimised: with
+    a declared spectral-moment stiffness, the residual of the action with
+    the stiffness (``residual_includes_stiffness``). At the start, where the
+    stiffness is declared, its gradient vanishes, so ``initial_residual`` is
+    the action's alone. ``accepted_updates`` is the number of
     relaxation updates the drive accepted; the engine's iterations, which
     ``--iteration-limit`` counts, are each one update of the Pachner moves
     and a relaxation of several such updates."""
@@ -653,7 +657,9 @@ def relax_level(spacetime, config, sectors=None, count=None):
     drive = cell_solve.solve(base, system, **bp.solve_arguments(held))
     final = drive["spacetime"]
     end = system.point(final)
-    residual = float(np.linalg.norm(end.relaxation.residual()))
+    # the norm the drive minimised: with a declared stiffness, its gradient
+    # is in the residual
+    residual, with_stiffness = drive["objective"].residual_norm(final)
     end_moduli = end.relaxation.held_log_moduli()
     drift = (max((abs(a - b) for a, b in zip(end_moduli, start_moduli)),
                  default=0.0)
@@ -685,6 +691,7 @@ def relax_level(spacetime, config, sectors=None, count=None):
         "stop_detail": str(drive["stop_detail"]),
         "initial_residual": initial,
         "residual": residual,
+        "residual_includes_stiffness": with_stiffness,
         "accepted_updates": int(drive["accepted_updates"]),
         "moves_committed": int(drive["moves_committed"]),
         "pachner_moves": bool(drive["moves"]),
