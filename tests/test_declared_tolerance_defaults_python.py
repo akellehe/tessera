@@ -42,7 +42,7 @@ def _argument_defaults(method):
      ("tolerance", "rankTolerance", "nearIsometryEpsilon")),
     (obs.IsospinDoubletConfig,
      ("grouping_tolerance", "min_relative_gap", "projector_tolerance",
-      "invariance_tolerance", "commutant_tolerance", "isotypic_tolerance",
+      "invariance_tolerance", "commutant_tolerance",
       "hermiticity_tolerance", "transport_leakage_tolerance",
       "intertwining_tolerance", "span_tolerance", "transport_rank_tolerance",
       "singular_value_grouping_tolerance", "member_splitting_tolerance",

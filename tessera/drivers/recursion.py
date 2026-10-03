@@ -631,12 +631,20 @@ def relax_level(spacetime, config, sectors=None, count=None):
     The relaxed fields are written to ``spacetime`` when the base the drive
     ended on has the cells it started with. When committed moves left other
     cells, ``spacetime`` is left as it was; the record's ``moved_base`` is
-    then the base the drive ended on (`base_fields`: cells, squared lengths,
-    links, relabeling), and None otherwise.
+    then the base the drive ended on (`base_fields`: cells, squared lengths
+    and links on its vertices relabeled 0..n-1), with the relabeling keyed
+    by the drive's name of each vertex (`cell_solve.VertexNames`): a vertex
+    of the level as built is named by its id there, and a vertex the drive
+    inserted by a name above every id of the level as built, so that no key
+    names two vertices; None otherwise.
 
     The record's ``converged`` is `baryon_poles.solve_converged`: the
     residual norm at the point the drive ended on (``residual``) at or below
-    the declared ``step_tolerance``. ``accepted_updates`` is the number of
+    the declared ``step_tolerance``. It is the norm the drive minimised: with
+    a declared spectral-moment stiffness, the residual of the action with
+    the stiffness (``residual_includes_stiffness``). At the start, where the
+    stiffness is declared, its gradient vanishes, so ``initial_residual`` is
+    the action's alone. ``accepted_updates`` is the number of
     relaxation updates the drive accepted; the engine's iterations, which
     ``--iteration-limit`` counts, are each one update of the Pachner moves
     and a relaxation of several such updates."""
@@ -653,7 +661,9 @@ def relax_level(spacetime, config, sectors=None, count=None):
     drive = cell_solve.solve(base, system, **bp.solve_arguments(held))
     final = drive["spacetime"]
     end = system.point(final)
-    residual = float(np.linalg.norm(end.relaxation.residual()))
+    # the norm the drive minimised: with a declared stiffness, its gradient
+    # is in the residual
+    residual, with_stiffness = drive["objective"].residual_norm(final)
     end_moduli = end.relaxation.held_log_moduli()
     drift = (max((abs(a - b) for a, b in zip(end_moduli, start_moduli)),
                  default=0.0)
@@ -665,7 +675,10 @@ def relax_level(spacetime, config, sectors=None, count=None):
         residual, bp.declared_tolerance(held, "step_tolerance"))
     moved_base = None
     if drive["changed"]:
-        moved_base = base_fields(final)
+        cells, z, links, relabel = base_fields(final)
+        names = drive["vertex_names"]
+        moved_base = (cells, z, links,
+                      {names[v]: label for v, label in relabel.items()})
     elif shared:
         stored = {}
         for a, b, length, phase in cell_solve.edge_fields(final):
@@ -685,6 +698,7 @@ def relax_level(spacetime, config, sectors=None, count=None):
         "stop_detail": str(drive["stop_detail"]),
         "initial_residual": initial,
         "residual": residual,
+        "residual_includes_stiffness": with_stiffness,
         "accepted_updates": int(drive["accepted_updates"]),
         "moves_committed": int(drive["moves_committed"]),
         "pachner_moves": bool(drive["moves"]),
@@ -701,7 +715,12 @@ def relax_level(spacetime, config, sectors=None, count=None):
         "kontsevich_segal_margin": float(
             cob.HodgeLaplacian.kontsevichSegalMargin(final)),
         "admissibility_gate": bool(held.get("admissibility_gate", False)),
+        # the scored complexes without a residual, in all and by reason:
+        # a candidate move or a trial of the line search on which the
+        # declared system or a declared stiffness has no value
         "undefined_points": len(drive["objective"].undefined),
+        "undefined_reasons": cell_solve.undefined_reasons(
+            drive["objective"].undefined),
         "sector_monopole_numbers": list(
             end.relaxation.sector_monopole_numbers()),
         "held_modulus_drift": float(drift),
@@ -1576,19 +1595,24 @@ def _tick(record, index, cells, z, links, config):
     try:
         if moved_base is not None:
             # committed Pachner moves left other cells: the level is the one
-            # the drive ended on, every sheet a copy of it. The held cut is
-            # carried by its vertices: a move of the four Pachner kinds
+            # the drive ended on, every sheet a copy of it, on its vertices
+            # relabeled 0..n-1. ``vertex_relabeling`` takes each vertex from
+            # the drive's name to its id on the moved level: a name that is
+            # an id of ``cells_before`` names that vertex, and a vertex the
+            # drive inserted has a name above every id of ``cells_before``
+            # (`cell_solve.VertexNames`), so no name stands for two vertices;
+            # ``cells_after`` names the moved level's cells so. The held cut
+            # is carried by its vertices: a move of the four Pachner kinds
             # changes no boundary face and removes no boundary vertex, so
             # every face of the cut is a boundary face of the moved base,
-            # which the record checks (``faces_after_on_boundary``). A bulk
-            # vertex is named by its id, and the engine gives an inserted
-            # vertex the lowest free id, so an id of ``vertex_relabeling``
-            # names the same vertex before and after only where no removal
-            # freed it
+            # which the record checks (``faces_after_on_boundary``)
             cells, moved_z, moved_links, relabel = moved_base
             spacetime, count = build_level(cells, moved_z, moved_links)
             relaxation["vertex_relabeling"] = {str(v): relabel[v]
                                                for v in sorted(relabel)}
+            name_of = {label: name for name, label in relabel.items()}
+            level["cells_after"] = [sorted(name_of[v] for v in cell)
+                                    for cell in cells]
             kept_faces = [tuple(relabel[v] for v in face) for face in cut
                           if all(v in relabel for v in face)]
             owners = {}
@@ -2357,11 +2381,13 @@ def summary(result):
                if "stop_reason" in record["relaxation"] else "",
                level.get("bulk_monopole_numbers_before"),
                level.get("bulk_monopole_numbers_after")))
-        if level.get("cells_before") not in (None, level.get("cells")):
+        if level.get("cells_after") is not None:
             lines.append(
                 "  committed moves changed the level's cells: the numbers "
-                "before are of the cells %s, those after of the cells %s"
-                % (level["cells_before"], level["cells"]))
+                "before are of the cells %s, those after of the cells %s "
+                "(by the drive's vertex names; on the level's vertices %s)"
+                % (level["cells_before"], level["cells_after"],
+                   level["cells"]))
         lines += bp.term_trace_lines(record["relaxation"], "    ")
         held = level.get("held_cut") or {}
         if held.get("faces"):
@@ -2492,7 +2518,12 @@ def build_parser():
     run.add_argument("--resolutions", type=float, nargs="+",
                      default=list(DECLARED_RESOLUTIONS),
                      help="modularity resolutions of the persistent partition "
-                          "(default %s)" % (DECLARED_RESOLUTIONS,))
+                          "of each level's box; they reach the level's box "
+                          "alone, and the recursion read of every cell "
+                          "(its quark condition 1) is taken at the "
+                          "library's own resolutions, which its record "
+                          "names under resolutions (default %s)"
+                          % (DECLARED_RESOLUTIONS,))
     run.add_argument("--persistence-required", type=int, default=None,
                      help="how many adjacent declared resolutions a component "
                           "must persist across to become a response vertex "
@@ -2602,7 +2633,7 @@ def main(argv=None):
         villain_order=args.villain_order)
     # what the run's numbers depend on beside its declarations: the command
     # line, the commit, the thread count and the linear algebra library
-    config["environment"] = bp.environment_record()
+    config["environment"] = bp.environment_record(argv)
     points_file = points_path(args.json) if args.json else None
     result = (drive_live(config, progress=not args.quiet,
                          points_file=points_file, keep_open=True)

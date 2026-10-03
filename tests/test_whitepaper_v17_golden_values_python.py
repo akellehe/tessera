@@ -652,23 +652,27 @@ def test_the_isospin_detector_on_a_constructed_doublet():
     """WP v17 line 464: an isospin doublet is an unlabeled two-dimensional
     band that neither the rotations nor the sheets act on. A constructed
     flavour doubling, read in two frames and at two resolutions, carries one
-    on each of its three twelve-fold eigenvalues. At the detector's declared
-    tolerances (1e-15) the copies of an eigenvalue, computed up to 7e-15
-    apart, are not all gathered into one band: the first frame reads the
-    bands of ranks 12, 12, 0, 12, 0 and the second 12, 12, 0, 12, and one
-    band, the one at 4 in the first frame, is a candidate. It is not
-    continued into the second frame, so emergence fails on frame
-    persistence, coherent transport fails on the transport over the
-    lifetime, and no doublet is observed."""
-    read = obs.IsospinDoublet.observe(_flavoured_monopole_frames())
+    on each of its three twelve-fold eigenvalues: both frames read three
+    bands of rank 12, each a candidate that is continued through the frames,
+    and emergence holds. The leakage of the transport out of a band is the
+    rounding of the two frames' projectors, 2.0e-15 to 2.5e-15 relative. With
+    the leakage tolerance declared at 1e-12 coherent transport holds and the
+    doublet is observed; at the detector's declared 1e-15 coherent transport
+    fails on the leakage alone and no doublet is observed."""
+    config = obs.IsospinDoubletConfig()
+    config.transport_leakage_tolerance = 1e-12
+    read = obs.IsospinDoublet.observe(_flavoured_monopole_frames(), config)
     assert [[b.rank for b in frame.bands] for frame in read.frames] == [
-        [12, 12, 0, 12, 0], [12, 12, 0, 12]]
-    assert len(read.candidates) == 1
-    assert read.conditions[0].status == obs.QuarkConditionStatus.Failed
-    assert list(read.conditions[0].failing) == ["frame-persistence"]
-    assert read.conditions[1].status == obs.QuarkConditionStatus.Failed
-    assert list(read.conditions[1].failing) == ["transport-over-lifetime"]
-    assert read.no_isospin_doublet and not read.doublet_observed
+        [12, 12, 12], [12, 12, 12]]
+    assert len(read.candidates) == 3
+    assert read.conditions[0].status == obs.QuarkConditionStatus.Passed
+    assert read.conditions[1].status == obs.QuarkConditionStatus.Passed
+    assert read.doublet_observed and not read.no_isospin_doublet
+    declared = obs.IsospinDoublet.observe(_flavoured_monopole_frames())
+    assert declared.conditions[0].status == obs.QuarkConditionStatus.Passed
+    assert declared.conditions[1].status == obs.QuarkConditionStatus.Failed
+    assert list(declared.conditions[1].failing) == ["transport-leakage"]
+    assert declared.no_isospin_doublet and not declared.doublet_observed
 
 
 def test_the_isospin_detector_finds_none_on_the_monopole_host():

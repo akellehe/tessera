@@ -40,8 +40,8 @@ the system on all of its sheets:
   and its Hessian to J (`moment_stiffness_derivatives`), so that the scalar
   stays the residual norm of one action. Its reference is the one the node
   holds, taken on the complex the stiffness was declared on; a complex with
-  another number of cells has no stiffness and no residual. None is
-  declared by default;
+  other cells of a declared degree has no stiffness and no residual. None
+  is declared by default;
 * a pinned region declared on the node (`MultiCobordism.declare_pinned_region`)
   holds the squared length and the link of every base edge with both ends in
   it: the engine leaves those edges where they are, and the step is the one
@@ -81,6 +81,12 @@ accepted point (or at the host, when so declared), which are carried by
 cell: on a complex a move has changed, a reference projector is read on the
 cells that complex shares with the reference's, and a cell the reference
 does not have carries no weight in it.
+
+A cell is named across the complexes of a drive by the drive's names of its
+vertices (`VertexNames`), not by the engine's vertex ids: the engine gives a
+vertex a move inserts the lowest id no vertex of the complex holds, so an id
+a removal freed can return on another vertex, and a name is never given to
+two vertices.
 """
 import math
 import threading
@@ -274,15 +280,21 @@ def sectors_on(sectors, host, support):
     return out
 
 
-def support_cells(support, degree=1):
+def support_cells(support, degree=1, names=None):
     """The carrier cells of a sheeted support in the operator's mode order,
     each named by its sheet and its base vertices, a name that a Pachner
-    move elsewhere on the base complex leaves as it is."""
+    move elsewhere on the base complex leaves as it is. With ``names`` (a
+    dict from each base vertex id to its name, `VertexNames.of`) a base
+    vertex is named by its name, in ascending order of the names; without,
+    by its id."""
+    if names is None:
+        names = {v: v for v in support.base_vertices}
     if support.sheets == 1:
-        return [(0, cell) for cell in carrier_cells(support.spacetime,
-                                                    degree)]
+        return [(0, tuple(sorted(names[v] for v in cell)))
+                for cell in carrier_cells(support.spacetime, degree)]
     return [(cell[0] // support.count,
-             tuple(support.base_vertices[v % support.count] for v in cell))
+             tuple(sorted(names[support.base_vertices[v % support.count]]
+                          for v in cell)))
             for cell in carrier_cells(support.spacetime, degree)]
 
 
@@ -385,8 +397,18 @@ def series_step(point, linearization, order):
                                             dtype=complex)))))
 
 
+def stiffness_cells(spacetime, degree):
+    """The cells of degree ``degree`` of a complex in the order of its
+    operator's rows (`ChainComplex.kSimplexVertices` of the complex its top
+    cells make), each as its ascending vertex ids: the cells the local
+    spectral moments, and so a stiffness reference, are listed by."""
+    return [tuple(int(v) for v in cell) for cell in
+            cob.ChainComplex.fromSpacetime(spacetime).kSimplexVertices(
+                int(degree))]
+
+
 def moment_stiffness_derivatives(spacetime, degree, reference, coefficients,
-                                 hessian=True):
+                                 hessian=True, cells=None):
     """The gradient and, with ``hessian``, the Hessian of the spectral-moment
     stiffness of a complex,
 
@@ -414,8 +436,12 @@ def moment_stiffness_derivatives(spacetime, degree, reference, coefficients,
     whose only term is tr(G L)).
 
     Returns the gradient (2 |E| entries) and the Hessian (2 |E| by 2 |E|, or
-    None). Raises ValueError when the reference is not of this complex's
-    cells, in which case the stiffness has no value here."""
+    None). ``cells`` are the cells the reference was read on
+    (`stiffness_cells` of the complex it was declared on). Raises ValueError
+    when the reference is not of this complex's number of cells, or, with
+    ``cells``, not of its cells: the stiffness has no value here. Without
+    ``cells`` the reference is read place by place in the operator's order
+    of the cells, whichever cells it was read on."""
     hodge = cob.HodgeLaplacian(spacetime)
     orders = len(coefficients)
     edges = len(edge_fields(spacetime))
@@ -432,6 +458,16 @@ def moment_stiffness_derivatives(spacetime, degree, reference, coefficients,
             "reference, the moments of the complex it was declared on, has "
             "%d entries, and the degree-%d operator here has %d cells at %d "
             "orders" % (len(reference), int(degree), size, orders))
+    if cells is not None:
+        declared = [tuple(int(v) for v in cell) for cell in cells]
+        here = stiffness_cells(spacetime, degree)
+        if here != declared:
+            raise ValueError(
+                "the spectral-moment stiffness has no value on this complex: "
+                "its reference is of the %d degree-%d cells of the complex it "
+                "was declared on, and %d of those are not cells here"
+                % (len(declared), int(degree),
+                   len(set(declared) - set(here))))
     deviation = moments.reshape(size, orders) - np.asarray(
         reference, dtype=complex).reshape(size, orders)
     declaration = cob.JointActionDeclaration()
@@ -721,28 +757,103 @@ def least_squares_multipliers(action, geometry):
     return [complex(x) for x in estimate]
 
 
+def vertex_ids(base):
+    """The vertex ids of a base complex, ascending."""
+    return sorted({v for a, b, _, _ in edge_fields(base) for v in (a, b)}
+                  | {v for cell in top_cells(base) for v in cell})
+
+
+class VertexNames:
+    """The names of the vertices of the base complexes a drive passes
+    through: one name per vertex for the whole drive, never given to two.
+
+    The engine gives a vertex a 1-4 move inserts the lowest id that no
+    vertex of the complex holds (`Spacetime::nextFreeVertexId` on a complex
+    `MultiCobordism` rebuilds from its cells), so after a 4-1 move freed an
+    id, a later insertion gives that id to another vertex. The vertices of
+    the complex a drive begins on are named by their ids. A vertex keeps its
+    name from one accepted point to the next while its id is held at both;
+    a vertex whose id is not held at the last accepted point takes a new
+    name, above every name given before, in ascending order of the ids.
+
+    The accepted points of a drive are the points its steps are proposed
+    from (`StationarityObjective.direction`): the engine proposes a step
+    after every move update, so between two accepted points lies one
+    committed move update. At the declared combinatorial depth and length of
+    one that update is one move, which inserts or removes at most one
+    vertex, so an id held at two consecutive accepted points names one
+    vertex. An update of several moves (a combinatorial depth or length
+    above one) is one step from one accepted point to the next, and an id
+    it frees and gives back within it keeps its name."""
+
+    def __init__(self):
+        self._names = None
+        self._next = 0
+
+    def begin(self, base):
+        """The drive begins at ``base``: each of its vertices is named by its
+        id, and a vertex met later takes a name above every name given
+        before."""
+        ids = vertex_ids(base)
+        # the bound first: a complex named meanwhile takes names above it
+        self._next = max([self._next] + [v + 1 for v in ids])
+        self._names = {v: v for v in ids}
+
+    @property
+    def begun(self):
+        return self._names is not None
+
+    def of(self, ids):
+        """The name of each of the vertex ids ``ids`` of a complex met after
+        the last accepted point (a dict from id to name); each id is its own
+        name before the drive begins."""
+        ids = sorted(int(v) for v in ids)
+        if self._names is None:
+            return {v: v for v in ids}
+        out = {v: self._names[v] for v in ids if v in self._names}
+        fresh = [v for v in ids if v not in self._names]
+        out.update({v: self._next + k for k, v in enumerate(fresh)})
+        return out
+
+    def accept(self, base):
+        """An accepted point: its vertices are named (`of`), and their names
+        are the ones a later complex is named from."""
+        if self._names is None:
+            self.begin(base)
+            return
+        names = self.of(vertex_ids(base))
+        self._next = max([self._next] + [name + 1 for name in names.values()])
+        self._names = names
+
+
 class ReggeStart:
     """The geometry the continued Regge sheets of a drive start from
     (`JointActionDeclaration.regge_start_squared_lengths`): the squared
     length of every edge of the base complex where the drive began, named by
-    the edge's two base vertices. A system builds a new `JointAction` at
-    every point it scores; each one is declared this start, so the Regge
-    term is read on one continued sheet from the drive's start to its end.
-    An edge a Pachner move creates has no start: at a point that is scored
-    it starts at the squared length it has there, and from the first
-    accepted point that has it, at the squared length it was accepted
+    the drive's names of the edge's two base vertices (``names``, a
+    `VertexNames` this start begins and advances). A system builds a new
+    `JointAction` at every point it scores; each one is declared this start,
+    so the Regge term is read on one continued sheet from the drive's start
+    to its end. An edge a Pachner move creates has no start: at a point that
+    is scored it starts at the squared length it has there, and from the
+    first accepted point that has it, at the squared length it was accepted
     with."""
 
     def __init__(self):
         self._squared = None
+        self.names = VertexNames()
 
-    @staticmethod
-    def _of(base):
-        return {(min(a, b), max(a, b)): complex(length * length)
-                for a, b, length, _ in edge_fields(base)}
+    def _of(self, base):
+        names = self.names.of(vertex_ids(base))
+        out = {}
+        for a, b, length, _ in edge_fields(base):
+            a, b = names[a], names[b]
+            out[(min(a, b), max(a, b))] = complex(length * length)
+        return out
 
     def begin(self, base):
         """The start is the geometry ``base`` holds."""
+        self.names.begin(base)
         self._squared = self._of(base)
 
     @property
@@ -752,6 +863,7 @@ class ReggeStart:
     def accept(self, base):
         """An accepted point: an edge without a start takes its squared
         length there."""
+        self.names.accept(base)
         if self._squared is None:
             return
         for edge, squared in self._of(base).items():
@@ -768,11 +880,13 @@ class ReggeStart:
                 or len(declaration.regge_start_squared_lengths)):
             return declaration
         declaration = cob.JointActionDeclaration(declaration)
+        names = self.names.of(support.base_vertices)
         start = []
         for a, b, length, _ in edge_fields(support.spacetime):
             if support.sheets != 1:
                 a = support.base_vertices[a % support.count]
                 b = support.base_vertices[b % support.count]
+            a, b = names[a], names[b]
             start.append(self._squared.get((min(a, b), max(a, b)),
                                            complex(length * length)))
         declaration.regge_start_squared_lengths = start
@@ -791,13 +905,21 @@ class GeometricSystem:
     the action declares, they are the least-squares ones at every point
     (`least_squares_multipliers`), as a content's are. ``begin(base)``
     declares the geometry the Regge sheets of a drive start from
-    (`ReggeStart`); `solve` calls it with the complex it is given."""
+    (`ReggeStart`); `solve` calls it with the complex it is given. The
+    vertices of the complexes a drive passes through are named by
+    ``vertex_names`` (`VertexNames`)."""
 
     def __init__(self, declare, geometry_of, sheets):
         self._declare = declare
         self._geometry_of = geometry_of
         self.sheets = int(sheets)
         self.regge_start = ReggeStart()
+
+    @property
+    def vertex_names(self):
+        """The drive's names of the vertices (`VertexNames`), begun and
+        advanced with the Regge start."""
+        return self.regge_start.names
 
     def begin(self, base):
         """A drive begins at ``base``: its Regge sheets start there."""
@@ -847,7 +969,10 @@ class ContentSystem:
     same on every complex afterwards. ``band_reference`` says where the
     bands are followed from afterwards (`BAND_REFERENCES`). The Regge sheets
     of a drive start at the host (`ReggeStart`), or at the complex
-    ``begin(base)`` is given."""
+    ``begin(base)`` is given. A carrier cell is named by its sheet and the
+    names of its base vertices (``vertex_names``, `VertexNames`), so a cell
+    of one complex is a cell of another only when the drive has the same
+    vertices at both."""
 
     def __init__(self, declare, mean_field_of, host, sheets,
                  band_reference=DECLARED_BAND_REFERENCE):
@@ -874,10 +999,11 @@ class ContentSystem:
             # are solved in
             self._targets = [complex(constraint.target)
                              for constraint in pinned.moment_constraints]
-        self.reference_cells = support_cells(
-            support, action.declaration.carrier_degree)
+        self.reference_cells = self._cells(support, action)
         self.reference = references_of(start.bands)
         self._covariance = covariance_of(start.bands)
+        # the cells the covariance of the last accepted point is over
+        self._covariance_cells = self.reference_cells
         # the places each band is declared at, per complex (named by its
         # carrier cells): on the host, where the bands are chosen; on any
         # other complex, where the first measurement there finds them
@@ -893,6 +1019,12 @@ class ContentSystem:
             declaration.fiber_moment_scale = self._scale
         return declaration
 
+    @property
+    def vertex_names(self):
+        """The drive's names of the vertices (`VertexNames`), begun and
+        advanced with the Regge start."""
+        return self.regge_start.names
+
     def begin(self, base):
         """A drive begins at ``base``: its Regge sheets start there."""
         self.regge_start.begin(base)
@@ -900,6 +1032,12 @@ class ContentSystem:
     def _action(self, support):
         return cob.JointAction(support.spacetime, self.regge_start.declared(
             self._declare(support.spacetime), support))
+
+    def _cells(self, support, action):
+        """The carrier cells of a support, named by the drive's names of
+        their base vertices."""
+        return support_cells(support, action.declaration.carrier_degree,
+                             self.vertex_names.of(support.base_vertices))
 
     def _field(self, base):
         support = sheeted_support(base, self.sheets)
@@ -910,7 +1048,7 @@ class ContentSystem:
     def _reference(self, support, action):
         """The reference bands read on a support's carrier cells, with the
         cells."""
-        cells = support_cells(support, action.declaration.carrier_degree)
+        cells = self._cells(support, action)
         return (reference_on(cells, self.reference_cells, self.reference),
                 cells)
 
@@ -945,11 +1083,11 @@ class ContentSystem:
     def iterate(self, base):
         """The measurements of a point (`SelfConsistentMeanField.iterate`),
         its bands followed from the reference and its covariance change taken
-        from the last accepted point's, with the point's carrier cells."""
+        from the last accepted point's when the point has its cells (none
+        otherwise), with the point's carrier cells."""
         field, action, support = self._field(base)
         reference, cells = self._measured_reference(field, support, action)
-        previous = (self._covariance
-                    if len(self._covariance) == len(cells) ** 2 else [])
+        previous = self._covariance if cells == self._covariance_cells else []
         return field.iterate(reference, previous), cells
 
     def accept(self, base):
@@ -958,6 +1096,7 @@ class ContentSystem:
         self.regge_start.accept(base)
         step, cells = self.iterate(base)
         self._covariance = covariance_of(step.bands)
+        self._covariance_cells = cells
         if self.band_reference == "previous":
             self.reference_cells = cells
             self.reference = references_of(step.bands)
@@ -1022,6 +1161,13 @@ class StationarityObjective(cob.CobordismObjective):
         self._deadline = None
         self._seconds = None
         self._thread = None
+        #: The cells of each degree of the node's spectral-moment stiffness
+        #: on the complex it was declared on (`declare_stiffness`), by
+        #: degree; empty when not told.
+        self.stiffness_cells = {}
+        # the node's stiffness as the engine hands it to every scoring:
+        # weight, degrees, coefficients and reference
+        self._stiffness_declared = None
 
     def begin(self, time_limit_seconds=None):
         """Start the clock of a drive run from the calling thread. A
@@ -1034,6 +1180,38 @@ class StationarityObjective(cob.CobordismObjective):
         self._seconds = time_limit_seconds
         self._deadline = (None if time_limit_seconds is None
                           else time.monotonic() + float(time_limit_seconds))
+
+    def declare_stiffness(self, spacetime, degrees):
+        """Tell the objective the complex its node's spectral-moment
+        stiffness was declared on: the cells of each declared degree there
+        (`stiffness_cells`) are the cells its reference is of, and a complex
+        with other cells of that degree has no stiffness
+        (`moment_stiffness_derivatives`)."""
+        self.stiffness_cells = {int(degree): stiffness_cells(spacetime, degree)
+                                for degree in degrees}
+
+    def residual_norm(self, spacetime):
+        """The norm a drive minimises at the base complex ``spacetime``: the
+        residual of the declared system there, with the gradient of the
+        node's spectral-moment stiffness added when one is declared, as the
+        engine hands it to every scoring. Returns the norm and whether a
+        stiffness is in it. Raises ValueError where the system or the
+        stiffness has no value."""
+        point = self._system.point(spacetime)
+        residual = np.asarray(point.relaxation.residual(), dtype=complex)
+        if self._stiffness_declared is None:
+            return float(np.linalg.norm(residual)), False
+        weight, degrees, coefficients, references = self._stiffness_declared
+        context = cob.ObjectiveContext()
+        context.spacetime = spacetime
+        context.moment_stiffness_weight = weight
+        context.moment_stiffness_degrees = list(degrees)
+        context.moment_stiffness_coefficients = list(coefficients)
+        context.moment_stiffness_reference = [list(r) for r in references]
+        added, _ = self._stiffness(point, context, False)
+        if len(added):
+            residual = residual + np.asarray(added)
+        return float(np.linalg.norm(residual)), True
 
     def hold(self, regions):
         """Tell the objective the pinned regions of its node, as vertex
@@ -1214,8 +1392,13 @@ class StationarityObjective(cob.CobordismObjective):
         the node, once per sheet, in the squared lengths and the links that
         the system relaxes (`moment_stiffness_derivatives`). Empty when no
         stiffness is declared or neither field is relaxed."""
-        weight = (float(context.moment_stiffness_weight)
-                  * point.support.sheets)
+        declared = float(context.moment_stiffness_weight)
+        if declared != 0.0:
+            self._stiffness_declared = (
+                declared, list(context.moment_stiffness_degrees),
+                list(context.moment_stiffness_coefficients),
+                [list(r) for r in context.moment_stiffness_reference])
+        weight = declared * point.support.sheets
         if weight == 0.0 or not (point.lengths or point.links):
             return [], []
         spacetime = context.spacetime
@@ -1226,7 +1409,8 @@ class StationarityObjective(cob.CobordismObjective):
         for degree, reference in zip(context.moment_stiffness_degrees,
                                      context.moment_stiffness_reference):
             part, second = moment_stiffness_derivatives(
-                spacetime, degree, list(reference), coefficients, jacobian)
+                spacetime, degree, list(reference), coefficients, jacobian,
+                self.stiffness_cells.get(int(degree)))
             gradient += weight * part
             if jacobian:
                 hessian += weight * second
@@ -1317,7 +1501,9 @@ def solve(spacetime, system, tolerance=1e-15, move_tolerance=1e-15,
     relaxation updates after each move update, and ``time_limit_seconds`` a
     wall-clock time read by the objective (`StationarityObjective.begin`).
     ``configure(node)`` may declare a pinned region or a spectral-moment
-    stiffness on the node before the drive; none is declared otherwise.
+    stiffness on the node before the drive; none is declared otherwise. A
+    stiffness declared there is of the cells of ``spacetime``
+    (`StationarityObjective.declare_stiffness`).
 
     The Regge term is read on the sheets continued from the geometry
     ``spacetime`` holds when the drive begins (``system.begin``,
@@ -1332,7 +1518,10 @@ def solve(spacetime, system, tolerance=1e-15, move_tolerance=1e-15,
     with its detail, the number of committed move updates and of accepted
     relaxation updates, how many scored complexes had no residual for each
     reason (``undefined_reasons``), the counts of the base complex before
-    and after, and the seconds it took."""
+    and after, the drive's names of the vertices of the base complex it
+    ended on (``vertex_names``, a dict from vertex id to name,
+    `VertexNames`; None for a system that names none), and the seconds it
+    took."""
     depth, length = checked_schedule(combinatorial_depth,
                                      combinatorial_length)
     # the drive begins here: the system's Regge sheets start at this geometry
@@ -1345,6 +1534,9 @@ def solve(spacetime, system, tolerance=1e-15, move_tolerance=1e-15,
     if configure is not None:
         configure(node)
     objective.hold([vertices for _, vertices in node.pinned_regions()])
+    if node.moment_stiffness_weight != 0.0:
+        # the node declared its stiffness on this complex
+        objective.declare_stiffness(spacetime, node.moment_stiffness_degrees)
     before = complex_counts(spacetime)
     cells_before = sorted(top_cells(spacetime))
     started = time.time()
@@ -1370,6 +1562,7 @@ def solve(spacetime, system, tolerance=1e-15, move_tolerance=1e-15,
         refusal = str(error)
     seconds = time.time() - started
     final = node.spacetime()
+    names = getattr(system, "vertex_names", None)
     updates = objective.updates
     last = updates[-1] if updates else None
     if limit is not None or refusal is not None:
@@ -1448,6 +1641,8 @@ def solve(spacetime, system, tolerance=1e-15, move_tolerance=1e-15,
         "candidate_moves": int(candidate_moves),
         "complex_before": before,
         "complex_after": complex_counts(final),
+        "vertex_names": (None if names is None
+                         else names.of(vertex_ids(final))),
         "changed": sorted(top_cells(final)) != cells_before,
         "seconds": seconds,
     }

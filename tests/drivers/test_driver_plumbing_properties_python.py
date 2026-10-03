@@ -1,7 +1,8 @@
 # Copyright (c) 2026 Twin Vector Labs LLC.
 # All rights reserved.
 """Properties of the drivers as programs: `tessera.drivers.recursion`,
-`tessera.drivers.baryon_poles` and `tessera.drivers.cell_solve`.
+`tessera.drivers.baryon_poles`, `tessera.drivers.isospin_doublet` and
+`tessera.drivers.cell_solve`.
 
 Each test states a property and checks it at the declared tolerances. The
 properties are of three kinds.
@@ -28,6 +29,7 @@ import copy
 import json
 import math
 import os
+import shutil
 import subprocess
 import sys
 
@@ -38,6 +40,7 @@ from tessera import cobordism as cob
 from tessera import observables as obs
 from tessera.drivers import baryon_poles as bp
 from tessera.drivers import cell_solve as cs
+from tessera.drivers import isospin_doublet as ISO
 from tessera.drivers import recursion as R
 from tests.drivers import _recursion_run_2026_09_23 as RUN
 from tests.drivers.test_baryon_poles_cli_python import _doublet_read
@@ -398,6 +401,110 @@ def test_an_invalid_growth_schedule_is_refused_before_the_first_tick(
     assert not (tmp_path / "run.points.jsonl").exists()
 
 
+@pytest.mark.parametrize("argv", [["--rank-tolerance", "inf"],
+                                  ["--tie-tolerance", "nan"],
+                                  ["--band-tolerance", "-1e-15"]])
+@pytest.mark.parametrize("driver", [bp, R, ISO],
+                         ids=["baryon_poles", "recursion", "isospin_doublet"])
+def test_a_tolerance_that_is_not_a_positive_finite_number_is_refused(
+        driver, argv):
+    """A tolerance on the command line is a positive finite number: an
+    infinite tolerance, one that is not a number and a negative one are
+    refused by the parser."""
+    with pytest.raises(SystemExit):
+        driver.build_parser().parse_args(["run", "--quiet"] + argv)
+
+
+@pytest.mark.parametrize("value", [math.inf, math.nan, -1e-15])
+def test_a_tolerance_with_no_meaning_is_refused_when_the_config_is_built(
+        value):
+    for build in (bp.default_config, R.default_config):
+        with pytest.raises(ValueError, match="a tolerance is a finite"):
+            build(tolerances={"rank_tolerance": value})
+
+
+@pytest.mark.parametrize("argv", [["--kappa", "0"], ["--kappa", "1", "0"],
+                                  ["--kappa", "nan"], ["--beta", "inf"]])
+def test_a_scan_coupling_with_no_value_is_refused_before_anything_is_computed(
+        argv, monkeypatch):
+    """A kappa of zero (the action carries 1/kappa) and a coupling that is
+    not a finite number are refused when the scan's config is built."""
+    with pytest.raises(ValueError):
+        _config_of(bp, ["run", "--quiet"] + argv, monkeypatch)
+
+
+@pytest.mark.parametrize("argv", [
+    ["--kappa", "1", "--content", "2", "2", "2"],
+    ["--kappa", "1", "--content", "1", "1", "0"],
+    ["--kappa", "1", "--content", "1", "1", "1", "--content", "0", "0", "4"],
+    ["--kappa", "0"],
+    ["--rank-tolerance", "inf"]])
+def test_the_isospin_driver_refuses_a_declaration_with_no_value_first(
+        argv, monkeypatch):
+    """A content that is not three quarks in three bands, a kappa of zero
+    and a tolerance that is not finite are refused before a host is
+    read."""
+    def refuse(*arguments, **options):
+        raise _Reached()
+
+    monkeypatch.setattr(ISO, "declared_carrier", refuse)
+    monkeypatch.setattr(ISO, "relaxed_carrier", refuse)
+    with pytest.raises((SystemExit, ValueError)):
+        ISO.main(["run", "--quiet"] + argv)
+
+
+def _base_and_pins(options, base):
+    """The vertices of the base complex a solve is handed and the vertex
+    sets its node is told to hold."""
+    class Node:
+        """What `node_configuration` declares on the engine's node."""
+
+        def __init__(self):
+            self.regions = []
+
+        def declare_pinned_region(self, name, vertices):
+            self.regions.append(sorted(vertices))
+
+    node = Node()
+    options["configure"](node)
+    vertices = sorted({v for a, b, _, _ in cs.edge_fields(base)
+                       for v in (a, b)})
+    return vertices, node.regions
+
+
+def test_the_pinned_vertices_are_ids_of_every_complex_a_solve_starts_on(
+        monkeypatch):
+    """``--pinned-vertices`` holds the same ids on the base complex of every
+    solve it reaches: the level's base complex, with its own vertex ids,
+    and every cell's base cell, one tetrahedron on its local vertices 0 to
+    3. Its help names both, and so does the moment stiffness's, whose
+    reference is the complex each solve starts on."""
+    config = _config_of(R, ["run", "--quiet", "--pinned-vertices", "0", "4"],
+                        monkeypatch)
+    seen = []
+
+    def solve(base, system, **options):
+        seen.append(_base_and_pins(options, base))
+        raise _Reached()
+
+    cells, z, links, _ = R.level_zero(config)
+    spacetime, count = R.build_level(cells, z, links)
+    (kappa, beta, cell), _ = _first_cell_config(config, monkeypatch)
+    monkeypatch.setattr(cs, "solve", solve)
+    with pytest.raises(_Reached):
+        R.relax_level(spacetime, config, [], count=count)
+    with pytest.raises(_Reached):
+        bp.relax_content((1, 1, 1), kappa, beta, cell)
+    (level, level_pins), (local, cell_pins) = seen
+    assert len(level) > 4 and {0, 4} <= set(level)
+    assert local == [0, 1, 2, 3]
+    assert level_pins == cell_pins == [[0, 4]]
+    helps = _helps(R)
+    for flag in ("--pinned-vertices", "--moment-stiffness-weight"):
+        assert "base cell" in helps[flag]
+        assert "level's base complex" in helps[flag]
+
+
 def test_the_hinges_of_the_regge_sum_are_an_option_of_the_recursion():
     """``--regge-hinges`` reaches the run's config, and from it every
     level's and every cell's action; the default is the interior hinges."""
@@ -409,18 +516,93 @@ def test_the_hinges_of_the_regge_sum_are_an_option_of_the_recursion():
         R.build_parser().parse_args(["run", "--regge-hinges", "some"])
 
 
-def _options_without_help(driver):
+def _helps(driver):
+    """The help string of every option of a driver's ``run``, by flag."""
     run = next(action for action in driver.build_parser()._actions
                if isinstance(action, argparse._SubParsersAction)).choices[
                    "run"]
-    return [action.option_strings[0] for action in run._actions
-            if action.option_strings and not action.help]
+    return {action.option_strings[0]: action.help for action in run._actions
+            if action.option_strings}
 
 
-@pytest.mark.parametrize("driver", [bp, R],
-                         ids=["baryon_poles", "recursion"])
+def _options_without_help(driver):
+    return [flag for flag, text in _helps(driver).items() if not text]
+
+
+@pytest.mark.parametrize("driver", [bp, R, ISO],
+                         ids=["baryon_poles", "recursion", "isospin_doublet"])
 def test_every_option_but_quiet_has_a_help_string(driver):
     assert _options_without_help(driver) == ["--quiet"]
+
+
+@pytest.mark.parametrize("driver", [bp, R, ISO],
+                         ids=["baryon_poles", "recursion", "isospin_doublet"])
+def test_the_help_of_a_tolerance_that_decides_nothing_says_so(driver):
+    """The tolerances of the isospin-doublet detector that need a second
+    frame, a further resolution or an observed doublet decide nothing on
+    the one frame every driver gives the detector; the help of each says
+    so and names the record's key, and no other tolerance's help does."""
+    helps = _helps(driver)
+    for key, _ in bp.TOLERANCES:
+        assert ("unread_tolerances" in helps["--" + key.replace("_", "-")]) \
+            == (key in bp.ISOSPIN_NEEDS), key
+    assert set(bp.ISOSPIN_NEEDS) <= {key for key, _ in bp.ISOSPIN_TOLERANCES}
+
+
+@pytest.fixture(scope="module")
+def declared_isospin():
+    """The detector's inputs on the declared host, one frame."""
+    actions, spinorial = ISO.symmetry()
+    return ISO.declared_carrier(), actions, spinorial
+
+
+def test_a_tolerance_an_isospin_read_names_unread_changes_nothing(
+        declared_isospin):
+    """On the one frame the drivers give it, the detector's read names the
+    seven tolerances that need more (`ISOSPIN_NEEDS`), and the read is the
+    same, record for record, with those seven at 1e-300 and at 0.9; a
+    tolerance it does read (the grouping) moves it at 0.9."""
+    carrier, actions, spinorial = declared_isospin
+
+    def read(tolerances):
+        return json.dumps(bp._jsonable(ISO.observe_host(
+            carrier, actions, spinorial, tolerances)), sort_keys=True,
+            allow_nan=False)
+
+    declared = read({})
+    for key in ("covariant", "t_averaged"):
+        record = json.loads(declared)[key]
+        assert len(record["frames"]) == 1
+        assert set(record["unread_tolerances"]) == set(bp.ISOSPIN_NEEDS)
+    for value in (1e-300, 0.9):
+        assert read({key: value for key in bp.ISOSPIN_NEEDS}) == declared
+    assert read({"isospin_grouping_tolerance": 0.9}) != declared
+
+
+def test_a_cells_recursion_read_names_the_resolutions_it_is_taken_at(
+        monkeypatch):
+    """The run's window of resolutions reaches the level's box
+    (`test_the_command_line_reaches_the_box_and_the_growth_step`); a cell's
+    recursion read is taken at the library's own resolutions, and its
+    record names the ones its turn was taken at. The help of
+    ``--resolutions`` says so."""
+    config = _config_of(R, ["run", "--quiet", "--resolutions", "0.5", "2"],
+                        monkeypatch)
+    (_, _, cell), _ = _first_cell_config(config, monkeypatch)
+    taken = []
+    original = cob.LevelRecursion.overSpacetime
+
+    def over_spacetime(spacetime, degree, source, declaration):
+        taken.append([float(r) for r in declaration.resolutions])
+        return original(spacetime, degree, source, declaration)
+
+    monkeypatch.setattr(cob.LevelRecursion, "overSpacetime",
+                        staticmethod(over_spacetime))
+    record = bp.recursion_read(bp.build_host(), cell)
+    assert config["resolutions"] == [0.5, 2.0]
+    assert record["resolutions"] == taken[0] == [
+        float(r) for r in cob.LevelRecursionDeclaration().resolutions]
+    assert "the library's own resolutions" in _helps(R)["--resolutions"]
 
 
 def test_the_options_one_driver_offers_and_the_other_does_not():
@@ -457,7 +639,7 @@ def test_the_registry_reaches_every_tolerance_of_the_isospin_detector():
     fields = {name: getattr(detector, name) for name in dir(detector)
               if not name.startswith("_")
               and isinstance(getattr(detector, name), float)}
-    assert len(fields) == 15
+    assert len(fields) == 14
     assert {name: value for name, value in fields.items()
             if value != 0.125} == {"track_overlap_threshold": 0.5}
     assert (detector.condition_number_cap, detector.decomposed_rank_limit,
@@ -468,7 +650,7 @@ def test_the_isospin_detector_takes_its_tolerances_from_the_registry():
     config = {key: 0.125 for key, _ in bp.TOLERANCES}
     detector = bp.isospin_doublet_config(config)
     assert [getattr(detector, field) for _, field in bp.ISOSPIN_TOLERANCES] \
-        == [0.125] * 14
+        == [0.125] * 13
     assert {key for key, _ in bp.ISOSPIN_TOLERANCES} <= \
         {key for key, _ in bp.TOLERANCES}
     declared = obs.IsospinDoubletConfig()
@@ -477,6 +659,12 @@ def test_the_isospin_detector_takes_its_tolerances_from_the_registry():
 
 
 # ------------------------------------------------------ records and files
+
+
+def _one_tick_arguments(directory):
+    return ["run", "--ticks", "1", "--persistence-required", "1",
+            "--no-pachner-moves", "--trace-terms", "--quiet", "--json",
+            str(directory / "run.json"), "--out", str(directory / "run.png")]
 
 
 @pytest.fixture(scope="module")
@@ -488,10 +676,7 @@ def one_tick(tmp_path_factory):
     original = R.cell_reads
     R.cell_reads = lambda cells, z, links, config: READ
     try:
-        result = R.main(["run", "--ticks", "1", "--persistence-required", "1",
-                         "--no-pachner-moves", "--trace-terms", "--quiet",
-                         "--json", str(directory / "run.json"), "--out",
-                         str(directory / "run.png")])
+        result = R.main(_one_tick_arguments(directory))
     finally:
         R.cell_reads = original
     return directory, result
@@ -721,6 +906,105 @@ def test_a_stop_request_is_read_before_every_tick(stub_reads, tmp_path):
     assert len(points.read_text().splitlines()) == 2
 
 
+def _git(directory, *arguments):
+    """git's own answer, the oracle of the commit the record reads from the
+    checkout's files."""
+    return subprocess.run(["git", "-C", str(directory)] + list(arguments),
+                          check=True, capture_output=True,
+                          text=True).stdout.strip()
+
+
+def _linked_blas(module):
+    """The BLAS the dynamic linker resolves for a compiled module (``ldd``),
+    as the real path of its file."""
+    lines = subprocess.run(["ldd", module], check=True, capture_output=True,
+                           text=True).stdout.splitlines()
+    return {os.path.realpath(line.split("=>")[1].split()[0])
+            for line in lines if "=>" in line and "blas" in line
+            and line.split("=>")[1].split()}
+
+
+@pytest.mark.skipif(not (os.path.exists("/proc/self/maps")
+                         and shutil.which("ldd") and shutil.which("git")),
+                    reason="the oracles of this test are Linux's: the "
+                           "process's map, ldd and git")
+def test_the_record_names_the_command_line_the_commit_the_threads_and_the_blas(
+        one_tick):
+    """The header of the points file names what the run's numbers depend
+    on beside its declarations: the arguments the driver parsed, the commit
+    of the checkout the package is imported from (git's own answer), the
+    thread variables, and every BLAS loaded in the process with the threads
+    it runs: among them the build numpy is linked to (its configuration as
+    numpy reports it) and the one the package's compiled module is linked
+    to (as the dynamic linker resolves it)."""
+    directory, _ = one_tick
+    header = _strict((directory / "run.points.jsonl").read_text()
+                     .splitlines()[0])
+    environment = header["config"]["environment"]
+    assert environment["arguments"] == _one_tick_arguments(directory)
+    package = os.path.dirname(os.path.abspath(R.__file__))
+    assert environment["checkout"]["commit"] == _git(package, "rev-parse",
+                                                     "HEAD")
+    assert os.path.realpath(environment["checkout"]["root"]) == \
+        os.path.realpath(_git(package, "rev-parse", "--show-toplevel"))
+    assert environment["threads"]["OMP_NUM_THREADS"] == \
+        os.environ.get("OMP_NUM_THREADS")
+    runtimes = environment["runtimes"]
+    blas = [r for r in runtimes if r.get("kind") == "openblas"]
+    assert blas and all(isinstance(r["threads"], int) and r["threads"] >= 1
+                        for r in blas)
+    numpy_build = np.show_config(mode="dicts")["Build Dependencies"]["blas"]
+    assert numpy_build["openblas configuration"].split() in \
+        [r["configuration"].split() for r in blas]
+    module = environment["module"]
+    assert module == os.path.realpath(sys.modules["tessera._tessera"].__file__)
+    linked = _linked_blas(module)
+    assert linked and linked <= {os.path.realpath(r["file"])
+                                 for r in runtimes}
+
+
+#: A process that prints the runtimes its environment record names.
+_RUNTIMES = """
+import json
+from tessera.drivers import baryon_poles as bp
+print(json.dumps(bp.environment_record([])["runtimes"]))
+"""
+
+
+@pytest.mark.skipif(not os.path.exists("/proc/self/maps"),
+                    reason="the process's libraries are listed on Linux")
+@pytest.mark.parametrize("threads", [1, 2])
+def test_the_record_names_the_threads_each_runtime_runs(threads):
+    """With OMP_NUM_THREADS set and no library variable, every threaded
+    BLAS and OpenMP runtime of the process reports that many threads, and
+    the record names it for each."""
+    environment = {key: value for key, value in os.environ.items()
+                   if key not in ("OPENBLAS_NUM_THREADS", "GOTO_NUM_THREADS",
+                                  "MKL_NUM_THREADS")}
+    environment["OMP_NUM_THREADS"] = str(threads)
+    environment["PYTHONPATH"] = os.pathsep.join(p for p in sys.path if p)
+    done = subprocess.run([sys.executable, "-c", _RUNTIMES], env=environment,
+                          check=True, capture_output=True, text=True)
+    runtimes = json.loads(done.stdout)
+    counted = [r for r in runtimes if r.get("kind") in ("openblas", "openmp")]
+    assert {r["kind"] for r in counted} == {"openblas", "openmp"}
+    for runtime in counted:
+        expected = 1 if runtime.get("threading") == "sequential" else threads
+        assert runtime["threads"] == expected, runtime["file"]
+
+
+def test_the_isospin_driver_writes_json_with_its_environment(tmp_path):
+    """The isospin driver's file is JSON and names the arguments it parsed
+    and the runtimes of its process."""
+    arguments = ["run", "--quiet", "--json", str(tmp_path / "doublet.json")]
+    ISO.main(arguments)
+    document = _strict((tmp_path / "doublet.json").read_text())
+    assert document["environment"]["arguments"] == arguments
+    assert "runtimes" in document["environment"]
+    assert set(document["declared_host"]["covariant"]["unread_tolerances"]) \
+        == set(bp.ISOSPIN_NEEDS)
+
+
 def test_the_points_path_is_beside_the_json(tmp_path):
     assert R.points_path("run.json") == "run.points.jsonl"
     assert R.points_path("run.v2.json") == "run.v2.points.jsonl"
@@ -836,10 +1120,11 @@ def test_the_many_body_average_is_the_same_twice_at_one_thread_count():
     "bit for bit at 1, 2 and 4 threads, the with-quartic operator and its "
     "poles differ in their last bits (4e-16 of their size), and the "
     "certificates decided on them at 1e-15 differ: sharp_spinor False at "
-    "one thread and True at two, determinant_count 8 and 1, 18 and 9 "
-    "(/tmp/v18code/standins/wave3/plumbing/b4_stage_hashes.py). The record "
-    "names neither the thread count nor the linear algebra library "
-    "(https://github.com/akellehe/tessera/issues/1372)"))
+    "one thread and True at two, determinant_count 8 and 1, 18 and 9. The "
+    "record names the threads and the BLAS; whether decisions at 1e-15 on "
+    "such values stand is a question for the user (fix(drivers): defects "
+    "of the drivers' options, records and files found by the audit, "
+    "https://github.com/akellehe/tessera/issues/1393)"))
 def test_the_many_body_average_does_not_depend_on_the_thread_count():
     """The operator a read's with-quartic poles are taken from is the same
     array whatever the number of threads the run is given."""

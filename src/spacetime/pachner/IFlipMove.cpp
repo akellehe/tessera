@@ -210,6 +210,7 @@ bool IFlipMove::proposeOn(SimplexPtr sigma, EdgePtr edge) {
   for (const auto &v : shared) touchedIds_.push_back(v->getId());
   for (const auto &v : unique) touchedIds_.push_back(v->getId());
 
+  collapsedEdge_ = edge;
   proposed_ = true;
   return true;
 }
@@ -226,6 +227,24 @@ bool IFlipMove::apply() {
     for (const auto &e : r.newEdges) createdEdges_.push_back(e);
   }
 
+  // The collapsed edge is in no cell: the d cells around it are gone and
+  // neither new cell spans both its endpoints. Unregister the faces only the
+  // removed cells held, then the edge (prune before removeEdge, as
+  // Spacetime::pruneOrphanedSimplices asks), keeping its fields for rollback.
+  for (const auto &verts : oldSimplexVerts_) {
+    std::vector<std::uint64_t> ids;
+    ids.reserve(verts.size());
+    for (const auto &v : verts) ids.push_back(v->getId());
+    st_->pruneOrphanedSimplices(ids);
+  }
+  collapsedSource_ = collapsedEdge_->getSource();
+  collapsedTarget_ = collapsedEdge_->getTarget();
+  collapsedLength_ = collapsedEdge_->getLength();
+  collapsedPhase_ = collapsedEdge_->getPhase();
+  st_->removeEdge(collapsedEdge_);
+  collapsedEdge_ = nullptr;
+  collapsedRemoved_ = true;
+
   applied_ = true;
   return true;
 }
@@ -240,6 +259,21 @@ void IFlipMove::rollback() {
   createdSimplexVerts_.clear();
 
   pachner_detail::removeAndClearEdges(createdEdges_, st_);
+
+  // The collapsed edge back with its own length and phase, before the cells
+  // around it, so that they take it rather than a fresh edge.
+  if (collapsedRemoved_) {
+    auto r = st_->getEdgeList()->tryAdd(collapsedSource_, collapsedTarget_,
+                                        collapsedLength_);
+    if (r.second) {
+      r.first->setLength(collapsedLength_);
+      r.first->setPhase(collapsedPhase_);
+    }
+    collapsedSource_->addOutEdge(r.first);
+    collapsedTarget_->addInEdge(r.first);
+    collapsedEdge_ = r.first;
+    collapsedRemoved_ = false;
+  }
 
   for (const auto &verts : oldSimplexVerts_) {
     st_->createSimplexTracked(verts);
