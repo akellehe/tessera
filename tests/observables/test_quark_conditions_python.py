@@ -92,14 +92,21 @@ class TestEighteenModeStates(unittest.TestCase):
         state = np.asarray(obs.SharpSpin.determinant([0, 7, 17], 18))
         self.assertEqual(state.size, 1 << 18)
         self.assertEqual(int(np.count_nonzero(state)), 1)
-        with self.assertRaises(ValueError):
-            obs.SharpSpin.determinant([0, 1], 25)
+        # a limit the caller declares is named when it is reached
+        with self.assertRaisesRegex(ValueError,
+                                    "the declared mode limit of 18 was "
+                                    "reached"):
+            obs.SharpSpin.determinant([0, 1], 19, modeLimit=18)
+        self.assertEqual(
+            np.asarray(obs.SharpSpin.determinant([0, 1], 19)).size, 1 << 19)
 
     def test_nine_carriers_give_eighteen_mode_spin_matrices(self):
         matrices = obs.SharpSpin.doubletSpinMatrices(9)
         self.assertEqual(np.asarray(matrices[0]).shape, (18, 18))
-        with self.assertRaises(ValueError):
-            obs.SharpSpin.doubletSpinMatrices(13)
+        # the carrier count is not limited: thirteen carriers are 26 modes
+        self.assertEqual(
+            np.asarray(obs.SharpSpin.doubletSpinMatrices(13)[0]).shape,
+            (26, 26))
 
     def test_an_eighteen_mode_spin_read(self):
         """Three up spins on carriers 0, 1 and 2 of nine: J = 3/2, sharp at
