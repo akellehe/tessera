@@ -21,6 +21,11 @@ the library evaluates in numbers:
   cofactors C of each cell's Cayley-Menger matrix, and their derivatives in
   the squared lengths, every root and inverse cosine a series whose order-0
   value is the one on the declared sheet;
+* the cosmological term -w_R Lambda sum_T V_T, when the action declares a
+  cosmological constant: the square of each top simplex's volume is
+  Q_T = (-1)^(d+1) det B / (2^d (d!)^2), B its Cayley-Menger matrix, and its
+  gradient c_d cof(B) / V_T, V_T the root whose order-0 value is the volume
+  the action reads on its sheet at the point (`JointAction.top_cell_volumes`);
 * the Villain term: the face holonomies are Laurent monomials in the links
   and the per-face derivative is D phi(F) = -beta_V DW_M(F) / W_M(F) with
   W_M(F) = 1 + sum_{m=1..M} c_m (F^m + F^-m), a Laurent polynomial of the
@@ -263,6 +268,7 @@ class SeriesStationarity:
         self._read_complex()
         self._read_state(follower)
         self._read_regge(regge_start)
+        self._read_volumes()
         self._read_villain()
 
     # ------------------------------------------------------------ the point
@@ -785,6 +791,8 @@ class SeriesStationarity:
                                      dtype=complex)
         if self._regge and self._lengths:
             length += self._regge_part(z, order)
+        if self._volumes is not None and self._lengths:
+            length += self._volume_part(z, order)
         if self._villain is not None and self._links:
             canonical_link += self._villain_part(link, inverse, order)
         if self._carrier_needed:
@@ -959,6 +967,60 @@ class SeriesStationarity:
             for key, gradient in deficit_gradient.items():
                 out[:, self._edge_index[key]] += weight * _mul(content,
                                                                gradient)
+        return out
+
+    # -- the cosmological term
+
+    def _read_volumes(self):
+        """The top simplices of the complex with the volume the action reads
+        on its sheet at the point, when the action declares a cosmological
+        term; None otherwise. The term enters the length equations only."""
+        declared = self._declaration
+        self._volumes = None
+        constant = float(declared.cosmological_constant)
+        weight = float(declared.gravitational_weight)
+        if constant == 0.0 or weight == 0.0 or not self._lengths:
+            return
+        d = self._dimension
+        self._volumes = {
+            "cells": [tuple(sorted(cell)) for cell in self._cells[d]],
+            "volumes": [complex(v) for v in self._action.top_cell_volumes()],
+            "coefficient": (-1.0) ** (d + 1)
+            / (2.0 ** d * math.factorial(d) ** 2),
+            "weight": -weight * constant,
+        }
+
+    def _volume_part(self, z, order):
+        """-w_R Lambda sum_T dV_T/dz_e per canonical edge, with
+        dV_T/dz_ab = c_d cof(B)_(a+1, b+1) / V_T: the squared length stands in
+        two symmetric entries of the Cayley-Menger matrix B, and the cofactor
+        is det(B) times the entry of B^-1."""
+        volumes = self._volumes
+        coefficient = volumes["coefficient"]
+        weight = volumes["weight"]
+        out = np.zeros((order + 1, z.shape[1]), dtype=complex)
+
+        def squared(a, b):
+            return z[:, self._edge_index[_pair(a, b)]]
+
+        for cell, volume in zip(volumes["cells"], volumes["volumes"]):
+            n = len(cell) + 1
+            matrix = np.zeros((order + 1, n, n), dtype=complex)
+            matrix[0, 0, 1:] = 1.0
+            matrix[0, 1:, 0] = 1.0
+            for i in range(len(cell)):
+                for j in range(i + 1, len(cell)):
+                    value = squared(cell[i], cell[j])
+                    matrix[:, i + 1, j + 1] = value
+                    matrix[:, j + 1, i + 1] = value
+            determinant = _determinant(matrix)
+            inverse = _inverse(matrix)
+            root = _sqrt(coefficient * determinant, volume)
+            for a in range(len(cell)):
+                for b in range(a + 1, len(cell)):
+                    cofactor = _mul(determinant, inverse[:, b + 1, a + 1])
+                    out[:, self._edge_index[_pair(cell[a], cell[b])]] += (
+                        weight * _divide(coefficient * cofactor, root))
         return out
 
     # -- the carrier operator
