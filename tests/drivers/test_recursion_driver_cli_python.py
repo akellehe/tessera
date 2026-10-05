@@ -570,9 +570,11 @@ def test_main_live_refuses_a_file_backend_by_name(stub_reads, monkeypatch):
 def test_main_live_runs_the_live_drive(stub_reads, monkeypatch, tmp_path):
     calls = []
 
-    def live(config, progress=False, points_file=None, keep_open=False):
-        calls.append((config["ticks"], progress, points_file, keep_open))
-        return R.drive(config, points_file=points_file)
+    def live(config, progress=False, points_file=None, keep_open=False,
+             steps_file=None):
+        calls.append((config["ticks"], progress, points_file, keep_open,
+                      steps_file))
+        return R.drive(config, points_file=points_file, steps_file=steps_file)
 
     monkeypatch.setattr(R, "drive_live", live)
     path = tmp_path / "live.json"
@@ -580,7 +582,8 @@ def test_main_live_runs_the_live_drive(stub_reads, monkeypatch, tmp_path):
     monkeypatch.setattr(R.bp, "hold_live_window",
                         lambda message: held.append(path.exists()))
     R.main(["run", "--ticks", "1", "--live", "--quiet", "--json", str(path)])
-    assert calls == [(1, False, str(tmp_path / "live.points.jsonl"), True)]
+    assert calls == [(1, False, str(tmp_path / "live.points.jsonl"), True,
+                      str(tmp_path / "live.steps.jsonl"))]
     assert held == [True]
 
 

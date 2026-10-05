@@ -246,6 +246,14 @@ interactive matplotlib backend, with the computation on a worker thread and the
 main thread servicing the GUI event loop; the outputs are identical with or
 without it. A non-interactive backend, and WebAgg, are refused by name.
 
+With ``--json`` every scan point's record is appended to
+``<json stem>.points.jsonl`` the moment the point completes, and every step
+proposal of every content's solve to ``<json stem>.steps.jsonl`` the moment it
+is made (`StepSink`); a content's solve record then refers to its lines there
+(``relaxation.steps``) in place of holding one entry per proposal
+(``relaxation.trace``), so the run's memory does not grow with the number of
+proposals.
+
 Every tolerance of the stack is an option (``--rank-tolerance`` is tau, the
 step's rank decision; the others are listed by `TOLERANCES`), each
 defaulting to 1e-15 and each recorded in the configuration. None changes an
@@ -260,12 +268,15 @@ of the order-M sums from their infinite series (``holonomy_truncation``).
 
 import argparse
 import cmath
+import contextlib
+import contextvars
 import ctypes
 import itertools
 import json
 import math
 import os
 import sys
+import threading
 import time
 
 import numpy as np
@@ -2666,7 +2677,9 @@ def relax_content(content, kappa, beta, config):
     three-sheeted system built from it. Returns the three-sheeted complex of
     the base the drive ended on, the action there (carrying the covariance,
     the constraints and their multipliers), the end-point report
-    (`SelfConsistentMeanField.read`) and the drive's record."""
+    (`SelfConsistentMeanField.read`) and the drive's record. Under a step
+    sink (`step_sink`) the drive writes every step proposal there
+    (`_proposal_record`) and keeps its aggregates (`ProposalAggregates`)."""
     base = build_base(config["edge_squared"], config.get("host_cell"))
     host = cell_solve.sheeted_support(base, SHEETS)
     villain_order = declared_villain_order(config)
@@ -2697,7 +2710,11 @@ def relax_content(content, kappa, beta, config):
         config.get("band_reference", cell_solve.DECLARED_BAND_REFERENCE))
     start_scale = max(abs(length * length)
                       for _, _, length, _ in cell_solve.edge_fields(base))
-    drive = cell_solve.solve(base, system, **solve_arguments(config))
+    sink = step_sink()
+    drive = cell_solve.solve(
+        base, system, steps=(None if sink is None else sink.begin(
+            _proposal_record, ProposalAggregates())),
+        **solve_arguments(config))
     support, action, report = system.read(drive["spacetime"], start_scale)
     return support.spacetime, action, report, drive
 
@@ -2843,6 +2860,35 @@ def _proposal_record(update):
     return entry
 
 
+class ProposalAggregates:
+    """What a content's solve record reports of all its step proposals,
+    added one update at a time (``add``) as the proposals are made
+    (`SolveSteps`) or from the updates the objective holds
+    (`relaxation_record`): the number of measured iterates at which a band
+    had crossed another (``band_crossings``), the lowest modulus of a band's
+    overlap with its previous projector over every measured iterate
+    (``lowest_overlap``, the first of equal ones; None before a band is
+    measured) and the covariance change of the last measured iterate
+    (``covariance_change``, None before one)."""
+
+    def __init__(self):
+        self.band_crossings = 0
+        self.lowest_overlap = None
+        self.covariance_change = None
+
+    def add(self, update):
+        step = update.get("measured")
+        if step is None:
+            return
+        if step.band_crossing:
+            self.band_crossings += 1
+        for band in step.bands:
+            overlap = abs(complex(band.overlap))
+            if self.lowest_overlap is None or overlap < self.lowest_overlap:
+                self.lowest_overlap = overlap
+        self.covariance_change = float(step.covariance_change)
+
+
 def relaxation_record(report, drive,
                       hessian_reality_tolerance=DECLARED_TOLERANCE,
                       step_tolerance=DECLARED_TOLERANCE):
@@ -2853,9 +2899,12 @@ def relaxation_record(report, drive,
     ``step_tolerance``), why it stopped (by name, with its detail), the
     number of accepted relaxation updates (``accepted_updates``) and of
     committed Pachner moves, the base complex before and after, the trace of
-    the residual norm, and one entry per step proposal (``trace``). From the
-    end-point report (`SelfConsistentMeanField.read`): whether the force and
-    the pinned moments are at the mean-field tolerance there
+    the residual norm, and one entry per step proposal (``trace``,
+    `_proposal_record`), or, when the drive wrote its proposals to a step
+    file (`StepSink`), the reference to their lines there (``steps``,
+    `SolveSteps.reference`) in its place. From the end-point report
+    (`SelfConsistentMeanField.read`): whether the force and the pinned
+    moments are at the mean-field tolerance there
     (``self_consistent``, with the report's sentence), the final
     force, the joint Jacobian's rank and rank gap, the Kontsevich-Segal
     margin and the growth of the lengths, the occupied bands followed to the
@@ -2864,11 +2913,15 @@ def relaxation_record(report, drive,
     moment-constrained action's Hessian on the range of the Hellmann-Feynman
     force with its sign (WP v17 line 265)."""
     objective = drive["objective"]
-    trace = [_proposal_record(update) for update in objective.updates]
-    measured = [update["measured"] for update in objective.updates
-                if update.get("measured") is not None]
-    overlaps = [abs(complex(band.overlap)) for step in measured
-                for band in step.bands]
+    if objective.steps is None:
+        aggregates = ProposalAggregates()
+        for update in objective.updates:
+            aggregates.add(update)
+        per_step = {"trace": [_proposal_record(update)
+                              for update in objective.updates]}
+    else:
+        aggregates = objective.steps.fold
+        per_step = {"steps": objective.steps.reference()}
     residual = float(drive["trace"][-1]) if len(drive["trace"]) else math.nan
     converged = solve_converged(residual, step_tolerance)
     return {
@@ -2903,16 +2956,16 @@ def relaxation_record(report, drive,
         "undefined_reasons": cell_solve.undefined_reasons(objective.undefined),
         "seconds": float(drive["seconds"]),
         "force_norm": float(report.force_norm),
-        "covariance_change": (float(measured[-1].covariance_change)
-                              if measured else 0.0),
+        "covariance_change": (0.0 if aggregates.covariance_change is None
+                              else aggregates.covariance_change),
         "purity_defect": float(report.purity_defect),
         "spectral_gap": float(report.spectral_gap),
         "band_isolation": float(report.band_isolation),
         "band_ranks": [int(r) for r in report.band_ranks],
         "bands": [_band_record(b) for b in report.bands],
-        "band_crossing_iterates": sum(1 for step in measured
-                                      if step.band_crossing),
-        "lowest_band_overlap": min(overlaps) if overlaps else 1.0,
+        "band_crossing_iterates": aggregates.band_crossings,
+        "lowest_band_overlap": (1.0 if aggregates.lowest_overlap is None
+                                else aggregates.lowest_overlap),
         "joint_jacobian": {
             "size": int(report.jacobian_size),
             "rank": int(report.jacobian_rank),
@@ -2944,7 +2997,7 @@ def relaxation_record(report, drive,
         "action_available": bool(report.action_available),
         "action_unavailable": report.action_unavailable,
         "occupied_energy": complex(report.occupied_energy),
-        "trace": trace,
+        **per_step,
     }
 
 
@@ -4937,11 +4990,14 @@ def scan_point(kappa, beta, config, on_content=None):
     solved cell has a read without a value that the poles are built on
     (`ReadWithoutValue`, with ``reason`` the reason by name and the solve's
     record), and one whose solve itself has no value (`NO_VALUE_ERRORS`: the
-    library's message). Every other content of the point is read."""
+    library's message). Every other content of the point is read. Under a
+    step sink, a content's solve is named by its ``content`` there
+    (`steps_at`)."""
     records = []
     for content in config.get("contents") or contents():
         try:
-            record = evaluate_content(content, kappa, beta, config)
+            with steps_at(content=list(content)):
+                record = evaluate_content(content, kappa, beta, config)
         except ReadWithoutValue as missing:
             # the mean-field solve left no finite geometry to read: recorded
             # with the reason by name and the solve's record, and the content
@@ -5324,15 +5380,39 @@ def term_records(terms):
              "gradient_norm": float(term.gradient_norm)} for term in terms]
 
 
-def term_trace(relaxation):
-    """The per-iterate terms of a solve record: the level relaxation's
-    ``term_trace`` (the starting point first), or the mean-field iterates'
-    ``terms``; empty when the solve recorded none."""
+def _term_iterates(relaxation):
+    """The terms of every iterate of a solve record that recorded them, in
+    order (`term_trace`), one iterate at a time."""
     if not relaxation:
-        return []
+        return
+    steps = relaxation.get("steps")
+    if steps is not None:
+        # the solve's lines in the run's step file; none is read when none
+        # carries terms
+        if steps.get("term_lines"):
+            for line in step_lines(steps):
+                if line.get("terms"):
+                    yield [{key: number(value) for key, value in term.items()}
+                           for term in line["terms"]]
+        return
     if relaxation.get("term_trace"):
-        return relaxation["term_trace"]
-    return [step.get("terms") or [] for step in relaxation.get("trace") or []]
+        for terms in relaxation["term_trace"]:
+            if terms:
+                yield terms
+        return
+    for step in relaxation.get("trace") or []:
+        if step.get("terms"):
+            yield step["terms"]
+
+
+def term_trace(relaxation):
+    """The terms of the action at every iterate of a solve record that
+    recorded them (``--trace-terms``), in order: the level relaxation's
+    ``term_trace`` (the starting point first), or the mean-field iterates'
+    ``terms``; for a record whose steps are in a step file (``steps``), the
+    terms of its lines there, every number as the record holds it
+    (`number`). Empty when the solve recorded none."""
+    return list(_term_iterates(relaxation))
 
 
 def term_trace_lines(relaxation, prefix):
@@ -5342,8 +5422,9 @@ def term_trace_lines(relaxation, prefix):
     change of the value and the improvement of the gradient norm (the
     previous norm less the current one: positive when the term's equations
     came closer to holding, negative when they moved away) since the
-    previous iterate. Empty when the solve recorded no terms."""
-    trace = [terms for terms in term_trace(relaxation) if terms]
+    previous iterate. Empty when the solve recorded no terms. The iterates
+    are read one at a time (`term_trace`)."""
+    trace = _term_iterates(relaxation)
     lines = []
     previous = None
 
@@ -5394,6 +5475,16 @@ def term_trace_lines(relaxation, prefix):
                                   term["label"]))
         previous = terms
     return lines
+
+
+def step_count(relaxation):
+    """The number of step proposals of a content's solve record: the
+    number of its lines in the step file (``steps``) or of its entries
+    (``trace``)."""
+    steps = relaxation.get("steps")
+    if steps is not None:
+        return int(steps["count"])
+    return len(relaxation.get("trace") or [])
 
 
 def relaxation_text(relaxation):
@@ -5465,8 +5556,7 @@ def relaxation_text(relaxation):
              "iterates, lowest overlap %.3g") % (
             relaxation["band_selection"],
             "; ".join(_band_text(b) for b in bands) if bands else "none",
-            relaxation["band_crossing_iterates"],
-            len(relaxation.get("trace") or []),
+            relaxation["band_crossing_iterates"], step_count(relaxation),
             relaxation["lowest_band_overlap"])
     if not relaxation.get("action_available", True):
         text += "; action unavailable: " + relaxation["action_unavailable"]
@@ -5906,13 +5996,223 @@ def _append_line(path, record):
         os.fsync(handle.fileno())
 
 
+# ------------------------------------------------------- the step file
+
+
+def steps_path(json_path):
+    """The JSON-lines file beside ``json_path`` that holds one line per step
+    proposal of every solve of a run (`StepSink`); the records of the run
+    refer to their lines there."""
+    root, _ = os.path.splitext(os.fspath(json_path))
+    return root + ".steps.jsonl"
+
+
+class _StepFile:
+    """The open step file of a run, shared by every place in it
+    (`StepSink.at`): its path, the number of lines and of bytes written, and
+    the number of solves begun."""
+
+    def __init__(self, path):
+        self.path = os.fspath(path)
+        self.handle = open(self.path, "w", encoding="utf-8")
+        self.lock = threading.Lock()
+        self.lines = 0
+        self.size = 0
+        self.solves = 0
+
+    def write(self, record):
+        """``record`` as one line of JSON (`_jsonable`), flushed to the file;
+        returns the line's index and its byte offset."""
+        text = json.dumps(_jsonable(record), allow_nan=False) + "\n"
+        with self.lock:
+            at = (self.lines, self.size)
+            self.handle.write(text)
+            self.handle.flush()
+            self.lines += 1
+            # the JSON is ASCII, one byte per character
+            self.size += len(text)
+        return at
+
+
+class StepSink:
+    """The step proposals of a run's solves, each written to a JSON-lines
+    file at ``path`` the moment it is made, so that a run holds none of
+    them in memory.
+
+    A line is one step proposal of one solve
+    (`cell_solve.StationarityObjective`): where in the run the solve is made
+    (``where``, the keys `steps_at` declares, outermost first: ``kappa`` and
+    ``beta`` of a scan point; ``tick``, then ``level`` for a level's
+    relaxation or ``cell`` for a host cell's read; ``content``), the solve
+    (``solve``, numbered from 0 in the order the run's solves begin) and
+    the step's index in its solve (``step``), followed by the step's record
+    exactly as the solve's record holds it when no step file is declared
+    (`_proposal_record` for a content, `recursion.level_step_record` for a
+    level), made JSON by `_jsonable`. Each line is flushed to the file when
+    it is written. ``at(**where)`` is the sink at a place further in the
+    run; ``begin`` starts a solve there (`SolveSteps`)."""
+
+    def __init__(self, path):
+        self._file = _StepFile(path)
+        self.where = {}
+
+    @property
+    def path(self):
+        return self._file.path
+
+    def at(self, **where):
+        """The same file, its solves named by ``where`` after the places
+        this sink names."""
+        sink = StepSink.__new__(StepSink)
+        sink._file = self._file
+        sink.where = dict(self.where, **where)
+        return sink
+
+    def begin(self, entry, fold=None):
+        """A solve begun at this place (`SolveSteps`): ``entry(update)`` is
+        the record of a step proposal, and ``fold``, when given, an object
+        whose ``add(update)`` keeps what the solve's record reports of all
+        its proposals (`ProposalAggregates`)."""
+        with self._file.lock:
+            number = self._file.solves
+            self._file.solves += 1
+        return SolveSteps(self._file, self.where, number, entry, fold)
+
+    def close(self):
+        self._file.handle.close()
+
+
+class SolveSteps:
+    """The step proposals of one solve in a run's step file, as
+    `StepSink.begin` starts them. The drive's objective
+    (`cell_solve.StationarityObjective`) hands every update to ``write``
+    when it makes it: its record (``entry(update)``) is written as one line
+    and the update is added to ``fold``. ``reference()`` names the solve's
+    lines."""
+
+    def __init__(self, file, where, number, entry, fold=None):
+        self._file = file
+        self.where = dict(where)
+        self.number = number
+        self.entry = entry
+        self.fold = fold
+        #: The number of lines written, and of those that carry the
+        #: action's terms (``--trace-terms``).
+        self.count = 0
+        self.term_lines = 0
+        # where the solve's first line is: the end of the file until it is
+        # written
+        self.first_line, self.offset = file.lines, file.size
+
+    def write(self, update):
+        entry = self.entry(update)
+        line = dict(self.where)
+        line["solve"] = self.number
+        line["step"] = self.count
+        line.update(entry)
+        at = self._file.write(line)
+        if self.count == 0:
+            self.first_line, self.offset = at
+        self.count += 1
+        if entry.get("terms"):
+            self.term_lines += 1
+        if self.fold is not None:
+            self.fold.add(update)
+
+    def reference(self):
+        """Where the solve's lines are: the file, the solve's number, the
+        index and the byte offset of its first line, the number of its
+        lines and of those that carry the action's terms."""
+        return {"file": self._file.path, "solve": self.number,
+                "first_line": self.first_line, "offset": self.offset,
+                "count": self.count, "term_lines": self.term_lines}
+
+
+def step_lines(reference):
+    """The lines of one solve in a step file (``reference``,
+    `SolveSteps.reference`), in order, each as the dict written: read from
+    the byte offset of its first line, a line of another solve passed
+    over."""
+    remaining = int(reference["count"])
+    if remaining <= 0:
+        return
+    with open(reference["file"], "rb") as handle:
+        handle.seek(int(reference["offset"]))
+        for raw in handle:
+            line = json.loads(raw)
+            if line.get("solve") != reference["solve"]:
+                continue
+            yield line
+            remaining -= 1
+            if remaining == 0:
+                return
+
+
+#: The step sink of the run in progress at the place in it the code runs
+#: (`declared_steps`, `steps_at`), or None.
+_STEPS = contextvars.ContextVar("tessera_step_sink", default=None)
+
+
+def step_sink():
+    """The step sink a solve made here writes its step proposals to
+    (`StepSink`, at the place `steps_at` names), or None when no run
+    declared one: the solve's record then holds them."""
+    return _STEPS.get()
+
+
+@contextlib.contextmanager
+def declared_steps(path):
+    """A step sink at ``path`` (`StepSink`) for every solve made in the
+    block on the calling thread; the file is closed when the block ends.
+    ``path`` None declares none and leaves the sink in force as it is."""
+    if path is None:
+        yield step_sink()
+        return
+    sink = StepSink(path)
+    token = _STEPS.set(sink)
+    try:
+        yield sink
+    finally:
+        _STEPS.reset(token)
+        sink.close()
+
+
+@contextlib.contextmanager
+def steps_at(**where):
+    """The solves made in the block are named by ``where`` in the step
+    file, after the places named outside it (`StepSink.at`); nothing when
+    no step sink is in force."""
+    sink = _STEPS.get()
+    if sink is None:
+        yield None
+        return
+    token = _STEPS.set(sink.at(**where))
+    try:
+        yield _STEPS.get()
+    finally:
+        _STEPS.reset(token)
+
+
 def drive(config, progress=False, on_frame=None, stop_requested=None,
-          points_file=None):
+          points_file=None, steps_file=None):
     """The whole scan. `on_frame(frames, index)` is called after each scan
     point with the list of completed points; the computation is the same with
     or without it. With `points_file`, the configuration and the host are
     written as the first line and every scan point's full record is appended
-    as one JSON line the moment the point completes."""
+    as one JSON line the moment the point completes. With `steps_file`, every
+    step proposal of every content's solve is written there as it is made
+    (`StepSink`; its solves named by the scan point's ``kappa`` and ``beta``
+    and the ``content``), the configuration records the file under
+    ``steps_file``, and every content's solve record refers to its lines
+    (``steps``) in place of holding them (``trace``)."""
+    if steps_file is not None:
+        config = dict(config, steps_file=os.fspath(steps_file))
+    with declared_steps(steps_file):
+        return _scan(config, progress, on_frame, stop_requested, points_file)
+
+
+def _scan(config, progress, on_frame, stop_requested, points_file):
+    """The body of `drive`."""
     # the declared host's own read, recorded once; every relaxed cell is read
     # against its own rotation group in `evaluate_content`
     declared = aligned_doublet_frame(
@@ -5940,7 +6240,8 @@ def drive(config, progress=False, on_frame=None, stop_requested=None,
             if stop_requested is not None and stop_requested():
                 return {"config": _jsonable(config), "host": host,
                         "points": frames, "stopped": True}
-            point = scan_point(kappa, beta, config)
+            with steps_at(kappa=kappa, beta=beta):
+                point = scan_point(kappa, beta, config)
             frames.append(point)
             if points_file is not None:
                 _append_line(points_file, point)
@@ -6542,7 +6843,8 @@ def hold_live_window(message):
     return True
 
 
-def drive_live(config, progress=False, points_file=None, keep_open=False):
+def drive_live(config, progress=False, points_file=None, keep_open=False,
+               steps_file=None):
     """The same `drive`, on a worker thread, drawing each completed scan point
     on the main thread. Refuses a non-interactive backend and WebAgg by name,
     as `tessera.drivers.emergence` does. While a point is being computed the
@@ -6612,7 +6914,8 @@ def drive_live(config, progress=False, points_file=None, keep_open=False):
             outcome["result"] = drive(config, progress=progress,
                                       on_frame=publish,
                                       stop_requested=stop.is_set,
-                                      points_file=points_file)
+                                      points_file=points_file,
+                                      steps_file=steps_file)
         except BaseException as exc:
             outcome["error"] = exc
         finally:
@@ -6731,7 +7034,11 @@ def build_parser():
     run.add_argument("--json", default=None,
                      help="write every record here at the end; each scan "
                           "point is also appended, as it completes, to the "
-                          "JSON-lines file beside it (<json stem>.points.jsonl)")
+                          "JSON-lines file beside it "
+                          "(<json stem>.points.jsonl), and every step "
+                          "proposal of every solve, as it is made, to "
+                          "<json stem>.steps.jsonl, which the records refer "
+                          "to")
     run.add_argument("--out", default=None,
                      help="write the final frame as a PNG here")
     run.add_argument("--live", action="store_true",
@@ -6985,11 +7292,13 @@ def main(argv=None):
     # written once in the header
     config["environment"] = environment_record(argv)
     points_file = points_path(args.json) if args.json else None
+    steps_file = steps_path(args.json) if args.json else None
     result = (drive_live(config, progress=not args.quiet,
-                         points_file=points_file, keep_open=True)
+                         points_file=points_file, keep_open=True,
+                         steps_file=steps_file)
               if args.live
               else drive(config, progress=not args.quiet,
-                         points_file=points_file))
+                         points_file=points_file, steps_file=steps_file))
     if args.json:
         with open(args.json, "w") as handle:
             json.dump(_jsonable(result), handle, indent=1, allow_nan=False)
