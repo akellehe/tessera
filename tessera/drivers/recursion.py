@@ -1461,8 +1461,16 @@ def pachner_stage(cells, z, links, config):
     complete and reproducible, so there is no seed. The base is one sheet;
     the level is rebuilt from it
     with every sheet identical. Returns the base after the committed moves,
-    its vertices relabeled 0..n-1 (``vertex_relabeling`` in the record), with
-    the stage's record; zero updates return the base as it is."""
+    its vertices relabeled 0..n-1, with the stage's record; zero updates
+    return the base as it is. A vertex a move inserts takes an id that no
+    complex of the search has held (`MultiCobordism.fresh_vertex_ids`), so
+    the record's ``vertex_relabeling``, from the search's id of each vertex
+    of the base it ends on to its label there, names each vertex once over
+    every update and every move of a composition: a vertex of the grown base
+    keeps its label there as its id, a vertex the moves inserted has an id
+    above every label of the grown base, and a vertex they removed has no
+    entry. ``changed`` says whether the cells, named by those ids, differ
+    from the grown base's."""
     updates = int(config.get("pachner_updates", 0))
     depth, length = cell_solve.checked_schedule(
         config.get("pachner_depth", DECLARED_PACHNER_DEPTH),
@@ -1511,6 +1519,7 @@ def pachner_stage(cells, z, links, config):
         node.set_simulation_mode(MC.SimulationMode.EMERGENCE,
                                  MC.EmergenceSubmode.STRICT)
         node.should_propose_surgery = False
+        node.fresh_vertex_ids = True
     else:
         system, _ = level_system(spacetime, config, [], SHEETS)
         # the Regge sheets of the search start at the level as grown
@@ -1537,8 +1546,25 @@ def pachner_stage(cells, z, links, config):
                                    for v in sorted(relabel)}
     record["after"] = {"vertices": len(relabel), "edges": len(z_out),
                        "cells": len(cells_out)}
-    record["changed"] = cells_out != sorted(sorted(c) for c in cells)
+    # by the search's ids, which name each vertex once: on the labels 0..n-1
+    # a vertex inserted in place of a removed one can take that one's label
+    record["changed"] = (sorted(cell_solve.top_cells(node.spacetime()))
+                         != sorted(tuple(sorted(c)) for c in cells))
     return cells_out, z_out, links_out, record
+
+
+def growth_lineage(lineage, pachner):
+    """Each response vertex's label on the next level: ``lineage`` takes a
+    response vertex to its label on the grown base (None for one no kept
+    cell holds), and the growth step's record ``pachner`` (`pachner_stage`)
+    takes that label, which is the vertex's id in the search, to its label
+    on the base the search ended on by ``vertex_relabeling``: None for a
+    vertex a move removed, and the label itself when the record has no
+    relabeling (no update, or a search without a value)."""
+    labels = pachner.get("vertex_relabeling")
+    return {str(v): (label if labels is None or label is None
+                     else labels.get(str(label)))
+            for v, label in lineage.items()}
 
 
 def _counts():
@@ -1911,11 +1937,7 @@ def _tick(record, index, cells, z, links, config):
     # a response vertex's lineage names a vertex of the next level, so it
     # takes the labels the growth step's moves leave (None for a vertex a
     # move removed)
-    labels = pachner.get("vertex_relabeling")
-    record["lineage"] = {
-        str(v): (label if labels is None or label is None
-                 else labels.get(str(label)))
-        for v, label in lineage.items()}
+    record["lineage"] = growth_lineage(lineage, pachner)
     record["summary"]["pachner"] = {
         "updates": pachner["updates"],
         "changed": pachner["changed"],

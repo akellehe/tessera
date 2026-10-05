@@ -2448,6 +2448,27 @@ assertion. Every pairing is the transpose.)doc")
                     "are proposed): the moves that keep the complex the "
                     "manifold it is, with the boundary it has. True by "
                     "default.")
+      .def_property("fresh_vertex_ids", &MultiCobordism::freshVertexIds,
+                    &MultiCobordism::setFreshVertexIds,
+                    "Whether a vertex a move inserts takes an id that no "
+                    "complex of the node has held. True: every complex the "
+                    "node builds from a record (each stage-1 candidate, each "
+                    "level of a composition, each committed complex, each "
+                    "pre-coned or refining cone-in) reserves every id below "
+                    "one more than the greatest id held by the complexes the "
+                    "node has replaced, by the one it holds and by the one "
+                    "being built, so an id names one vertex for the life of "
+                    "the node, through any number of moves in one committed "
+                    "update and any number of updates. False, the default: a "
+                    "complex built from a record gives a new vertex the "
+                    "lowest id it does not hold, so an id a move freed can be "
+                    "given to another vertex. The moves offered and their "
+                    "geometry are the same either way; what differs is the id "
+                    "of a vertex inserted after a removal, and with it that "
+                    "vertex's place among the vertices, which a complex built "
+                    "from a record lists in ascending order of their ids: the "
+                    "order in which candidates on such a complex are listed, "
+                    "and so the first of exactly equal scores, can differ.")
       .def_property_readonly("should_propose_dispositions",
                              &MultiCobordism::shouldProposeDispositions,
            "Whether the stage-1 move draw also proposes CAUSAL DISPOSITIONS "

@@ -2667,7 +2667,30 @@ std::shared_ptr<Spacetime> MultiCobordism::build(
   // Candidate clones inherit the wiring mode so combinatorial moves scored on
   // them wire their new edges under the same convention.
   rebuiltSpacetime->setBalancedEdgeWiring(balancedEdgeWiring_);
+  if (freshVertexIds_) {
+    // Every id below the bound has been held by a complex of the node or is
+    // held by this one. `fromVertexTuples` gives every vertex its id
+    // explicitly and leaves the id counter at zero, and `reserveVertexId`
+    // returns the ids the complex does not hold in ascending order; so
+    // reserving as many ids as are free below the bound reserves exactly
+    // those, and the next vertex created takes the bound.
+    const std::uint64_t bound =
+        std::max({replacedVertexIdBound_, vertexIdBoundOf(*spacetime_),
+                  vertexIdBoundOf(*rebuiltSpacetime)});
+    for (std::uint64_t unheld =
+             bound - rebuiltSpacetime->getVertexList()->size();
+         unheld > 0; --unheld)
+      (void)rebuiltSpacetime->reserveVertexId();
+  }
   return rebuiltSpacetime;
+}
+
+std::uint64_t MultiCobordism::vertexIdBoundOf(const Spacetime &spacetime) {
+  std::uint64_t bound = 0;
+  if (const auto &vertices = spacetime.getVertexList())
+    for (const auto *vertex : vertices->liveVector())
+      if (vertex != nullptr) bound = std::max(bound, vertex->getId() + 1);
+  return bound;
 }
 
 MultiCobordism::MoveSpec MultiCobordism::drawRandomMoveSpecification(
@@ -3283,6 +3306,8 @@ double MultiCobordism::step(int nCandidateMoves, int lookaheadDepth,
     }
   }
   if (foundImprovingMove) {
+    replacedVertexIdBound_ =
+        std::max(replacedVertexIdBound_, vertexIdBoundOf(*spacetime_));
     spacetime_ = build(bestSnapshot);
     // The first committed move is what starts linking the bulk, so block
     // regions are settled from here on.
@@ -3330,6 +3355,8 @@ void MultiCobordism::preconeCells(int count, bool timelike, bool alternate) {
       if (applyMoveSpecification(
               candidateSpacetime,
               {coneTimelike ? kConeInTimelike : kConeIn, coneInFace})) {
+        replacedVertexIdBound_ =
+            std::max(replacedVertexIdBound_, vertexIdBoundOf(*spacetime_));
         spacetime_ = build(snapshotOf(*candidateSpacetime));
         coned = true;
       }

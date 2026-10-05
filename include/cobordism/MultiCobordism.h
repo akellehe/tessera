@@ -779,6 +779,28 @@ class MultiCobordism {
     shouldProposeSurgery_ = shouldProposeSurgery;
   }
 
+  /// Whether a vertex a move inserts takes an id that no complex of the node
+  /// has held. Declared, every complex the node builds from a record (`build`:
+  /// each stage-1 candidate, each level of a composition, each committed
+  /// complex, each pre-coned or refining cone-in) reserves every id below one
+  /// more than the greatest id held by the complexes the node has replaced,
+  /// by the one it holds and by the one being built, so an id names one
+  /// vertex for the life of the node, through any number of moves in one
+  /// committed update and any number of updates. Off, which is the default,
+  /// a complex built from a record gives a new vertex the lowest id it does
+  /// not hold (`Spacetime::reserveVertexId` on a complex whose ids were
+  /// given explicitly), so an id a move freed can be given to another vertex.
+  /// The moves offered and their geometry are the same either way; what
+  /// differs is the id of a vertex inserted after a removal, and with it that
+  /// vertex's place among the vertices, which a complex built from a record
+  /// lists in ascending order of their ids: the order in which candidates on
+  /// such a complex are listed, and so the first of exactly equal scores, can
+  /// differ.
+  [[nodiscard]] bool freshVertexIds() const { return freshVertexIds_; }
+  void setFreshVertexIds(bool freshVertexIds) {
+    freshVertexIds_ = freshVertexIds;
+  }
+
   /// The move tolerance of stage 1: a move, or a composition of moves, is
   /// committed only when it lowers the objective by more than this amount.
   /// Defaults to 1e-15.
@@ -2907,9 +2929,14 @@ class MultiCobordism {
       int dimensions, const Snapshot &complexSnapshot);
   /// `rebuild` at the node's dimension, carrying the node's edge-wiring mode
   /// so combinatorial moves scored on the result wire their new edges under
-  /// the same convention.
+  /// the same convention, and, with fresh vertex ids declared
+  /// (`setFreshVertexIds`), reserving every id a complex of the node has
+  /// held, so a vertex created on the result takes an id none has held.
   [[nodiscard]] std::shared_ptr<Spacetime> build(
       const Snapshot &complexSnapshot) const;
+  /// One more than the greatest id of a vertex of \p spacetime; 0 when it
+  /// has none.
+  [[nodiscard]] static std::uint64_t vertexIdBoundOf(const Spacetime &spacetime);
 
   /// Draw one random stage-1 move specification on `spacetime`: a `{kind, payload}`
   /// pair where `kind` is one of `add`/`remove`/`flip`/`iflip` (payload = a seed for
@@ -3258,6 +3285,13 @@ class MultiCobordism {
   bool shouldProposeDispositions_{true};
   /// Whether the move draw and the enumeration offer the surgical kinds.
   bool shouldProposeSurgery_{true};
+  /// Whether a vertex a move inserts takes an id no complex of the node has
+  /// held (`setFreshVertexIds`).
+  bool freshVertexIds_{false};
+  /// One more than the greatest vertex id held by a complex the node has
+  /// replaced by a committed move; 0 before the first. Kept whether or not
+  /// fresh vertex ids are declared.
+  std::uint64_t replacedVertexIdBound_{0};
   /// What the two-body target is scored against (`setReadoutModes`).
   std::vector<ReadoutMode> readoutModes_{ReadoutMode::Transfer};
   /// The state `ReadoutMode::Whole` scores against (`setOutputStateTarget`).

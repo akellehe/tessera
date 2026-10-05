@@ -20,6 +20,19 @@ Terms used below:
   1235 then inserts a vertex to which it gives the freed id 4, so that the
   cell 1234 and the edges 14, 24 and 34 are named by their ids on S0 and on
   the complex after both moves, and are other cells there;
+* *S3* is the subdivision of the tetrahedron 0123 by the vertex 4 (the
+  cells of S), squared length 3 on the edges of vertex 4 and 8 on the
+  others, the base's links on the edges of 0123 and 1 elsewhere. The 4-1
+  move removes vertex 4, and the 1-4 move on the tetrahedron 0123 it leaves
+  then inserts a vertex joined to the same four corners by edges of squared
+  length 1 and link 1: without fresh vertex ids
+  (`MultiCobordism.fresh_vertex_ids`) the engine gives that vertex the
+  freed id 4, so that the complex after both moves has S3's cells, named by
+  the same ids;
+* *F* is the scalar `_CountedEdges` scores a complex with: the sum over its
+  edges of the modulus of the squared length less 1, plus a weight times
+  the modulus of the number of cells less a count, plus a per-cell term
+  times the number of cells; it reads no vertex id;
 * a vertex's *name* is the drive's (`cell_solve.VertexNames`), which no two
   vertices share;
 * the *places* of a band are the positions of its modes in the ordered
@@ -62,6 +75,72 @@ def _s0(moves=0, interior=3.0):
                          False)
         assert move.propose() and move.apply()
     return spacetime
+
+
+def _s3():
+    """S3, one sheet, its vertices 0..4."""
+    edges = sorted({e for c in S_CELLS for e in itertools.combinations(c, 2)})
+    z = {e: complex(3.0 if 4 in e else 8.0) for e in edges}
+    links = {e: cmath.exp(1j * BASE_PHASES.get(e, 0.0)) for e in edges}
+    return z, links, R.build_level(S_CELLS, z, links, sheets=1)[0]
+
+
+class _CountedEdges(cob.CobordismObjective):
+    """F, with the weight, the count and the per-cell term given."""
+
+    def __init__(self, weight=0.0, count=0, per_cell=0.0):
+        super().__init__()
+        self.weight, self.count, self.per_cell = weight, count, per_cell
+
+    def value(self, spacetime):
+        cells = len(spacetime.getTopSimplices())
+        return (sum(abs(edge.getLength() ** 2 - 1.0)
+                    for edge in spacetime.getEdgeList().toVector())
+                + self.weight * abs(cells - self.count)
+                + self.per_cell * cells)
+
+    def begin(self, *args):
+        """No clock: the declared interface of `StationarityObjective`."""
+
+    def name(self):
+        return "counted_edges"
+
+    def term_names(self):
+        return [cob.ObjectiveTermName.REGGE_STATIONARITY]
+
+    def terms(self, context):
+        out = cob.MultiCobordism.ObjectiveTerms()
+        out.regge_stationarity = self.value(context.spacetime)
+        return out
+
+    def direction(self, context):
+        out = cob.ObjectiveDirection()
+        out.ascent = np.zeros(context.edge_count, dtype=complex)
+        out.baseline = self.value(context.spacetime)
+        out.baseline_computed = True
+        return out
+
+    def is_target_conditioned(self):
+        return False
+
+
+def _composed(fresh):
+    """One stage-1 update of S3 under F with weight 10 and count 4, every
+    composition of exactly two moves scored first (a combinatorial length
+    of two), on a node of `cell_solve.cell_node` with ``fresh`` vertex ids:
+    its trace, the complex it commits, and the drive's names of that
+    complex's vertices."""
+    base = _s3()[2]
+    names = cs.VertexNames()
+    names.begin(base)
+    node = cs.cell_node(base, _CountedEdges(weight=10.0, count=4))
+    node.fresh_vertex_ids = fresh
+    trace = node.run_stage1(max_steps=1, n_candidate_moves=0,
+                            grow_boundaries=False, max_lookahead=2,
+                            combinatorial_breadth=2)
+    assert node.last_stage1_lookahead == 2
+    after = node.spacetime()
+    return list(trace), after, names.of(cs.vertex_ids(after))
 
 
 def _s():
@@ -158,17 +237,81 @@ def test_a_vertex_a_move_inserts_takes_a_name_no_vertex_had():
     assert names.of(cs.vertex_ids(after))[4] == 7
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "within one committed update of several moves (combinatorial depth or "
-    "length above one) the drivers see no complex between the moves, and "
-    "MultiCobordism reports none, so an id the update frees and gives back "
-    "keeps its name"))
 def test_a_vertex_reinserted_within_one_update_takes_a_new_name():
     """The removal and the insertion committed as one update of two moves:
-    the vertex inserted is another vertex and is named so."""
-    names = cs.VertexNames()
-    names.begin(_s0())
-    assert names.of(cs.vertex_ids(_s0(2)))[4] != 4
+    on S3, F (weight 10, count 4) is 50, no single move lowers it, and the
+    4-1 move followed by the 1-4 move on the tetrahedron 0123 lowers it to
+    42, the edges of the vertex inserted at squared length 1. The node of a
+    drive declares fresh vertex ids, so the vertex inserted takes the id 5,
+    which no complex of the drive held, and the drive names it 5: no cell
+    after the update is named as a cell of S3, and its edges are not taken
+    for those of the vertex removed."""
+    trace, after, named = _composed(fresh=True)
+    assert trace == pytest.approx([50.0, 42.0], rel=1e-15)
+    assert sorted(cs.top_cells(after)) == [(0, 1, 2, 5), (0, 1, 3, 5),
+                                           (0, 2, 3, 5), (1, 2, 3, 5)]
+    assert named == {0: 0, 1: 1, 2: 2, 3: 3, 5: 5}
+    assert not {tuple(sorted(named[v] for v in c))
+                for c in cs.top_cells(after)} & set(cs.top_cells(_s3()[2]))
+    assert {(a, b): (length * length).real
+            for a, b, length, _ in cs.edge_fields(after) if 5 in (a, b)} == {
+        (0, 5): 1.0, (1, 5): 1.0, (2, 5): 1.0, (3, 5): 1.0}
+
+
+def test_fresh_vertex_ids_change_only_the_id_of_the_vertex_inserted():
+    """The same update on a node without fresh vertex ids, the engine's
+    default: the same composition is committed with the same trace, and the
+    vertex inserted takes the freed id 4, so the complex has S3's cells
+    named by S3's ids and the drive's names take the vertex inserted for the
+    vertex removed. With fresh vertex ids the complex is the same on the
+    relabeling 5 -> 4, every squared length and link the same."""
+    fresh_trace, fresh, _ = _composed(fresh=True)
+    trace, after, named = _composed(fresh=False)
+    assert trace == fresh_trace
+    assert sorted(cs.top_cells(after)) == sorted(cs.top_cells(_s3()[2]))
+    assert named == {v: v for v in range(5)}
+    relabel = {0: 0, 1: 1, 2: 2, 3: 3, 5: 4}
+    assert sorted(tuple(sorted(relabel[v] for v in c))
+                  for c in cs.top_cells(fresh)) == sorted(
+        cs.top_cells(after))
+    moved = {tuple(sorted((relabel[a], relabel[b]))): (length, phase)
+             for a, b, length, phase in cs.edge_fields(fresh)}
+    assert moved == {(min(a, b), max(a, b)): (length, phase)
+                     for a, b, length, phase in cs.edge_fields(after)}
+
+
+def test_a_growth_step_of_two_updates_names_the_vertex_it_reinserts(
+        monkeypatch):
+    """The growth step (`recursion.pachner_stage`) of two updates on S3,
+    scored by F with a per-cell term of -1 in place of the joint action's
+    stationarity: F is 46, the first update commits the 4-1 move (41, below
+    the 43 of a 1-4 move) and the second the 1-4 move on the tetrahedron
+    0123 that leaves (38). The vertex inserted has the search's id 5, so
+    ``vertex_relabeling`` has no entry for the vertex 4 the first update
+    removed, the cells changed although they are S3's on the labels 0..4,
+    and the lineage of a response vertex on the vertex 4 of the grown base
+    is None, not the vertex inserted."""
+    z, links, _ = _s3()
+    objective = _CountedEdges(per_cell=-1.0)
+
+    class Begun:
+        def begin(self, base):
+            pass
+
+    monkeypatch.setattr(R, "level_system",
+                        lambda base, config, sectors, sheets: (Begun(), None))
+    monkeypatch.setattr(cs, "StationarityObjective", lambda system: objective)
+    config = R.default_config(pachner_updates=2)
+    assert config["pachner_objective"] == "joint-action"
+    cells, _, _, record = R.pachner_stage(S_CELLS, z, links, config)
+    assert record["trace"] == pytest.approx([46.0, 41.0, 38.0], rel=1e-15)
+    assert record["vertex_relabeling"] == {"0": 0, "1": 1, "2": 2, "3": 3,
+                                           "5": 4}
+    assert cells == [sorted(c) for c in S_CELLS]
+    assert record["changed"]
+    lineage = R.growth_lineage({0: 0, 1: 4, 2: None}, record)
+    assert lineage == {"0": 0, "1": None, "2": None}
+    assert R.growth_lineage({0: 4}, {"updates": 0}) == {"0": 4}
 
 
 def test_a_reference_band_carries_no_weight_onto_a_reinserted_vertex():

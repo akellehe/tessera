@@ -767,24 +767,25 @@ class VertexNames:
     """The names of the vertices of the base complexes a drive passes
     through: one name per vertex for the whole drive, never given to two.
 
-    The engine gives a vertex a 1-4 move inserts the lowest id that no
-    vertex of the complex holds (`Spacetime::nextFreeVertexId` on a complex
-    `MultiCobordism` rebuilds from its cells), so after a 4-1 move freed an
-    id, a later insertion gives that id to another vertex. The vertices of
-    the complex a drive begins on are named by their ids. A vertex keeps its
-    name from one accepted point to the next while its id is held at both;
-    a vertex whose id is not held at the last accepted point takes a new
-    name, above every name given before, in ascending order of the ids.
+    The vertices of the complex a drive begins on are named by their ids. A
+    vertex keeps its name from one accepted point to the next while its id
+    is held at both; a vertex whose id is not held at the last accepted
+    point takes a new name, above every name given before, in ascending
+    order of the ids. The accepted points of a drive are the points its
+    steps are proposed from (`StationarityObjective.direction`).
 
-    The accepted points of a drive are the points its steps are proposed
-    from (`StationarityObjective.direction`): the engine proposes a step
-    after every move update, so between two accepted points lies one
-    committed move update. At the declared combinatorial depth and length of
-    one that update is one move, which inserts or removes at most one
-    vertex, so an id held at two consecutive accepted points names one
-    vertex. An update of several moves (a combinatorial depth or length
-    above one) is one step from one accepted point to the next, and an id
-    it frees and gives back within it keeps its name."""
+    The node of a drive declares fresh vertex ids (`cell_node`,
+    `MultiCobordism.fresh_vertex_ids`): a vertex a move inserts takes an id
+    that no complex of the drive has held. An id held at two complexes of a
+    drive therefore names one vertex whatever lies between them, the several
+    moves of one committed update (a combinatorial depth or length above
+    one) and several updates without an accepted point included, and the
+    names of every complex the drive scores are exact. A complex built
+    outside the engine can give a freed id to another vertex: a move applied
+    to a `Spacetime` built from its cells gives the vertex it inserts the
+    lowest id the complex does not hold. Such a complex is named exactly
+    when no id is freed and given back between it and the last accepted
+    point, as when one move lies between them."""
 
     def __init__(self):
         self._names = None
@@ -1524,13 +1525,16 @@ def undefined_reasons(reasons):
 def cell_node(spacetime, objective, register_degrees=(1,)):
     """A `MultiCobordism` node on ``spacetime`` that descends ``objective``
     and nothing else: no target, no boundary block, no surgery, the strict
-    emergence mode."""
+    emergence mode. A vertex a move inserts takes an id that no complex of
+    the node has held (``fresh_vertex_ids``), so an id names one vertex for
+    the life of the node (`VertexNames`)."""
     node = cob.MultiCobordism(spacetime, [], [], list(register_degrees), 1.0,
                               0, 0, False)
     node.set_objective(objective)
     node.set_simulation_mode(cob.MultiCobordism.SimulationMode.EMERGENCE,
                              cob.MultiCobordism.EmergenceSubmode.STRICT)
     node.should_propose_surgery = False
+    node.fresh_vertex_ids = True
     return node
 
 
