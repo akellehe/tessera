@@ -7094,15 +7094,16 @@ def _cosmological_constant(text):
             "--cosmological-constant is a finite number; got %r" % text)
 
 
-def add_cosmological_constant_argument(parser):
+def add_cosmological_constant_argument(
+        parser, carriers="every joint action the run declares carries"):
     """``--cosmological-constant``, the option of the joint action that adds
     the cosmological term (`DECLARED_COSMOLOGICAL_CONSTANT`), for the
-    baryon-poles and the recursion drivers."""
+    baryon-poles and the recursion drivers. ``carriers`` says which of the
+    run's actions carry the term."""
     parser.add_argument(
         "--cosmological-constant", type=_cosmological_constant,
         default=DECLARED_COSMOLOGICAL_CONSTANT,
-        help="Lambda, the cosmological constant: every joint action the run "
-             "declares (every level's, cell's and growth step's) carries the "
+        help="Lambda, the cosmological constant: " + carriers + " the "
              "term -(1/kappa) Lambda sum_T V_T, V_T the volume of each top "
              "simplex from its Cayley-Menger determinant, the volume term of "
              "the Einstein-Hilbert action with a cosmological constant "
