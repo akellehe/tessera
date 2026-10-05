@@ -172,6 +172,23 @@ def test_the_log_lines_are_the_same_read_from_the_file(solves):
     assert "of 10 iterates" in bp.relaxation_text(streamed["content"])
 
 
+def test_the_recursion_prints_the_same_lines_read_from_the_file(solves):
+    """A tick's per-cell lines (`recursion.read_lines`), the --trace-terms
+    lines of every content among them, are the same whether the content's
+    solve record holds its steps or refers to the step file."""
+    plain, streamed, _, _ = solves
+
+    def tick(relaxation):
+        content = {"content": [0, 3, 0], "failed": "the read has no value",
+                   "relaxation": relaxation, "doublet_reads": []}
+        return {"tick": 0, "reads": [{"cell": [0, 1, 3, 4],
+                                      "contents": [content], "ratios": {}}]}
+
+    lines = R.read_lines(tick(plain["content"]))
+    assert any("iterate 9: S = " in line for line in lines)
+    assert R.read_lines(tick(streamed["content"])) == lines
+
+
 def _retained(objective):
     """The number of objects the objective holds, its system and its step
     writer apart (`gc.get_referents`)."""
