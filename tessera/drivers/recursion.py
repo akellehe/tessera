@@ -48,8 +48,10 @@ At level l (a complex K_l of three sheets of a base complex):
    the declared order, ``--villain-order``, ten by default), with the
    cosmological term -(1/kappa) Lambda sum_T V_T when a cosmological
    constant is declared (``--cosmological-constant``, none by default; it
-   enters the actions of the ticks from ``--cosmological-constant-from-tick``
-   on, every tick by default, `tick_config`), in
+   enters the level's relaxation and the growth step of the ticks from
+   ``--cosmological-constant-from-tick`` on, every tick by default,
+   `tick_config`, and never the cells' reads, a cell being one tetrahedron
+   with no interior hinge), in
    strict emergence (no carried density in the equations; WP §7). The
    spectral-moment part of S_0 is the
    holomorphic spectral constraint of WP v17 §3.4, which belongs to
@@ -1614,14 +1616,26 @@ def tick_config(config, index):
     """The config the actions of tick ``index`` are declared from: ``config``
     itself, or, before the tick a declared cosmological constant enters
     (``cosmological_constant_from_tick``), a copy without the constant, so
-    that the tick's level relaxation, cell reads and growth step carry no
-    cosmological term."""
+    that the tick's level relaxation and growth step carry no cosmological
+    term. The cells' reads never carry it (`_tick`)."""
     first = int(config.get("cosmological_constant_from_tick",
                            DECLARED_COSMOLOGICAL_CONSTANT_FROM_TICK))
     if index >= first or "cosmological_constant" not in config:
         return config
     out = dict(config)
     del out["cosmological_constant"]
+    return out
+
+
+def cell_reads_config(config, declared):
+    """The config the cells of a tick are read with (`cell_reads`): the
+    tick's config with the cut held on the declared host's tetrahedra
+    (``declared``) and without a cosmological constant, a cell being one
+    tetrahedron with no interior hinge, whose Regge sum is structurally zero
+    and so leaves the cosmological term nothing to balance."""
+    out = dict(config)
+    out["hold_cell_sectors"] = declared
+    out.pop("cosmological_constant", None)
     return out
 
 
@@ -1818,9 +1832,8 @@ def _tick(record, index, cells, z, links, config):
             record.update(interaction)
 
     # the reads of the level's cells need its cells and its fields alone
-    reads_config = dict(config)
-    reads_config["hold_cell_sectors"] = declared
-    record["reads"] = cell_reads(cells, base_z, base_links, reads_config)
+    record["reads"] = cell_reads(cells, base_z, base_links,
+                                 cell_reads_config(config, declared))
 
     grown = stage["reads"] if stage is not None else []
     kept = [r for r in grown if "failed" not in r and "rejected" not in r]
@@ -2002,8 +2015,10 @@ def default_config(ticks=DECLARED_TICKS, tetrahedra=DECLARED_TETRAHEDRA,
     of the primal Regge sum of every level's and every cell's action.
     ``cosmological_constant`` is Lambda
     (`baryon_poles.DECLARED_COSMOLOGICAL_CONSTANT`): a nonzero value is
-    recorded and carried into every level's, every cell's and the growth
-    step's action; zero leaves the term and the key out.
+    recorded and carried into every level's and the growth step's action,
+    and not into the cells' reads (a cell is one tetrahedron with no
+    interior hinge, so its Regge sum is structurally zero and the term would
+    have nothing to balance it); zero leaves the term and the key out.
     ``cosmological_constant_from_tick`` is the first tick whose actions carry
     it (`tick_config`; every tick by default), recorded with a nonzero
     constant.
@@ -2729,15 +2744,20 @@ def build_parser():
                      help="draw each completed tick while the run proceeds; "
                           "the outputs are identical")
     bp.add_action_arguments(run)
-    bp.add_cosmological_constant_argument(run)
+    bp.add_cosmological_constant_argument(
+        run, carriers=("every level's relaxation and the growth step carry, "
+                       "from --cosmological-constant-from-tick on, and the "
+                       "cells' reads (one tetrahedron each, with no interior "
+                       "hinge) never carry,"))
     run.add_argument("--cosmological-constant-from-tick", type=int,
                      default=DECLARED_COSMOLOGICAL_CONSTANT_FROM_TICK,
-                     help="the first tick whose actions (the level's "
-                          "relaxation, the cells' reads and the growth step) "
-                          "carry the declared cosmological constant; the "
-                          "ticks before it carry no cosmological term. 0, "
-                          "the default, is every tick; 1 leaves the declared "
-                          "host, which has no interior hinge, without it")
+                     help="the first tick whose level relaxation and growth "
+                          "step carry the declared cosmological constant; "
+                          "the ticks before it carry no cosmological term, "
+                          "and the cells' reads never do (a cell has no "
+                          "interior hinge). 0, the default, is every tick; 1 "
+                          "leaves the declared host, which has no interior "
+                          "hinge, without it")
     bp.add_mean_field_arguments(run)
     bp.add_tolerance_arguments(run)
     bp.add_limit_arguments(run)

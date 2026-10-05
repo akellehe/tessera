@@ -2,7 +2,9 @@
 # All rights reserved.
 """The first tick of the cosmological term (`recursion.tick_config`,
 ``--cosmological-constant-from-tick``): the actions of a tick before it carry
-no cosmological constant, and from it on they carry the declared one.
+no cosmological constant, and from it on the level's relaxation and the
+growth step carry the declared one; the cells' reads never do
+(`recursion.cell_reads_config`).
 
 The level relaxation of a tick is replaced by a function that records the
 cosmological constant the tick's config declares and then has no value, so
@@ -82,3 +84,30 @@ def test_a_run_without_a_constant_records_none_per_tick(monkeypatch):
     cells, z, links, _ = R.level_zero(config)
     record, _ = R.tick(0, cells, z, links, config)
     assert "cosmological_constant" not in record
+
+
+@pytest.mark.parametrize("index", [0, 1, 2])
+def test_the_cells_are_read_without_the_constant(index):
+    """From the first tick on the level carries the constant and the cells'
+    reads do not: a cell is one tetrahedron with no interior hinge."""
+    config = R.default_config(cosmological_constant=1.0,
+                              cosmological_constant_from_tick=1)
+    level = R.tick_config(config, index)
+    reads = R.cell_reads_config(level, index == 0)
+    assert bp.declared_cosmological_constant(level) == (
+        0.0 if index == 0 else 1.0)
+    assert bp.declared_cosmological_constant(reads) == 0.0
+    assert "cosmological_constant" not in reads
+    assert reads["hold_cell_sectors"] is (index == 0)
+    # everything else of the tick's config reaches the cells
+    assert {k: v for k, v in reads.items() if k != "hold_cell_sectors"} == {
+        k: v for k, v in level.items() if k != "cosmological_constant"}
+
+
+def test_the_help_names_the_actions_that_carry_the_constant():
+    run = R.build_parser()._subparsers._group_actions[0].choices["run"]
+    helps = {action.option_strings[0]: action.help for action in run._actions
+             if action.option_strings}
+    assert "never carry" in helps["--cosmological-constant"]
+    assert "the cells' reads never do" in helps[
+        "--cosmological-constant-from-tick"]
