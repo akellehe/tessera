@@ -681,7 +681,8 @@ def test_the_options_one_driver_offers_and_the_other_does_not():
                 if action.option_strings}
     assert flags(bp) - flags(R) == {"--isospin-doublet"}
     assert flags(R) - flags(bp) == {
-        "--band-rank", "--contents", "--max-cells", "--pachner-depth",
+        "--band-rank", "--contents", "--cosmological-constant-from-tick",
+        "--max-cells", "--pachner-depth",
         "--pachner-candidate-moves", "--pachner-length",
         "--pachner-objective", "--pachner-updates",
         "--persistence-required",
