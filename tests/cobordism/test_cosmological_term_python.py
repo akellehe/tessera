@@ -189,6 +189,29 @@ def test_the_term_record_carries_its_weight_and_value():
                               + action.spectral_term())
 
 
+def test_the_term_has_its_line_in_the_trace():
+    """`action_term_records` carries the term with its weight, bare factor
+    and gradient norm, and the ``--trace-terms`` lines print it beside the
+    Regge term, as the product of its weight and the volume sum."""
+    from tessera.drivers import baryon_poles as bp
+    spacetime = P._sphere()
+    action = _cosmological(spacetime, regge=0.7, constant=0.37)
+    geometry = cob.HolomorphicRelaxationDeclaration()
+    geometry.relax_lengths = True
+    geometry.relax_links = False
+    records = bp.term_records(cob.action_term_records(action, geometry))
+    by_name = {record["name"]: record for record in records}
+    term = by_name["cosmological"]
+    assert term["weight"] == -0.7 * 0.37
+    assert term["value"] == action.cosmological_term()
+    assert term["gradient_norm"] > 0.0
+    lines = bp.term_trace_lines({"term_trace": [records]}, "")
+    labelled = [line for line in lines
+                if "-(1/kappa) Lambda sum_T V_T = " in line]
+    assert len(labelled) == 1
+    assert lines.index(labelled[0]) == 2
+
+
 # ------------------------------------------------------------ the degrees
 
 
