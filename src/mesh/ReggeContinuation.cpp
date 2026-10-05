@@ -108,7 +108,7 @@ std::complex<double> ReggeContinuation::cosineOn(std::complex<double> Cij,
                                                  std::complex<double> rootII,
                                                  std::complex<double> rootJJ) {
   const std::complex<double> denominator = rootII * rootJJ;
-  if (std::abs(denominator) < 1e-300) return {0.0, 0.0};
+  if (denominator == std::complex<double>{0.0, 0.0}) return {0.0, 0.0};
   std::complex<double> r = -Cij / denominator;
   // Pinned to the +0 side for a real ratio, the side Simplex::dihedralAngle
   // takes: for |r| > 1 the sign of Im(theta) is decided by which side of the

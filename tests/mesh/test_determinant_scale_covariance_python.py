@@ -26,7 +26,7 @@ unit circle) at y = 0.4 (the complex metric) and at y = 0 (the real one of the
 #1417 probe).
 
 Measured on the module of
-``~/scratch/v18code-2026-10-05/determinant-without-absolute-cut/build-1``: the
+``~/scratch/v18code-2026-10-05/determinant-without-absolute-cut/build-2``: the
 largest relative departure over every read and every decade from s = 1e-30 to
 1e30 is 3.3e-15 (the content gradients of the boundary of the 4-simplex); the
 Regge term divided by s^(1/2) reads 73.304611 + 0.885506 i at y = 0.4 and
@@ -189,6 +189,30 @@ def test_a_gram_determinant_below_1e_300_is_read():
     worst = max(departures, key=departures.get)
     assert departures[worst] <= AGREEMENT, (
         f"{worst} departs by {departures[worst]:.3e}")
+
+
+def test_a_cofactor_root_product_below_1e_300_gives_the_angle():
+    """At s = 1e-153 the Cayley-Menger cofactors of the regular tetrahedron
+    are C_ij = 1e-306 and C_ii = C_jj = -3e-306, so the product of the roots
+    of C_ii and C_jj is 3e-306, below 1e-300, and all are normal doubles:
+    the cofactors divided by s^2 and the dihedral angle agree with their
+    values at s = 1. (Its Gram determinant, of order 1e-459, is below the
+    smallest double, so the content is not read here.)"""
+    scale = 1e-153
+    spacetime, cells = _tetrahedron(scale)
+    cell, hinge = cells[0]
+    ok, cij, cii, cjj = cell.dihedralCofactors(hinge)
+    assert ok
+    assert cii != 0 and cjj != 0
+    assert math.sqrt(abs(cii)) * math.sqrt(abs(cjj)) < 1e-300
+    reference = _reference("regular tetrahedron")
+    for name, value in (("C_ij", cij), ("C_ii", cii), ("C_jj", cjj)):
+        expected = reference[f"{name}[0]"]
+        assert abs(complex(value) / scale ** 2 - expected) <= (
+            AGREEMENT * abs(expected))
+    expected = reference["dihedral angle[0]"]
+    assert abs(complex(cell.dihedralAngle(hinge)) - expected) <= (
+        AGREEMENT * abs(expected))
 
 
 @pytest.mark.xfail(strict=True, reason=(
