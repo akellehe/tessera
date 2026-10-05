@@ -51,7 +51,7 @@ inline std::complex<double> principalSqrt(std::complex<double> z) {
 /// acos(i y) = pi/2 - i asinh(y) reproduces Sorkin's quarter turn with no
 /// special case.
 ///
-/// `ok` is false when the cofactors are unusable -- a degenerate denominator,
+/// `ok` is false when the cofactors are unusable -- a zero denominator,
 /// or a cofactor matrix of the wrong size -- and the caller skips the hinge.
 ///
 /// The value reads this in the canonical sorted-by-id frame and the derivatives
@@ -84,7 +84,7 @@ inline DihedralCosine dihedralCosine(
     // On the principal sheet the sign is +1 and this is the sheet-blind value.
     const std::complex<double> denom = static_cast<double>(sheet.rootSign) *
                                        principalSqrt(Cii) * principalSqrt(Cjj);
-    if (std::abs(denom) < 1e-300) return {};
+    if (denom == std::complex<double>{0.0, 0.0}) return {};
     std::complex<double> r = -Cij / denom;
     // acos is cut on (-inf,-1] and [1,inf), so for a real ratio with |r| > 1 --
     // the same-sign, boost wedge -- the sign of Im(theta) is decided by which
@@ -709,6 +709,11 @@ std::pair<SimplexPtr, Simplices> Simplex::cone(VertexPtr vertex) {
 // Geometry
 // =====================================================================
 
+// Gaussian elimination with partial pivoting. The matrices are Gram and Cayley-Menger
+// matrices whose entries carry the unit of the squared lengths, so no pivot is
+// compared with a fixed number: only a column whose every candidate is exactly zero
+// makes the determinant zero, and the determinant follows a dilation of the squared
+// lengths at every scale a double represents, to rounding.
 std::complex<double> Simplex::determinant(const std::vector<std::complex<double>> &M, int n) {
     if (n == 1) return M[0];
     if (n == 2) return M[0] * M[3] - M[1] * M[2];
@@ -721,7 +726,7 @@ std::complex<double> Simplex::determinant(const std::vector<std::complex<double>
             double val = std::abs(A[row * n + col]);
             if (val > maxVal) { maxVal = val; pivot = row; }
         }
-        if (maxVal < 1e-15) return 0.0;
+        if (maxVal == 0.0) return 0.0;
         if (pivot != col) {
             for (int j = 0; j < n; ++j)
                 std::swap(A[col * n + j], A[pivot * n + j]);
@@ -1094,7 +1099,7 @@ Simplex::deficitAngleGradient(const DihedralSheets &sheets) const {
         // by the Hessian below.
         const GeomCache &tc = tau->cmCache();
         const std::complex<double> detB = tc.cmDet;
-        if (std::abs(detB) < 1e-300) continue;
+        if (detB == std::complex<double>{0.0, 0.0}) continue;
         const std::vector<std::complex<double>> &C = tc.cmCof;
         const auto declared = sheets.find(tau->topTuple());
         const DihedralCosine dihedral = dihedralCosine(
@@ -1176,7 +1181,7 @@ Simplex::deficitAngleHessian(const DihedralSheets &sheets) const {
         // Same cached raw-order Cayley-Menger section as the gradient.
         const GeomCache &tc = tau->cmCache();
         const std::complex<double> detB = tc.cmDet;
-        if (std::abs(detB) < 1e-300) continue;
+        if (detB == std::complex<double>{0.0, 0.0}) continue;
         const std::vector<std::complex<double>> &C = tc.cmCof;
         const auto declared = sheets.find(tau->topTuple());
         const DihedralCosine dihedral = dihedralCosine(
@@ -1440,7 +1445,7 @@ std::complex<double> dCircumR2(const ::tessera::mesh::Simplex* s,
     const std::vector<std::complex<double>> &G = gc.gram;
     if (static_cast<int>(G.size()) != d * d) return {0.0, 0.0};
     const std::complex<double> detG = gc.gramDet;
-    if (std::abs(detG) < 1e-300) return {0.0, 0.0};
+    if (detG == std::complex<double>{0.0, 0.0}) return {0.0, 0.0};
     const std::vector<std::complex<double>> &cofG = gc.gramCof;
     std::vector<std::complex<double>> h(d), beta(d, std::complex<double>{0.0, 0.0});
     for (int i = 0; i < d; ++i) h[i] = 0.5 * G[i * d + i];
@@ -1483,7 +1488,7 @@ std::complex<double> d2CircumR2(const ::tessera::mesh::Simplex* s,
     const std::vector<std::complex<double>> &G = gc.gram;
     if (static_cast<int>(G.size()) != d * d) return {0.0, 0.0};
     const std::complex<double> detG = gc.gramDet;
-    if (std::abs(detG) < 1e-300) return {0.0, 0.0};
+    if (detG == std::complex<double>{0.0, 0.0}) return {0.0, 0.0};
     const std::vector<std::complex<double>> &cofG = gc.gramCof;
     std::vector<std::complex<double>> Ginv(static_cast<std::size_t>(d) * d);
     for (int i = 0; i < d; ++i)
@@ -1610,7 +1615,7 @@ Simplex::volumeGradient() const {
     const std::vector<std::complex<double>> &G = gc.gram;
     if (static_cast<int>(G.size()) != d * d) return grad;
     const std::complex<double> detG = gc.gramDet;
-    if (std::abs(detG) < 1e-300) return grad;
+    if (detG == std::complex<double>{0.0, 0.0}) return grad;
     const std::vector<std::complex<double>> &cofG = gc.gramCof;  // cof[r*d+c] = C_rc
     const std::complex<double> V = volume();
     const auto &sv = vertices;
@@ -1655,7 +1660,7 @@ Simplex::volumeGradientDirectionalDerivative(
     const std::vector<std::complex<double>> &G = gc.gram;
     if (static_cast<int>(G.size()) != d * d) return out;
     const std::complex<double> detG = gc.gramDet;
-    if (std::abs(detG) < 1e-300) return out;
+    if (detG == std::complex<double>{0.0, 0.0}) return out;
     const std::vector<std::complex<double>> &cofG = gc.gramCof;
     const std::complex<double> V = volume();
     const auto &sv = vertices;
@@ -1878,7 +1883,7 @@ struct CircumcentricHeight {
     const std::size_t mm = static_cast<std::size_t>(m);
     const std::size_t msz = static_cast<std::size_t>(ms);
     bool singular = gcf.gram.size() != mm * mm || gcf.gramCof.size() != mm * mm ||
-                    std::abs(detCf) < 1e-300;
+                    detCf == cd{0.0, 0.0};
     // A vertex (ms = 0) has the empty Gram matrix, of determinant one.
     cd detS{1.0, 0.0};
     std::vector<cd> ginvS;
@@ -1886,7 +1891,7 @@ struct CircumcentricHeight {
         const Simplex::GeomCache &gs = s->gramCofCache();
         detS = gs.gramDet;
         if (gs.gram.size() != msz * msz || gs.gramCof.size() != msz * msz ||
-            std::abs(detS) < 1e-300) {
+            detS == cd{0.0, 0.0}) {
             singular = true;
         } else if (withGradient) {
             ginvS.resize(msz * msz);
