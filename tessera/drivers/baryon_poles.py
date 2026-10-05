@@ -2913,15 +2913,17 @@ def relaxation_record(report, drive,
     moment-constrained action's Hessian on the range of the Hellmann-Feynman
     force with its sign (WP v17 line 265)."""
     objective = drive["objective"]
-    if objective.steps is None:
+    # an objective that names no step writer holds every proposal
+    written = getattr(objective, "steps", None)
+    if written is None:
         aggregates = ProposalAggregates()
         for update in objective.updates:
             aggregates.add(update)
         per_step = {"trace": [_proposal_record(update)
                               for update in objective.updates]}
     else:
-        aggregates = objective.steps.fold
-        per_step = {"steps": objective.steps.reference()}
+        aggregates = written.fold
+        per_step = {"steps": written.reference()}
     residual = float(drive["trace"][-1]) if len(drive["trace"]) else math.nan
     converged = solve_converged(residual, step_tolerance)
     return {
