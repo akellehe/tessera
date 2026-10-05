@@ -47,7 +47,9 @@ At level l (a complex K_l of three sheets of a base complex):
    primal Regge + the Villain holonomy term (the Villain weight summed to
    the declared order, ``--villain-order``, ten by default), with the
    cosmological term -(1/kappa) Lambda sum_T V_T when a cosmological
-   constant is declared (``--cosmological-constant``, none by default), in
+   constant is declared (``--cosmological-constant``, none by default; it
+   enters the actions of the ticks from ``--cosmological-constant-from-tick``
+   on, every tick by default, `tick_config`), in
    strict emergence (no carried density in the equations; WP §7). The
    spectral-moment part of S_0 is the
    holomorphic spectral constraint of WP v17 §3.4, which belongs to
@@ -248,6 +250,10 @@ DECLARED_PACHNER_CANDIDATE_MOVES = 0
 #: action (``--regge-hinges``): the interior hinges, or all of them.
 REGGE_HINGES = ("interior", "all")
 DECLARED_REGGE_HINGES = "interior"
+#: The first tick whose actions carry a declared cosmological constant: every
+#: tick. A later tick leaves the term out of the ticks before it, the declared
+#: host's among them.
+DECLARED_COSMOLOGICAL_CONSTANT_FROM_TICK = 0
 DECLARED_PACHNER_OBJECTIVE = "joint-action"
 #: The degrees the joint stationarity objective is declared over on the base:
 #: the register degree and the Hodge degrees, the emergence driver's
@@ -1563,9 +1569,30 @@ def tick(index, cells, z, links, config):
     return record, following
 
 
+def tick_config(config, index):
+    """The config the actions of tick ``index`` are declared from: ``config``
+    itself, or, before the tick a declared cosmological constant enters
+    (``cosmological_constant_from_tick``), a copy without the constant, so
+    that the tick's level relaxation, cell reads and growth step carry no
+    cosmological term."""
+    first = int(config.get("cosmological_constant_from_tick",
+                           DECLARED_COSMOLOGICAL_CONSTANT_FROM_TICK))
+    if index >= first or "cosmological_constant" not in config:
+        return config
+    out = dict(config)
+    del out["cosmological_constant"]
+    return out
+
+
 def _tick(record, index, cells, z, links, config):
     """The steps of `tick`, written into ``record`` as they are made; returns
-    the next level's base, or None."""
+    the next level's base, or None. A run that declares a cosmological
+    constant records under ``cosmological_constant`` the value the tick's
+    actions carry (`tick_config`)."""
+    if "cosmological_constant" in config:
+        config = tick_config(config, index)
+        record["cosmological_constant"] = bp.declared_cosmological_constant(
+            config)
     declared = index == 0
     certificate_tolerance = bp.declared_tolerance(config,
                                                   "certificate_tolerance")
@@ -1852,7 +1879,8 @@ def _tick(record, index, cells, z, links, config):
 
 def checked_run(ticks, tetrahedra, kappa, beta, resolutions, band_rank,
                 persistence_required, max_cells, pachner_updates,
-                pachner_depth, pachner_length, pachner_candidate_moves=0):
+                pachner_depth, pachner_length, pachner_candidate_moves=0,
+                cosmological_constant_from_tick=0):
     """The declarations of a run that have no meaning, each named: a count
     that is negative, a coupling that is zero or not finite (the action
     carries 1/kappa), an empty window of resolutions or a resolution that is
@@ -1869,6 +1897,8 @@ def checked_run(ticks, tetrahedra, kappa, beta, resolutions, band_rank,
     whole("the number of updates of the growth step", pachner_updates, 0)
     whole("the number of candidates the growth step draws",
           pachner_candidate_moves, 0)
+    whole("the first tick of the cosmological term",
+          cosmological_constant_from_tick, 0)
     if persistence_required is not None:
         whole("the number of resolutions a component persists across",
               persistence_required, 0)
@@ -1909,7 +1939,9 @@ def default_config(ticks=DECLARED_TICKS, tetrahedra=DECLARED_TETRAHEDRA,
                    limits=None,
                    villain_order=bp.DECLARED_VILLAIN_ORDER, solve=None,
                    regge_hinges=DECLARED_REGGE_HINGES,
-                   cosmological_constant=bp.DECLARED_COSMOLOGICAL_CONSTANT):
+                   cosmological_constant=bp.DECLARED_COSMOLOGICAL_CONSTANT,
+                   cosmological_constant_from_tick=(
+                       DECLARED_COSMOLOGICAL_CONSTANT_FROM_TICK)):
     """The declared configuration, recorded with every run. ``max_cells``
     limits how many tetrahedra per tick are read as hosts, for quick checks;
     it changes no number of the cells it keeps. ``persistence_required`` is
@@ -1930,12 +1962,16 @@ def default_config(ticks=DECLARED_TICKS, tetrahedra=DECLARED_TETRAHEDRA,
     (`baryon_poles.DECLARED_COSMOLOGICAL_CONSTANT`): a nonzero value is
     recorded and carried into every level's, every cell's and the growth
     step's action; zero leaves the term and the key out.
+    ``cosmological_constant_from_tick`` is the first tick whose actions carry
+    it (`tick_config`; every tick by default), recorded with a nonzero
+    constant.
 
     A declaration that has no meaning is named here, before a tick is
     computed (`checked_run`)."""
     checked_run(ticks, tetrahedra, kappa, beta, resolutions, band_rank,
                 persistence_required, max_cells, pachner_updates,
-                pachner_depth, pachner_length, pachner_candidate_moves)
+                pachner_depth, pachner_length, pachner_candidate_moves,
+                cosmological_constant_from_tick)
     config = bp.default_config(kappas=[kappa], betas=[beta],
                                regge_hinges=regge_hinges,
                                edge_squared=edge_squared,
@@ -1982,6 +2018,9 @@ def default_config(ticks=DECLARED_TICKS, tetrahedra=DECLARED_TETRAHEDRA,
         "pachner_length": int(pachner_length),
         "pachner_objective": checked_pachner_objective(pachner_objective),
         "pachner_candidate_moves": int(pachner_candidate_moves),
+        **({"cosmological_constant_from_tick":
+            int(cosmological_constant_from_tick)}
+           if "cosmological_constant" in config else {}),
         "pachner_stage": ("stage-1 updates of MultiCobordism on each grown "
                           "level's base (one sheet) under the declared "
                           "pachner_objective, the four Pachner kinds "
@@ -2628,6 +2667,14 @@ def build_parser():
                           "the outputs are identical")
     bp.add_action_arguments(run)
     bp.add_cosmological_constant_argument(run)
+    run.add_argument("--cosmological-constant-from-tick", type=int,
+                     default=DECLARED_COSMOLOGICAL_CONSTANT_FROM_TICK,
+                     help="the first tick whose actions (the level's "
+                          "relaxation, the cells' reads and the growth step) "
+                          "carry the declared cosmological constant; the "
+                          "ticks before it carry no cosmological term. 0, "
+                          "the default, is every tick; 1 leaves the declared "
+                          "host, which has no interior hinge, without it")
     bp.add_mean_field_arguments(run)
     bp.add_tolerance_arguments(run)
     bp.add_limit_arguments(run)
@@ -2659,7 +2706,8 @@ def main(argv=None):
         limits=bp.limits_from(args),
         solve=bp.solve_options_from(args),
         villain_order=args.villain_order,
-        cosmological_constant=args.cosmological_constant)
+        cosmological_constant=args.cosmological_constant,
+        cosmological_constant_from_tick=args.cosmological_constant_from_tick)
     # what the run's numbers depend on beside its declarations: the command
     # line, the commit, the thread count and the linear algebra library
     config["environment"] = bp.environment_record(argv)
