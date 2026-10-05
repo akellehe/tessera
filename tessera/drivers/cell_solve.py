@@ -1128,9 +1128,20 @@ class StationarityObjective(cob.CobordismObjective):
     step of order ``direction_order`` (one to `MAXIMUM_DIRECTION_ORDER`) in
     the base edges' coordinates. ``series(point, linearization, order)``
     returns the step of an order above one in the system's variables
-    (`series_step`)."""
+    (`series_step`).
 
-    def __init__(self, system, direction_order=1, series=series_step):
+    Every stage-2 update is a step proposal, recorded where its step was
+    formed. Without ``steps`` the records are held in ``updates``. With
+    ``steps``, an object whose ``write(update)`` takes each record when it is
+    made (`baryon_poles.SolveSteps`, which writes it to a run's step file),
+    ``updates`` holds none; either way the objective keeps the number of
+    proposals (``proposals``), the last record (``last_update``), the
+    residual norm at every distinct point a step was proposed from
+    (`proposed_trace`) and the counts `solve` reads (`cell_changes`,
+    `relaxed_points`), none of which grows with the size of a record."""
+
+    def __init__(self, system, direction_order=1, series=series_step,
+                 steps=None):
         super().__init__()
         direction_order = int(direction_order)
         if not 1 <= direction_order <= MAXIMUM_DIRECTION_ORDER:
@@ -1147,14 +1158,34 @@ class StationarityObjective(cob.CobordismObjective):
         self.scored = 0
         # stage 1 scores its candidates from several threads
         self._lock = threading.Lock()
-        #: One record per stage-2 update, taken where its step was formed.
+        #: Where every step proposal's record is written when it is made,
+        #: or None, when the records are held in `updates`.
+        self.steps = steps
+        #: One record per stage-2 update, taken where its step was formed;
+        #: empty when the records are written to `steps`.
         self.updates = []
+        #: The number of step proposals, and the record of the last one
+        #: (None before the first).
+        self.proposals = 0
+        self.last_update = None
         #: The vertex sets of the pinned regions of the node the objective
         #: is injected in (`hold`); none unless the node declares one.
         self.pinned_regions = []
-        # the cells and the fields of the complex at every step proposal,
-        # and of the last complex scored with its score
-        self._proposed = []
+        # the cells of the complex at the first and at the last step
+        # proposal, and how many times they changed from one proposal to the
+        # next
+        self._first_cells = None
+        self._last_cells = None
+        self._cell_changes = 0
+        # the cells and the fields of the complex at the last step proposal;
+        # the residual norm at every distinct point a step was proposed from,
+        # in order; and how many of those points follow one of the same
+        # cells
+        self._last_point = None
+        self._point_norms = []
+        self._relaxed_points = 0
+        # the cells and the fields of the last complex scored, with its
+        # score
         self._last_scored = None
         # the declared time of the drive in progress, read on the thread
         # that runs it (`begin`)
@@ -1227,16 +1258,6 @@ class StationarityObjective(cob.CobordismObjective):
         return (tuple(sorted(top_cells(spacetime))),
                 tuple(edge_fields(spacetime)))
 
-    def proposed_points(self, final):
-        """The distinct points of a drive in order, each by its cells and
-        its fields: the points its steps were proposed from, and ``final``,
-        the complex it was left on, when no step was proposed from it."""
-        points = []
-        for point in self._proposed + [self._fingerprint(final)]:
-            if not points or point != points[-1]:
-                points.append(point)
-        return points
-
     def proposed_trace(self, final=None):
         """The residual norm at every distinct point a step was proposed
         from, in order: the first point, then one entry per committed move
@@ -1246,17 +1267,62 @@ class StationarityObjective(cob.CobordismObjective):
         the last complex scored: an accepted trial is the last one its line
         search scores. It is the engine's trace of a drive, kept here
         because the engine returns its own only when the drive returns."""
-        trace = []
-        previous = None
-        for update, point in zip(self.updates, self._proposed):
-            if point != previous:
-                trace.append(float(update["residual_norm"]))
-            previous = point
+        trace = list(self._point_norms)
         if final is not None and self._last_scored is not None:
             ended = self._fingerprint(final)
-            if ended != previous and self._last_scored[0] == ended:
+            if ended != self._last_point and self._last_scored[0] == ended:
                 trace.append(float(self._last_scored[1]))
         return trace
+
+    def cell_changes(self, before, final):
+        """How many times the cells change along a drive: from ``before``
+        (the sorted top cells of the complex it began on), through the
+        complex of every step proposal in order, to the complex ``final`` it
+        was left on. A committed move changes the cells of the complex a
+        step is proposed on."""
+        after = sorted(top_cells(final))
+        if self._first_cells is None:
+            return int(before != after)
+        return (int(before != self._first_cells) + self._cell_changes
+                + int(self._last_cells != after))
+
+    def relaxed_points(self, final):
+        """How many of the distinct points of a drive, in order, follow a
+        point of the same cells: over the points its steps were proposed
+        from and ``final``, the complex it was left on, when no step was
+        proposed from it. Between two such points lies an accepted
+        relaxation update."""
+        count = self._relaxed_points
+        ended = self._fingerprint(final)
+        if (self._last_point is not None and ended != self._last_point
+                and ended[0] == self._last_point[0]):
+            count += 1
+        return count
+
+    def _propose(self, spacetime, update):
+        """Keep a step proposal made at ``spacetime`` with its record: the
+        counts of `cell_changes` and `relaxed_points`, the residual norm of
+        a point not met at the previous proposal, and the record itself, in
+        `updates` or written to `steps`."""
+        point = self._fingerprint(spacetime)
+        cells = list(point[0])
+        if self._first_cells is None:
+            self._first_cells = cells
+        elif cells != self._last_cells:
+            self._cell_changes += 1
+        self._last_cells = cells
+        if point != self._last_point:
+            self._point_norms.append(float(update["residual_norm"]))
+            if (self._last_point is not None
+                    and point[0] == self._last_point[0]):
+                self._relaxed_points += 1
+        self._last_point = point
+        if self.steps is None:
+            self.updates.append(update)
+        else:
+            self.steps.write(update)
+        self.last_update = update
+        self.proposals += 1
 
     def _check_time(self):
         if (self._deadline is not None
@@ -1359,8 +1425,7 @@ class StationarityObjective(cob.CobordismObjective):
                                                  + point.count][classes]
         out.baseline = float(newton.residual_norm)
         out.baseline_computed = True
-        self._proposed.append(self._fingerprint(spacetime))
-        self.updates.append({
+        self._propose(spacetime, {
             "residual_norm": float(newton.residual_norm),
             "step_norm": float(np.linalg.norm(step)),
             "jacobian_rank": int(newton.jacobian_rank),
@@ -1376,7 +1441,6 @@ class StationarityObjective(cob.CobordismObjective):
             "linear_residual": float(newton.linear_residual),
             "held_coordinates": list(held),
             "complex": complex_counts(spacetime),
-            "cells": sorted(top_cells(spacetime)),
             "scored_before": self.scored,
             "undefined_before": len(self.undefined),
             "measured": measured,
@@ -1475,7 +1539,7 @@ def solve(spacetime, system, tolerance=1e-15, move_tolerance=1e-15,
           combinatorial_depth=DECLARED_COMBINATORIAL_DEPTH,
           combinatorial_length=DECLARED_COMBINATORIAL_LENGTH,
           candidate_moves=0, iteration_limit=None, update_limit=None,
-          time_limit_seconds=None, configure=None):
+          time_limit_seconds=None, configure=None, steps=None):
     """Drive the base complex ``spacetime`` to a stationary point of
     ``system`` with `MultiCobordism`, whose mechanics are used as they are.
 
@@ -1509,6 +1573,11 @@ def solve(spacetime, system, tolerance=1e-15, move_tolerance=1e-15,
     ``spacetime`` holds when the drive begins (``system.begin``,
     `ReggeStart`).
 
+    The record of every step proposal is held by the objective
+    (`StationarityObjective.updates`), or, with ``steps``, handed to
+    ``steps.write`` when it is made and not held
+    (`StationarityObjective`).
+
     Returns the drive's record: the base complex it ended on (``spacetime``;
     a committed move replaces the object), the node and the objective, the
     trace of the residual norm (the engine's; for a drive an error or a
@@ -1528,7 +1597,7 @@ def solve(spacetime, system, tolerance=1e-15, move_tolerance=1e-15,
     begin = getattr(system, "begin", None)
     if begin is not None:
         begin(spacetime)
-    objective = StationarityObjective(system, direction_order, series)
+    objective = StationarityObjective(system, direction_order, series, steps)
     node = cell_node(spacetime, objective)
     node.move_tolerance = move_tolerance
     if configure is not None:
@@ -1563,49 +1632,42 @@ def solve(spacetime, system, tolerance=1e-15, move_tolerance=1e-15,
     seconds = time.time() - started
     final = node.spacetime()
     names = getattr(system, "vertex_names", None)
-    updates = objective.updates
-    last = updates[-1] if updates else None
+    last = objective.last_update
+    proposals = objective.proposals
     if limit is not None or refusal is not None:
         # the engine returns its trace when the drive returns; a drive an
         # error ended keeps the residual norms of the points its steps were
         # proposed from and of the last accepted point, where the base is
         # left
         trace = objective.proposed_trace(final)
-        points = objective.proposed_points(final)
     # a committed move changes the cells of the complex a step is proposed
     # on; every other entry of the engine's trace after the first is an
     # accepted relaxation update
-    seen = [cells_before] + [update["cells"] for update in updates]
-    seen.append(sorted(top_cells(final)))
-    committed = sum(1 for first, second in zip(seen, seen[1:])
-                    if first != second)
+    committed = objective.cell_changes(cells_before, final)
     accepted = max(len(trace) - 1 - committed, 0)
     if limit is not None or refusal is not None:
         # between two points of one complex lies an accepted relaxation
         # update
-        accepted = sum(1 for first, second in zip(points, points[1:])
-                       if first[0] == second[0])
-    for update in updates:
-        del update["cells"]
+        accepted = objective.relaxed_points(final)
     norm = (trace[-1] if len(trace)
             else last["residual_norm"] if last else float("nan"))
     stationary = bool(node.last_stage2_stationary)
     moved = moves and int(node.last_stage1_lookahead) > 0
     if refusal is not None:
         stop = STOP_NO_STEP
-        detail = "%s, after %d step proposals: %s" % (stop, len(updates),
-                                                      refusal)
+        detail = "%s, after %d step proposals: %s" % (stop, proposals,
+                                                       refusal)
     elif limit is not None:
         stop = STOP_DECLARED_LIMIT
         detail = ("%s was reached after %d step proposals; the residual norm "
-                  "at the last of them is %.3g" % (limit, len(updates), norm))
+                  "at the last of them is %.3g" % (limit, proposals, norm))
     elif stationary and not moved:
         stop = STOP_STATIONARY
         scored = objective.scored - (last["scored_before"] if last else 0)
         without = objective.undefined[
             (last["undefined_before"] if last else 0):]
         detail = ("%s after %d step proposals; the residual norm is %.3g"
-                  % (stop, len(updates), norm))
+                  % (stop, proposals, norm))
         if scored:
             detail += ("; since the last proposal %d complexes were scored, "
                        "%d of them without a residual" % (scored,
@@ -1623,7 +1685,7 @@ def solve(spacetime, system, tolerance=1e-15, move_tolerance=1e-15,
         detail = ("a declared count ended the drive (iteration limit %s, "
                   "update limit %s) after %d step proposals; the residual "
                   "norm is %.3g" % (iteration_limit, update_limit,
-                                    len(updates), norm))
+                                    proposals, norm))
     return {
         "spacetime": final,
         "node": node,

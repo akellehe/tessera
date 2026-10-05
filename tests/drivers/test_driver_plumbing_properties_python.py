@@ -798,11 +798,22 @@ def test_the_record_of_a_tick_names_what_the_command_line_declared(one_tick):
     relaxation = document["ticks"][0]["relaxation"]
     assert relaxation["pachner_moves"] is False
     assert relaxation["moves_committed"] == 0 and not relaxation["changed"]
-    # --trace-terms: every point a step was proposed from carries the terms
-    assert len(relaxation["term_trace"]) == len(relaxation["jacobian_ranks"])
-    assert len(relaxation["term_trace"]) >= 1
-    names = [term["name"] for term in relaxation["term_trace"][0]]
+    # --trace-terms: every point a step was proposed from carries the terms,
+    # one line per step proposal in the step file beside the JSON file,
+    # which the config names and the level's record refers to
+    assert config["steps_file"] == str(directory / "run.steps.jsonl")
+    steps = relaxation["steps"]
+    assert "term_trace" not in relaxation
+    assert "jacobian_ranks" not in relaxation
+    assert steps["file"] == config["steps_file"] and steps["solve"] == 0
+    lines = [json.loads(line) for line in
+             (directory / "run.steps.jsonl").read_text().splitlines()]
+    assert steps["count"] == steps["term_lines"] == len(lines) >= 1
+    assert [(line["tick"], line["level"], line["step"]) for line in lines] \
+        == [(0, 0, step) for step in range(len(lines))]
+    names = [term["name"] for term in lines[0]["terms"]]
     assert names[-1] == "action" and "regge" in names and "holonomy" in names
+    assert len(bp.term_trace(relaxation)) == len(lines)
     growth = document["ticks"][0]["pachner"]
     assert growth["updates"] == config["pachner_updates"] == 1
     assert growth["depth"] == config["pachner_depth"] == 1

@@ -349,9 +349,11 @@ def test_main_live_refuses_a_file_backend_by_name(cheap, monkeypatch):
 def test_main_live_runs_the_live_drive(cheap, monkeypatch, tmp_path):
     calls = []
 
-    def live(config, progress=False, points_file=None, keep_open=False):
-        calls.append((progress, points_file, keep_open))
-        return bp.drive(config, progress=progress, points_file=points_file)
+    def live(config, progress=False, points_file=None, keep_open=False,
+             steps_file=None):
+        calls.append((progress, points_file, keep_open, steps_file))
+        return bp.drive(config, progress=progress, points_file=points_file,
+                        steps_file=steps_file)
 
     monkeypatch.setattr(bp, "drive_live", live)
     path = tmp_path / "live.json"
@@ -360,7 +362,8 @@ def test_main_live_runs_the_live_drive(cheap, monkeypatch, tmp_path):
                         lambda message: held.append(path.exists()))
     bp.main(["run", "--kappa", "1", "--beta", "1", "--live", "--quiet",
              "--json", str(path)])
-    assert calls == [(False, str(tmp_path / "live.points.jsonl"), True)]
+    assert calls == [(False, str(tmp_path / "live.points.jsonl"), True,
+                      str(tmp_path / "live.steps.jsonl"))]
     assert path.exists()
     assert held == [True]
 

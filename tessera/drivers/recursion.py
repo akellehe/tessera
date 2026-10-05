@@ -185,7 +185,12 @@ matplotlib backend, with the computation on a worker thread and the main
 thread servicing the GUI event loop. Closing the window switches the run to
 headless; it continues and still writes every output. With ``--json`` every
 tick's record is appended to ``<json stem>.points.jsonl`` the moment the tick
-completes. A non-interactive backend, and WebAgg, are refused by name.
+completes, and every step proposal of every solve (a level's relaxation, a
+host cell's contents) to ``<json stem>.steps.jsonl`` the moment it is made
+(`baryon_poles.StepSink`); the records then refer to their lines there
+(``steps``) in place of holding one entry per proposal, so the run's memory
+does not grow with the number of proposals. A non-interactive backend, and
+WebAgg, are refused by name.
 """
 
 import argparse
@@ -193,6 +198,7 @@ import cmath
 import itertools
 import json
 import math
+import os
 import sys
 import time
 
@@ -657,7 +663,14 @@ def relax_level(spacetime, config, sectors=None, count=None):
     the action's alone. ``accepted_updates`` is the number of
     relaxation updates the drive accepted; the engine's iterations, which
     ``--iteration-limit`` counts, are each one update of the Pachner moves
-    and a relaxation of several such updates."""
+    and a relaxation of several such updates.
+
+    The record holds, per step proposal, the joint Jacobian's rank and rank
+    gap (``jacobian_ranks``, ``rank_gaps``) and, with ``--trace-terms``,
+    every term of the action (``term_trace``), as `level_step_record` reads
+    them. Under a step sink (`baryon_poles.step_sink`) the drive writes
+    them there, one line per proposal, and the record refers to the lines
+    (``steps``) in their place."""
     shared = count is not None
     sheets = SHEETS if shared else 1
     base = sheet_base(spacetime, count) if shared else spacetime
@@ -668,7 +681,11 @@ def relax_level(spacetime, config, sectors=None, count=None):
     regge_hinge_count = int(start.relaxation.action.regge_hinge_count())
     regge_structurally_zero = bool(
         start.relaxation.action.regge_structurally_zero())
-    drive = cell_solve.solve(base, system, **bp.solve_arguments(held))
+    sink = bp.step_sink()
+    drive = cell_solve.solve(
+        base, system,
+        steps=None if sink is None else sink.begin(level_step_record),
+        **bp.solve_arguments(held))
     final = drive["spacetime"]
     end = system.point(final)
     # the norm the drive minimised: with a declared stiffness, its gradient
@@ -681,7 +698,21 @@ def relax_level(spacetime, config, sectors=None, count=None):
     action = end.relaxation.action
     reported = action.reported_value()
     cosmological = bp.declared_cosmological_constant(config)
-    updates = drive["objective"].updates
+    written = drive["objective"].steps
+    if written is None:
+        entries = [level_step_record(update)
+                   for update in drive["objective"].updates]
+        per_step = {
+            "jacobian_ranks": [entry["jacobian_rank"] for entry in entries],
+            "rank_gaps": [entry["rank_gap"] for entry in entries],
+            # every term of the action at every point a step was proposed
+            # from (--trace-terms); empty otherwise
+            "term_trace": [entry["terms"] for entry in entries
+                           if "terms" in entry],
+        }
+    else:
+        # the same, one line per step proposal in the run's step file
+        per_step = {"steps": written.reference()}
     converged = bp.solve_converged(
         residual, bp.declared_tolerance(held, "step_tolerance"))
     moved_base = None
@@ -738,12 +769,7 @@ def relax_level(spacetime, config, sectors=None, count=None):
         "shared_sheet_geometry": shared,
         "rank_tolerance": float(bp.declared_tolerance(held,
                                                       "rank_tolerance")),
-        "jacobian_ranks": [int(u["jacobian_rank"]) for u in updates],
-        "rank_gaps": [float(u["rank_gap"]) for u in updates],
-        # every term of the action at every point a step was proposed from
-        # (--trace-terms); empty otherwise
-        "term_trace": [bp.term_records(u["measured"]) for u in updates
-                       if u.get("measured")],
+        **per_step,
         "regge_hinges": config["regge_hinges"],
         "regge_hinge_count": regge_hinge_count,
         "regge_structurally_zero": regge_structurally_zero,
@@ -762,6 +788,18 @@ def relax_level(spacetime, config, sectors=None, count=None):
             "regge_term": complex(action.regge_term())}
            if cosmological != 0.0 else {}),
     }
+
+
+def level_step_record(update):
+    """One step proposal of a level's relaxation as the level's record
+    holds it (`relax_level`): the joint Jacobian's rank and rank gap where
+    the step was formed and, when the proposal measured the action's terms
+    (``--trace-terms``), every term there (`baryon_poles.term_records`)."""
+    entry = {"jacobian_rank": int(update["jacobian_rank"]),
+             "rank_gap": float(update["rank_gap"])}
+    if update.get("measured"):
+        entry["terms"] = bp.term_records(update["measured"])
+    return entry
 
 
 # ------------------------------------------------------- the box on the base
@@ -1186,7 +1224,9 @@ def cell_reads(cells, z, links, config):
     other cells are read. A tetrahedron of the declared
     level-0 host is a declared host of its own, so its four faces are its
     bounding cut and are held. A tetrahedron of a grown level is not
-    declared, so nothing on it is held (``hold_cell_sectors``)."""
+    declared, so nothing on it is held (``hold_cell_sectors``). Under a step
+    sink, the solves of a cell's contents are named by its ``cell`` there
+    (`baryon_poles.steps_at`)."""
     fixture = obs.MonopoleSupport.tetrahedron(1)
     chosen = cells if config["max_cells"] is None else \
         cells[:config["max_cells"]]
@@ -1222,8 +1262,9 @@ def cell_reads(cells, z, links, config):
             cell_config["held_sectors"] = (
                 held_sectors([[0, 1, 2, 3]], [number], 4)
                 if config.get("hold_cell_sectors", True) else [])
-            point = bp.scan_point(config["kappa"], config["beta"],
-                                  cell_config)
+            with bp.steps_at(cell=c):
+                point = bp.scan_point(config["kappa"], config["beta"],
+                                      cell_config)
         except bp.NO_VALUE_ERRORS as error:
             out.append({"cell": c, "host_cell": host_cell,
                         "failed": str(error), "failed_contents": [],
@@ -1623,10 +1664,11 @@ def _tick(record, index, cells, z, links, config):
     # `bulk_monopole_numbers_after` is read on (`cells`)
     level["bulk_monopole_numbers_before"] = bulk_before
     try:
-        relaxation = relax_level(
-            spacetime, config,
-            cut_sectors(cut, cut_before, count) if declared else [],
-            count=count)
+        with bp.steps_at(level=index):
+            relaxation = relax_level(
+                spacetime, config,
+                cut_sectors(cut, cut_before, count) if declared else [],
+                count=count)
     except bp.NO_VALUE_ERRORS as error:
         # the library names no stationary point to read (for example a face
         # holonomy outside the domain of the holonomy term), so the
@@ -2039,14 +2081,29 @@ def points_path(json_path):
 
 
 def drive(config, progress=False, on_frame=None, stop_requested=None,
-          points_file=None):
+          points_file=None, steps_file=None):
     """Every tick. `on_frame(frames, index)` is called after each tick with
     the completed ticks; with `points_file` the configuration and the host are
     its first line and every tick is appended the moment it completes. A tick
     that ends on an error which is not one of
     `baryon_poles.NO_VALUE_ERRORS` is a defect of the code: what the tick
     reached (the ``tick_record`` the error carries) is appended to the
-    points file, and the error is raised."""
+    points file, and the error is raised. With `steps_file`, every step
+    proposal of every solve of the run (the level's relaxation and every
+    host cell's contents) is written there as it is made
+    (`baryon_poles.StepSink`; its solves named by the ``tick``, then the
+    ``level`` or the ``cell`` and the ``content``), the configuration
+    records the file under ``steps_file``, and the records of the level and
+    of the contents refer to their lines (``steps``) in place of holding
+    them."""
+    if steps_file is not None:
+        config = dict(config, steps_file=os.fspath(steps_file))
+    with bp.declared_steps(steps_file):
+        return _ticks(config, progress, on_frame, stop_requested, points_file)
+
+
+def _ticks(config, progress, on_frame, stop_requested, points_file):
+    """The body of `drive`."""
     cells, z, links, connection = level_zero(config)
     host = {
         "cells": cells,
@@ -2070,7 +2127,8 @@ def drive(config, progress=False, on_frame=None, stop_requested=None,
             stopped = True
             break
         try:
-            record, state = tick(index, *state, config)
+            with bp.steps_at(tick=index):
+                record, state = tick(index, *state, config)
         except Exception as error:
             reached = getattr(error, "tick_record", None)
             if reached is not None and points_file is not None:
@@ -2284,7 +2342,8 @@ def draw_frame(figure, frames, index):
     figure.tight_layout()
 
 
-def drive_live(config, progress=False, points_file=None, keep_open=False):
+def drive_live(config, progress=False, points_file=None, keep_open=False,
+               steps_file=None):
     """The same `drive` on a worker thread, drawing each completed tick on the
     main thread; the window is shown once, never raised, and pumped with
     `canvas.start_event_loop`. While a tick is being computed the window says
@@ -2348,7 +2407,8 @@ def drive_live(config, progress=False, points_file=None, keep_open=False):
             outcome["result"] = drive(config, progress=progress,
                                       on_frame=publish,
                                       stop_requested=stop.is_set,
-                                      points_file=points_file)
+                                      points_file=points_file,
+                                      steps_file=steps_file)
         except BaseException as exc:
             outcome["error"] = exc
         finally:
@@ -2659,7 +2719,10 @@ def build_parser():
     run.add_argument("--json", default=None,
                      help="write every record here at the end; each tick is "
                           "also appended, as it completes, to "
-                          "<json stem>.points.jsonl")
+                          "<json stem>.points.jsonl, and every step proposal "
+                          "of every solve, as it is made, to "
+                          "<json stem>.steps.jsonl, which the records refer "
+                          "to")
     run.add_argument("--out", default=None,
                      help="write the final frame as a PNG here")
     run.add_argument("--live", action="store_true",
@@ -2712,11 +2775,13 @@ def main(argv=None):
     # line, the commit, the thread count and the linear algebra library
     config["environment"] = bp.environment_record(argv)
     points_file = points_path(args.json) if args.json else None
+    steps_file = bp.steps_path(args.json) if args.json else None
     result = (drive_live(config, progress=not args.quiet,
-                         points_file=points_file, keep_open=True)
+                         points_file=points_file, keep_open=True,
+                         steps_file=steps_file)
               if args.live
               else drive(config, progress=not args.quiet,
-                         points_file=points_file))
+                         points_file=points_file, steps_file=steps_file))
     if args.json:
         with open(args.json, "w") as handle:
             json.dump(_jsonable(result), handle, indent=1, allow_nan=False)
