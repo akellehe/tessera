@@ -433,7 +433,9 @@ class HolomorphicLinearization {
 /// The Jacobian of the stationarity system is assembled analytically
 /// (`jacobian`). Its geometric blocks are the Hessian of the action at fixed
 /// carried state, `JointAction::actionHessian`: the Regge Hessian on the
-/// declared sheets, the Villain Hessian in the Maurer-Cartan increments, and
+/// declared sheets, with the cosmological term's Hessian when a cosmological
+/// constant is declared, the Villain Hessian in the Maurer-Cartan increments,
+/// and
 /// the contraction of the covariant operator's second derivatives against
 /// \f$ w_M\Gamma+\sum_j\xi_jX_j \f$ together with the variation of the
 /// power sums' matrices \f$ X_j \f$ through the operator. The multiplier

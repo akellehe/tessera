@@ -34,7 +34,8 @@ tetrahedron with the Villain term; the boundary of the 4-simplex with the
 Regge term on its continued sheets, fourteen dihedral angles off their
 principal sheet; the sphere with a complex metric, a complex flux and the
 matter term at a fixed covariance; the recorded host of the recursion run
-with the driver's mean-field declaration), with three more built here: the
+with the driver's mean-field declaration), with four more built here: the
+Regge fixture with a cosmological constant, the
 sphere carrying the three terms at once, the declared three-sheeted host of
 `baryon_poles.build_host()` with and without its edge classes, and a host
 with complex squared lengths and links off the unit circle.
@@ -114,6 +115,21 @@ def _villain():
 
 def _regge():
     spacetime, action = J._continued_sheet_fixture()
+    declaration = J._relaxation(relax_lengths=True)
+    return Case(spacetime, cob.HolomorphicRelaxation(action, declaration),
+                declaration, length_scale=0.3)
+
+
+def _cosmological():
+    """The Regge fixture with a cosmological constant declared: the
+    cosmological term's volumes on the sheets of the Regge term beside it
+    (#1417). Measured: the orders zero and one within 8.9e-16 and 3.1e-16
+    of the library's residual and Jacobian, the coefficients to order ten
+    within 7.8e-16 of the Cauchy oracle, each of its scale."""
+    spacetime, action = J._continued_sheet_fixture()
+    declared = cob.JointActionDeclaration(action.declaration)
+    declared.cosmological_constant = 0.8
+    action = cob.JointAction(spacetime, declared)
     declaration = J._relaxation(relax_lengths=True)
     return Case(spacetime, cob.HolomorphicRelaxation(action, declaration),
                 declaration, length_scale=0.3)
@@ -222,6 +238,7 @@ def _host(kind, content, fiber_moments, fiber_pinning, classes):
 CASES = {
     "villain": _villain,
     "regge": _regge,
+    "cosmological": _cosmological,
     "matter": _matter,
     "three-terms": _three_terms,
     "pinned-power-sums": lambda: _pinned("power-sums"),
@@ -339,7 +356,7 @@ def test_the_variables_are_the_systems(case):
 def test_the_order_zero_coefficient_is_the_residual(case):
     """Every coefficient of order zero of the series residual at the zero
     displacement equals the system's residual to rounding. Measured: at most
-    1.6e-13 of the residual's scale over the fifteen cases."""
+    1.6e-13 of the residual's scale over the sixteen cases."""
     residual = np.asarray(case.system.residual(), dtype=complex)
     series = _coefficients(case.series.residual(
         [nm.TruncatedSeries([0.0, 0.0])] * case.size))

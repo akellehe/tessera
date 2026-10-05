@@ -108,20 +108,23 @@ struct SpectralMomentConstraint {
 /// per edge of the complex each. Summed over the terms these are
 /// `JointAction::lengthStationarity` and `JointAction::linkStationarity`.
 struct ActionTermGradient {
-  /// `"regge"`, `"holonomy"`, `"matter"`, or
+  /// `"regge"`, `"cosmological"` (listed only when a cosmological constant
+  /// is declared), `"holonomy"`, `"matter"`, or
   /// `"constraint j"` with \f$ j \f$ counted from one in declaration order.
   std::string name;
   /// The term as it stands in the action: `"(1/kappa) S_Regge"`,
+  /// `"-(1/kappa) Lambda sum_T V_T"`,
   /// `"beta S_hol"`, `"w_m tr(Gamma h_1)"`, or
   /// `"xi_j (c_j - c_j*)"` followed by what \f$ c_j \f$ is, the band
   /// eigenvalue \f$ \lambda_b/s \f$ or the power sum \f$ p_j(h_C/s) \f$.
   std::string label;
   /// The coefficient in front of the term: \f$ w_R=1/\kappa \f$,
-  /// \f$ w_S \f$, \f$ \beta \f$, \f$ w_m \f$, or the multiplier
-  /// \f$ \xi_j \f$.
+  /// \f$ -w_R\Lambda \f$, \f$ w_S \f$, \f$ \beta \f$, \f$ w_m \f$, or the
+  /// multiplier \f$ \xi_j \f$.
   std::complex<double> weight{0.0, 0.0};
   /// What the weight multiplies: \f$ S_{\rm Regge} \f$,
-  /// \f$ \operatorname{tr}(\Gamma h) \f$, or the constraint's residual
+  /// \f$ \sum_TV_T \f$, \f$ \operatorname{tr}(\Gamma h) \f$, or the
+  /// constraint's residual
   /// \f$ c_j-c_j^{\star} \f$ in the declared unit, so that
   /// `value == weight * bare` when `factored`. For the holonomy term, whose
   /// weight enters its form (the Villain weight is \f$ \beta \f$ over the
@@ -130,6 +133,7 @@ struct ActionTermGradient {
   std::complex<double> bare{0.0, 0.0};
   bool factored = true;
   /// The term's value: \f$ w_R S_{\rm Regge} \f$,
+  /// \f$ -w_R\Lambda\sum_TV_T \f$,
   /// \f$ S_{\rm hol} \f$ (quiet NaN where it refuses to evaluate),
   /// \f$ w_m\operatorname{tr}(\Gamma h) \f$, or
   /// \f$ \xi_j\,(c_j-c_j^{\star}) \f$.
@@ -760,6 +764,25 @@ struct JointActionDeclaration {
   /// starts from. Ignored under `ReggeBranch::Principal`.
   std::vector<std::complex<double>> reggeStartSquaredLengths;
 
+  /// \f$ \Lambda \f$, the cosmological constant. The Einstein-Hilbert action
+  /// with a cosmological constant, discretized with the Regge term,
+  /// \f[
+  ///   \int\sqrt g\,(R-2\Lambda)\;\to\;
+  ///   2\Bigl(\sum_h|h|\,\varepsilon_h-\Lambda\sum_TV_T\Bigr),
+  /// \f]
+  /// gives the action the term \f$ -w_R\Lambda\sum_TV_T \f$, with \f$ w_R \f$
+  /// the declared `gravitationalWeight` and \f$ V_T \f$ the volume of each
+  /// top simplex \f$ T \f$ of the complex (`JointAction::cosmologicalTerm`).
+  /// On a \f$ d \f$-dimensional complex the primal Regge sum is homogeneous
+  /// of degree \f$ d-2 \f$ in the lengths and the volume of degree \f$ d \f$,
+  /// so along a dilation the action is stationary where
+  /// \f$ (d-2)\,S_{\rm Regge}=d\,\Lambda\sum_TV_T \f$ (in three dimensions
+  /// \f$ S_{\rm Regge}=3\Lambda\sum_TV_T \f$) when the two sides have the
+  /// same sign: the term gives a level's stationarity a length scale. Any
+  /// finite value of either sign; zero, the default, leaves the term out,
+  /// and then no quantity of the action is formed with it.
+  double cosmologicalConstant = 0.0;
+
   /// \f$ \beta \f$, the heat-kernel coupling of the face-holonomy term
   /// \f$ S_{\rm hol}(U) \f$, whose coefficient is then
   /// \f$ \beta_V=\beta/\langle m^2\rangle_\beta \f$ (`VillainCharacter`); the
@@ -862,11 +885,13 @@ struct JointActionDeclaration {
 /// easy magnetization plane. II", Journal de Physique 36, 581 (1975), for the
 /// heat-kernel form.
 ///
-/// The action is the sum of five terms,
+/// The action is the sum of five terms, and of a sixth when a cosmological
+/// constant \f$ \Lambda \f$ is declared,
 /// \f[
 ///   S(z,U,\Gamma) = w_R\,S_{\rm Regge}(z) + w_S\,S_{\rm stiff}(z)
 ///                 + w_H\,S_{\rm hol}(U)
-///                 + w_M\,S_{\rm matter}(z,U,\Gamma) + S_{\rm spec}(z,U;\xi),
+///                 + w_M\,S_{\rm matter}(z,U,\Gamma) + S_{\rm spec}(z,U;\xi)
+///                 - w_R\Lambda\sum_TV_T(z),
 /// \f]
 /// in the two edge fields of the microscopic state — the complex squared length
 /// \f$ z_e=\ell_e^2 \f$ and the multiplicative connection
@@ -909,6 +934,10 @@ struct JointActionDeclaration {
 /// * \f$ S_{\rm spec}(z,U;\xi)=\sum_j \xi_j\,(p_j(h)-p_j^{\star}) \f$ carries the
 ///   declared `SpectralMomentConstraint`s, with
 ///   \f$ p_j(h)=\operatorname{tr}(h^j) \f$.
+/// * \f$ -w_R\Lambda\sum_TV_T(z) \f$ is the cosmological term
+///   (`JointActionDeclaration::cosmologicalConstant`), the volume of each top
+///   simplex from its Cayley-Menger determinant on the sheet the Regge term
+///   is read on (`cosmologicalTerm`). It is absent when \f$ \Lambda=0 \f$.
 ///
 /// The carrier operator \f$ h=h_k(z,U) \f$ is `HodgeLaplacian::laplacian` at the
 /// declared degree under the declared metric source. It is generally
@@ -962,8 +991,9 @@ class JointAction {
   /// @throws std::invalid_argument when \p spacetime is null, when the carrier
   ///   degree is negative, when a declared moment order is below one, when
   ///   the covariance is present and is not a square matrix over the
-  ///   \f$ k \f$-cells of the complex, or when the holonomy term is declared
-  ///   with a negative weight or a tolerance outside \f$ (0,1) \f$.
+  ///   \f$ k \f$-cells of the complex, when the holonomy term is declared
+  ///   with a negative weight or a tolerance outside \f$ (0,1) \f$, or when
+  ///   the cosmological constant is not a finite number.
   JointAction(std::shared_ptr<Spacetime> spacetime,
               JointActionDeclaration declaration);
 
@@ -1045,6 +1075,58 @@ class JointAction {
 
   /// \f$ w_R\,S_{\rm Regge}(z) \f$ in the declared form and hinge set.
   [[nodiscard]] std::complex<double> reggeTerm() const;
+
+  /// The volume \f$ V_T \f$ of every top simplex of the complex, in the
+  /// canonical `ChainComplex::kSimplexVertices` order of the top degree.
+  ///
+  /// With \f$ d \f$ the dimension of the simplex and \f$ B \f$ its
+  /// Cayley-Menger matrix (the bordered matrix of its squared lengths), the
+  /// square of the volume is the polynomial
+  /// \f[
+  ///   Q_T(z)=\frac{(-1)^{d+1}}{2^d\,(d!)^2}\det B
+  /// \f]
+  /// in the squared lengths, and \f$ V_T \f$ is a root of \f$ Q_T \f$. The
+  /// root is read on the sheet the declared `ReggeBranch` names: under
+  /// `ReggeBranch::Continued` it is declared principal at the real
+  /// projection \f$ \operatorname{Re}z^{(0)} \f$ of the starting geometry
+  /// and continued along the straight segment to \f$ z^{(0)} \f$ and on to
+  /// the geometry the mesh holds (`SheetedSqrt`), as the hinge contents of
+  /// the Regge term are; under `ReggeBranch::Principal` it is the principal
+  /// root. The sheet is declared for either `ReggeForm`.
+  /// @throws std::domain_error when the continued root cannot be followed
+  ///   along the segment at any step the parameter resolves.
+  [[nodiscard]] std::vector<std::complex<double>> topCellVolumes() const;
+
+  /// \f$ \sum_TV_T \f$, the sum of `topCellVolumes`.
+  [[nodiscard]] std::complex<double> volumeSum() const;
+
+  /// The cosmological term \f$ -w_R\Lambda\sum_TV_T \f$, with \f$ w_R \f$
+  /// the declared `gravitationalWeight` and \f$ \Lambda \f$ the declared
+  /// `cosmologicalConstant`. Zero, and not formed, when either is zero.
+  [[nodiscard]] std::complex<double> cosmologicalTerm() const;
+
+  /// The Hessian of `cosmologicalTerm` in the squared lengths, flat
+  /// row-major \f$ |E|\times|E| \f$ in `getEdgeList()` order. With
+  /// \f$ Q_T \f$ the polynomial of `topCellVolumes` and \f$ V_T \f$ its
+  /// root on the declared sheet,
+  /// \f[
+  ///   \frac{\partial V_T}{\partial z_e}=\frac{\partial_eQ_T}{2V_T},\qquad
+  ///   \frac{\partial^2V_T}{\partial z_e\partial z_f}
+  ///   =\frac{\partial_e\partial_fQ_T}{2V_T}
+  ///    -\frac{\partial_eQ_T\,\partial_fQ_T}{4V_T^3},
+  /// \f]
+  /// where the derivatives of \f$ Q_T \f$ are polynomials: a squared length
+  /// stands in two symmetric entries of \f$ B \f$, so
+  /// \f$ \partial_e\det B \f$ is twice the cofactor of either entry, and
+  /// \f$ \partial_e\partial_f\det B \f$ is, by the multilinearity of the
+  /// determinant in the columns, the sum over the ordered pairs of distinct
+  /// columns \f$ c\ne c' \f$ of the determinant of \f$ B \f$ with column
+  /// \f$ c \f$ replaced by that of \f$ \partial_eB \f$ and column \f$ c' \f$
+  /// by that of \f$ \partial_fB \f$. Zero, and not formed, when the term is
+  /// absent. Symmetric.
+  /// @throws std::domain_error when a top simplex has \f$ Q_T=0 \f$, the
+  ///   branch point of its root, where the derivatives have no value.
+  [[nodiscard]] std::vector<std::complex<double>> cosmologicalHessian() const;
   /// \f$ S_{\rm hol}(U) \f$, the weight included. This is the one quantity
   /// that needs \f$ \log W_M \f$, and it is evaluated on the branch real on
   /// the unit circle (`VillainCharacter::logarithm`); it throws
@@ -1058,7 +1140,8 @@ class JointAction {
   [[nodiscard]] std::complex<double> matterTerm() const;
   /// \f$ \sum_j \xi_j\,(p_j(h)-p_j^{\star}) \f$.
   [[nodiscard]] std::complex<double> spectralTerm() const;
-  /// The whole action \f$ S(z,U,\Gamma) \f$, the sum of the five terms above.
+  /// The whole action \f$ S(z,U,\Gamma) \f$, the sum of the terms above,
+  /// `cosmologicalTerm` included when a cosmological constant is declared.
   [[nodiscard]] std::complex<double> value() const;
 
   /// The whole action as a solver reports it: `value` when it can be
@@ -1078,7 +1161,10 @@ class JointAction {
   /// the primal Regge form the per-hinge product rule
   /// \f$ \sum_h(\partial|h|\,\varepsilon_h+|h|\,\partial\varepsilon_h) \f$ from
   /// `mesh::Simplex::volumeGradient` and `mesh::Simplex::deficitAngleGradient`,
-  /// for the dual form `simulations::ReggeSolver::actionGradientExact`, and the
+  /// for the dual form `simulations::ReggeSolver::actionGradientExact`, for a
+  /// declared cosmological term
+  /// \f$ -w_R\Lambda\sum_T\partial_eQ_T/(2V_T) \f$ (`cosmologicalHessian`),
+  /// and the
   /// operator gradient `HodgeLaplacian::laplacianGradient`. No finite difference
   /// enters it, and no imaginary part is discarded: the returned number is the
   /// full complex derivative of a holomorphic function.
@@ -1098,7 +1184,8 @@ class JointAction {
   [[nodiscard]] std::vector<std::complex<double>> linkStationarity() const;
 
   /// Every term of the action with its value and its stationarity
-  /// (`ActionTermGradient`), in the order regge, holonomy, matter,
+  /// (`ActionTermGradient`), in the order regge, cosmological (only when a
+  /// cosmological constant is declared), holonomy, matter,
   /// then one entry per declared constraint. A term whose weight is zero is
   /// listed with zero value and zero gradient, so the list has the same shape
   /// at every point. The sums over the terms are `lengthStationarity` and
@@ -1148,7 +1235,8 @@ class JointAction {
   /// multipliers, flat row-major \f$ 2|E|\times2|E| \f$ in the block order
   /// lengths then links, each block in `getEdgeList()` order.
   ///
-  /// It is `reggeHessian` on the length block, `holonomyHessian` on the link
+  /// It is `reggeHessian`, with `cosmologicalHessian` when a cosmological
+  /// constant is declared, on the length block, `holonomyHessian` on the link
   /// block, and on every block the contraction
   /// \f$ \operatorname{tr}(A\,\partial_x\partial_yh)
   /// +\sum_j\xi_j\operatorname{tr}(\partial_yX_j\,\partial_xh) \f$, with
@@ -1369,8 +1457,9 @@ class JointAction {
   [[nodiscard]] std::vector<std::complex<double>> orderedCarrierEigenvalues(
       bool ascendingRealPart = true) const;
 
-  /// The names of the four declared terms, in the order `value` sums them:
-  /// `"regge"`, `"holonomy"`, `"matter"`, `"spectral"`.
+  /// The names of the four terms every action carries, in the order `value`
+  /// sums them: `"regge"`, `"holonomy"`, `"matter"`, `"spectral"`. A
+  /// declared cosmological term is `"cosmological"` (`termGradients`).
   [[nodiscard]] static std::vector<std::string> termNames();
 
  private:
@@ -1379,6 +1468,28 @@ class JointAction {
   /// relative to the principal one.
   struct ReggeSheets;
   [[nodiscard]] ReggeSheets reggeSheets() const;
+
+  /// Every top simplex with its squared volume \f$ Q_T \f$ and its volume
+  /// \f$ V_T \f$ on the declared sheet at the current geometry
+  /// (`topCellVolumes`).
+  struct TopCells;
+  [[nodiscard]] TopCells topCells() const;
+
+  /// Whether the cosmological term is formed: a nonzero cosmological
+  /// constant and a nonzero Regge weight.
+  [[nodiscard]] bool cosmologicalTermFormed() const noexcept {
+    return declaration_.cosmologicalConstant != 0.0 &&
+           declaration_.gravitationalWeight != 0.0;
+  }
+
+  /// Add the cosmological term's length stationarity,
+  /// \f$ -w_R\Lambda\sum_T\partial_eQ_T/(2V_T) \f$, to \p lengths (one
+  /// entry per edge in `getEdgeList()` order). Called only when the term is
+  /// formed, outside `stationarityPart`, so that an action without the term
+  /// runs the code it runs without the option.
+  /// @throws std::domain_error when a top simplex has zero volume.
+  void addCosmologicalStationarity(
+      std::vector<std::complex<double>> &lengths) const;
 
   /// Which part of the stationarity `stationarityPart` forms.
   enum class StationarityPart { All, Regge, Holonomy, Contraction };

@@ -4758,6 +4758,16 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      "continued from, one squared length per edge in "
                      "getEdgeList() order; empty means the squared lengths "
                      "the mesh holds when the JointAction is constructed.")
+      .def_readwrite("cosmological_constant",
+                     &JointActionDeclaration::cosmologicalConstant,
+                     "Lambda, the cosmological constant: the action carries "
+                     "the term -w_R Lambda sum_T V_T of the Einstein-Hilbert "
+                     "action with a cosmological constant discretized with "
+                     "the Regge term, w_R the gravitational weight and V_T "
+                     "the volume of each top simplex from its Cayley-Menger "
+                     "determinant on the sheet the Regge term is read on. Any "
+                     "finite value of either sign; 0, the default, leaves the "
+                     "term out.")
       .def_readwrite("holonomy_weight",
                      &JointActionDeclaration::holonomyWeight,
                      "beta, the heat-kernel coupling of the face-holonomy "
@@ -4858,7 +4868,8 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       "The gauge-invariant joint action S(z, U, Gamma) of Sections 3 and 13 of "
       "the whitepaper, and its exact holomorphic stationarity equations.\n\n"
       "S = w_R S_Regge(z) + S_hol(U) + w_M tr(Gamma "
-      "h(z, U)) + sum_j xi_j (c_j - c_j*), with S_hol the branch-free sum of "
+      "h(z, U)) + sum_j xi_j (c_j - c_j*) [- w_R Lambda sum_T V_T with a "
+      "declared cosmological constant], with S_hol the branch-free sum of "
       "the Villain per-face potential over the face holonomies "
       "F_tau = prod_e U_e^eps. The stationarity conditions are "
       "the complex equations dS/dz_e = 0, U_e dS/dU_e = 0 and p_j(h) = p_j*, "
@@ -4914,6 +4925,22 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
            "complex stationarity equation in xi_j.")
       .def("regge_term", &JointAction::reggeTerm,
            "w_R S_Regge(z) in the declared form and hinge set.")
+      .def("top_cell_volumes", &JointAction::topCellVolumes,
+           "V_T for every top simplex, in the canonical ChainComplex order of "
+           "the top degree: the root of Q_T = (-1)^(d+1) det B / (2^d (d!)^2), "
+           "B the Cayley-Menger matrix, on the sheet the declared "
+           "regge_branch names (continued from the real projection of the "
+           "starting geometry, or principal).")
+      .def("volume_sum", &JointAction::volumeSum,
+           "sum_T V_T, the sum of top_cell_volumes.")
+      .def("cosmological_term", &JointAction::cosmologicalTerm,
+           "-w_R Lambda sum_T V_T; zero when Lambda or w_R is zero.")
+      .def("cosmological_hessian", &JointAction::cosmologicalHessian,
+           "The Hessian of cosmological_term in the squared lengths, flat "
+           "|E| x |E| in getEdgeList() order: d^2V = d^2Q / (2V) - dQ dQ / "
+           "(4V^3) per top simplex, the derivatives of Q_T polynomials in the "
+           "squared lengths. Zero when the term is absent; raises at a top "
+           "simplex of zero volume, the branch point of its root.")
       .def("regge_hinge_count", &JointAction::reggeHingeCount,
            "The number of hinges the primal Regge sum runs over under the "
            "declared hinge rule.")
@@ -4936,7 +4963,8 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def("spectral_term", &JointAction::spectralTerm,
            "sum_j xi_j (p_j(h) - p_j*).")
       .def("value", &JointAction::value,
-           "S(z, U, Gamma), the sum of the five terms.")
+           "S(z, U, Gamma), the sum of the terms, the cosmological term "
+           "included when a cosmological constant is declared.")
       .def("reported_value", &JointAction::reportedValue,
            "The value as a solver reports it: available with the value, or "
            "unavailable with the refusal's message (for example log W refused "
@@ -5023,7 +5051,8 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
            "equations.")
       .def("term_gradients", &JointAction::termGradients,
            "Every term of the action with its value and its stationarity "
-           "(ActionTermGradient): regge, stiffness, holonomy, matter, then one "
+           "(ActionTermGradient): regge, cosmological (only when a "
+           "cosmological constant is declared), holonomy, matter, then one "
            "per declared constraint; a term of zero weight is listed with "
            "zeros. For records and traces, not the inner loop of a solve.")
       .def("moment_gradient", &JointAction::momentGradient, py::arg("index"),

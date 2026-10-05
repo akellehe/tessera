@@ -794,6 +794,10 @@ JointAction::JointAction(std::shared_ptr<Spacetime> spacetime,
     throw std::invalid_argument(
         "JointAction: the unit the power sums are measured in must be "
         "positive and finite; got " + std::to_string(declaration_.momentScale));
+  if (!std::isfinite(declaration_.cosmologicalConstant))
+    throw std::invalid_argument(
+        "JointAction: the cosmological constant is a finite number; got " +
+        std::to_string(declaration_.cosmologicalConstant));
   if (!declaration_.momentProjector.empty()) {
     const ChainComplex complex = ChainComplex::fromSpacetime(*spacetime_);
     const std::size_t order =
@@ -1475,6 +1479,318 @@ JointAction::ReggeSheets JointAction::reggeSheets() const {
   return out;
 }
 
+// ------------------------------------------------------- the cosmological term
+
+struct JointAction::TopCells {
+  struct Cell {
+    /// The sorted vertex ids of the top simplex.
+    std::vector<std::uint64_t> ids;
+    /// Its Cayley-Menger matrix at the current geometry, flat row-major over
+    /// the border and the vertices.
+    std::vector<complexd> cayleyMenger;
+    /// \f$ Q_T=c_d\det B \f$, the square of its volume.
+    complexd square{0.0, 0.0};
+    /// \f$ V_T \f$, the root of \f$ Q_T \f$ on the declared sheet.
+    complexd volume{0.0, 0.0};
+  };
+  std::vector<Cell> cells;
+  /// \f$ c_d=(-1)^{d+1}/(2^d(d!)^2) \f$, \f$ d \f$ the dimension of the top
+  /// simplices.
+  double coefficient{0.0};
+};
+
+namespace {
+
+/// The determinant of a square matrix, flat row-major, by Eigen: in closed
+/// form up to order four and by the LU decomposition with partial pivoting
+/// above, with no threshold on a pivot.
+complexd plainDeterminant(const std::vector<complexd> &flat,
+                          std::size_t order) {
+  if (order == 0) return complexd{1.0, 0.0};
+  return toMatrix(flat, order).determinant();
+}
+
+/// \f$ c_d=(-1)^{d+1}/(2^d(d!)^2) \f$, the coefficient that makes
+/// \f$ c_d\det B \f$ the square of the volume of a \f$ d \f$-simplex with
+/// Cayley-Menger matrix \f$ B \f$.
+double volumeSquareCoefficient(int dimension) {
+  double factorial = 1.0;
+  for (int i = 2; i <= dimension; ++i) factorial *= static_cast<double>(i);
+  const double sign = (dimension + 1) % 2 == 0 ? 1.0 : -1.0;
+  return sign / (std::ldexp(1.0, dimension) * factorial * factorial);
+}
+
+/// The local edges \f$ (a,b) \f$, \f$ a<b \f$, of a simplex of \p vertices
+/// vertices, in lexicographic order.
+std::vector<std::pair<int, int>> localEdges(int vertices) {
+  std::vector<std::pair<int, int>> out;
+  for (int a = 0; a < vertices; ++a)
+    for (int b = a + 1; b < vertices; ++b) out.emplace_back(a, b);
+  return out;
+}
+
+/// \f$ \partial Q/\partial z_{ab} \f$ for every local edge of a simplex with
+/// the Cayley-Menger matrix \p border (order \p order): \f$ z_{ab} \f$ stands
+/// in the entries \f$ (a+1,b+1) \f$ and \f$ (b+1,a+1) \f$, so the derivative
+/// of the determinant is the sum of their two cofactors, which are equal on
+/// the symmetric matrix: twice the signed minor that deletes row \f$ a+1 \f$
+/// and column \f$ b+1 \f$.
+std::vector<complexd> volumeSquareFirst(const std::vector<complexd> &border,
+                                        std::size_t order,
+                                        const std::vector<std::pair<int, int>> &edges,
+                                        double coefficient) {
+  std::vector<complexd> out;
+  out.reserve(edges.size());
+  std::vector<complexd> minor((order - 1) * (order - 1));
+  for (const auto &[a, b] : edges) {
+    const std::size_t row = static_cast<std::size_t>(a) + 1;
+    const std::size_t column = static_cast<std::size_t>(b) + 1;
+    std::size_t index = 0;
+    for (std::size_t r = 0; r < order; ++r) {
+      if (r == row) continue;
+      for (std::size_t c = 0; c < order; ++c)
+        if (c != column) minor[index++] = border[r * order + c];
+    }
+    const double sign = (row + column) % 2 == 0 ? 1.0 : -1.0;
+    out.push_back(2.0 * coefficient * sign *
+                  plainDeterminant(minor, order - 1));
+  }
+  return out;
+}
+
+/// \f$ \partial^2Q/\partial z_e\partial z_f \f$ for every pair of local edges,
+/// flat row-major and symmetric. The determinant is multilinear in the
+/// columns and \f$ B \f$ is affine in the squared lengths, so the second
+/// derivative along \f$ A=\partial_eB \f$ and \f$ A'=\partial_fB \f$ is
+/// \f$ \sum_{c\ne c'}\det B[c\leftarrow A_c,\,c'\leftarrow A'_{c'}] \f$, over
+/// the columns \f$ c \f$ in which \f$ A \f$ and \f$ c' \f$ in which
+/// \f$ A' \f$ is nonzero: the column \f$ b+1 \f$ of \f$ \partial_{ab}B \f$ is
+/// the unit vector of row \f$ a+1 \f$, and its column \f$ a+1 \f$ that of row
+/// \f$ b+1 \f$.
+std::vector<complexd> volumeSquareSecond(
+    const std::vector<complexd> &border, std::size_t order,
+    const std::vector<std::pair<int, int>> &edges, double coefficient) {
+  const std::size_t count = edges.size();
+  std::vector<complexd> out(count * count, complexd{0.0, 0.0});
+  // the nonzero columns of one edge's derivative, each with the row of its
+  // one unit entry
+  auto columns = [](const std::pair<int, int> &edge) {
+    const std::size_t a = static_cast<std::size_t>(edge.first) + 1;
+    const std::size_t b = static_cast<std::size_t>(edge.second) + 1;
+    return std::array<std::pair<std::size_t, std::size_t>, 2>{
+        {{b, a}, {a, b}}};
+  };
+  std::vector<complexd> replaced(order * order);
+  for (std::size_t e = 0; e < count; ++e)
+    for (std::size_t f = e; f < count; ++f) {
+      complexd sum{0.0, 0.0};
+      for (const auto &[c, rowC] : columns(edges[e]))
+        for (const auto &[cPrime, rowCPrime] : columns(edges[f])) {
+          if (c == cPrime) continue;
+          replaced = border;
+          for (std::size_t r = 0; r < order; ++r) {
+            replaced[r * order + c] =
+                complexd{r == rowC ? 1.0 : 0.0, 0.0};
+            replaced[r * order + cPrime] =
+                complexd{r == rowCPrime ? 1.0 : 0.0, 0.0};
+          }
+          sum += plainDeterminant(replaced, order);
+        }
+      out[e * count + f] = coefficient * sum;
+      out[f * count + e] = coefficient * sum;
+    }
+  return out;
+}
+
+/// The mesh's edges by their sorted vertex pair, valued by their index in
+/// `getEdgeList()` order.
+std::map<EdgeKey, std::size_t> edgeIndices(const Spacetime &spacetime) {
+  std::map<EdgeKey, std::size_t> out;
+  if (!spacetime.getEdgeList()) return out;
+  const auto edges = spacetime.getEdgeList()->toVector();
+  for (std::size_t index = 0; index < edges.size(); ++index) {
+    const auto *edge = edges[index];
+    if (edge == nullptr || edge->getSource() == nullptr ||
+        edge->getTarget() == nullptr)
+      continue;
+    out[pairKey(edge->getSource()->getId(), edge->getTarget()->getId())] =
+        index;
+  }
+  return out;
+}
+
+/// The refusal of a derivative of the volume root at its branch point.
+void requireVolumeOffBranchPoint(complexd volume,
+                                 const std::vector<std::uint64_t> &ids) {
+  if (volume == complexd{0.0, 0.0})
+    throw std::domain_error(
+        "JointAction: the volume of the top cell on vertices " + idList(ids) +
+        " is zero, the branch point of its root, where the cosmological "
+        "term's derivatives in the squared lengths have no value");
+}
+
+}  // namespace
+
+JointAction::TopCells JointAction::topCells() const {
+  TopCells out;
+  const ChainComplex complex = ChainComplex::fromSpacetime(*spacetime_);
+  const int dimension = complex.dimension();
+  if (dimension < 1) return out;
+  out.coefficient = volumeSquareCoefficient(dimension);
+  const std::size_t order = static_cast<std::size_t>(dimension) + 2;
+
+  SquaredLengthField now;
+  for (const auto *edge : spacetime_->getEdgeList()->toVector()) {
+    if (edge == nullptr || edge->getSource() == nullptr ||
+        edge->getTarget() == nullptr)
+      continue;
+    const complexd length = edge->getLength();
+    now[pairKey(edge->getSource()->getId(), edge->getTarget()->getId())] =
+        length * length;
+  }
+  const bool continued = declaration_.reggeBranch == ReggeBranch::Continued;
+  // The path of the continued roots, as the Regge sheets take it: the
+  // Euclidean reference Re z0 to the starting geometry z0, then z0 to the
+  // geometry the mesh holds now.
+  SquaredLengthField reference;
+  if (continued) {
+    for (const auto &[key, value] : reggeStart_)
+      reference[key] = complexd{value.real(), 0.0};
+    for (const auto &[key, value] : now)
+      if (reggeStart_.find(key) == reggeStart_.end())
+        throw std::logic_error(
+            "JointAction: an edge of the mesh has no starting squared length "
+            "for the continued volume roots; the triangulation changed after "
+            "the action was constructed");
+  }
+  const SquaredLengthField &start = reggeStart_;
+  const std::array<std::pair<const SquaredLengthField *,
+                             const SquaredLengthField *>, 2>
+      legs{{{&reference, &start}, {&start, &now}}};
+  const double coefficient = out.coefficient;
+
+  for (auto ids : complex.kSimplexVertices(dimension)) {
+    if (ids.size() != order - 1) continue;
+    std::sort(ids.begin(), ids.end());
+    TopCells::Cell cell;
+    cell.ids = ids;
+    cell.cayleyMenger = cayleyMenger(ids, now, now, 0.0);
+    cell.square = coefficient * plainDeterminant(cell.cayleyMenger, order);
+    const complexd principal = principalSquareRoot(cell.square);
+    int sign = 1;
+    if (continued) {
+      auto square = [&](const SquaredLengthField &from,
+                        const SquaredLengthField &to, double t) {
+        return coefficient *
+               plainDeterminant(cayleyMenger(ids, from, to, t), order);
+      };
+      SheetedSqrt root(square(reference, reference, 0.0));
+      for (const auto &[from, to] : legs)
+        walkSegment(
+            root,
+            [&, from = from, to = to](SheetedSqrt &trial, double t) {
+              trial.advance(square(*from, *to, t));
+              return std::abs(trial.lastStep()) <= kMaximumRootTurn;
+            },
+            "the volume root of the top cell on vertices " + idList(ids));
+      // the continued value read as a sheet of the root at the geometry
+      // the mesh holds, as the hinge contents are
+      sign = (std::conj(root.value()) * principal).real() >= 0.0 ? 1 : -1;
+    }
+    cell.volume = static_cast<double>(sign) * principal;
+    out.cells.push_back(std::move(cell));
+  }
+  return out;
+}
+
+std::vector<std::complex<double>> JointAction::topCellVolumes() const {
+  std::vector<complexd> volumes;
+  for (const auto &cell : topCells().cells) volumes.push_back(cell.volume);
+  return volumes;
+}
+
+std::complex<double> JointAction::volumeSum() const {
+  complexd sum{0.0, 0.0};
+  for (const auto &cell : topCells().cells) sum += cell.volume;
+  return sum;
+}
+
+std::complex<double> JointAction::cosmologicalTerm() const {
+  if (!cosmologicalTermFormed()) return complexd{0.0, 0.0};
+  const double weight =
+      -declaration_.gravitationalWeight * declaration_.cosmologicalConstant;
+  return weight * volumeSum();
+}
+
+std::vector<std::complex<double>> JointAction::cosmologicalHessian() const {
+  const std::size_t edges = edgeCount();
+  std::vector<complexd> hessian(edges * edges, complexd{0.0, 0.0});
+  if (!cosmologicalTermFormed() || edges == 0) return hessian;
+  const double weight =
+      -declaration_.gravitationalWeight * declaration_.cosmologicalConstant;
+  const auto indexOfEdge = edgeIndices(*spacetime_);
+  const TopCells top = topCells();
+  for (const auto &cell : top.cells) {
+    requireVolumeOffBranchPoint(cell.volume, cell.ids);
+    const std::size_t order = cell.ids.size() + 1;
+    const auto local = localEdges(static_cast<int>(cell.ids.size()));
+    const auto first =
+        volumeSquareFirst(cell.cayleyMenger, order, local, top.coefficient);
+    const auto second =
+        volumeSquareSecond(cell.cayleyMenger, order, local, top.coefficient);
+    // d^2V = d^2Q / (2V) - dQ dQ / (4V^3)
+    const complexd half = 0.5 / cell.volume;
+    const complexd quarterCube =
+        0.25 / (cell.volume * cell.volume * cell.volume);
+    std::vector<std::size_t> rows(local.size(), edges);
+    for (std::size_t e = 0; e < local.size(); ++e) {
+      const auto found = indexOfEdge.find(
+          pairKey(cell.ids[static_cast<std::size_t>(local[e].first)],
+                  cell.ids[static_cast<std::size_t>(local[e].second)]));
+      if (found != indexOfEdge.end()) rows[e] = found->second;
+    }
+    // one value per unordered pair, written to both entries, so that the
+    // Hessian is symmetric exactly
+    for (std::size_t e = 0; e < local.size(); ++e) {
+      if (rows[e] == edges) continue;
+      for (std::size_t f = e; f < local.size(); ++f) {
+        if (rows[f] == edges) continue;
+        const complexd value =
+            weight * (second[e * local.size() + f] * half -
+                      first[e] * first[f] * quarterCube);
+        hessian[rows[e] * edges + rows[f]] += value;
+        if (f != e) hessian[rows[f] * edges + rows[e]] += value;
+      }
+    }
+  }
+  return hessian;
+}
+
+void JointAction::addCosmologicalStationarity(
+    std::vector<std::complex<double>> &lengths) const {
+  // -w_R Lambda sum_T dQ_T/dz_e / (2 V_T), every root on its declared
+  // sheet, dQ_T a polynomial in the squared lengths.
+  const double weight =
+      -declaration_.gravitationalWeight * declaration_.cosmologicalConstant;
+  const auto indexOfEdge = edgeIndices(*spacetime_);
+  const TopCells top = topCells();
+  for (const auto &cell : top.cells) {
+    requireVolumeOffBranchPoint(cell.volume, cell.ids);
+    const auto local = localEdges(static_cast<int>(cell.ids.size()));
+    const auto first = volumeSquareFirst(cell.cayleyMenger,
+                                         cell.ids.size() + 1, local,
+                                         top.coefficient);
+    const complexd half = 0.5 / cell.volume;
+    for (std::size_t e = 0; e < local.size(); ++e) {
+      const auto found = indexOfEdge.find(
+          pairKey(cell.ids[static_cast<std::size_t>(local[e].first)],
+                  cell.ids[static_cast<std::size_t>(local[e].second)]));
+      if (found != indexOfEdge.end() && found->second < lengths.size())
+        lengths[found->second] += weight * (first[e] * half);
+    }
+  }
+}
+
 std::complex<double> JointAction::reggeTerm() const {
   if (declaration_.gravitationalWeight == 0.0) return complexd{0.0, 0.0};
   if (declaration_.reggeForm == ReggeForm::Dual)
@@ -1535,8 +1851,9 @@ std::complex<double> JointAction::spectralTerm() const {
 }
 
 std::complex<double> JointAction::value() const {
-  return reggeTerm() + holonomyTerm() + matterTerm() +
-         spectralTerm();
+  complexd geometric = reggeTerm();
+  if (cosmologicalTermFormed()) geometric += cosmologicalTerm();
+  return geometric + holonomyTerm() + matterTerm() + spectralTerm();
 }
 
 ReportedActionValue JointAction::reportedValue() const {
@@ -1583,6 +1900,7 @@ Eigen::MatrixXcd contractionMatrix(const JointActionDeclaration &declaration,
 std::vector<complexd> JointAction::lengthStationarity() const {
   std::vector<complexd> stationarity;
   stationarityPart(StationarityPart::All, nullptr, &stationarity, nullptr);
+  if (cosmologicalTermFormed()) addCosmologicalStationarity(stationarity);
   return stationarity;
 }
 
@@ -1789,6 +2107,16 @@ std::vector<ActionTermGradient> JointAction::termGradients() const {
       complexd{declaration_.gravitationalWeight, 0.0}, reggeTerm(), true,
       StationarityPart::Regge, nullptr,
       declaration_.gravitationalWeight != 0.0, false);
+  if (declaration_.cosmologicalConstant != 0.0) {
+    add("cosmological", "-(1/kappa) Lambda sum_T V_T",
+        complexd{-declaration_.gravitationalWeight *
+                     declaration_.cosmologicalConstant,
+                 0.0},
+        cosmologicalTerm(), true, StationarityPart::Regge, nullptr, false,
+        false);
+    if (cosmologicalTermFormed())
+      addCosmologicalStationarity(terms.back().lengthStationarity);
+  }
   complexd holonomy{0.0, 0.0};
   try {
     holonomy = holonomyTerm();
@@ -1956,6 +2284,12 @@ std::vector<complexd> JointAction::actionHessian(bool lengths,
     const std::vector<complexd> regge = reggeHessian();
     for (std::size_t e = 0; e < edges; ++e)
       for (std::size_t f = 0; f < edges; ++f) at(e, f) += regge[e * edges + f];
+  }
+  if (lengths && cosmologicalTermFormed()) {
+    const std::vector<complexd> cosmological = cosmologicalHessian();
+    for (std::size_t e = 0; e < edges; ++e)
+      for (std::size_t f = 0; f < edges; ++f)
+        at(e, f) += cosmological[e * edges + f];
   }
   if (links && declaration_.holonomyWeight > 0.0) {
     const std::vector<complexd> villain = holonomyHessian();
