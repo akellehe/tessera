@@ -45,8 +45,10 @@ At level l (a complex K_l of three sheets of a base complex):
 
 1. both edge fields relax to holomorphic stationarity of the joint action,
    primal Regge + the Villain holonomy term (the Villain weight summed to
-   the declared order, ``--villain-order``, ten by default), in strict
-   emergence (no carried density in the equations; WP §7). The
+   the declared order, ``--villain-order``, ten by default), with the
+   cosmological term -(1/kappa) Lambda sum_T V_T when a cosmological
+   constant is declared (``--cosmological-constant``, none by default), in
+   strict emergence (no carried density in the equations; WP §7). The
    spectral-moment part of S_0 is the
    holomorphic spectral constraint of WP v17 §3.4, which belongs to
    controlled synthesis on an occupied fiber and so enters only the per-cell
@@ -605,11 +607,13 @@ def level_system(base, config, sectors, sheets):
     held = dict(config)
     held["held_sectors"] = list(sectors or [])
     villain_order = bp.declared_villain_order(config)
+    cosmological_constant = bp.declared_cosmological_constant(config)
 
     def declare(complex_):
         return bp.action_declaration(
             complex_, config["kappa"], config["beta"],
-            config["regge_hinges"], villain_order=villain_order)
+            config["regge_hinges"], villain_order=villain_order,
+            cosmological_constant=cosmological_constant)
 
     def geometry_of(support):
         return bp.support_geometry(held, support, host)
@@ -670,6 +674,7 @@ def relax_level(spacetime, config, sectors=None, count=None):
              if len(end_moduli) == len(start_moduli) else math.nan)
     action = end.relaxation.action
     reported = action.reported_value()
+    cosmological = bp.declared_cosmological_constant(config)
     updates = drive["objective"].updates
     converged = bp.solve_converged(
         residual, bp.declared_tolerance(held, "step_tolerance"))
@@ -741,6 +746,15 @@ def relax_level(spacetime, config, sectors=None, count=None):
         "action": complex(reported.value),
         "action_available": bool(reported.available),
         "seconds": float(drive["seconds"]),
+        # with a declared cosmological constant, its term, the sum of the
+        # volumes and the Regge term at the point the drive ended on: along
+        # a dilation the action is stationary where the Regge term is minus
+        # three times the cosmological term
+        **({"cosmological_constant": cosmological,
+            "cosmological_term": complex(action.cosmological_term()),
+            "volume_sum": complex(action.volume_sum()),
+            "regge_term": complex(action.regge_term())}
+           if cosmological != 0.0 else {}),
     }
 
 
@@ -1184,10 +1198,11 @@ def cell_reads(cells, z, links, config):
             selected_contents=[tuple(x) for x in config["contents"]])
         cell_config["host_cell"] = host_cell
         cell_config["isospin_doublet"] = True
-        # the order of the Villain weight (part of the action), and the
-        # mean-field solver and the tolerances the run declared (none of
-        # which changes an equation)
-        for key in ("villain_order", "band_selection", "fiber_moments",
+        # the order of the Villain weight and a declared cosmological
+        # constant (parts of the action), and the mean-field solver and the
+        # tolerances the run declared (none of which changes an equation)
+        for key in ("villain_order", "cosmological_constant",
+                    "band_selection", "fiber_moments",
                     "fiber_pinning", "kappa_role", "trace_terms") + tuple(
                         key for key, _ in bp.TOLERANCES) + tuple(
                             key for key, _, _ in bp.LIMITS) + tuple(
@@ -1418,6 +1433,12 @@ def pachner_stage(cells, z, links, config):
                   "disposition move"),
         "objective_name": name,
         "admissibility_gate": bool(config.get("admissibility_gate", False)),
+        # a declared cosmological constant is a term of the joint action and
+        # so of the joint-action objective; the engine's objective has no
+        # such term
+        **({"cosmological_constant": bp.declared_cosmological_constant(config),
+            "cosmological_term_in_objective": name != "engine"}
+           if bp.declared_cosmological_constant(config) != 0.0 else {}),
         "objective": (
             "joint stationarity: the Regge action and the Hodge spectral "
             "entropies of degrees %s stationary at one metric"
@@ -1887,7 +1908,8 @@ def default_config(ticks=DECLARED_TICKS, tetrahedra=DECLARED_TETRAHEDRA,
                    pachner_candidate_moves=DECLARED_PACHNER_CANDIDATE_MOVES,
                    limits=None,
                    villain_order=bp.DECLARED_VILLAIN_ORDER, solve=None,
-                   regge_hinges=DECLARED_REGGE_HINGES):
+                   regge_hinges=DECLARED_REGGE_HINGES,
+                   cosmological_constant=bp.DECLARED_COSMOLOGICAL_CONSTANT):
     """The declared configuration, recorded with every run. ``max_cells``
     limits how many tetrahedra per tick are read as hosts, for quick checks;
     it changes no number of the cells it keeps. ``persistence_required`` is
@@ -1904,6 +1926,10 @@ def default_config(ticks=DECLARED_TICKS, tetrahedra=DECLARED_TETRAHEDRA,
     `baryon_poles.SOLVE_OPTIONS` by key, for the drive of every level's
     relaxation and of every cell's solve. ``regge_hinges`` names the hinges
     of the primal Regge sum of every level's and every cell's action.
+    ``cosmological_constant`` is Lambda
+    (`baryon_poles.DECLARED_COSMOLOGICAL_CONSTANT`): a nonzero value is
+    recorded and carried into every level's, every cell's and the growth
+    step's action; zero leaves the term and the key out.
 
     A declaration that has no meaning is named here, before a tick is
     computed (`checked_run`)."""
@@ -1920,7 +1946,8 @@ def default_config(ticks=DECLARED_TICKS, tetrahedra=DECLARED_TETRAHEDRA,
                                fiber_pinning=fiber_pinning,
                                tolerances=tolerances, trace_terms=trace_terms,
                                limits=limits, villain_order=villain_order,
-                               solve=solve)
+                               solve=solve,
+                               cosmological_constant=cosmological_constant)
     config.update({
         "mode": "controlled synthesis",
         "ticks": ticks,
@@ -2600,6 +2627,7 @@ def build_parser():
                      help="draw each completed tick while the run proceeds; "
                           "the outputs are identical")
     bp.add_action_arguments(run)
+    bp.add_cosmological_constant_argument(run)
     bp.add_mean_field_arguments(run)
     bp.add_tolerance_arguments(run)
     bp.add_limit_arguments(run)
@@ -2630,7 +2658,8 @@ def main(argv=None):
         regge_hinges=args.regge_hinges,
         limits=bp.limits_from(args),
         solve=bp.solve_options_from(args),
-        villain_order=args.villain_order)
+        villain_order=args.villain_order,
+        cosmological_constant=args.cosmological_constant)
     # what the run's numbers depend on beside its declarations: the command
     # line, the commit, the thread count and the linear algebra library
     config["environment"] = bp.environment_record(argv)

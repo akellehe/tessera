@@ -53,7 +53,9 @@ quarks in each of the three lowest bands of the covariant operator h_1, see
    (``--villain-order``, the sum over |m| <= M, ten by default) and
    beta_V = beta / <m^2>_beta from the same sums: the paper's holonomy term
    at that order, with the bare connection stiffness beta L_1^up at trivial
-   holonomy;
+   holonomy. A declared cosmological constant (``--cosmological-constant``,
+   none by default) adds -(1/kappa) Lambda sum_T V_T, V_T the volume of each
+   tetrahedron;
    with certificates-blind mean-field backreaction to self-consistency
    (`SelfConsistentMeanField`), the carried density being the content's band
    filling of h_1. The fixed point is found by `MultiCobordism`, whose
@@ -588,6 +590,47 @@ def checked_villain_order(value):
     return int(value)
 
 
+#: Lambda, the cosmological constant of the joint action
+#: (`cob.JointActionDeclaration.cosmological_constant`): the action carries
+#: the term -(1/kappa) Lambda sum_T V_T of the Einstein-Hilbert action with a
+#: cosmological constant discretized with the Regge term, V_T the volume of
+#: each top simplex. Along a dilation the primal Regge sum of a
+#: three-dimensional complex scales with the lengths and the volume with
+#: their cube, so the term gives a level's stationarity a length scale where
+#: S_Regge = 3 Lambda sum_T V_T, when the two sides have the same sign. Zero,
+#: the declared value, leaves the term out: the config then carries no key
+#: for it and every action and record is the one without the term.
+#: `add_cosmological_constant_argument` offers it as
+#: ``--cosmological-constant``, `default_config` records a nonzero value, and
+#: the recursion driver carries it into every level's, cell's and growth
+#: step's action.
+DECLARED_COSMOLOGICAL_CONSTANT = 0.0
+
+
+def declared_cosmological_constant(config):
+    """The cosmological constant (`DECLARED_COSMOLOGICAL_CONSTANT`) of a
+    config, or the declared value when the config leaves it out."""
+    return checked_cosmological_constant(
+        (config or {}).get("cosmological_constant",
+                           DECLARED_COSMOLOGICAL_CONSTANT))
+
+
+def checked_cosmological_constant(value):
+    """``value`` as a cosmological constant: a finite number of either sign.
+    Anything else is an error."""
+    if isinstance(value, bool):
+        raise ValueError("the cosmological constant is a finite number; got "
+                         "%r" % (value,))
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        number = math.nan
+    if not math.isfinite(number):
+        raise ValueError("the cosmological constant is a finite number; got "
+                         "%r" % (value,))
+    return number
+
+
 #: The limits a user may declare on a solve, by config key: the type of each
 #: and what it ends. None is declared by default, and then nothing ends a
 #: solve but the end of its drive, however long it runs.
@@ -923,14 +966,17 @@ def checked_regge_hinges(name):
 
 def action_declaration(spacetime, kappa, beta, regge_hinges="interior",
                        matter_weight=1.0,
-                       villain_order=DECLARED_VILLAIN_ORDER):
+                       villain_order=DECLARED_VILLAIN_ORDER,
+                       cosmological_constant=DECLARED_COSMOLOGICAL_CONSTANT):
     """The joint action of the calculation (WP §3, §7): the primal Regge term
     with weight 1/kappa over the hinges ``regge_hinges`` names
     (`REGGE_HINGES`; another name has no value), the Villain holonomy term
     with coupling beta and the Villain weight summed to ``villain_order``,
     and the mean-field term; kappa enters only through the Regge weight, and
     the spectral-moment part of S_0 is imposed by the mean-field solve as
-    the constraints of WP v17 §3.4 on the occupied fiber."""
+    the constraints of WP v17 §3.4 on the occupied fiber. A nonzero
+    ``cosmological_constant`` adds the term -(1/kappa) Lambda sum_T V_T
+    (`DECLARED_COSMOLOGICAL_CONSTANT`); zero leaves it out."""
     declaration = cob.JointActionDeclaration()
     declaration.carrier_degree = 1
     declaration.metric_source = cob.HodgeMetricSource.WhitneyPencil
@@ -940,6 +986,8 @@ def action_declaration(spacetime, kappa, beta, regge_hinges="interior",
     declaration.holonomy_weight = beta
     declaration.villain_order = villain_order
     declaration.matter_weight = matter_weight
+    declaration.cosmological_constant = checked_cosmological_constant(
+        cosmological_constant)
     return declaration
 
 
@@ -1870,7 +1918,8 @@ def _geometric_action(spacetime, kappa, beta, config):
         spacetime, action_declaration(
             spacetime, kappa, beta, config["regge_hinges"],
             matter_weight=0.0,
-            villain_order=declared_villain_order(config)))
+            villain_order=declared_villain_order(config),
+            cosmological_constant=declared_cosmological_constant(config)))
 
 
 def fluctuation_couplings(spacetime, phases):
@@ -2621,11 +2670,13 @@ def relax_content(content, kappa, beta, config):
     base = build_base(config["edge_squared"], config.get("host_cell"))
     host = cell_solve.sheeted_support(base, SHEETS)
     villain_order = declared_villain_order(config)
+    cosmological_constant = declared_cosmological_constant(config)
 
     def declare(spacetime):
         return action_declaration(spacetime, kappa, beta,
                                   config["regge_hinges"],
-                                  villain_order=villain_order)
+                                  villain_order=villain_order,
+                                  cosmological_constant=cosmological_constant)
 
     # the number of constraints of the occupied fiber, read at the host;
     # their targets and unit are the host's (`cell_solve.ContentSystem`)
@@ -3672,7 +3723,10 @@ def _content_reads(content, kappa, beta, config, started, spacetime, action,
             "kappa_role": config.get("kappa_role"),
             "terms": {name: _term(action, name)
                       for name in ("regge", "holonomy", "matter",
-                                   "spectral")},
+                                   "spectral") + (
+                                       ("cosmological",)
+                                       if declared_cosmological_constant(
+                                           config) != 0.0 else ())},
             "regge_hinge_count": int(action.regge_hinge_count()),
             "edge_lengths": [complex(e.getLength()) for e in
                              spacetime.getEdgeList().toVector()],
@@ -4182,7 +4236,8 @@ def _carrier(host, kappa, beta, config):
     """h_1 of a host under the run's declared action, as a matrix."""
     declaration = action_declaration(
         host, kappa, beta, config["regge_hinges"],
-        villain_order=declared_villain_order(config))
+        villain_order=declared_villain_order(config),
+        cosmological_constant=declared_cosmological_constant(config))
     return matrix(cob.JointAction(host, declaration).carrier_operator())
 
 
@@ -5325,7 +5380,7 @@ def term_trace_lines(relaxation, prefix):
                             changes(total, earlier.get("action"))))
         else:
             lines.append("%siterate %d:" % (prefix, index))
-        for name in ("regge", "holonomy", "matter"):
+        for name in ("regge", "cosmological", "holonomy", "matter"):
             if name in by_name:
                 term = by_name[name]
                 lines.append(line(term, earlier.get(name), 2, term["label"]))
@@ -5594,14 +5649,19 @@ def default_config(kappas=DECLARED_KAPPAS, betas=DECLARED_BETAS,
                    fiber_moments=DECLARED_FIBER_MOMENTS,
                    fiber_pinning=DECLARED_FIBER_PINNING, tolerances=None,
                    trace_terms=False, limits=None,
-                   villain_order=DECLARED_VILLAIN_ORDER, solve=None):
+                   villain_order=DECLARED_VILLAIN_ORDER, solve=None,
+                   cosmological_constant=DECLARED_COSMOLOGICAL_CONSTANT):
     """The declared configuration, recorded with every run. The contents
     default to all ten; a subset is for tests and quick checks and changes no
     number of the contents it keeps. ``tolerances`` sets any of `TOLERANCES`
     by key; the others are recorded at `DECLARED_TOLERANCE`. ``limits``
     declares any of `LIMITS` by key; the others are recorded as None, not
     declared. ``villain_order`` is the order the Villain weight of the
-    holonomy term is summed to (`DECLARED_VILLAIN_ORDER`). ``solve`` sets
+    holonomy term is summed to (`DECLARED_VILLAIN_ORDER`).
+    ``cosmological_constant`` is Lambda (`DECLARED_COSMOLOGICAL_CONSTANT`),
+    recorded under ``cosmological_constant`` when it is not zero; zero leaves
+    the term and the key out, and a value that is not a finite number has
+    no meaning and is refused here. ``solve`` sets
     any of `SOLVE_OPTIONS` by key; the others are recorded at their declared
     values. A content that is not one of the ten (`checked_contents`), a
     coupling that has no value (`checked_couplings`), a tolerance that is
@@ -5621,6 +5681,8 @@ def default_config(kappas=DECLARED_KAPPAS, betas=DECLARED_BETAS,
     if fiber_pinning not in FIBER_PINNINGS:
         raise ValueError("the fiber pinning is one of %s; got %r"
                          % (", ".join(FIBER_PINNINGS), fiber_pinning))
+    cosmological_constant = checked_cosmological_constant(
+        cosmological_constant)
     return {
         "mode": "controlled synthesis",
         "contents": [list(c) for c in checked_contents(
@@ -5630,6 +5692,8 @@ def default_config(kappas=DECLARED_KAPPAS, betas=DECLARED_BETAS,
         "edge_squared": edge_squared,
         "regge_hinges": regge_hinges,
         "villain_order": checked_villain_order(villain_order),
+        **({"cosmological_constant": cosmological_constant}
+           if cosmological_constant != 0.0 else {}),
         "elimination": elimination,
         **declared_tolerances(tolerances),
         **declared_limits(limits),
@@ -6680,6 +6744,7 @@ def build_parser():
                           "`IsospinDoublet`) to every content's record; the "
                           "other outputs are unchanged")
     add_action_arguments(run)
+    add_cosmological_constant_argument(run)
     add_mean_field_arguments(run)
     add_tolerance_arguments(run)
     add_limit_arguments(run)
@@ -6709,6 +6774,33 @@ def add_action_arguments(parser):
                              "from 1 to %d (default %d)"
                              % (cob.VillainCharacter.maximum_order,
                                 DECLARED_VILLAIN_ORDER))
+
+
+def _cosmological_constant(text):
+    """A finite number, for --cosmological-constant."""
+    try:
+        return checked_cosmological_constant(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            "--cosmological-constant is a finite number; got %r" % text)
+
+
+def add_cosmological_constant_argument(parser):
+    """``--cosmological-constant``, the option of the joint action that adds
+    the cosmological term (`DECLARED_COSMOLOGICAL_CONSTANT`), for the
+    baryon-poles and the recursion drivers."""
+    parser.add_argument(
+        "--cosmological-constant", type=_cosmological_constant,
+        default=DECLARED_COSMOLOGICAL_CONSTANT,
+        help="Lambda, the cosmological constant: every joint action the run "
+             "declares (every level's, cell's and growth step's) carries the "
+             "term -(1/kappa) Lambda sum_T V_T, V_T the volume of each top "
+             "simplex from its Cayley-Menger determinant, the volume term of "
+             "the Einstein-Hilbert action with a cosmological constant "
+             "discretized with the Regge term; along a dilation it gives "
+             "the stationarity a length scale where S_Regge = 3 Lambda "
+             "sum_T V_T, when the two sides have the same sign. A finite "
+             "number of either sign; 0, the default, leaves the term out")
 
 
 def _tolerance(text):
@@ -6885,7 +6977,8 @@ def main(argv=None):
                             trace_terms=args.trace_terms,
                             limits=limits_from(args),
                             villain_order=args.villain_order,
-                            solve=solve_options_from(args))
+                            solve=solve_options_from(args),
+                            cosmological_constant=args.cosmological_constant)
     if args.isospin_doublet:
         config["isospin_doublet"] = True
     # what the numbers of the run depend on beside the configuration,

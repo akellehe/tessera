@@ -60,6 +60,8 @@ SENTINEL_SOLVE = {"direction_order": 3, "band_reference": "host",
                   "pachner_moves": False, "combinatorial_depth": 1,
                   "combinatorial_length": 2, "candidate_moves": 4,
                   "admissibility_gate": True}
+#: A cosmological constant different from the declared zero.
+SENTINEL_COSMOLOGICAL_CONSTANT = -0.45
 
 
 class _Reached(Exception):
@@ -70,7 +72,9 @@ def _sentinel_arguments():
     """The command line that sets every option of the registries to its
     sentinel, and the action and the mean field to non-default values."""
     argv = ["run", "--quiet", "--kappa", "0.7", "--beta", "1.3",
-            "--villain-order", "4", "--band-selection", "sort-every-iterate",
+            "--villain-order", "4",
+            "--cosmological-constant", repr(SENTINEL_COSMOLOGICAL_CONSTANT),
+            "--band-selection", "sort-every-iterate",
             "--fiber-pinning", "power-sums", "--fiber-moments", "bands",
             "--trace-terms", "--direction-order", "3", "--band-reference",
             "host", "--no-pachner-moves", "--combinatorial-length", "2",
@@ -148,6 +152,7 @@ def test_every_registry_key_on_the_command_line_is_recorded_at_its_value(
     for key, value in SENTINEL_SOLVE.items():
         assert config[key] == value, key
     assert config["villain_order"] == 4
+    assert config["cosmological_constant"] == SENTINEL_COSMOLOGICAL_CONSTANT
     assert config["band_selection"] == "sort-every-iterate"
     assert config["fiber_pinning"] == "power-sums"
     assert config["fiber_moments"] == "bands"
@@ -207,6 +212,7 @@ def test_the_command_line_reaches_the_level_relaxation(monkeypatch):
     assert action.holonomy_weight == 1.3
     assert action.villain_order == 4
     assert action.regge_hinges == cob.ReggeHinges.Interior
+    assert action.cosmological_constant == SENTINEL_COSMOLOGICAL_CONSTANT
 
 
 def test_the_command_line_reaches_every_cell_solve(monkeypatch):
@@ -221,7 +227,8 @@ def test_the_command_line_reaches_every_cell_solve(monkeypatch):
     carried = ([key for key, _ in bp.TOLERANCES]
                + [key for key, _, _ in bp.LIMITS]
                + [key for key, _, _ in bp.SOLVE_OPTIONS]
-               + ["villain_order", "band_selection", "fiber_moments",
+               + ["villain_order", "cosmological_constant",
+                  "band_selection", "fiber_moments",
                   "fiber_pinning", "trace_terms", "elimination",
                   "regge_hinges", "contents"])
     assert {key: cell[key] for key in carried} == \
@@ -256,6 +263,63 @@ def test_the_command_line_reaches_every_cell_solve(monkeypatch):
     assert action.gravitational_weight == 1.0 / 0.7
     assert action.holonomy_weight == 1.3
     assert action.villain_order == 4
+    assert action.cosmological_constant == SENTINEL_COSMOLOGICAL_CONSTANT
+
+
+def test_the_cosmological_constant_reaches_the_growth_step(monkeypatch):
+    """``--cosmological-constant`` reaches the joint action the growth
+    step's search scores a base with (the declared ``joint-action``
+    objective, the stationarity of the level's action), and the stage's
+    record names it; the engine's objective has no such term, and its
+    record says so."""
+    config = _config_of(R, _sentinel_arguments() + [
+        "--pachner-updates", "1"], monkeypatch)
+    seen = {}
+
+    def cell_node(spacetime, objective, register_degrees=(1,)):
+        system = objective._system
+        support = cs.sheeted_support(spacetime, system.sheets)
+        seen["action"] = system._declare(support.spacetime)
+        raise _Reached()
+
+    monkeypatch.setattr(cs, "cell_node", cell_node)
+    cells, z, links, _ = R.level_zero(config)
+    with pytest.raises(_Reached):
+        R.pachner_stage(cells, z, links, config)
+    assert seen["action"].cosmological_constant == \
+        SENTINEL_COSMOLOGICAL_CONSTANT
+    assert seen["action"].gravitational_weight == 1.0 / 0.7
+
+    def run_stage1(node, **options):
+        return []
+
+    monkeypatch.setattr(cob.MultiCobordism, "run_stage1", run_stage1)
+    _, _, _, record = R.pachner_stage(
+        cells, z, links, dict(config, pachner_objective="engine"))
+    assert record["cosmological_constant"] == SENTINEL_COSMOLOGICAL_CONSTANT
+    assert record["cosmological_term_in_objective"] is False
+
+
+@pytest.mark.parametrize("driver", [bp, R], ids=["baryon_poles", "recursion"])
+def test_without_the_cosmological_constant_nothing_carries_it(
+        driver, monkeypatch):
+    """Without ``--cosmological-constant`` the config has no key for it and
+    every action the drivers declare carries Lambda = 0, the term absent;
+    a value that is not a finite number is refused by name."""
+    config = _config_of(driver, ["run", "--quiet"], monkeypatch)
+    assert "cosmological_constant" not in config
+    assert bp.declared_cosmological_constant(config) == 0.0
+    cells, z, links, _ = R.level_zero(R.default_config())
+    spacetime, count = R.build_level(cells, z, links)
+    system, _ = R.level_system(R.sheet_base(spacetime, count),
+                               R.default_config(), [], R.SHEETS)
+    assert system._declare(spacetime).cosmological_constant == 0.0
+    for text in ("nan", "inf", "-inf", "one"):
+        with pytest.raises(SystemExit):
+            driver.build_parser().parse_args(
+                ["run", "--cosmological-constant", text])
+    with pytest.raises(ValueError, match="cosmological constant"):
+        bp.default_config(cosmological_constant=math.inf)
 
 
 def test_the_command_line_reaches_the_box_and_the_growth_step(monkeypatch):
