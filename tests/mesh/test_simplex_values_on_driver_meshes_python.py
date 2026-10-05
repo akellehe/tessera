@@ -123,12 +123,13 @@ def test_a_timelike_leg_gives_an_imaginary_content():
 
 def test_a_degenerate_simplex_is_refused_by_name():
     """A flat tetrahedron (the fourth vertex in the plane of the first three:
-    squared lengths of the unit square's corners with its diagonals) has zero
-    content; its Hodge star is refused as 'primal volume is zero (degenerate
-    simplex)' and its spacelike admissibility as 'inadmissible spacelike
-    simplex'."""
+    squared lengths of the corners of a 3 by 4 rectangle with its diagonals,
+    9, 16 and 25, whose roots and their squares are exact in floating point,
+    so the cell is flat in the stored lengths too) has zero content; its Hodge
+    star is refused as 'primal volume is zero (degenerate simplex)' and its
+    spacelike admissibility as 'inadmissible spacelike simplex'."""
     spacetime = T.Spacetime.fromVertexTuples(3, [[0, 1, 2, 3]], 1.0, 0.0)
-    corners = {0: (0, 0), 1: (1, 0), 2: (0, 1), 3: (1, 1)}
+    corners = {0: (0, 0), 1: (3, 0), 2: (0, 4), 3: (3, 4)}
     for edge in spacetime.getEdgeList().toVector():
         a, b = int(edge.getSource().getId()), int(edge.getTarget().getId())
         (xa, ya), (xb, yb) = corners[a], corners[b]
