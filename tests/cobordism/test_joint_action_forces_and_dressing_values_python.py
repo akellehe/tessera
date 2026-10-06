@@ -196,7 +196,13 @@ def test_the_single_particle_hole_mode():
     """Two levels 0 and Delta = 2, the lower occupied, one fluctuation with
     O = [[0, g], [g, 0]], g = 1/2, d^2h = diag(1/2, 0) and bare stiffness
     A = 1: Pi(0) = 2 g^2 / Delta = 1/4, D = 1/2, and the collective mode is at
-    omega^2 = Delta^2 (1 - Pi(0) / (A + D)) = 4 (1 - 1/6) = 10/3."""
+    omega^2 = Delta^2 (1 - Pi(0) / (A + D)) = 4 (1 - 1/6) = 10/3.
+
+    Every finite eigenvalue of the pencil is reported with its residual,
+    whatever its size: the pair at +-sqrt(10/3) solves A_eff(omega) x = 0 to
+    rounding (residuals 1.0e-14 and 6.5e-16), and the pair at the
+    particle-hole energy +-Delta = +-2 (continuum distance at rounding) has
+    residual 1, so it solves no equation of the dressed stiffness."""
     g = 0.5
     h0 = np.diag([0.0, 2.0])
     o = np.array([[0.0, g], [g, 0.0]])
@@ -207,12 +213,20 @@ def test_the_single_particle_hole_mode():
                                                                   abs=1e-15)
     assert complex(fluctuation.induced_stiffness()[0]) == pytest.approx(
         0.25, abs=1e-15)
-    frequencies = sorted(complex(m.frequency).real
-                         for m in fluctuation.collective_modes())
-    np.testing.assert_allclose(frequencies,
-                               [-math.sqrt(10 / 3), math.sqrt(10 / 3)],
-                               rtol=1e-12)
-    for mode in fluctuation.collective_modes():
+    modes = sorted(fluctuation.collective_modes(),
+                   key=lambda m: complex(m.frequency).real)
+    frequencies = [complex(m.frequency).real for m in modes]
+    np.testing.assert_allclose(
+        frequencies, [-2.0, -math.sqrt(10 / 3), math.sqrt(10 / 3), 2.0],
+        rtol=1e-12)
+    solved = [m for m in modes if abs(complex(m.frequency).real) < 1.9]
+    assert len(solved) == 2
+    assert all(m.residual < 1e-13 for m in solved)
+    at_the_pole = [m for m in modes if abs(complex(m.frequency).real) > 1.9]
+    for mode in at_the_pole:
+        assert mode.continuum_distance < 1e-14
+        assert mode.residual == pytest.approx(1.0, abs=1e-12)
+    for mode in modes:
         assert mode.radiation_rate == pytest.approx(0.0, abs=1e-12)
     # A_eff(omega) = A + D - Pi(omega) vanishes at the mode
     at_mode = complex(fluctuation.dressed_stiffness(math.sqrt(10 / 3))[0])

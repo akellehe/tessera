@@ -265,9 +265,10 @@ class TheSelfConsistentPairTest(unittest.TestCase):
 
     def test_the_solve_reaches_a_fixed_point_of_the_pair(self):
         """From the sphere with its squared lengths moved by up to 0.015 the
-        drive accepts four steps (residual norm 6.4, 0.17, 5.1e-4, 2.5e-8,
-        8.0e-14) and stops when no trial of its line search lowers the
-        residual norm by the tolerance. The force it stops at, 8.0e-14, is
+        drive accepts six steps (residual norm 6.4, 0.17, 5.1e-4, 2.5e-8,
+        1.4e-13, 1.1e-13, 9.6e-14), the last two within the rounding of its
+        equations, and stops when no trial of its line search lowers the
+        residual norm by the tolerance. The force it stops at, 9.6e-14, is
         the rounding of terms of size one hundred, above the declared
         tolerance 1e-15, so the read there says not converged; the fixed
         point's properties hold to rounding."""
@@ -291,7 +292,7 @@ class TheSelfConsistentPairTest(unittest.TestCase):
                          mean_field=_mean_field(occupied_modes=modes))
         report = drive["report"]
         self.assertEqual(drive["stop_reason"], cs.STOP_STATIONARY)
-        self.assertEqual(drive["accepted_updates"], 4)
+        self.assertEqual(drive["accepted_updates"], 6)
         self.assertEqual(drive["moves_committed"], 0)
         self.assertEqual(drive["objective"].undefined, [])
         self.assertLess(drive["trace"][-1], 1e-12)
@@ -324,15 +325,15 @@ class TheSelfConsistentPairTest(unittest.TestCase):
 
     def test_every_step_leaves_the_covariance_a_projector(self):
         """The drive stays inside the Gaussian class: at every point a step
-        is proposed from, fifteen of them, the covariance is a projector."""
+        is proposed from, nineteen of them, the covariance is a projector."""
         spacetime = sphere3(squared=lambda index: 1.0 + 0.02 * (index % 4))
         drive = cs.relax(
             spacetime, _declaration(gravitational_weight=90.0,
                                     matter_weight=1.0),
             mean_field=_mean_field(occupied_modes=2))
         steps = [update["measured"] for update in drive["objective"].updates]
-        self.assertEqual(len(steps), 15)
-        self.assertEqual(drive["accepted_updates"], 14)
+        self.assertEqual(len(steps), 19)
+        self.assertEqual(drive["accepted_updates"], 18)
         for step in steps:
             self.assertLess(step.purity_defect, 1e-14)
             self.assertEqual(len(step.occupied_eigenvalues), 2)
@@ -384,7 +385,7 @@ class TheSelfConsistentPairTest(unittest.TestCase):
         # is proposed from on, so a sort at the end point fills another pair
         crossed = [bool(update["measured"].band_crossing)
                    for update in drive["objective"].updates]
-        self.assertEqual(crossed, [False] * 4 + [True] * 11)
+        self.assertEqual(crossed, [False] * 4 + [True] * 15)
         reread = np.array(
             drive["action"].occupation_projector(2, True), dtype=complex)
         self.assertGreater(np.max(np.abs(final - reread)), 0.3)
@@ -541,7 +542,7 @@ class TheStepAndReportFieldsTest(unittest.TestCase):
             mean_field=_mean_field(occupied_modes=2))
         report = drive["report"]
         steps = [update["measured"] for update in drive["objective"].updates]
-        self.assertEqual(len(steps), 15)
+        self.assertEqual(len(steps), 19)
         for step in steps:
             # the occupied energy is the sum over the eigenvalues of the
             # bands the covariance fills, the followed ones; the occupied

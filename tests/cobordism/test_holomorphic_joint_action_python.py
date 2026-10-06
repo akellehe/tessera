@@ -454,9 +454,11 @@ class TheMultipliersImposeTheMomentEquationTest(unittest.TestCase):
         """The drive of the constrained system from the geometry scaled by
         1.08: the multiplier of a constraint declared on the action is the
         least-squares one at every point (`cell_solve.GeometricSystem`),
-        which here is ``xi = -w_M = -1`` exactly, since the length equations
-        are ``(w_M + xi) d p_1/d z``. Five accepted updates take the residual
-        norm from 30.4 to exactly zero, and the moment holds exactly."""
+        which here is ``xi = -w_M = -1``, since the length equations are
+        ``(w_M + xi) d p_1/d z``. Five accepted updates take the residual
+        norm from 30.4 to 1.7e-15, its rounding: each of the ten length
+        equations is below 7.1e-16, the moment equation holds exactly, and
+        the multiplier is -1 to 1.4e-17."""
         reference = sphere3(squared=_metric)
         target = self._constrained(reference, 0j).power_sums()[0]
         spacetime = sphere3(squared=lambda index: _metric(index) * 1.08)
@@ -467,9 +469,12 @@ class TheMultipliersImposeTheMomentEquationTest(unittest.TestCase):
         self.assertEqual(record["stop_reason"], cs.STOP_STATIONARY)
         self.assertEqual(record["accepted_updates"], 5)
         self.assertAlmostEqual(record["trace"][0], 30.40, places=2)
-        self.assertEqual(record["trace"][-1], 0.0)
+        self.assertLess(record["trace"][-1], 1e-14)
+        residual = np.asarray(record["point"].relaxation.residual())
+        self.assertLess(np.max(np.abs(residual)), 1e-15)
         end = record["point"].relaxation.action
-        self.assertEqual(list(end.multipliers()), [-1.0 + 0j])
+        (multiplier,) = end.multipliers()
+        self.assertLess(abs(multiplier + 1.0), 1e-15)
         self.assertEqual(list(end.moment_residuals()), [0j])
 
     def test_the_stationary_point_has_the_target_moment_and_the_forced_multiplier(

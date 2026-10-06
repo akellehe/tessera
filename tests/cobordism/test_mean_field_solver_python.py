@@ -35,7 +35,7 @@ Terms used below:
 
 What is asserted:
 
-* the drive takes (0123, 201) from a residual norm of 0.39 to 1.7e-14 in 21
+* the drive takes (0123, 201) from a residual norm of 0.92 to 2.0e-14 in 21
   accepted updates, on the real slice, where no trial lowers the norm by the
   tolerance, and the point it reaches satisfies the equations of the joint
   action evaluated independently; at the declared tolerance that point is
@@ -46,15 +46,18 @@ What is asserted:
   band through a crossing to a point that is no fixed point of the re-sorted
   equations;
 * a read that reaches no fixed point ends by itself and by name, and its
-  record says what the drive scored last; the engine scores no trial outside
-  the Kontsevich-Segal allowable domain, so a read whose step leaves it
-  ends on its boundary; a squared length that is not finite, and a cell a
-  committed move changed, are the only geometries with no value to read;
+  record says what the drive scored last; the engine scores every trial
+  whatever its Kontsevich-Segal margin (its admissibility gate is off unless
+  declared), so a read whose step leaves the allowable domain is made
+  outside it and flagged with its margin; a squared length that is not
+  finite, and a cell a committed move changed, are the only geometries with
+  no value to read;
 * no limit ends a drive unless the user declares one, and a declared one
   ends it by name;
 * the step over the held set is the constrained Newton step, which leaves
-  far less of the linearized residual than the projection of the
-  unconstrained step and keeps every held modulus.
+  less of the linearized residual, in the scaled equations it solves, than
+  the projection of the unconstrained step (half as much on the read
+  below), and keeps every held modulus.
 """
 import numpy as np
 import pytest
@@ -121,14 +124,19 @@ def _class_force(action, spacetime):
 
 def test_the_drive_takes_a_read_to_the_rounding_of_its_equations():
     """(0123, 201): the drive lowers the residual norm of the joint system
-    from 0.391 at the host to 1.7e-14 in 21 accepted updates, every one a
+    from 0.916 at the host to 2.0e-14 in 21 accepted updates, every one a
     decrease, committing no Pachner move, on the real slice. It ends where
     no move and no trial of the line search lowers the norm by the tolerance
-    1e-15, and the end point, whose force 1.7e-14 is above that tolerance,
+    1e-15, and the end point, whose force 2.0e-14 is above that tolerance,
     is reported not converged. The joint Jacobian there has rank 11 of 14
     (twelve shared coordinates and the two multipliers of the pinned fiber;
     the three gauge directions are its null space) with a separated rank
-    decision, and the pinned eigenvalues hold to rounding."""
+    decision, and the pinned eigenvalues hold to rounding.
+
+    The norm at the host is that of the multipliers' least-squares fit
+    taken on the length equations scaled by their coordinates' scales
+    (`cell_solve.least_squares_multipliers`); the fit of the unscaled
+    equations leaves 0.391 there."""
     spacetime, action, report, drive, _ = _relax(FIRST_CELL, (2, 0, 1))
     assert report.band_selection == cob.BandSelection.Continuation
     assert drive["stop_reason"] == cs.STOP_STATIONARY == \
@@ -137,7 +145,7 @@ def test_the_drive_takes_a_read_to_the_rounding_of_its_equations():
     trace = drive["trace"]
     assert 15 <= drive["accepted_updates"] <= 30
     assert len(trace) == drive["accepted_updates"] + 1
-    assert trace[0] == pytest.approx(0.39072, rel=1e-4)
+    assert trace[0] == pytest.approx(0.91632, rel=1e-4)
     assert all(after < before for before, after in zip(trace, trace[1:]))
     assert trace[-1] < 1e-12
     # the fixed-point conditions at the declared tolerance 1e-15
@@ -442,18 +450,18 @@ def test_continuation_and_re_sorting_part_at_a_crossing():
 
     Followed by continuation, the declared band 2 (places 6 to 8 at the host)
     crosses below the host's middle band at the first accepted update, and
-    every later step proposal reports the crossing. The drive ends at a
-    residual norm of 4.3e-15 with the occupied band at 2.898, its pinned
-    value, at z = (32.692, 15.566, 20.997, 14.372, 10.783, 20.617). There
-    the spectrum in ascending order of real part is 0.383, 2.898, 3.584, ...
-    (three modes each): the followed band holds places 3 to 5.
+    every later step proposal reports the crossing. The drive ends after 38
+    accepted updates at a residual norm of 7.1e-13 with the occupied band at
+    2.898, its pinned value, at z = (33.214, 13.996, 19.556, 16.021, 13.651,
+    21.301), off the real slice by up to 0.027. There the spectrum in
+    ascending order of real part is 0.353, 2.898, 3.575, ... (three modes
+    each, every triple one band of rank three at the declared band tolerance
+    1e-15): the followed band holds places 3 to 5.
 
-    Re-sorted at every point, the drive ends at another point,
-    z = (28.531, 13.207, 13.306, 14.385, 14.672, 10.288), with its occupied
-    band at the pinned value too. At the declared band tolerance 1e-15 the
-    three lowest modes of either end point, equal to parts in 1e15, read as
-    two bands of ranks 2 and 1, so the third band in the declared order is
-    the triple at places 3 to 5 at both."""
+    Re-sorted at every point, the drive ends after 8 accepted updates at
+    another point, z = (34.307, 12.155, 24.478, 33.301, 28.132, 37.576),
+    with its occupied band at the pinned value too, and there it is the
+    third triple, at places 6 to 8."""
     spacetime, action, followed, drive, _ = _relax(FIRST_CELL, (0, 0, 3))
     record = bp.relaxation_record(followed, drive)
     assert drive["stop_reason"] == cs.STOP_STATIONARY
@@ -468,29 +476,32 @@ def test_continuation_and_re_sorting_part_at_a_crossing():
     assert list(band.declared_positions) == [6, 7, 8]
     assert list(band.positions) == [3, 4, 5] and band.crossed
     assert band.eigenvalues[0].real == pytest.approx(2.8977, abs=5e-4)
+    assert drive["accepted_updates"] == 38
     z_followed = np.asarray(bp.sheet_squared_lengths(spacetime, 0))
     np.testing.assert_allclose(
-        z_followed.real, [32.692, 15.566, 20.997, 14.372, 10.783, 20.617],
+        z_followed.real, [33.214, 13.996, 19.556, 16.021, 13.651, 21.301],
         atol=5e-3)
-    assert np.max(np.abs(z_followed.imag)) < 1e-4
+    assert np.max(np.abs(z_followed.imag)) == pytest.approx(0.0271, abs=5e-4)
 
     spectrum = np.sort(np.linalg.eigvals(
         bp.matrix(action.carrier_operator())).real)
-    np.testing.assert_allclose(spectrum[0:3], 0.3835, atol=5e-4)
+    np.testing.assert_allclose(spectrum[0:3], 0.3525, atol=5e-4)
     np.testing.assert_allclose(spectrum[3:6], 2.8977, atol=5e-4)
-    np.testing.assert_allclose(spectrum[6:9], 3.5845, atol=5e-4)
-    assert list(followed.band_ranks) == [2, 1, 3, 3, 3, 3, 3]
+    np.testing.assert_allclose(spectrum[6:9], 3.5751, atol=5e-4)
+    assert list(followed.band_ranks) == [3] * 6
 
     resorted_spacetime, _, resorted, resorted_drive, _ = _relax(
         FIRST_CELL, (0, 0, 3), selection="sort-every-iterate")
     assert resorted.band_selection == cob.BandSelection.SortEveryIterate
     assert resorted_drive["stop_reason"] == cs.STOP_STATIONARY
     assert resorted_drive["trace"][-1] < 1e-12
+    assert resorted_drive["accepted_updates"] == 8
     (band,) = resorted.bands
     assert band.eigenvalues[0].real == pytest.approx(2.8977, abs=5e-4)
+    assert list(band.positions) == [6, 7, 8]
     z_resorted = np.asarray(bp.sheet_squared_lengths(resorted_spacetime, 0))
     np.testing.assert_allclose(
-        z_resorted.real, [28.531, 13.207, 13.306, 14.385, 14.672, 10.288],
+        z_resorted.real, [34.307, 12.155, 24.478, 33.301, 28.132, 37.576],
         atol=5e-3)
     assert np.max(np.abs(z_resorted - z_followed)) > 1.0
 
@@ -503,12 +514,12 @@ def test_a_held_holonomy_driven_across_minus_one_is_named():
     holonomy across -1, where the monopole number read from the principal
     arguments jumps, and the system is not posed at a point that carries
     another number than the declared one. The drive lowers the residual
-    norm from 133 to 0.0135 in 24 accepted updates and ends where every one
+    norm from 133 to 0.333 in 22 accepted updates and ends where every one
     of the 24 trials of its line search lands in another sector and so has
     no residual: its detail says so, with the library's words for the last
     of them. It ends by itself; the geometry it stopped at is
     Kontsevich-Segal allowable (margin pi, a Euclidean cell) with the
-    largest |z| 230 times the host's, so the read carries no flag of the
+    largest |z| 68 times the host's, so the read carries no flag of the
     geometry, and its record says why the drive stopped."""
     _, _, report, drive, config = _relax(FIRST_CELL, (3, 0, 0),
                                          fiber_moments=0)
@@ -516,7 +527,7 @@ def test_a_held_holonomy_driven_across_minus_one_is_named():
     assert drive["stop_reason"] == cs.STOP_STATIONARY
     assert drive["moves_committed"] == 0
     assert drive["trace"][0] == pytest.approx(133.26, rel=1e-3)
-    assert report.force_norm == pytest.approx(0.01353, abs=5e-4)
+    assert report.force_norm == pytest.approx(0.33345, abs=5e-4)
     assert 15 <= drive["accepted_updates"] <= 40
     sector = ("HolomorphicRelaxation: held sector 0 is declared with "
               "monopole number 1 but the starting configuration carries 0")
@@ -529,7 +540,7 @@ def test_a_held_holonomy_driven_across_minus_one_is_named():
     trace = drive["trace"]
     assert all(after < before for before, after in zip(trace, trace[1:]))
     assert report.kontsevich_segal_margin == pytest.approx(np.pi, abs=1e-5)
-    assert report.largest_length_ratio == pytest.approx(230.0, rel=0.05)
+    assert report.largest_length_ratio == pytest.approx(67.94, rel=0.05)
     assert _flags(report, config) == []
     record = bp.relaxation_record(report, drive)
     assert record["stop_reason"] == \
@@ -538,39 +549,45 @@ def test_a_held_holonomy_driven_across_minus_one_is_named():
     assert record["fiber_moments"] == 0 and record["multipliers"] == []
 
 
-def test_lengths_that_grow_end_on_the_boundary_of_the_allowable_domain():
+def test_lengths_that_grow_leave_the_allowable_domain_and_are_flagged():
     """(0123, 201) with no fiber moment pinned: the length equations are the
     matter force alone, which is 1/z^2 at large z and vanishes only at
-    infinite length, so the step lengthens the cell. The engine scores no
-    trial outside the closure of the Kontsevich-Segal allowable domain, so
-    the drive follows the step up to the boundary of that domain: after 7
-    accepted updates one squared length is negative (-80.0, the others 80
-    to 235, the largest |z| 29 times the host's), the margin is zero to
-    rounding, the residual norm is 12.7 (from 90.9 at the host), and no
-    trial of the last line search is scored. A margin at or below the
-    declared tolerance 1e-15 is flagged, with the margin and the tolerance
-    it was compared with. The geometry is finite, so it has a value to
-    read."""
+    infinite length, so the step lengthens the cell. The engine scores
+    every trial whatever its Kontsevich-Segal margin (its admissibility gate
+    is off unless declared), so the drive follows the step out of the
+    allowable domain: after 4 accepted updates every squared length is
+    complex and five of the six have a negative real part (the largest |z|
+    29 times the host's), the margin is -2.97, the residual norm is 2.14
+    (from 90.9 at the host), and every one of the 24 trials of the last line
+    search is scored and has no residual (a link of the trial is zero). A
+    margin at or below the declared tolerance 1e-15 is flagged, with the
+    margin and the tolerance it was compared with. The geometry is finite,
+    so it has a value to read."""
     spacetime, _, report, drive, config = _relax(FIRST_CELL, (2, 0, 1),
                                                  fiber_moments=0)
     assert not report.converged
     assert drive["stop_reason"] == cs.STOP_STATIONARY
     assert drive["trace"][0] == pytest.approx(90.946, rel=1e-3)
-    assert drive["trace"][-1] == pytest.approx(12.69, rel=1e-2)
-    assert drive["accepted_updates"] == 7
-    # no trial of the last line search was admissible, so none was scored
+    assert drive["trace"][-1] == pytest.approx(2.1402, rel=1e-2)
+    assert drive["accepted_updates"] == 4
+    assert drive["stop_detail"].endswith(
+        "since the last proposal 24 complexes were scored, 24 of them without "
+        "a residual (the last: Connection: a link must be nonzero (U_xy in "
+        "C*))")
     last = drive["objective"].updates[-1]
-    assert drive["objective"].scored == last["scored_before"]
-    assert report.largest_length_ratio == pytest.approx(29.41, rel=1e-2)
+    assert drive["objective"].scored - last["scored_before"] == 24
+    assert report.largest_length_ratio == pytest.approx(28.79, rel=1e-2)
     z = np.asarray(bp.sheet_squared_lengths(spacetime, 0))
-    assert sorted(z.real)[0] == pytest.approx(-80.03, rel=1e-2)
-    assert sorted(z.real)[1] > 0.0
+    np.testing.assert_allclose(
+        sorted(z.real), [-230.30, -127.99, -53.44, -52.94, -18.23, 16.20],
+        rtol=1e-2)
+    assert np.min(np.abs(z.imag)) > 1.0
     margin = report.kontsevich_segal_margin
-    assert abs(margin) < 1e-12
+    assert margin == pytest.approx(-2.9709, abs=1e-3)
     tolerance = bp.declared_tolerance(config, "allowability_tolerance")
     assert tolerance == 1e-15
     flags = _flags(report, config)
-    assert (flags == []) == (margin > tolerance)
+    assert len(flags) == 1
     for flag in flags:
         assert flag["name"] == "not Kontsevich-Segal allowable"
         assert flag["kontsevich_segal_margin"] == margin
@@ -583,41 +600,29 @@ def test_lengths_that_grow_end_on_the_boundary_of_the_allowable_domain():
                        "length_runaway_ratio")
 
 
-def test_a_read_whose_step_leaves_the_allowable_domain_ends_on_its_boundary():
-    """(0123, 021): the step drives one shared squared length negative. The
-    engine scores no trial outside the closure of the Kontsevich-Segal
-    allowable domain, so the drive ends on its boundary after 6 accepted
-    updates, at a residual norm of 0.946 (from 8.12 at the host), with one
-    squared length at -2.06 and the margin zero to rounding (3e-14). Of the
-    trials of its last line search, the four that were scored have no
-    residual (a link of the step's size overflows to zero) and the others
-    lie outside the domain. The pinned eigenvalues do not hold there
-    (residuals 0.16 and 1.13), and the read is flagged only when the margin
-    is at or below the declared tolerance."""
+def test_the_read_of_0123_021_reaches_a_fixed_point_of_its_equations():
+    """(0123, 021): the drive lowers the residual norm from 8.84 at the host
+    to 1.1e-13 in 13 accepted updates, every squared length staying real
+    and positive (a Euclidean cell, margin pi), and ends where no trial of
+    its line search lowers the norm by the tolerance; the pinned
+    eigenvalues hold to rounding (residuals below 2e-14) and the read
+    carries no flag of the geometry."""
     spacetime, _, report, drive, config = _relax(FIRST_CELL, (0, 2, 1))
     assert not report.converged
     assert drive["stop_reason"] == cs.STOP_STATIONARY
-    assert drive["accepted_updates"] == 6
-    assert drive["trace"][0] == pytest.approx(8.1217, rel=1e-3)
-    assert drive["trace"][-1] == pytest.approx(0.946, rel=1e-2)
+    assert drive["accepted_updates"] == 13
+    assert drive["trace"][0] == pytest.approx(8.8403, rel=1e-3)
+    assert drive["trace"][-1] < 1e-12
     assert drive["stop_detail"].endswith(
-        "since the last proposal 4 complexes were scored, 4 of them without "
-        "a residual (the last: Connection: a link must be nonzero (U_xy in "
-        "C*))")
+        "since the last proposal 24 complexes were scored, 0 of them without "
+        "a residual")
     z = np.asarray(bp.sheet_squared_lengths(spacetime, 0))
     np.testing.assert_allclose(
-        z.real, [22.480, 5.846, 12.047, 9.478, 12.753, -2.056], atol=5e-3)
+        z.real, [7.040, 5.911, 9.746, 5.810, 9.623, 3.595], atol=5e-3)
     assert np.max(np.abs(z.imag)) < 1e-9
-    assert sorted(abs(r) for r in report.moment_residuals) == \
-        pytest.approx([0.1572, 1.1285], abs=5e-3)
-    margin = report.kontsevich_segal_margin
-    assert abs(margin) < 1e-12
-    tolerance = bp.declared_tolerance(config, "allowability_tolerance")
-    flags = _flags(report, config)
-    assert (flags == []) == (margin > tolerance)
-    for flag in flags:
-        assert flag["name"] == "not Kontsevich-Segal allowable"
-        assert flag["kontsevich_segal_margin"] == margin
+    assert max(abs(r) for r in report.moment_residuals) < 1e-13
+    assert report.kontsevich_segal_margin == pytest.approx(np.pi, abs=1e-9)
+    assert _flags(report, config) == []
     assert bp.geometry_without_value(spacetime, drive) is None
 
 
@@ -625,12 +630,13 @@ def test_a_read_whose_step_leaves_the_allowable_domain_ends_on_its_boundary():
 def test_a_read_that_stops_short_moves_at_every_update_and_says_why():
     """(0123, 300) with the pinned fiber: the drive moves at every update it
     accepts (the covariance changes at every one), lengthening the cell to
-    753 times the host's largest |z|, and ends by name after 142 accepted
-    updates at a residual norm of 3.0e-7 (0.400 at the host), where no trial
-    of the line search lowers the norm by the tolerance. The pinned
-    eigenvalue holds there to parts in 1e11. The geometry is
-    Kontsevich-Segal allowable (margin pi), so the read carries no flag of
-    the geometry, and the record and its text say why the drive stopped."""
+    7.3e6 times the host's largest |z|, and ends by name after 462 accepted
+    updates at a residual norm of 5.8e-8 (0.907 at the host, the norm of
+    the multipliers' fit in the scaled equations), where no trial of the
+    line search lowers the norm by the tolerance. The pinned eigenvalue
+    holds there to 5.7e-8 of its target. The geometry is Kontsevich-Segal
+    allowable (margin pi to 1e-5), so the read carries no flag of the
+    geometry, and the record and its text say why the drive stopped."""
     _, _, report, drive, config = _relax(FIRST_CELL, (3, 0, 0))
     assert not report.converged
     assert drive["stop_reason"] == cs.STOP_STATIONARY
@@ -639,16 +645,16 @@ def test_a_read_that_stops_short_moves_at_every_update_and_says_why():
         "since the last proposal 24 complexes were scored, 0 of them "
         "without a residual")
     accepted = drive["accepted_updates"]
-    assert 100 <= accepted <= 200
-    assert drive["trace"][0] == pytest.approx(0.40022, rel=1e-4)
-    assert report.force_norm == pytest.approx(2.99e-7, rel=0.1)
+    assert 400 <= accepted <= 550
+    assert drive["trace"][0] == pytest.approx(0.90713, rel=1e-4)
+    assert report.force_norm == pytest.approx(1.08e-8, rel=0.1)
     measured = [update["measured"] for update in drive["objective"].updates]
     changes = [step.covariance_change for step in measured[1:accepted + 1]]
     assert len(changes) == accepted and min(changes) > 0.0
-    assert report.largest_length_ratio == pytest.approx(753.0, rel=0.05)
-    assert abs(report.moment_residuals[0]) < 1e-8 * abs(
+    assert report.largest_length_ratio == pytest.approx(7.34e6, rel=0.05)
+    assert abs(report.moment_residuals[0]) < 1e-7 * abs(
         report.moment_targets[0])
-    assert report.kontsevich_segal_margin == pytest.approx(np.pi, abs=1e-6)
+    assert report.kontsevich_segal_margin == pytest.approx(np.pi, abs=1e-5)
     assert _flags(report, config) == []
     record = bp.relaxation_record(report, drive)
     assert record["stop_reason"] == \
@@ -678,10 +684,10 @@ def test_no_limit_is_declared_unless_the_user_declares_one():
 
 
 def test_a_declared_number_of_updates_ends_the_solve_by_name():
-    """(0123, 003), which takes eight accepted updates, with one iteration
-    of the drive and two relaxation updates declared: the drive takes the
-    two and stops at a residual norm of 0.105, and says that the limit was
-    the user's."""
+    """(0123, 003), which takes 38 accepted updates, with one iteration of
+    the drive and two relaxation updates declared: the drive takes the two
+    and stops at a residual norm of 0.0238 (9.22 at the host), and says that
+    the limit was the user's."""
     _, _, report, drive, _ = _relax(
         FIRST_CELL, (0, 0, 3),
         limits={"iteration_limit": 1, "update_limit": 2})
@@ -689,7 +695,7 @@ def test_a_declared_number_of_updates_ends_the_solve_by_name():
     assert drive["stop_reason"] == cs.STOP_DECLARED_LIMIT
     assert drive["accepted_updates"] == 2
     assert len(drive["objective"].updates) == 2
-    assert drive["trace"] == pytest.approx([8.5302, 1.7717, 0.10534],
+    assert drive["trace"] == pytest.approx([9.2198, 1.4020, 0.023845],
                                            rel=1e-4)
     assert drive["stop_detail"].startswith(
         "a declared count ended the drive (iteration limit 1, update limit "
@@ -710,7 +716,7 @@ def test_a_declared_time_ends_the_solve_by_name():
     assert drive["stop_detail"].startswith(
         "the declared time limit of 0 seconds was reached after 0 step "
         "proposals")
-    assert report.force_norm == pytest.approx(8.5302, rel=1e-4)
+    assert report.force_norm == pytest.approx(9.2198, rel=1e-4)
     assert report.largest_length_ratio == 1.0
     np.testing.assert_array_equal(
         np.asarray(bp.sheet_squared_lengths(spacetime, 0)),
@@ -774,15 +780,20 @@ def _held_modulus_projector(geometry, support):
     return basis @ basis.T
 
 
-def test_the_constrained_step_leaves_far_less_of_the_linear_residual():
-    """(0123, 021) at the host, the covariance fixed. The projection of the
-    unconstrained minimum-norm Newton step onto the held directions leaves
-    28 % of the linearized residual; the constrained Newton step, the
-    least-squares step over the steps that keep the held moduli
-    (`HolomorphicRelaxation.newton_step`), leaves 2.4 %. It keeps every held
-    modulus to rounding, it is a descent direction for the residual norm,
-    and the first update of a drive along it lowers the residual norm from
-    9.91 to 8.57 with the held moduli drifting by one unit of rounding."""
+def test_the_constrained_step_leaves_less_of_the_linear_residual():
+    """(0123, 021) at the host, the covariance fixed. The constrained Newton
+    step (`HolomorphicRelaxation.newton_step`) is the least-squares step,
+    over the steps that keep the held moduli, of the equations with every
+    row and column multiplied by its variable's scale (`variable_scales`:
+    the squared length 8 of the host on the lengths, one on the links). In
+    that norm it leaves 14.7 % of the linearized residual, and the
+    projection of the unconstrained minimum-norm Newton step onto the held
+    directions, a step that keeps them too, leaves 29.5 %; in the unscaled
+    norm, which the step reports (`linear_residual`), they leave 9.0 % and
+    28.5 %. The step keeps every held modulus to rounding, it is a descent
+    direction for the residual norm, and the first update of a drive along
+    it lowers the residual norm from 9.91 to 8.07 with the held moduli
+    drifting by one unit of rounding."""
     base, system, host, geometry = _held_host_system((0, 2, 1))
     relaxation = system.point(base).relaxation
     assert relaxation.variable_count() == 12
@@ -800,6 +811,13 @@ def test_the_constrained_step_leaves_far_less_of_the_linear_residual():
     projected_left = np.linalg.norm(residual + jacobian @ projected) / \
         np.linalg.norm(residual)
     assert projected_left == pytest.approx(0.285, abs=0.01)
+    scales = np.asarray(relaxation.variable_scales())
+
+    def scaled_left(step):
+        return np.linalg.norm(scales * (residual + jacobian @ step)) / \
+            np.linalg.norm(scales * residual)
+
+    assert scaled_left(projected) == pytest.approx(0.2946, abs=5e-4)
 
     newton = relaxation.newton_step()
     assert newton.constrained
@@ -809,8 +827,8 @@ def test_the_constrained_step_leaves_far_less_of_the_linear_residual():
     assert newton.constrained_rank_gap > 1e5
     assert newton.residual_norm == pytest.approx(np.linalg.norm(residual),
                                                  rel=1e-12)
-    assert newton.linear_residual == pytest.approx(0.0235, abs=5e-4)
-    assert newton.linear_residual < projected_left / 5
+    assert newton.linear_residual == pytest.approx(0.0897, abs=5e-4)
+    assert newton.linear_residual < projected_left / 3
     # the step keeps the held moduli, leaves what it reports of the
     # linearized residual, and is a descent direction
     taken = np.asarray(newton.step)
@@ -818,12 +836,14 @@ def test_the_constrained_step_leaves_far_less_of_the_linear_residual():
     left = np.linalg.norm(residual + jacobian @ taken) / \
         np.linalg.norm(residual)
     assert left == pytest.approx(newton.linear_residual, rel=1e-6)
+    assert scaled_left(taken) == pytest.approx(0.1472, abs=5e-4)
+    assert scaled_left(taken) < scaled_left(projected)
     assert np.vdot(residual, jacobian @ taken).real < 0.0
     # one relaxation update of a drive along it
     before = relaxation.held_log_moduli()
     drive = cs.solve(base, system, moves=False, iteration_limit=1)
     assert drive["accepted_updates"] == 1
-    assert drive["trace"] == pytest.approx([9.9098, 8.5696], rel=1e-4)
+    assert drive["trace"] == pytest.approx([9.9098, 8.0686], rel=1e-4)
     after = system.point(drive["spacetime"]).relaxation.held_log_moduli()
     assert len(before) == len(after) == 12
     assert max(abs(a - b) for a, b in zip(after, before)) < 1e-14
