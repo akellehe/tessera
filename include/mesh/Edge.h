@@ -159,11 +159,11 @@ class Edge {
     ///
     /// `isDegenerate` is separate from `isNull`: a null edge is a lightlike ray, a
     /// degenerate one is absent. Exactly one of the five predicates holds for any edge.
-
-    /// Absolute floor on the Euclidean modulus below which an edge is degenerate rather
-    /// than any causal type. Dimensions of length. This is the one place the Euclidean
-    /// modulus is the right norm — an edge with no extent is absent.
-    static constexpr double kDegenerateEpsilon = 1e-12;
+    ///
+    /// An edge is degenerate exactly when \f$ l = 0 \f$: an edge with no extent is
+    /// absent, and \f$ \arg 0 \f$ reads nothing. Any nonzero length has an argument and
+    /// takes its causal type from it whatever its modulus, so no disposition changes
+    /// under a dilation of the lengths.
 
     /// Angular half-width, in radians, within which an argument counts as definite.
     ///
@@ -255,7 +255,7 @@ class Edge {
     [[nodiscard]] bool isNull() const noexcept;
     /// A genuinely complex \f$ l^2 \f$: no definite causal character.
     [[nodiscard]] bool isMixed() const noexcept;
-    /// An absent edge (\f$ |l|_E \approx 0 \f$), which is not a causal type.
+    /// An absent edge (\f$ l = 0 \f$ exactly), which is not a causal type.
     [[nodiscard]] bool isDegenerate() const noexcept;
     [[nodiscard]] EdgeDisposition disposition() const noexcept;
 

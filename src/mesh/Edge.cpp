@@ -120,9 +120,10 @@ class Simplex;
     }
 
     [[nodiscard]] bool Edge::isDegenerate() const noexcept {
-      // The Euclidean modulus, and the one place it is the right norm: an edge with
-      // no extent at all is absent, not lightlike.
-      return std::abs(getLength()) <= kDegenerateEpsilon;
+      // An edge with no extent at all is absent, not lightlike: exactly l = 0, where
+      // arg(l^2) reads nothing. Any nonzero length, however small, has an argument,
+      // so the comparison carries no unit of length.
+      return getLength() == std::complex<double>(0.0, 0.0);
     }
 
     [[nodiscard]] bool Edge::isSpacelike() const noexcept {

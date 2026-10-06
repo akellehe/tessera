@@ -196,7 +196,8 @@ the C* connection.)doc")
            "to the nearest of the three -- that would invent definiteness the "
            "geometry does not have. The common case for a uniformly drawn argument.")
       .def("isDegenerate", &Edge::isDegenerate,
-           "An absent edge (Euclidean modulus ~ 0), which is not a causal type. "
+           "An absent edge (l == 0 exactly), which is not a causal type. Any "
+           "nonzero length has an argument and takes its causal type from it. "
            "Exactly one of isSpacelike/isTimelike/isNull/isMixed/isDegenerate holds.")
       .def("getPhase", &Edge::getPhase,
            R"doc(Return the complex C* connection phase carried by this edge.
