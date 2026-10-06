@@ -465,16 +465,20 @@ def test_the_shared_field_has_six_lengths_and_six_links():
 @pytest.mark.parametrize("tolerances", ["run", "declared"])
 def test_the_step_uses_the_numerical_rank(content, tolerances):
     """The step of `HolomorphicRelaxation` (`newton_step`) is the
-    minimum-norm least-squares solution with singular values at or below
-    rank_tolerance times the largest counted as zero. On the seeded action of
-    the run's first host cell, every edge its own coordinate, the
-    36-coordinate closed-form Jacobian has exactly three near-null
-    directions, at 1e-16 of the largest singular value, and the next
-    singular value is eleven decades above them. The run declared the
-    threshold 1e-10 (`RUN.TOLERANCES`) and the declared default is 1e-15;
-    at both the rank the step uses is the numerical rank 33, for both
-    contents, and the step reports it with the gap between the smallest
-    retained and the largest discarded singular value."""
+    minimum-norm least-squares solution of the equations with every row and
+    column multiplied by its variable's scale (`variable_scales`: the
+    squared length 8 of the host on the lengths, one on the links), with
+    singular values of that scaled Jacobian at or below rank_tolerance times
+    the largest counted as zero. On the seeded action of the run's first
+    host cell, every edge its own coordinate, the 36-coordinate closed-form
+    Jacobian has exactly three near-null directions, at 1e-16 of the
+    largest singular value, scaled or not, and in the scaled Jacobian the
+    next singular value is twelve decades or more above them. The run
+    declared the threshold 1e-10 (`RUN.TOLERANCES`) and the declared default
+    is 1e-15; at both the rank the step uses is the numerical rank 33, for
+    both contents, and the step reports it with the singular values of the
+    scaled Jacobian and the gap between the smallest retained and the
+    largest discarded one."""
     config = (_cell_config if tolerances == "run"
               else _declared_cell_config)(FIRST_CELL, content)
     spacetime = bp.build_host(config["edge_squared"], config["host_cell"])
@@ -493,15 +497,23 @@ def test_the_step_uses_the_numerical_rank(content, tolerances):
     numerical_rank = int(np.sum(singular > 1e-10 * singular[0]))
     assert numerical_rank == 33
     assert np.all(singular[33:] < 1e-14 * singular[0])
+    scales = np.asarray(relaxation.variable_scales())
+    # |l * l| of the stored length sqrt(8): 8 to one unit of rounding
+    np.testing.assert_allclose(scales[:18], 8.0, rtol=1e-15)
+    assert set(scales[18:]) == {1.0}
+    scaled = np.linalg.svd(scales[:, None] * jacobian * scales[None, :],
+                           compute_uv=False)
+    assert int(np.sum(scaled > 1e-10 * scaled[0])) == numerical_rank
+    assert np.all(scaled[33:] < 1e-14 * scaled[0])
     step = relaxation.newton_step()
     assert step.jacobian_rank == numerical_rank
     assert step.rank_tolerance == declaration.rank_tolerance
-    assert step.largest_singular_value == pytest.approx(singular[0],
+    assert step.largest_singular_value == pytest.approx(scaled[0],
                                                         rel=1e-12)
     assert step.smallest_retained_singular_value == pytest.approx(
-        singular[32], rel=1e-9)
-    assert step.largest_discarded_singular_value < 1e-14 * singular[0]
-    assert step.rank_gap > 1e10
+        scaled[32], rel=1e-9)
+    assert step.largest_discarded_singular_value < 1e-14 * scaled[0]
+    assert step.rank_gap > 1e12
 
 
 def test_the_near_null_directions_are_one_per_sheet():
@@ -543,12 +555,9 @@ def test_three_quarks_in_one_band_survive_the_relaxation():
     run's first host cell the occupied band is followed as one band of rank
     three holding the three quarks, at every step proposal and at the end
     point. The ranks of the whole spectrum are read at the declared band
-    tolerance 1e-15: [3, 3, 3, 3, 3, 3] at the host, and at other points a
-    triple whose modes agree to parts in 1e15 can read as bands of ranks 2
-    and 1, as the lowest one does at the end point, [2, 1, 3, 3, 3, 3, 3].
-    (With the bands read on the T-averaged operator and the sheets relaxed
-    separately, this was the run's refusal "band 2 has rank 2 and cannot
-    hold the declared occupation 3".)"""
+    tolerance 1e-15, relative to the operator's largest eigenvalue modulus,
+    on the three equal blocks of the sheets, each decomposed on its own:
+    [3, 3, 3, 3, 3, 3] at every step proposal and at the end point."""
     config = _declared_cell_config(FIRST_CELL, (0, 0, 3))
     _, _, report, drive = bp.relax_content((0, 0, 3), 1.0, 1.0, config)
     measured = [update["measured"] for update in drive["objective"].updates]
@@ -556,9 +565,7 @@ def test_three_quarks_in_one_band_survive_the_relaxation():
     for step in measured + [report]:
         (band,) = step.bands
         assert band.rank == 3 and band.occupation == 3.0
-        assert sum(step.band_ranks) == 18
-    assert list(measured[0].band_ranks) == [3] * 6
-    assert list(report.band_ranks) == [2, 1, 3, 3, 3, 3, 3]
+        assert list(step.band_ranks) == [3] * 6
 
 
 def _seeded_band_read(gauge_angle):

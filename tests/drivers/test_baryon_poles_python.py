@@ -284,19 +284,20 @@ def test_the_primal_regge_term_is_empty_on_the_host():
 def test_the_monopole_spin_read(alignment):
     """The spin read of the declared host at the declared tolerances. The
     genuine j = 1/2 doublet is the pair at 4, the second of the three
-    carriers. The library's read lists it as its third band, because it
-    reads the two eigenvalues at 4 - 2/sqrt(3), computed 3e-15 apart, as two
-    bands of rank one at the degeneracy tolerance 1e-15. The aligned frame
-    names its reference by the carrier that holds the doublet, 1, with that
-    carrier's certificates."""
+    carriers. Under the nontrivial projective class the library's read
+    takes the consecutive pairs of eigenvalues as one unit, so the two
+    eigenvalues at 4 - 2/sqrt(3), computed 3e-15 apart, are one band of
+    dimension two, and the doublet is its second band, the one coexact
+    band. The aligned frame names its reference by the carrier that holds
+    the doublet, 1, with that carrier's certificates."""
     read = alignment["spin_read"]
     assert read.monopole.monopole_number == 1
     assert read.cocycle.nontrivial
     assert abs(read.cocycle.commutator_phase + 1.0) < 1e-12
     assert read.half_integer_doublet
-    assert [band.dimension for band in read.bands] == [1, 1, 2, 2]
-    assert read.doublet_index == 2
-    assert read.bands[2].coexact and not read.bands[3].coexact
+    assert [band.dimension for band in read.bands] == [2, 2, 2]
+    assert read.doublet_index == 1
+    assert [band.coexact for band in read.bands] == [False, True, False]
     values = alignment["averaged_eigenvalues"]
     expected = [4 - 2 / np.sqrt(3)] * 2 + [4.0] * 2 + [4 + 2 / np.sqrt(3)] * 2
     assert np.allclose(values, expected, atol=1e-12)
@@ -1405,10 +1406,10 @@ def test_the_refined_host_keeps_the_boundary_and_its_monopole():
     holonomies and the unit monopole through them are unchanged, and the new
     edges carry the centroid's lengths and the trivial link. The refined
     support's projective class is nontrivial. Its spin read at the declared
-    tolerances (1e-15) finds no j = 1/2 doublet: of the five doubly
-    degenerate eigenvalues of its averaged edge Laplacian only the lowest
-    pair is read as one band of rank two, which is not coexact, and the
-    other four pairs are read as bands of rank one."""
+    tolerances (1e-15) finds no j = 1/2 doublet: the five doubly degenerate
+    eigenvalues of its averaged edge Laplacian are five bands of dimension
+    two, the consecutive pairs the nontrivial class makes one unit, and none
+    is coexact."""
     refined, data = bp.refined_host(bp.build_host())
     assert len(refined.getVertexList().toVector()) == 15
     assert len(refined.getEdgeList().toVector()) == 30
@@ -1425,8 +1426,8 @@ def test_the_refined_host_keeps_the_boundary_and_its_monopole():
         assert read.monopole_number == 1 and read.odd
         spin = support.spinRead(bp.refined_rotation_group())
         assert spin.cocycle.nontrivial and not spin.half_integer_doublet
-        assert [band.dimension for band in spin.bands] == [2] + [1] * 8
-        assert spin.doublet_index == len(spin.bands) == 9
+        assert [band.dimension for band in spin.bands] == [2] * 5
+        assert spin.doublet_index == len(spin.bands) == 5
         assert not any(band.coexact for band in spin.bands)
 
 
@@ -1506,7 +1507,11 @@ def test_a_relaxed_cell_without_the_tetrahedral_group_is_read_in_the_host_frame(
     cell's own spin read does not hold, so the spin is read in the frame of
     the declared symmetric host and the content is flagged "not
     tetrahedrally symmetric" with the numbers of the symmetry read. The
-    geometry is Kontsevich-Segal allowable, so that is the one flag. The
+    geometry is Kontsevich-Segal allowable, so it carries no flag of the
+    geometry; the second flag is the elimination's, which is outside the
+    range of its expansion there (remainders 1.01 of h_1's linear term and
+    0.951 of the action's quadratic term along the induced displacement,
+    against the declared tolerance 1e-15). The
     content is read like any other: it is not among the contents with no
     value, it has the ten doublet contents (the triples of occupations of
     2, 2', 2'' that sum to three), each with its sectors and their poles,
@@ -1521,8 +1526,15 @@ def test_a_relaxed_cell_without_the_tetrahedral_group_is_read_in_the_host_frame(
     assert point["flagged_contents"] == [[2, 0, 1]]
     (record,) = point["contents"]
     assert "failed" not in record and "reason" not in record
-    (flag,) = record["flags"]
+    flag, elimination = record["flags"]
     assert flag["name"] == "not tetrahedrally symmetric"
+    assert elimination["name"] == \
+        "the elimination is outside the range of its expansion"
+    assert elimination["operator_relative_remainder"] == pytest.approx(
+        1.0066, abs=1e-3)
+    assert elimination["action_relative_remainder"] == pytest.approx(
+        0.9507, abs=1e-3)
+    assert elimination["tolerance"] == 1e-15
     assert flag["detail"].startswith(
         "the relaxed cell has 1 of the 12 rotations of the tetrahedron as "
         "symmetries at the certificate tolerance")
@@ -1570,18 +1582,18 @@ def test_a_relaxed_cell_without_the_tetrahedral_group_is_read_in_the_host_frame(
         "accepted_updates": relaxation["accepted_updates"]}
 
 
-def test_a_read_on_the_boundary_of_the_allowable_domain_is_flagged_by_name():
+def test_a_read_outside_the_allowable_domain_is_flagged_by_name():
     """(0123, 201) of the recursion's tick-0 run with no constraint of the
     occupied fiber pinned, at the declared tolerances: nothing holds the
-    lengths against the band's force, and the drive follows the step until
-    one squared length is negative, on the boundary of the Kontsevich-Segal
-    allowable domain, past which the engine scores no trial (7 accepted
-    updates, the largest |z| 29 times the host's, residual norm 12.7). That
-    geometry is finite, so it is read; its margin, zero to rounding, is not
-    above the declared tolerance, so the content is flagged "not
-    Kontsevich-Segal allowable" with the margin and the tolerance the margin
-    was compared with, and the flags of the geometry come first in the
-    record. The record carries the solve (the band selection, the accepted
+    lengths against the band's force, and the drive follows the step out of
+    the Kontsevich-Segal allowable domain, where the engine scores every
+    trial since its admissibility gate is off unless declared (4 accepted
+    updates, the largest |z| 29 times the host's, residual norm 2.14). That
+    geometry is finite, so it is read; its margin, -2.97, is not above the
+    declared tolerance, so the content is flagged "not Kontsevich-Segal
+    allowable" with the margin and the tolerance the margin was compared
+    with, and the flags of the geometry come first in the record, before
+    those of the spin read and of the elimination. The record carries the solve (the band selection, the accepted
     updates, the force, why it stopped, every step proposal) and the ten
     doublet contents, and the report prints the flag on the content's
     line."""
@@ -1605,26 +1617,29 @@ def test_a_read_on_the_boundary_of_the_allowable_domain_is_flagged_by_name():
     solve = record["relaxation"]
     assert flag["kontsevich_segal_margin"] == \
         solve["kontsevich_segal_margin"]
-    assert abs(flag["kontsevich_segal_margin"]) < 1e-12
+    assert flag["kontsevich_segal_margin"] == pytest.approx(-2.9709,
+                                                            abs=1e-3)
     assert flag["tolerance"] == bp.declared_tolerance(
         config, "allowability_tolerance") == 1e-15
     assert flag["kontsevich_segal_margin"] <= flag["tolerance"]
-    # every further flag is one of the spin read's
-    assert {f["name"] for f in record["flags"][1:]} <= {
+    # every further flag is one of the spin read's or the elimination's
+    names = [f["name"] for f in record["flags"][1:]]
+    assert set(names) <= {
         "not tetrahedrally symmetric", "no j = 1/2 doublet",
-        "the sheets' doublet labels disagree"}
+        "the sheets' doublet labels disagree",
+        "the elimination is outside the range of its expansion"}
     assert solve["spin_frame"] in (bp.SPIN_FRAME_OF_THE_CELL,
                                    bp.SPIN_FRAME_OF_THE_HOST)
     assert (solve["spin_frame"] == bp.SPIN_FRAME_OF_THE_HOST) == \
-        (len(record["flags"]) == 2)
+        ("not tetrahedrally symmetric" in names)
     assert solve["band_selection"] == "continuation"
     assert solve["converged"] is False
     stationary = "no move and no scaled step lowers the residual norm"
     assert solve["stop_reason"] == stationary
-    assert solve["accepted_updates"] == 7 and solve["moves_committed"] == 0
+    assert solve["accepted_updates"] == 4 and solve["moves_committed"] == 0
     assert len(solve["trace"]) > solve["accepted_updates"]
-    assert solve["residual_trace"][-1] == pytest.approx(12.69, rel=1e-2)
-    assert solve["largest_length_ratio"] == pytest.approx(29.41, rel=1e-2)
+    assert solve["residual_trace"][-1] == pytest.approx(2.1402, rel=1e-2)
+    assert solve["largest_length_ratio"] == pytest.approx(28.79, rel=1e-2)
     assert all("jacobian_rank" in entry and "force_norm" in entry
                for entry in solve["trace"])
     assert [read["doublet_content"] for read in record["doublet_reads"]] == \
@@ -1651,12 +1666,12 @@ def test_pinning_every_power_sum_of_a_degenerate_fiber_at_the_declared_tolerance
     run the fiber is one eigenvalue repeated on the three sheets, so its
     three power sums are one independent constraint stated three times. At
     the declared rank tolerance 1e-15 the dependent rows are not read as
-    zero, their least-squares multipliers are of order 1e11 to 1e12, and
-    the drive ends after 7 accepted updates at a residual norm of 0.023
-    (9.03 at the host) with the pinned moments 0.2 % to 0.6 % off their
-    targets. With multipliers of that size the end point is decided at
-    rounding, so the residual and the moments are asserted within a factor
-    of ten. The record carries the fiber's rank, the three multipliers,
+    zero, their least-squares multipliers are of order 1e14, and
+    the drive ends after 3 accepted updates at a residual norm of 1.39
+    (8.32 at the host, the norm of the multipliers' fit in the scaled
+    equations) with the pinned moments 7 % to 22 % off their targets. With
+    multipliers of that size the end point is decided at rounding, so the
+    residual and the moments are asserted within a factor of ten. The record carries the fiber's rank, the three multipliers,
     the residuals, the Hessian along the Hellmann-Feynman force with its
     sign, and the content's line prints them."""
     from tessera.drivers import recursion as R
@@ -1674,15 +1689,15 @@ def test_pinning_every_power_sum_of_a_degenerate_fiber_at_the_declared_tolerance
     assert solve["converged"] is False
     assert solve["stop_reason"] == \
         "no move and no scaled step lowers the residual norm"
-    assert solve["residual_trace"][0] == pytest.approx(9.0311, rel=1e-4)
-    assert 2.3e-3 < solve["residual_trace"][-1] < 0.23
+    assert solve["residual_trace"][0] == pytest.approx(8.3249, rel=1e-4)
+    assert 0.139 < solve["residual_trace"][-1] < 13.9
     assert solve["fiber_rank"] == 3
     assert solve["fiber_pinning"] == "power-sums"
     assert solve["fiber_moments"] == 3 and len(solve["multipliers"]) == 3
     assert max(abs(m) for m in solve["multipliers"]) > 1e9
     relative = [abs(r) / abs(t) for r, t in zip(solve["moment_residuals"],
                                                 solve["moment_targets"])]
-    assert 2e-4 < min(relative) and max(relative) < 0.06
+    assert 7e-3 < min(relative) and max(relative) < 2.2
     assert solve["joint_jacobian"]["size"] == 15
     assert solve["force_hessian_sign"] in ("positive", "negative", "complex")
     text = bp.relaxation_text(solve)
@@ -1695,10 +1710,13 @@ def test_the_declared_read_pins_the_eigenvalue_of_every_occupied_band():
     """The declared pinning: the eigenvalue of each occupied band, one
     constraint per band. (0123, 030) occupies one band of rank three, so one
     eigenvalue is pinned with one multiplier; the drive takes the residual
-    norm from 9.03 at the host to 1.4e-14 in 8 accepted updates with the
-    eigenvalue held at the host's value 0.708 to parts in 1e14 and the
-    multiplier -3, and the record and the content's line say so. At the
-    declared tolerance 1e-15 that end point is reported not converged."""
+    norm from 9.20 at the host (the norm of the multipliers' fit in the
+    scaled equations) to 1.7e-10 in 4 accepted updates and then, in 33 more
+    along steps whose linearization leaves 2e-5 to 1e-4 of the residual, to
+    1.1e-10, with the eigenvalue held at the host's value 0.708 to parts in
+    1e10 and the multiplier -3, and the record and the content's line say
+    so. At the declared tolerance 1e-15 that end point is reported not
+    converged."""
     from tessera.drivers import recursion as R
     from tests.drivers import _recursion_run_2026_09_23 as RUN
 
@@ -1710,12 +1728,12 @@ def test_the_declared_read_pins_the_eigenvalue_of_every_occupied_band():
     assert report.fiber_constraint_form == \
         cob.FiberConstraintForm.BandEigenvalues
     solve = bp.relaxation_record(report, drive)
-    assert solve["residual_trace"][0] == pytest.approx(9.0311, rel=1e-4)
-    assert solve["residual_trace"][-1] < 1e-12
-    assert 1e-15 < solve["force_norm"] < 1e-12 and solve["converged"] is False
+    assert solve["residual_trace"][0] == pytest.approx(9.1983, rel=1e-4)
+    assert solve["residual_trace"][-1] == pytest.approx(1.114e-10, rel=0.1)
+    assert 1e-15 < solve["force_norm"] < 1e-10 and solve["converged"] is False
     assert solve["stop_reason"] == \
         "no move and no scaled step lowers the residual norm"
-    assert solve["accepted_updates"] == drive["accepted_updates"] == 8
+    assert solve["accepted_updates"] == drive["accepted_updates"] == 37
     assert solve["moves_committed"] == 0
     assert solve["fiber_rank"] == 3
     assert solve["fiber_pinning"] == "eigenvalues"
@@ -1725,7 +1743,7 @@ def test_the_declared_read_pins_the_eigenvalue_of_every_occupied_band():
     assert solve["moment_targets"][0] == pytest.approx(0.70797, abs=5e-5)
     assert solve["moment_targets"][0] == pytest.approx(band.eigenvalues[0],
                                                         rel=1e-9)
-    assert abs(solve["moment_residuals"][0]) < 1e-12 * abs(
+    assert abs(solve["moment_residuals"][0]) < 1e-9 * abs(
         solve["moment_targets"][0])
     text = bp.relaxation_text(solve)
     assert ("the eigenvalues of 1 occupied bands (fiber rank 3) pinned at "

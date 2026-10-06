@@ -795,30 +795,20 @@ def test_three_separate_eigenvalues_are_three_bands():
     assert list(read.ranks) == [1, 1, 1]
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "band_projectors takes its bands from BandFollower::read, which groups "
-    "two eigenvalues when they differ by at most bandTolerance * "
-    "max(1, |eigenvalue|): the floor of one is in the unit of the operator, "
-    "so on an operator of size 1e-9 (h_1 of a cell whose squared lengths "
-    "are 1e9) eigenvalues one part in 1e7 apart are one band at the band "
-    "tolerance 1e-15 (fix(cobordism): the Regge sheet starts again at every "
-    "scored point, and the multipliers and band grouping depend on the unit "
-    "of length, https://github.com/akellehe/tessera/issues/1385)"))
 def test_the_bands_do_not_depend_on_the_unit_of_the_operator():
+    """`band_projectors` takes its bands from `BandFollower.read`, which
+    groups eigenvalues at the band tolerance times the operator's largest
+    eigenvalue modulus: on an operator of size 1e-9 (h_1 of a cell whose
+    squared lengths are 1e9) eigenvalues one part in 1e7 apart are two
+    bands at the band tolerance 1e-15, as they are in the unit one."""
     assert [len(values) for values, _ in
             bp.band_projectors(_three_levels(1e-9), 1e-15)] == [1, 1, 1]
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "BandFollower::read groups two eigenvalues when they differ by at most "
-    "bandTolerance * max(1, |eigenvalue|): the floor of one is in the unit "
-    "of the operator, so on an operator of size 1e-9 (h_1 of a cell whose "
-    "squared lengths are 1e9) eigenvalues one part in 1e7 apart are one "
-    "band at the band tolerance 1e-15 (fix(cobordism): the Regge sheet "
-    "starts again at every scored point, and the multipliers and band "
-    "grouping depend on the unit of length, "
-    "https://github.com/akellehe/tessera/issues/1385)"))
 def test_the_band_follower_does_not_depend_on_the_unit_of_the_operator():
+    """`BandFollower.read` groups eigenvalues at the band tolerance times the
+    operator's largest eigenvalue modulus, so the three levels of an
+    operator of size 1e-9 are three bands."""
     declaration = cob.SelfConsistentMeanFieldDeclaration()
     declaration.covariance_rule = cob.CovarianceRule.BandFilling
     declaration.band_occupations = [1.0]
