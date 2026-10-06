@@ -1167,6 +1167,22 @@ std::string idList(const Ids &ids) {
   return out + "]";
 }
 
+/// The sheet of \p principal that \p continued sits on: +1 when
+/// \f$ \mathrm{Re}(\overline{c}\, p) \ge 0 \f$ (the continued value lies within a
+/// quarter turn of the principal one), -1 otherwise. The sign is read from the
+/// two unit phases \f$ c/|c| \f$ and \f$ p/|p| \f$, so it does not underflow or
+/// overflow with the size of the two values, which carry powers of the lengths;
+/// an exact zero on either side reads +1.
+int sheetSign(complexd continued, complexd principal) {
+  const double continuedModulus = std::abs(continued);
+  const double principalModulus = std::abs(principal);
+  if (continuedModulus == 0.0 || principalModulus == 0.0) return 1;
+  return (std::conj(continued / continuedModulus) *
+          (principal / principalModulus)).real() >= 0.0
+             ? 1
+             : -1;
+}
+
 /// A real cosine pinned to the +0 side of the inverse cosine's cuts, as
 /// `Simplex::dihedralAngle` pins it.
 complexd pinnedCosine(complexd Cij, complexd rootProduct) {
@@ -1436,8 +1452,7 @@ JointAction::ReggeSheets JointAction::reggeSheets() const {
       const complexd principal = principalSquareRoot(cofactors.Cii) *
                                  principalSquareRoot(cofactors.Cjj);
       Simplex::DihedralSheet sheet;
-      sheet.rootSign =
-          (std::conj(product) * principal).real() >= 0.0 ? 1 : -1;
+      sheet.rootSign = sheetSign(product, principal);
       const complexd arccosine = principalArcCosine(pinnedCosine(
           cofactors.Cij, static_cast<double>(sheet.rootSign) * principal));
       double best = std::numeric_limits<double>::infinity();
@@ -1470,9 +1485,7 @@ JointAction::ReggeSheets JointAction::reggeSheets() const {
               return std::abs(trial.lastStep()) <= kMaximumRootTurn;
             },
             "the content root of the hinge on vertices " + idList(hingeIds));
-      entry.contentSign =
-          (std::conj(content.value()) * hinge->volume()).real() >= 0.0 ? 1
-                                                                        : -1;
+      entry.contentSign = sheetSign(content.value(), hinge->volume());
     }
     out.hinges.push_back(std::move(entry));
   }
@@ -1695,7 +1708,7 @@ JointAction::TopCells JointAction::topCells() const {
             "the volume root of the top cell on vertices " + idList(ids));
       // the continued value read as a sheet of the root at the geometry
       // the mesh holds, as the hinge contents are
-      sign = (std::conj(root.value()) * principal).real() >= 0.0 ? 1 : -1;
+      sign = sheetSign(root.value(), principal);
     }
     cell.volume = static_cast<double>(sign) * principal;
     out.cells.push_back(std::move(cell));

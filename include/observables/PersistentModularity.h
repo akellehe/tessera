@@ -633,8 +633,8 @@ public:
     /// diagnostic, not a gate. Under a random initialization it is close to
     /// every edge.
     std::size_t mixed = 0;
-    /// Absent edges, with Euclidean \f$ |\ell| \f$ below
-    /// `Edge::kDegenerateEpsilon`. Not a causal type and not scored either way.
+    /// Absent edges, with \f$ \ell = 0 \f$ exactly (`Edge::isDegenerate`). Not
+    /// a causal type and not scored either way.
     /// These are a genuine absence and do make the map unavailable: an edge
     /// with no extent has no argument.
     std::size_t degenerate = 0;
@@ -647,7 +647,7 @@ public:
   /// than literals: the reason is produced here and compared elsewhere, and a
   /// typo in either place would still compile.
   struct CausalWeightReason {
-    /// At least one edge has \f$ |\ell| \f$ below `Edge::kDegenerateEpsilon`.
+    /// At least one edge has \f$ \ell = 0 \f$ exactly (`Edge::isDegenerate`).
     /// Such an edge is absent rather than indefinite: it has no argument to
     /// carry, and \f$ \arg 0 \f$ reads nothing.
     static constexpr const char *kDegenerateEdgeLength = "degenerate-edge-length";

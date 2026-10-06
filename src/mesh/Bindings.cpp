@@ -196,7 +196,8 @@ the C* connection.)doc")
            "to the nearest of the three -- that would invent definiteness the "
            "geometry does not have. The common case for a uniformly drawn argument.")
       .def("isDegenerate", &Edge::isDegenerate,
-           "An absent edge (Euclidean modulus ~ 0), which is not a causal type. "
+           "An absent edge (l == 0 exactly), which is not a causal type. Any "
+           "nonzero length has an argument and takes its causal type from it. "
            "Exactly one of isSpacelike/isTimelike/isNull/isMixed/isDegenerate holds.")
       .def("getPhase", &Edge::getPhase,
            R"doc(Return the complex C* connection phase carried by this edge.
@@ -403,10 +404,15 @@ their vertex IDs.)doc")
       .def("assertSpacelikeAdmissible", &Simplex::assertSpacelikeAdmissible,
            py::arg("tol") = 1e-12,
            "Fail-loudly admissibility check for a purely-spacelike simplex: "
-           "raises RuntimeError when the Gram matrix is not positive-definite "
-           "(the spacelike triangle inequalities are violated). A simplex with "
-           "any null/timelike (worldline) edge is skipped; fewer than two "
-           "vertices is trivially admissible.")
+           "raises RuntimeError when the Gram matrix G relative to vertex 0 is "
+           "not positive-definite (the spacelike triangle inequalities are "
+           "violated). Each leading minor of G is read relative to the "
+           "simplex's own size, divided by |G_11| ... |G_kk| (the product of "
+           "the squared lengths of the edges from vertex 0 that span it), and "
+           "must be real and greater than tol; the ratio does not change under "
+           "a dilation of the squared lengths. A simplex with any edge that is "
+           "not spacelike is skipped; fewer than two vertices is trivially "
+           "admissible.")
       .def("getFacets", &Simplex::getFacets,
            py::return_value_policy::reference_internal,
            R"doc(Return the (k-1)-dimensional faces of this k-simplex.

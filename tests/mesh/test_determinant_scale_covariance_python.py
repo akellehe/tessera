@@ -31,6 +31,12 @@ largest relative departure over every read and every decade from s = 1e-30 to
 1e30 is 3.3e-15 (the content gradients of the boundary of the 4-simplex); the
 Regge term divided by s^(1/2) reads 73.304611 + 0.885506 i at y = 0.4 and
 73.218453 at y = 0 at every scale. ``AGREEMENT`` is 1e-13, thirty times that.
+
+`Simplex::assertSpacelikeAdmissible` (#1427) reads each leading minor of the
+Gram matrix relative to vertex 0 divided by the product of its diagonal moduli
+(the squared lengths of the edges from vertex 0 that span it), a ratio a
+dilation leaves unchanged, and an edge is degenerate only at l = 0, so the
+check is made, and decides the same way, at every scale from 1e-300 to 1e300.
 """
 
 import cmath
@@ -215,13 +221,53 @@ def test_a_cofactor_root_product_below_1e_300_gives_the_angle():
         AGREEMENT * abs(expected))
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "Simplex::assertSpacelikeAdmissible compares each leading minor of the "
-    "Gram matrix with the absolute default tol = 1e-12, so a regular "
-    "tetrahedron whose squared lengths are below 1e-12 is declared "
-    "inadmissible."))
+# ------------------------------------------------ spacelike admissibility
+
+#: Every decade from 1e-30 to 1e30, and every tenth decade out to 1e-300 and
+#: 1e300, where the squared lengths are still normal doubles.
+WIDE_SCALES = sorted(set(SCALES) | {10.0 ** k for k in range(-300, 301, 10)})
+
+
+def _tetrahedron_with(squared, scale):
+    """A tetrahedron whose edge (a, b) has the squared length
+    ``squared[(a, b)]`` times ``scale``."""
+    spacetime = T.Spacetime()
+    vertices = {i: spacetime.createVertex(i) for i in range(4)}
+    edges = [spacetime.createEdge(vertices[a], vertices[b],
+                                  cmath.sqrt(complex(scale * value)))
+             for (a, b), value in sorted(squared.items())]
+    cell, _ = spacetime.createSimplex([vertices[i] for i in range(4)], edges)
+    return spacetime, cell
+
+
+#: A regular tetrahedron: the leading minors of its Gram matrix relative to
+#: vertex 0, each divided by the product of its diagonal moduli, are 1, 3/4
+#: and 1/2.
+REGULAR = {(a, b): 1.0 for a in range(4) for b in range(a + 1, 4)}
+
+#: The face (0, 2, 3) has sides 1, 1 and 5^(1/2) > 1 + 1: the third leading
+#: minor of the Gram matrix is -5/2.
+VIOLATING = {**REGULAR, (2, 3): 5.0}
+
+
 def test_a_small_regular_tetrahedron_is_spacelike_admissible():
     """A regular tetrahedron of squared length 1e-16 is positive definite and
     passes the spacelike admissibility check, as it does at s = 1."""
     spacetime, cells = _tetrahedron(1e-16)
     cells[0][0].assertSpacelikeAdmissible()
+
+
+@pytest.mark.parametrize("scale", WIDE_SCALES, ids=lambda s: f"s={s:.0e}")
+def test_spacelike_admissibility_follows_the_dilation(scale):
+    """At every scale the regular tetrahedron passes at the default tol and at
+    tol = 0.49 and is refused at tol = 0.51 (its smallest relative leading
+    minor is 1/2), and the tetrahedron that violates a triangle inequality is
+    refused."""
+    spacetime, regular = _tetrahedron_with(REGULAR, scale)
+    regular.assertSpacelikeAdmissible()
+    regular.assertSpacelikeAdmissible(0.49)
+    with pytest.raises(RuntimeError, match="leading minor 3"):
+        regular.assertSpacelikeAdmissible(0.51)
+    spacetime, violating = _tetrahedron_with(VIOLATING, scale)
+    with pytest.raises(RuntimeError, match="not positive-definite"):
+        violating.assertSpacelikeAdmissible()

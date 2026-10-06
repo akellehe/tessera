@@ -552,17 +552,24 @@ class Simplex {
 
     /// Fail-loudly admissibility check for a purely-spacelike simplex.
     ///
-    /// "Spacelike" means every edge has squared length > tol (the Edge
-    /// convention: spacelike > 0, null = 0, timelike < 0). For such a cell the
-    /// Gram matrix relative to vertex 0 must be positive-definite —
-    /// equivalently the generalized triangle inequalities hold and the cell has
-    /// real, nonzero d-content. If it does not, the simplex is inadmissible and
-    /// this throws ``std::runtime_error`` rather than silently repairing it
-    /// (positive-definiteness is checked Eigen-free via Sylvester's criterion
-    /// on the leading principal minors). A simplex containing any null or
-    /// timelike (worldline) edge is skipped, returning without checking: its
-    /// admissibility is governed by the Lorentzian structure, not the spacelike
-    /// triangle inequalities. Fewer than two vertices is trivially admissible.
+    /// "Spacelike" means every edge is spacelike by `Edge::isSpacelike` (its
+    /// squared length real and positive). For such a cell the Gram matrix
+    /// \f$ G \f$ relative to vertex 0 must be positive-definite — equivalently
+    /// the generalized triangle inequalities hold and the cell has real,
+    /// nonzero d-content. If it does not, the simplex is inadmissible and this
+    /// throws ``std::runtime_error`` rather than silently repairing it.
+    /// Positive-definiteness is checked Eigen-free via Sylvester's criterion on
+    /// the leading principal minors, each relative to the simplex's own size:
+    /// the k-th leading minor divided by
+    /// \f$ |G_{11}| \cdots |G_{kk}| \f$, the product of the squared lengths of
+    /// the k edges from vertex 0 that span it, must be real and greater than
+    /// \p tol. That ratio does not change under a dilation of the squared
+    /// lengths, and by Hadamard's inequality it lies in (0, 1] for a
+    /// positive-definite \f$ G \f$. A simplex containing any edge that is not
+    /// spacelike (null, timelike, mixed or degenerate) is skipped, returning
+    /// without checking: its admissibility is governed by the Lorentzian
+    /// structure, not the spacelike triangle inequalities. Fewer than two
+    /// vertices is trivially admissible.
     void assertSpacelikeAdmissible(double tol = 1e-12) const;
 
     /// Circumcenter of this simplex in barycentric coordinates
