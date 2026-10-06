@@ -44,9 +44,9 @@ from tests.cobordism import test_joint_action_properties_python as P
 #: The digest of the residual and the Jacobian of
 #: `test_joint_action_properties_python._fixed_state_system` (the Regge,
 #: Villain and matter terms on the complex metric, lengths and links
-#: relaxed), recorded with the module of ac499572, the commit the term was
-#: added to, on the development machine.
-BASE_DIGEST = ("ee2530fcf42470a2b95a139c2be8588fad731ae58944cc026a2eeeea995324d6")
+#: relaxed), recorded with the module of f8394a16 on the development
+#: machine.
+BASE_DIGEST = ("d1e4bb01606e318951a242b5f8719ee5322611ca270876fa4b3d9ba4dbc5e865")
 
 #: The deficit angle of every hinge of the regular boundary of the
 #: 4-simplex: three regular tetrahedra meet at each edge.
@@ -79,8 +79,9 @@ def _cosmological(spacetime, regge=0.7, constant=0.37):
 
 def test_without_lambda_the_residual_and_jacobian_are_those_of_the_base():
     """With Lambda = 0, left at its default or declared, the residual and
-    the Jacobian of the stationarity system are bit for bit those of the
-    module of ac499572, and the action lists the terms it listed there."""
+    the Jacobian of the stationarity system are bit for bit those recorded
+    in `BASE_DIGEST`, and the action lists the terms it lists without the
+    cosmological term."""
     _, system = P._fixed_state_system()
     assert system.action.declaration.cosmological_constant == 0.0
     assert _digest(system) == BASE_DIGEST

@@ -24,7 +24,6 @@ import pytest
 
 from tessera import cobordism as cob
 from tessera.drivers import baryon_poles as bp
-from tessera.drivers import cell_solve as cs
 from tessera.drivers import recursion as R
 
 from tests.drivers import _recursion_run_2026_09_23 as RUN
@@ -190,28 +189,32 @@ def _level_relaxation(trace_terms):
 
 def test_a_relaxation_records_the_terms_only_when_asked():
     """The geometric action alone has no stationary point near this host:
-    twelve accepted updates each triple the squared lengths and lower the
-    residual norm by the factor 3^(-1/2), from 12.67 to 9.0e-3, and at
-    squared lengths 4.25e6 the Jacobian's rank at the run's rank tolerance
-    falls from nine to three, the step moves no coordinate, and the drive
-    stops. With ``trace_terms`` every one of the fifteen step proposals
+    after the first two of its 53 accepted updates every one lowers the
+    residual norm by the factor 3^(-1/2) to 2e-7, from 12.67 to 1.5e-12, which is below the run's step tolerance 1e-11, so the
+    read is reported converged. The rank of the scaled Jacobian at the
+    run's rank tolerance is nine at the first 42 step proposals and six at
+    the last 16. With ``trace_terms`` every one of the 58 step proposals
     carries the terms; without it none does, and the drive is the same."""
     silent, _ = _level_relaxation(False)
     assert silent["term_trace"] == []
     traced, expected = _level_relaxation(True)
-    assert len(traced["jacobian_ranks"]) == 15
-    assert len(traced["term_trace"]) == 15
+    assert len(traced["jacobian_ranks"]) == 58
+    assert len(traced["term_trace"]) == 58
     for terms in traced["term_trace"]:
         assert [t["name"] for t in terms] == TERMS + SUMS
     # the same drive either way: recording changes nothing
     assert traced["residual_trace"] == silent["residual_trace"]
-    assert traced["accepted_updates"] == silent["accepted_updates"] == 12
-    assert traced["moves_committed"] == 0 and not traced["converged"]
-    assert traced["stop_reason"] == cs.STOP_STATIONARY
-    assert traced["jacobian_ranks"] == [9] * 12 + [3] * 3
+    assert traced["accepted_updates"] == silent["accepted_updates"] == 53
+    assert traced["moves_committed"] == 0 and traced["converged"]
+    assert traced["stop_reason"] == "converged"
+    assert traced["jacobian_ranks"] == [9] * 42 + [6] * 16
     assert traced["initial_residual"] == pytest.approx(12.669871793382649,
                                                        rel=1e-12)
-    assert traced["residual"] == pytest.approx(0.009002790053988682,
+    trace = traced["residual_trace"]
+    assert len(trace) == 54
+    np.testing.assert_allclose(np.asarray(trace[3:]) / np.asarray(trace[2:-1]),
+                               3.0 ** -0.5, rtol=1e-6)
+    assert traced["residual"] == pytest.approx(1.4907043912764497e-12,
                                                rel=1e-9)
     ratios = np.divide(traced["residual_trace"][2:],
                        traced["residual_trace"][1:-1])

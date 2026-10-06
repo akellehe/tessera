@@ -49,14 +49,22 @@ class NonfiniteSpectralTotalizationTest(unittest.TestCase):
     def tearDown(self):
         cob.HodgeLaplacian.setDefaultWeightConvention(self._prior_convention)
 
+    # The SquaredContent weights are those of the diagonal-weight operator,
+    # so the two terms are read with that metric source: the default one,
+    # the Whitney pencil, has no SquaredContent weight and is finite on this
+    # geometry (its largest entry is 19.2), where the terms read 0.0 and a
+    # finite ratio.
+
     def test_near_kernel_residual_totalizes(self):
         st = _overflowed_holed_surface()
-        r = cob.MultiCobordism.nearKernelResidual(st, 1, 3)
+        r = cob.MultiCobordism.nearKernelResidual(
+            st, 1, 3, cob.HodgeMetricSource.DiagonalWeights)
         self.assertEqual(r, math.inf)
 
     def test_half_sum_ratio_totalizes(self):
         st = _overflowed_holed_surface()
-        r = cob.MultiCobordism.singularValueHalfSumRatio(st, 1)
+        r = cob.MultiCobordism.singularValueHalfSumRatio(
+            st, 1, cob.HodgeMetricSource.DiagonalWeights)
         self.assertEqual(r, math.inf)
 
     def test_r_state_survives_the_crash_geometry(self):

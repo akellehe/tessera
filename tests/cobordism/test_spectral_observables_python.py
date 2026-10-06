@@ -75,13 +75,17 @@ def _testbed():
 class TestSpectralGap(unittest.TestCase):
 
     def test_matches_operator_first_gap(self):
-        # The Observable equals lambda_1 - lambda_0 read off HodgeLaplacian.
+        # The Observable equals lambda_1 - lambda_0 of the operator it reads,
+        # the U(1) connection Laplacian D - A of HodgeLaplacian
+        # (connectionEigenvalues), not the metric L_0, whose weights are the
+        # geometry's.
         for name, st in (("triangle", _triangle()), ("path", _path()),
                          ("testbed", _testbed())):
             with self.subTest(fixture=name):
-                raw = np.asarray(cob.HodgeLaplacian(st).eigenvalues(),
-                                 dtype=complex)
-                # Degree 0 is the Hermitian graph Laplacian: real spectrum,
+                raw = np.asarray(
+                    cob.HodgeLaplacian(st).connectionEigenvalues(),
+                    dtype=complex)
+                # The connection operator is Hermitian: real spectrum,
                 # asserted rather than projected.
                 np.testing.assert_allclose(raw.imag, 0.0, atol=1e-12)
                 evals = sorted(raw.real)

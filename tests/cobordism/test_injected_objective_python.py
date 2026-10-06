@@ -331,7 +331,8 @@ class NamedConstantsTest(unittest.TestCase):
              cob.ObjectiveTermName.REGISTER_RESIDUAL,
              cob.ObjectiveTermName.ACTION_MAGNITUDE,
              cob.ObjectiveTermName.CARRIED_STATE_ENERGY,
-             cob.ObjectiveTermName.MOMENT_STIFFNESS])
+             cob.ObjectiveTermName.MOMENT_STIFFNESS,
+             cob.ObjectiveTermName.JOINT_ACTION_STATIONARITY])
 
 
 if __name__ == "__main__":

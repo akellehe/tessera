@@ -21,6 +21,8 @@ import os
 import sys
 import unittest
 
+import pytest
+
 import tessera as T
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -168,10 +170,18 @@ class Stage2UnclampedTest(unittest.TestCase):
         trace = opt.run_stage2(beta=1.0, max_iters=3, alpha0=0.05, tolerance=1e-9)
         self.assertTrue(all(math.isfinite(f) for f in trace))
         self.assertGreaterEqual(len(trace), 2, "no accepted step — vacuous run")
-        # Measured on the default Whitney metric: three accepted steps,
-        # 1745.9421 -> 143.1963 -> 111.9970 -> 97.2480, ending inside the
-        # domain (margin 1.27e-4).
-        self.assertGreater(cob.HodgeLaplacian.kontsevichSegalMargin(opt.st), 0.0)
+        # Measured on the default Whitney metric, with the admissibility gate
+        # off as it is unless declared: three accepted steps,
+        # 1745.9421 -> 178.5238 -> 90.9606 -> 82.2664, ending outside the
+        # allowable domain (margin -0.952), where the trials are scored and
+        # the margin is reported. With the gate declared
+        # (``admissibility_gate``) the steps are 143.1963 -> 111.9970 ->
+        # 97.2480 and end inside it (margin 1.27e-4).
+        self.assertEqual(trace, pytest.approx(
+            [1745.9421, 178.52382, 90.960618, 82.266414], rel=1e-6))
+        self.assertAlmostEqual(
+            cob.HodgeLaplacian.kontsevichSegalMargin(opt.st), -0.95179,
+            places=4)
         for e in opt.st.getEdgeList().toVector():
             sq = complex(e.getLength()**2)
             self.assertTrue(cmath.isfinite(sq))

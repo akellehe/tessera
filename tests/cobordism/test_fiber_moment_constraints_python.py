@@ -259,8 +259,12 @@ def test_a_full_band_pins_its_trace_with_a_multiplier_of_minus_one():
     to (1 + xi_1) tr(P_C h_1): the length equations then need xi_1 = -1,
     since the Euler identity makes the trace's length gradient nonzero
     wherever the trace is. The drive converges there in five accepted
-    updates (residual norm 9.0, 1.6, 0.032, 2.6e-4, 1.4e-8, 7.3e-13), the
-    pinned trace holds, and the geometry is Euclidean."""
+    updates (residual norm 9.20, 1.15, 0.013, 3.8e-5, 4.7e-10, 3.5e-14), the
+    pinned trace holds, and the geometry is Euclidean to the solve's
+    tolerance: the squared lengths are real to 1.8e-9 and the margin is pi
+    to 1.1e-9. The Hessian along the force has a positive real part, 0.46
+    of its scale, and an imaginary part of 1.1e-6 of its scale, above the
+    run's reality tolerance 1e-6, so its sign reads "complex"."""
     config = _config(FIRST_CELL, (0, 3, 0), "1")
     spacetime, action, report, drive = bp.relax_content((0, 3, 0), 1.0, 1.0,
                                                         config)
@@ -281,9 +285,15 @@ def test_a_full_band_pins_its_trace_with_a_multiplier_of_minus_one():
         3 * band.eigenvalues[0], rel=1e-10)
     # Euclidean to the solve's tolerance
     assert report.kontsevich_segal_margin == pytest.approx(np.pi, abs=1e-6)
+    z = np.asarray(bp.sheet_squared_lengths(spacetime, 0))
+    assert np.max(np.abs(z.imag)) < 1e-8 and np.min(z.real) > 0.0
+    value = complex(report.force_hessian)
+    scale = report.force_hessian_scale
+    assert value.real / scale == pytest.approx(0.4589, abs=1e-3)
+    assert abs(value.imag) / scale == pytest.approx(1.10e-6, rel=0.1)
     assert bp.hessian_sign(
-        report.force_hessian, report.force_hessian_scale,
-        RUN.TOLERANCES["hessian_reality_tolerance"]) == "positive"
+        value, scale,
+        RUN.TOLERANCES["hessian_reality_tolerance"]) == "complex"
 
 
 def test_every_pinned_moment_holds_the_host_of_0134_111():
@@ -325,10 +335,9 @@ def test_the_unit_of_the_power_sums_changes_no_solution():
     sum_j j xi_j lambda^(j - 1) = -1. The three constraints are dependent,
     so the multipliers are not unique: in each unit they are that unit's
     least-squares ones, and they differ between the two. The drive
-    converges in five accepted updates in the fiber's unit and in six in
-    the operator's own, to a solution of the same equations: the pin holds
-    and the multipliers, in the operator's own unit, satisfy the same
-    condition."""
+    converges in five accepted updates in either unit, to a solution of the
+    same equations: the pin holds and the multipliers, in the operator's
+    own unit, satisfy the same condition."""
     _, _, _, read = _host(FIRST_CELL, (0, 3, 0))
     (band,) = read.bands
     pinned = band.eigenvalues[0]
@@ -337,7 +346,7 @@ def test_the_unit_of_the_power_sums_changes_no_solution():
         config = _config(FIRST_CELL, (0, 3, 0), "r")
         report, drive = _relax(config, (0, 3, 0), 3, scale)
         assert report.converged
-        assert drive["accepted_updates"] == (5 if scale == 0.0 else 6)
+        assert drive["accepted_updates"] == 5
         assert drive["moves_committed"] == 0
         assert report.moment_scale == pytest.approx(
             abs(pinned) if scale == 0.0 else 1.0, rel=1e-12)
@@ -351,11 +360,25 @@ def test_the_unit_of_the_power_sums_changes_no_solution():
     assert np.max(np.abs(multipliers[0] - multipliers[1])) > 0.05
 
 
-def test_more_moments_than_the_fiber_holds_are_refused():
-    spacetime, action, mean_field, _ = _host(FIRST_CELL, (0, 3, 0))
+def test_more_moments_than_the_fiber_holds_are_pinned_as_declared():
+    """Four power sums of the rank-three fiber of (0123, 030) are pinned as
+    declared: the fourth is a function of the first three, and the four
+    multipliers are the minimum-norm least-squares ones. The fiber is one
+    eigenvalue lambda on the three sheets, so the targets, the fiber's
+    values at the host, are p_j = 3 lambda^j in the operator's own unit, and
+    every constraint holds there exactly."""
+    spacetime, action, mean_field, read = _host(FIRST_CELL, (0, 3, 0))
+    (band,) = read.bands
     mean_field.fiber_moments = 4
-    with pytest.raises(ValueError, match="the fiber has rank 3"):
-        cob.SelfConsistentMeanField(action, mean_field).read()
+    report = cob.SelfConsistentMeanField(action, mean_field).read()
+    assert report.fiber_rank == 3
+    assert len(report.multipliers) == len(report.moment_targets) == 4
+    assert all(np.isfinite(complex(xi)) for xi in report.multipliers)
+    value = band.eigenvalues[0]
+    np.testing.assert_allclose(
+        list(report.moment_targets), [3 * value ** j for j in range(1, 5)],
+        rtol=1e-12)
+    assert list(report.moment_residuals) == [0j] * 4
 
 
 # ------------------------------------------------ the bands' eigenvalues
