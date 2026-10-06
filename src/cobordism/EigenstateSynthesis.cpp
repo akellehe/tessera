@@ -37,6 +37,28 @@ namespace tessera::cobordism {
 
 using cd = std::complex<double>;
 
+namespace {
+
+/// Whether the triangle term of the low-rank \f$ dL_1/d\ell^2 \f$ applies to a
+/// triangle with the 2 by 2 Gram matrix \p G, its determinant \p detG and the
+/// metric weight \p W2. The term is derived for the squared-content weight
+/// \f$ W_2 = \det G / 4 \f$, so the weight must be that one: the two are compared
+/// relative to the Gram matrix's own scale,
+/// \f$ (|G_{00}|\,|G_{11}| + |G_{01}|\,|G_{10}|)/4 \f$ (the moduli of the two
+/// products \f$ \det G / 4 \f$ is formed from, which bound its rounding). The term
+/// inverts \f$ G \f$ and divides by \f$ W_2 \f$, so it is skipped exactly when
+/// \f$ \det G \f$ or \f$ W_2 \f$ is zero, where it has no value; a nonzero
+/// determinant of any size is used, as the operator itself carries
+/// \f$ 1/W_2 \f$ for the triangle.
+bool squaredContentTriangleTerm(const Eigen::Matrix2cd &G, cd detG, cd W2) {
+  const double scale = std::abs(G(0, 0)) * std::abs(G(1, 1)) +
+                       std::abs(G(0, 1)) * std::abs(G(1, 0));
+  if (std::abs(detG / 4.0 - W2) > 1e-9 * scale / 4.0) return false;
+  return detG != cd(0.0, 0.0) && W2 != cd(0.0, 0.0);
+}
+
+}  // namespace
+
 EigenstateSynthesis::EigenstateSynthesis(std::shared_ptr<Spacetime> st, int k,
                                          HodgeLaplacian::MetricSource metricSource)
     : st_(st), k_(k), metricSource_(metricSource),
@@ -1678,9 +1700,7 @@ std::vector<double> EigenstateSynthesis::periodGradientOverLoops(
         const cd detG = G.determinant();
         const cd W2ti = W2v[ti];
         // W2 must be the V^2 weight detG/4 this derivation assumes.
-        if (std::abs(detG / 4.0 - W2ti) > 1e-9 * std::max(1.0, std::abs(W2ti)) ||
-            std::abs(detG) < 1e-12)
-          continue;
+        if (!squaredContentTriangleTerm(G, detG, W2ti)) continue;
         auto ind = [&](int pp, int qq) -> double {
           return (pp != qq && key(t[pp], t[qq]) == ek) ? 1.0 : 0.0;
         };
@@ -2225,9 +2245,7 @@ std::vector<cd> EigenstateSynthesis::periodGapForLoopsGradient(
       const cd detG = G.determinant();
       const cd W2ti = W2v[ti];
       // W2 must be the V^2 weight detG/4 this derivation assumes.
-      if (std::abs(detG / 4.0 - W2ti) > 1e-9 * std::max(1.0, std::abs(W2ti)) ||
-          std::abs(detG) < 1e-12)
-        continue;
+      if (!squaredContentTriangleTerm(G, detG, W2ti)) continue;
       auto ind = [&](int pp, int qq) -> double {
         return (pp != qq && key(t[pp], t[qq]) == ek) ? 1.0 : 0.0;
       };
