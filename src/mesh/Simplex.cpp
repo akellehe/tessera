@@ -1329,14 +1329,27 @@ void Simplex::assertSpacelikeAdmissible(double tol) const {
 
     // All edges spacelike: the Gram matrix must be positive-definite. Check via
     // Sylvester's criterion (every leading principal minor > 0) so the test
-    // stays Eigen-free, reusing the existing determinant helper.
+    // stays Eigen-free, reusing the existing determinant helper. Each minor is
+    // read relative to the simplex's own size, on the Gram matrix scaled to
+    // unit diagonal moduli, S_ij = G_ij / (sqrt|G_ii| sqrt|G_jj|): the k-th
+    // leading minor of S is that of G divided by |G_11| ... |G_kk|, the product
+    // of the squared lengths of the k edges from vertex 0 that span it. The
+    // ratio does not change under a dilation of the squared lengths, S carries
+    // no power of them to underflow or overflow, and by Hadamard's inequality
+    // the ratio lies in (0, 1] when G is positive-definite.
     const std::vector<std::complex<double>> g = gramMatrix();
+    std::vector<double> rootDiagonal(static_cast<std::size_t>(d));
+    for (int i = 0; i < d; ++i)
+        rootDiagonal[static_cast<std::size_t>(i)] =
+            std::sqrt(std::abs(g[static_cast<std::size_t>(i) * d + i]));
     for (int k = 1; k <= d; ++k) {
         std::vector<std::complex<double>> sub(static_cast<std::size_t>(k) * k);
         for (int i = 0; i < k; ++i)
             for (int j = 0; j < k; ++j)
                 sub[static_cast<std::size_t>(i) * k + j] =
-                    g[static_cast<std::size_t>(i) * d + j];
+                    g[static_cast<std::size_t>(i) * d + j] /
+                    rootDiagonal[static_cast<std::size_t>(i)] /
+                    rootDiagonal[static_cast<std::size_t>(j)];
         const std::complex<double> minor = determinant(sub, k);
         // A genuinely spacelike cell has real, positive leading minors. A
         // nonzero imaginary part means the cell is not spacelike at all, which
@@ -1345,7 +1358,8 @@ void Simplex::assertSpacelikeAdmissible(double tol) const {
             throw std::runtime_error(
                 "Simplex::assertSpacelikeAdmissible: inadmissible spacelike "
                 "simplex — Gram matrix is not positive-definite (leading minor "
-                + std::to_string(k) + " = " + std::to_string(minor.real()) +
+                + std::to_string(k) + " relative to the product of its diagonal "
+                "moduli = " + std::to_string(minor.real()) +
                 " + " + std::to_string(minor.imag()) + "i" +
                 "); the spacelike triangle inequalities are violated. The metric "
                 "is not silently repaired.");
