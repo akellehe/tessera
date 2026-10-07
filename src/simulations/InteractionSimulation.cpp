@@ -16,6 +16,7 @@
 #include "mesh/Vertex.h"
 #include "observables/MIUnits.hpp"
 #include "quantum/ChoiJamiolkowski.h"
+#include "quantum/DensityMatrix.hpp"
 #include "quantum/Holography.hpp"
 #include "quantum/KoashiImoto.hpp"
 #include "spacetime/Metric.h"
@@ -59,49 +60,8 @@ double vonNeumannEntropy(Eigen::MatrixXcd const& rho) {
     return s;
 }
 
-// A randomized correlated mixed state on n qubits: ρ = M M† / Tr(M M†)
-// with M a complex-Gaussian 2ⁿ × 2ⁿ matrix. Generic — every pair of
-// qubits shares genuine mutual information.
-Eigen::MatrixXcd randomCorrelatedState(int n, std::mt19937& rng) {
-    const int dim = 1 << n;
-    std::normal_distribution<double> g(0.0, 1.0);
-    Eigen::MatrixXcd m(dim, dim);
-    for (int i = 0; i < dim; ++i)
-        for (int j = 0; j < dim; ++j)
-            m(i, j) = cd(g(rng), g(rng));
-    Eigen::MatrixXcd rho = m * m.adjoint();
-    return rho / rho.trace().real();
-}
-
-// Reduced density matrix of an n-qubit state, keeping the qubits in
-// `keep` (0-based; qubit 0 is the most significant bit). The kept qubits
-// keep their listed order, so keep = {i, j} returns the (qubit i ⊗
-// qubit j) joint state in the same ordering as tensor2.
-Eigen::MatrixXcd partialTrace(Eigen::MatrixXcd const& rho, int n,
-                              std::vector<int> const& keep) {
-    std::vector<int> traced;
-    for (int b = 0; b < n; ++b)
-        if (std::find(keep.begin(), keep.end(), b) == keep.end())
-            traced.push_back(b);
-    const int k = static_cast<int>(keep.size());
-    const int t = static_cast<int>(traced.size());
-    const int dimK = 1 << k;
-    const int dimT = 1 << t;
-    auto fullIndex = [&](int kv, int tv) {
-        int idx = 0;
-        for (int i = 0; i < k; ++i)             // keep[0] = most significant
-            if (kv & (1 << (k - 1 - i))) idx |= 1 << (n - 1 - keep[i]);
-        for (int i = 0; i < t; ++i)
-            if (tv & (1 << (t - 1 - i))) idx |= 1 << (n - 1 - traced[i]);
-        return idx;
-    };
-    Eigen::MatrixXcd out = Eigen::MatrixXcd::Zero(dimK, dimK);
-    for (int r = 0; r < dimK; ++r)
-        for (int c = 0; c < dimK; ++c)
-            for (int tv = 0; tv < dimT; ++tv)
-                out(r, c) += rho(fullIndex(r, tv), fullIndex(c, tv));
-    return out;
-}
+// randomCorrelatedState and partialTrace (the n-qubit reduced state) are
+// the public tessera::quantum functions of quantum/DensityMatrix.hpp.
 
 // Sorted vertex-pointer pair, the canonical key for jointOf_.
 std::pair<VertexPtr, VertexPtr> sortedPair(VertexPtr a, VertexPtr b) {
