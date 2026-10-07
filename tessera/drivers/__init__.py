@@ -13,6 +13,13 @@ API test suite imports them as a library: `emergence.build_config` and
 * `fock`      -- the inductive limit of the Fock stages over a refinement
                  sequence: the compatibility defect of the vacuum embedding,
                  measured at every adjacent pair of a stated sequence.
+* `entanglement_complex`  -- an n-qubit network under pairwise interactions
+                 and the Vietoris-Rips filtration of edge lengths built from
+                 the qubits' mutual information alone (no embedding).
+* `entanglement_regions`  -- the entropies of every subset of those qubits:
+                 the co-information ledger and monogamy of mutual information.
+* `entanglement_schedules` -- relaxation of the pairwise mutual information
+                 with interactions on all pairs against an open chain.
 
 Each module keeps a `main()` entry point, so the thin command line wrappers
 kept outside this repository can call straight into it.
