@@ -254,6 +254,37 @@ class TestN32Distribution(unittest.TestCase):
 
 
 @pytest.mark.slow
+class TestEntanglementComplex(unittest.TestCase):
+    """Tests for examples/entanglement_complex.py"""
+
+    def test_runs_and_saves_the_filtration(self):
+        rc, out, err, path = run_example("entanglement_complex.py", ["--qubits", "4"])
+        self.assertEqual(rc, 0, f"Script failed:\nstdout:\n{out}\nstderr:\n{err}")
+        self.assertIn("VIETORIS-RIPS FILTRATION", out)
+        self.assertTrue(os.path.exists(path), f"No output at {path}")
+        self.assertGreater(os.path.getsize(path), 0)
+        os.unlink(path)
+
+    def test_slices_with_regions_save_the_ledger(self):
+        rc, out, err, path = run_example(
+            "entanglement_complex.py", ["--qubits", "4", "--timesteps", "3", "--regions"])
+        self.assertEqual(rc, 0, f"stderr:\n{err}")
+        self.assertIn("C by order", out)
+        regions = path.rsplit(".", 1)[0] + "_regions.png"
+        for figure in (path, regions):
+            self.assertTrue(os.path.exists(figure), f"No output at {figure}")
+            os.unlink(figure)
+
+    def test_compare_schedules(self):
+        rc, out, err, path = run_example(
+            "entanglement_complex.py",
+            ["--compare-schedules", "--qubits", "4", "--timesteps", "6", "--seeds", "0"])
+        self.assertEqual(rc, 0, f"stderr:\n{err}")
+        self.assertIn("relaxation time", out)
+        self.assertTrue(os.path.exists(path), f"No output at {path}")
+        os.unlink(path)
+
+
 class TestBuildBenchmark(unittest.TestCase):
     """Tests for examples/benchmarks/build_benchmark.py"""
 

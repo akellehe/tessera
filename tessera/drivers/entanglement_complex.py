@@ -718,8 +718,8 @@ def main(argv=None):
     parser.add_argument("--json", action="store_true",
                         help="write the record as JSON on standard output")
     parser.add_argument("--save", default=None,
-                        help="write the figures to <stem>_filtration.png (and "
-                             "<stem>_regions.png with --regions)")
+                        help="write the filtration figure to this path (and, with "
+                             "--regions, the ledger to <stem>_regions.png)")
     parser.add_argument("--no-show", action="store_true", help="do not open a window")
     args = parser.parse_args(argv)
 
@@ -812,7 +812,7 @@ def main(argv=None):
         stem = args.save.rsplit(".", 1)[0] if args.save else None
         draw_filtration(filtration, names,
                         "%d qubits: Vietoris-Rips filtration of edge length = %s" % (n, label),
-                        "%s_filtration.png" % stem if stem else None)
+                        args.save)
         if regions is not None:
             reg.draw(regions, result["slices"], names,
                      "%s_regions.png" % stem if stem else None)

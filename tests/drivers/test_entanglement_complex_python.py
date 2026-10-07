@@ -558,7 +558,7 @@ class TestCommandLine(unittest.TestCase):
         _, out = quiet(ec.main, ["--qubits", "4", "--timesteps", "3", "--regions",
                                  "--no-show", "--save", self.path("t.png")])
         self.assertEqual(out.count("C by order"), 4)
-        for name in ("t_filtration.png", "t_regions.png"):
+        for name in ("t.png", "t_regions.png"):
             self.assertTrue(os.path.exists(self.path(name)), name)
 
     def test_refusals(self):
