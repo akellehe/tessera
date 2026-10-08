@@ -2089,6 +2089,45 @@ observables::PersistentModularity magnitudeGraphOf(
 // The supports of `components`, as coordinate lists, with every coordinate
 // claimed at most once and every unclaimed coordinate its own component: the
 // partition handed to `nextLevel` must cover every index exactly once.
+// The coordinate a component is listed by: its smallest member inside the
+// quotient's coordinate range, or past every coordinate when it has none.
+int leadingCoordinate(const observables::ComponentRead &component, int dim) {
+  int leading = dim;
+  for (const std::uint64_t cell : component.support) {
+    const int index = static_cast<int>(cell);
+    if (index >= 0 && index < dim && index < leading) leading = index;
+  }
+  return leading;
+}
+
+// The components in canonical order, ascending in their leading coordinate.
+// The modularity scan lists them in the order its labels came out, which
+// depends on the restart that won and on hashing, so a record read in that
+// order was not reproducible across builds; this order is a function of the
+// partition alone. `companions` (one value per component) is permuted
+// alongside.
+void canonicalOrder(
+    std::vector<const observables::ComponentRead *> &components, int dim,
+    std::vector<double> *companions = nullptr) {
+  std::vector<std::size_t> order(components.size());
+  std::iota(order.begin(), order.end(), std::size_t{0});
+  std::stable_sort(order.begin(), order.end(),
+                   [&](std::size_t a, std::size_t b) {
+                     return leadingCoordinate(*components[a], dim) <
+                            leadingCoordinate(*components[b], dim);
+                   });
+  std::vector<const observables::ComponentRead *> sorted;
+  sorted.reserve(components.size());
+  for (const std::size_t i : order) sorted.push_back(components[i]);
+  components.swap(sorted);
+  if (companions != nullptr) {
+    std::vector<double> values;
+    values.reserve(companions->size());
+    for (const std::size_t i : order) values.push_back((*companions)[i]);
+    companions->swap(values);
+  }
+}
+
 std::vector<std::vector<int>> partitionOf(
     const std::vector<const observables::ComponentRead *> &components, int dim,
     std::vector<int> *origin = nullptr) {
@@ -2140,6 +2179,7 @@ std::vector<std::vector<int>> RecursiveQuotient::persistentPartition(
   std::vector<const observables::ComponentRead *> discovered;
   for (const observables::ComponentRead &component : slice.components)
     discovered.push_back(&component);
+  canonicalOrder(discovered, dim);
   return partitionOf(discovered, dim);
 }
 
@@ -2197,6 +2237,7 @@ RecursiveQuotient::persistentPartitionOverResolutions(
     persistent.push_back(&first[at]);
     overlaps.push_back(track.minAdjacentOverlap);
   }
+  canonicalOrder(persistent, dim, &overlaps);
   std::vector<int> origin;
   read.components = partitionOf(persistent, dim, &origin);
   const auto window = static_cast<double>(gammas.size());

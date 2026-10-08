@@ -345,26 +345,29 @@ def tick_zero():
 
 def test_the_tick_zero_partition_is_the_recorded_one(tick_zero):
     """The Section 15 box on the run's level reproduces the record: the
-    partition of the nine edges into [2, 5, 7], [0, 1, 4], [3], [6], [8] at
+    partition of the nine edges into [0, 1, 4], [2, 5, 7], [3], [6], [8] at
     resolution 1, persistence [5, 5, 1, 1, 1] over the five resolutions,
-    five accepted rank-1 bands and a zero determinant residual.
+    five accepted rank-1 bands and a zero determinant residual. The
+    components are listed in the recursion's canonical order, ascending in
+    their first edge (the run's record listed the two three-edge components
+    the other way round, in the order the modularity labels came out).
 
     The isolation gap of a band is the distance between its selected
     eigenvalue and the nearest excluded eigenvalue of the component's block:
-    13.125953135604732 and 6.950753599816647 for the two three-edge
+    6.950753599816647 and 13.125953135604732 for the two three-edge
     components (the recorded selection circle of each sits halfway between
-    the two, at radius 6.562976567802366 and 3.4753767999083234, so the gap
+    the two, at radius 3.4753767999083234 and 6.562976567802366, so the gap
     is twice that radius). The three single-edge components select their
     only eigenvalue and exclude nothing, so their gaps are infinite and the
     record says so."""
     config, _, _, _, base = tick_zero
     level = R.recursion_turn(base["operator"], config)
     record = R.level_record(level)
-    assert record["partition"] == [[2, 5, 7], [0, 1, 4], [3], [6], [8]]
+    assert record["partition"] == [[0, 1, 4], [2, 5, 7], [3], [6], [8]]
     assert record["selected_resolution"] == 1.0
     assert record["component_persistence"] == [5.0, 5.0, 1.0, 1.0, 1.0]
     np.testing.assert_allclose(record["isolation_gaps"][:2],
-                               [13.125953135604732, 6.950753599816647],
+                               [6.950753599816647, 13.125953135604732],
                                rtol=1e-12)
     assert record["isolation_gaps"][2:] == [math.inf] * 3
     assert record["encloses_everything"] == [False, False, True, True, True]
@@ -386,7 +389,7 @@ def test_persistence_accepts_across_the_declared_window(tick_zero, required,
     kept, rejected = R.persistent_components(level, base["edges"], required)
     assert len(kept) == accepted
     if required == 5:
-        assert kept == [[2, 5, 7], [0, 1, 4]]
+        assert kept == [[0, 1, 4], [2, 5, 7]]
         assert [r["edges"] for r in rejected] == [["0-4"], ["1-4"], ["3-4"]]
 
 
