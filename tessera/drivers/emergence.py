@@ -2860,8 +2860,13 @@ def source_commit():
         head = git("rev-parse", "HEAD")
         branch = git("rev-parse", "--abbrev-ref", "HEAD")
         dirty = bool(git("status", "--porcelain"))
-    except (OSError, subprocess.SubprocessError):
-        return Absent("the run is not inside a readable git work tree")
+    except (OSError, subprocess.SubprocessError) as error:
+        # Say what git said: a refusal (an unowned checkout, say) reads very
+        # differently from an absent git, and the record is the only place
+        # a headless run leaves the reason.
+        detail = getattr(error, "stderr", None) or str(error)
+        return Absent("the run is not inside a readable git work tree: %s"
+                      % " ".join(str(detail).split()))
     return {"head": head, "branch": branch, "dirty": dirty}
 
 
