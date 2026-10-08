@@ -49,6 +49,7 @@ optional-dependencies.dev = [
     "tessera[live]",
     "pytest",
     "pytest-xdist",
+    "pytest-split",
     "scikit-build-core>=0.9",
     "cmake>=3.22",
     "ninja",

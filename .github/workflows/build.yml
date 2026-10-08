@@ -9,6 +9,14 @@ on:
     # pushes still gate the tree at least once a day, independent of merges.
     - cron: "0 7 * * *"
   workflow_dispatch:
+    inputs:
+      tier:
+        description: >-
+          Which tier to run: "full" is every test; "fast" is every test not
+          marked slow, as on a pull request.
+        type: choice
+        options: [full, fast]
+        default: full
 
 permissions:
   contents: read
@@ -168,10 +176,18 @@ jobs:
       #
       # PR pushes run only the fast lane (the ``slow`` tests deselected);
       # merge-to-main, the nightly schedule, and manual dispatch run the FULL
-      # suite. Coverage is split, never cut — every ``slow`` test still runs on
-      # main/nightly. Both lanes run from the repo root so pytest finds tests/.
+      # suite (a manual dispatch may select the fast lane through its ``tier``
+      # input; ``inputs.tier`` is empty for every other event). Coverage is
+      # split, never cut — every ``slow`` test still runs on main/nightly.
+      # Both lanes run from the repo root so pytest finds tests/.
+      #
+      # Both lanes record how long every test took (setup + call + teardown)
+      # through pytest-split's ``--store-durations``, as the JSON file
+      # ``.test_durations`` at the repo root: test id -> seconds. The committed
+      # copy of that file is refreshed from the artifact uploaded below, and
+      # its measurements decide which tests carry the ``slow`` marker.
       - name: Run fast test suite (PR pushes)
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' || inputs.tier == 'fast'
         env:
           OMP_NUM_THREADS: ${{ env.TESSERA_TEST_THREADS_PER_WORKER }}
           OPENBLAS_NUM_THREADS: ${{ env.TESSERA_TEST_THREADS_PER_WORKER }}
@@ -179,10 +195,11 @@ jobs:
           BLIS_NUM_THREADS: ${{ env.TESSERA_TEST_THREADS_PER_WORKER }}
         run: |
           python -m pytest tests/ -q -m "not slow" \
-            -n "$(.github/scripts/test-workers.sh)" --dist worksteal
+            -n "$(.github/scripts/test-workers.sh)" --dist worksteal \
+            --store-durations --durations-path .test_durations
 
       - name: Run full test suite (main / nightly / manual)
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' && inputs.tier != 'fast'
         env:
           OMP_NUM_THREADS: ${{ env.TESSERA_TEST_THREADS_PER_WORKER }}
           OPENBLAS_NUM_THREADS: ${{ env.TESSERA_TEST_THREADS_PER_WORKER }}
@@ -190,4 +207,19 @@ jobs:
           BLIS_NUM_THREADS: ${{ env.TESSERA_TEST_THREADS_PER_WORKER }}
         run: |
           python -m pytest tests/ -q \
-            -n "$(.github/scripts/test-workers.sh)" --dist worksteal
+            -n "$(.github/scripts/test-workers.sh)" --dist worksteal \
+            --store-durations --durations-path .test_durations
+
+      # The durations file from whichever lane ran, so the committed copy can
+      # be refreshed from any run (``gh run download <run-id> -n
+      # test-durations-py3.13``). A failed run still measured the tests that
+      # ran, hence ``!cancelled()`` rather than ``success()``. The file is a
+      # dotfile, which upload-artifact skips unless told otherwise.
+      - name: Upload per-test durations
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-durations-py${{ matrix.python-version }}
+          path: .test_durations
+          include-hidden-files: true
+          if-no-files-found: error
