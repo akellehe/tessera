@@ -39,7 +39,12 @@ jobs:
     # green depends on which runner happens to pick it up.
     container:
       image: ubuntu:24.04
-    timeout-minutes: 90
+    # The fast suite alone has taken 58 to over 82 minutes on primary01
+    # (measured 2026-10-08: 82 minutes reached 99% before the old 90-minute
+    # limit cancelled the job, the runner carrying its other work) and 90
+    # minutes on workstation05, after a 7-minute build. The limit must hold
+    # the suite on a loaded runner, or a passing suite reads as a failure.
+    timeout-minutes: 150
     strategy:
       fail-fast: false
       matrix:
