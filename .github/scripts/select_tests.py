@@ -136,7 +136,8 @@ CPP_HEADER_SUFFIXES = (".h", ".hpp", ".cuh", ".inl", ".tpp")
 CPP_SOURCE_SUFFIXES = (".cpp", ".cc", ".cxx", ".cu")
 CPP_SUFFIXES = CPP_HEADER_SUFFIXES + CPP_SOURCE_SUFFIXES
 
-#: Node of the C++ include graph that stands for every file; never a real key.
+#: The area of the files directly under ``include/`` or ``src/`` (``Logger.h``,
+#: ``Poset.cpp``): bound at the top level by ``src/bindings.cpp``.
 ROOT_AREA = "<root>"
 
 #: Import-graph node of the names ``tessera/__init__.py`` re-exports at the
@@ -396,7 +397,6 @@ class Tree:
         self.star_exported_areas: set[str] = set()
         # Python
         self.py_modules: dict[str, str] = {}      # dotted name -> path
-        self.py_packages: set[str] = set()
         self.test_files: list[str] = []
         self.conftest_dirs: dict[str, str] = {}   # dotted name -> directory
         self.scans: dict[str, _ModuleScan] = {}
@@ -509,8 +509,6 @@ class Tree:
                 name = _module_name(rel)
                 is_package = rel.endswith("/__init__.py")
                 self.py_modules[name] = rel
-                if is_package:
-                    self.py_packages.add(name)
                 if _is_test_file(rel):
                     self.test_files.append(rel)
                 if _is_conftest(rel):
@@ -773,7 +771,7 @@ def _select_tests(tree: Tree, changed: str, selection: Selection) -> None:
             return
         selection.add(changed, "fixture file; the tests mentioning it", paths)
         return
-    paths.add(directory.split("/")[0] + "/" + directory.split("/")[1] + "/")
+    paths.add("/".join(directory.split("/")[:2]) + "/")
     selection.add(changed, "test data; its tests directory and the tests mentioning it", paths)
 
 
@@ -800,6 +798,9 @@ def select(tree: Tree, changed_paths) -> Selection:
         else:
             selection.full(changed, "no known mapping")
     if selection.is_full:
+        return selection
+    if FULL_TIER in selection.paths:
+        selection.full("(union)", "a change reaches the conftest of tests/")
         return selection
     selection.paths = {p for p in selection.paths if tree.exists(p)}
     if not selection.paths:
