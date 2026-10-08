@@ -48,7 +48,11 @@ jobs:
   # documentation build) from reading as contention for ours. Two runs are
   # left out: this one, and the run this one supersedes (same workflow, event,
   # branch and head repository), which the concurrency group above is
-  # cancelling and whose runner is about to be free.
+  # cancelling and whose runner is about to be free. Runs for the same commit
+  # (the documentation build the same push starts, on the same runners) are
+  # not backlog either: they are this push's own work, so they are left out
+  # as well; a shard that lands behind one waits for a job this push would
+  # have run anyway.
   #
   # Blind spots, each of which can make the decision read "free" when a runner
   # is not: jobs of other repositories on the same runners, interactive work on
@@ -82,6 +86,11 @@ jobs:
                   { owner, repo, status, per_page: 100 });
                 for (const run of runs) {
                   if (run.id === me.id) continue;
+                  if (run.head_sha === me.head_sha) {
+                    core.info(`not counted: ${describe(run)}, a sibling of this run `
+                      + "(same commit, started by the same push)");
+                    continue;
+                  }
                   if (run.workflow_id === me.workflow_id
                       && run.event === me.event
                       && run.head_branch === me.head_branch
