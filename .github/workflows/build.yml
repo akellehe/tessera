@@ -166,10 +166,38 @@ jobs:
       # TESSERA_TEST_THREADS_PER_WORKER threads inside each test and
       # TESSERA_TEST_CPUS / TESSERA_TEST_THREADS_PER_WORKER tests at once.
       #
-      # PR pushes run only the fast lane (the ``slow`` tests deselected);
+      # PR pushes run only the fast lane (the ``slow`` tests deselected) on
+      # the tests the change can affect (see the selection step below);
       # merge-to-main, the nightly schedule, and manual dispatch run the FULL
       # suite. Coverage is split, never cut — every ``slow`` test still runs on
       # main/nightly. Both lanes run from the repo root so pytest finds tests/.
+      #
+      # A pull request runs only the tests its change can affect.
+      # .github/scripts/select_tests.py maps the changed paths to pytest paths
+      # from the tree's own import and include graphs, and selects the whole
+      # fast tier whenever a path has no known mapping; its log says what it
+      # chose and why. HEAD is the pull request's merge commit, whose first
+      # parent is the base branch tip, so the diff against the base is exactly
+      # the change the pull request makes. The shallow checkout lacks the base
+      # commit, so it is fetched first. When the diff cannot be computed the
+      # list is empty and the selector runs everything.
+      - name: Select the tests the change can affect (PR pushes)
+        if: github.event_name == 'pull_request'
+        run: |
+          base="${{ github.event.pull_request.base.sha }}"
+          changed="${RUNNER_TEMP}/changed-paths.txt"
+          if ! git fetch --no-tags --depth=1 origin "$base" \
+             || ! git diff --name-only "$base" HEAD > "$changed"; then
+            echo "could not diff against the base ${base}; running the full fast tier"
+            : > "$changed"
+          fi
+          echo "changed paths:"
+          sed 's/^/  /' "$changed"
+          python .github/scripts/select_tests.py \
+            --changed-paths "$changed" --output "${RUNNER_TEMP}/selected-tests.txt"
+
+      # The selection is one pytest path per line, none containing
+      # whitespace; flags appended after it apply to the same selection.
       - name: Run fast test suite (PR pushes)
         if: github.event_name == 'pull_request'
         env:
@@ -178,7 +206,7 @@ jobs:
           MKL_NUM_THREADS: ${{ env.TESSERA_TEST_THREADS_PER_WORKER }}
           BLIS_NUM_THREADS: ${{ env.TESSERA_TEST_THREADS_PER_WORKER }}
         run: |
-          python -m pytest tests/ -q -m "not slow" \
+          python -m pytest $(cat "${RUNNER_TEMP}/selected-tests.txt") -q -m "not slow" \
             -n "$(.github/scripts/test-workers.sh)" --dist worksteal
 
       - name: Run full test suite (main / nightly / manual)
