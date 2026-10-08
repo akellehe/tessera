@@ -69,10 +69,36 @@ jobs:
       AGENT_TOOLSDIRECTORY: /opt/hostedtoolcache
       TESSERA_CUDA: "0"
       # The runner box is shared (other self-hosted runners + interactive use);
-      # cap build and math-library parallelism so concurrent matrix jobs stay
-      # good neighbors. Tunable.
-      CMAKE_BUILD_PARALLEL_LEVEL: "8"
+      # cap math-library parallelism so concurrent matrix jobs stay good
+      # neighbors. Tunable. Build parallelism (CMAKE_BUILD_PARALLEL_LEVEL) is
+      # not a constant: the "Size the build" step below derives it from the
+      # memory the host actually has free when the job starts.
       OMP_NUM_THREADS: "8"
+      # Compiler cache. CMakeLists.txt already routes every compile through
+      # ccache when it is on the PATH; naming the launcher here makes that the
+      # CI contract rather than an auto-detected convenience. The cache
+      # directory sits inside the job workspace so actions/cache can persist
+      # it between jobs with no change to the runner hosts (the "compiler
+      # cache" steps below). The 2 GB cap keeps one archive well inside the
+      # repository's 10 GB cache quota; ccache evicts its oldest objects
+      # itself at the cap, so the archive never grows without bound.
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_MAXSIZE: 2G
+      # What ccache folds into every object's hash besides the preprocessed
+      # source and the flags. Its default (the compiler's mtime and size)
+      # cannot see that pyproject.toml compiles with -march=native: the flag
+      # text is the same on every host but the code it produces is not, and
+      # ccache has no special handling for it. `g++ -v` pins the exact
+      # compiler build; `-march=native -Q --help=target` prints the
+      # instruction-set flags "native" resolves to on this CPU. Together they
+      # make sure an object is reused only by a compiler that would have
+      # generated the same code. The actions/cache key below carries the same
+      # two facts so a cache from another toolchain or CPU is not even
+      # restored; this check is what keeps it safe at the object level
+      # regardless of how the directory travelled.
+      CCACHE_COMPILERCHECK: "%compiler% -v; %compiler% -march=native -Q --help=target"
       # Total CPU threads the test lanes may occupy, and how many of them each
       # pytest-xdist worker gets. Worker count is the quotient, computed by
       # .github/scripts/test-workers.sh. Raising TESSERA_TEST_CPUS trades
@@ -92,13 +118,16 @@ jobs:
       # search path — so a green run asserts the build still selects
       # pybind11 >= 3.0 and never falls back to the system v2.
       # liblapack/libblas satisfy the (unconditional) quantum subsystem's
-      # BLAS/LAPACK need.
+      # BLAS/LAPACK need. ccache is the compiler cache the job env points
+      # CMake at; zstd is what actions/cache compresses the cache archive
+      # with when it is present (without it the archive falls back to gzip,
+      # slower to pack and larger to upload).
       - name: Install the toolchain (incl. pybind11 v2 regression trap)
         run: |
           apt-get update
           DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
             ca-certificates curl git \
-            build-essential cmake ninja-build \
+            build-essential cmake ninja-build ccache zstd \
             pybind11-dev libeigen3-dev liblapack-dev libblas-dev
 
       - uses: actions/checkout@v6
@@ -140,8 +169,103 @@ jobs:
             exit 1
           fi
 
+      # A full build is memory-bound, not CPU-bound: the template-heavy
+      # translation units (src/cobordism/MultiCobordism.cpp, the per-subsystem
+      # Bindings.cpp, the Eigen-dense chainhodge sources) each peak at several
+      # GB in cc1plus at -O3 -march=native. A fixed parallel level sized for
+      # the larger runner host (125 GB) ran eight such compilers on the 29 GB
+      # host while other work was using it: swap filled completely,
+      # /proc/pressure/memory reported about 16% stall time, and one job died
+      # with exit 137 (the kernel's out-of-memory kill) in the build step.
+      # The container sees the host's /proc/meminfo, so size the build from
+      # MemAvailable at the moment the job starts: one compiler per 3 GiB
+      # free (the per-job peak CMakeLists.txt budgets for), at most 8 (the
+      # ceiling that keeps the job a good neighbour on the shared box), and
+      # at least 2. CMakeLists.txt's Ninja job pools cap parallelism from
+      # *total* memory as well; the lower of the two applies. nproc alone is
+      # the wrong input: the 29 GB host has 16 cores.
+      - name: Size the build for the memory available
+        run: |
+          avail_kib=$(awk '/^MemAvailable:/ { print $2 }' /proc/meminfo)
+          jobs=$(( avail_kib / (3 * 1024 * 1024) ))
+          if [ "$jobs" -gt 8 ]; then jobs=8; fi
+          if [ "$jobs" -lt 2 ]; then jobs=2; fi
+          echo "MemAvailable $(( avail_kib / 1024 )) MiB, $(nproc --all) cores -> CMAKE_BUILD_PARALLEL_LEVEL=${jobs}"
+          echo "CMAKE_BUILD_PARALLEL_LEVEL=${jobs}" >> "$GITHUB_ENV"
+
+      # Compiler cache, part 1: restore. The key names everything an object
+      # depends on that a source hash cannot see: the image release, the
+      # exact compiler version (a changed compiler must never serve objects
+      # another one compiled: the golden-float dumps are reproducible on one
+      # toolchain only, see the container comment above), and the CPU model
+      # (the build is -march=native, so objects from the other runner host
+      # target a different instruction set), followed by a hash of the C++
+      # sources and build configuration. An exact match means a job with
+      # identical sources already filled the cache; the restore-keys prefix
+      # makes any earlier cache for the same toolchain and CPU a warm start
+      # when the sources moved, which is the common case for a pull request.
+      # Caches are scoped by branch: a pull request can restore its own and
+      # main's, and the push-to-main run after a merge keeps main's current.
+      - name: Fingerprint the toolchain for the compiler cache
+        id: toolchain
+        run: |
+          os_release="$(. /etc/os-release && echo "${ID}${VERSION_ID}")"
+          cxx="${CXX:-g++}"
+          gcc_version="$("$cxx" -dumpfullversion)"
+          cpu_model="$(grep -m1 '^model name' /proc/cpuinfo | cut -d: -f2- \
+            | tr -cs '[:alnum:]' '-' | sed 's/^-//; s/-*$//')"
+          prefix="ccache-${os_release}-gcc${gcc_version}-${cpu_model:-unknown-cpu}-"
+          echo "compiler ${cxx} ${gcc_version} on ${os_release}, cpu ${cpu_model:-unknown}"
+          echo "cache key prefix ${prefix}"
+          echo "ccache-key-prefix=${prefix}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the compiler cache
+        id: ccache-restore
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ${{ steps.toolchain.outputs.ccache-key-prefix }}${{ hashFiles('CMakeLists.txt', 'cmake/**', 'pyproject.toml', 'src/**', 'include/**', 'tests/**/*.cpp', 'tests/**/*.h', 'third_party/**/*.cc', 'third_party/**/*.h') }}
+          restore-keys: ${{ steps.toolchain.outputs.ccache-key-prefix }}
+
+      # Statistics are cumulative and travel with the cache directory, so the
+      # print before the build shows the restored cache's history and size;
+      # zeroing them afterwards makes the print after the build report this
+      # job alone, which is the hit rate worth reading.
+      - name: Compiler cache statistics before the build
+        run: |
+          ccache --show-stats --verbose
+          ccache --zero-stats
+
       - name: Build and install (with dev extras for the test suite)
         run: python -m pip install -e ".[dev]" -v
+
+      # The same statistics also go on the run's summary page, so the hit
+      # rate can be read without opening the log.
+      - name: Compiler cache statistics after the build
+        if: ${{ !cancelled() }}
+        run: |
+          ccache --show-stats | tee "$RUNNER_TEMP/ccache-stats.txt"
+          {
+            echo "### Compiler cache (ccache) for this build"
+            echo
+            echo '```'
+            cat "$RUNNER_TEMP/ccache-stats.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Compiler cache, part 2: save. Right after the build rather than in a
+      # post-job step, so a red test suite does not throw away the objects a
+      # cold build spends minutes compiling; a failed build still saves the objects
+      # it did produce (ccache stores successful compiles only). Skipped when
+      # the exact key was restored: that cache already holds these objects.
+      # Under a job matrix every shard restores the same key and the first
+      # shard to save wins; the others log that the cache exists and move on.
+      - name: Save the compiler cache
+        if: ${{ !cancelled() && steps.ccache-restore.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ${{ steps.ccache-restore.outputs.cache-primary-key }}
 
       - name: Import smoke test
         working-directory: ${{ runner.temp }}
