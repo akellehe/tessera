@@ -86,10 +86,15 @@ jobs:
                     github.rest.actions.listJobsForWorkflowRun,
                     { owner, repo, run_id: run.id, per_page: 100 });
                   for (const job of jobs) {
+                    if (job.status === "completed") continue;
                     const labels = job.labels || [];
-                    if (job.status === "completed" || !labels.includes("self-hosted")) continue;
-                    contending.push(`${describe(run)}: job "${job.name}" is ${job.status} `
-                      + `on [${labels.join(", ")}]`);
+                    const where = `${describe(run)}: job "${job.name}" is ${job.status} `
+                      + `on [${labels.join(", ")}]`;
+                    if (!labels.includes("self-hosted")) {
+                      core.info(`not counted: ${where}, not a self-hosted job`);
+                      continue;
+                    }
+                    contending.push(where);
                   }
                 }
               }
