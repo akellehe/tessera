@@ -374,22 +374,23 @@ def test_lengths_that_grow_without_bound_are_left_to_the_equations():
 
 
 def test_a_read_that_leaves_the_allowable_domain_is_refused():
-    """(0123, 021): the joint Newton drives one shared squared length
-    negative within five steps, where no damped step reduces the residual;
-    the solve stops by that name at a geometry on the boundary of
-    Kontsevich-Segal allowability (a negative squared length puts one
-    eigenvalue of the metric at argument pi, so the margin is zero to
-    rounding), and the read is refused with the margin, so no pole is read
-    on it."""
+    """(0123, 021): the joint Newton takes one shared squared length
+    negative and converges there, at a stationary point outside
+    Kontsevich-Segal allowability (a negative squared length puts an
+    eigenvalue of the metric past argument pi, so the margin is negative),
+    and the read is refused with the margin, so no pole is read on it.
+
+    The convergence investigation's reproducer of 2026-09-28 recorded this
+    content stopping short instead, no damped step reducing the residual
+    within five steps, at a geometry on the boundary of the domain (margin
+    zero to rounding); the solver's changes of 2026-09-30 carry the same
+    solve through to a stationary point past the boundary. The property
+    held here is the refusal: whatever the solve does on the way, a
+    geometry that leaves the domain is not read."""
     spacetime, _, report, config = _relax(FIRST_CELL, (0, 2, 1))
-    assert not report.converged
-    assert report.stop_reason == cob.RelaxationStop.NoDescent
-    assert report.stop_detail.startswith(
-        "no damped step reduced the residual norm")
-    assert report.iterations <= 10
     z = np.asarray(bp.sheet_squared_lengths(spacetime, 0))
     assert np.min(z.real) < 0
-    assert abs(report.kontsevich_segal_margin) < 1e-6
+    assert report.kontsevich_segal_margin < 0
     name, message = _refusal(report, config)
     assert name == "not Kontsevich-Segal allowable"
     assert "margin %.3g" % report.kontsevich_segal_margin in message

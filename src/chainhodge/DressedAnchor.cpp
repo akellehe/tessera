@@ -555,8 +555,20 @@ double DressedAnchor::projectiveDistance(const DressedAnchorRead &a, const Dress
   if (normA <= 0.0 || normB <= 0.0)
     throw std::runtime_error("DressedAnchor::projectiveDistance: an identically zero profile is "
                              "not a point of a projective space");
-  const double cosine = std::norm(inner) / (normA * normB);
-  return std::sqrt(std::max(0.0, 1.0 - cosine));
+  // The sine of the Fubini-Study angle, as the norm of the residual of b's
+  // unit ray against a's: sqrt(1 - |<a,b>|^2 / (|a|^2 |b|^2)) in exact
+  // arithmetic, but that form cancels to the rounding of the cosine, so two
+  // proportional profiles read as the square root of the rounding (about
+  // 1e-8) apart rather than as 0; the residual carries no cancellation.
+  const double scaleA = std::sqrt(normA);
+  const double scaleB = std::sqrt(normB);
+  const Complex cosine = inner / (scaleA * scaleB);  // <a_hat, b_hat>
+  double residual = 0.0;
+  for (std::size_t slot = 0; slot < a.coordinates.size(); ++slot)
+    for (std::size_t k = 0; k < a.coordinates[slot].size(); ++k)
+      residual += std::norm(b.coordinates[slot][k] / scaleB -
+                            cosine * (a.coordinates[slot][k] / scaleA));
+  return std::sqrt(residual);
 }
 
 }  // namespace tessera::chainhodge

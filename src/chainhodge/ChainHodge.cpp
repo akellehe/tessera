@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <fstream>
 #include <limits>
 #include <numeric>
@@ -127,12 +128,43 @@ ChainHodge::ChainHodge(cobordism::ChainComplex K, SquaredLengths s, Preset prese
   if (crossover_ < 1) throw std::invalid_argument("ChainHodge: crossover must be >= 1");
   const int d = K_.dimension();
   if (d < 0) throw std::invalid_argument("ChainHodge: empty complex");
+  // The masses are the Cayley-Menger determinants of the cells, polynomials
+  // of degree d + 1 in the squared lengths, on a square-root sheet chosen by
+  // the branch. Past double range those determinants are infinities whose
+  // sheets are undefined, and the assembly then returns values (finite ones,
+  // once inverted) that differ from one construction to the next on the same
+  // input; measured on a two-complex with one squared length at 1e160. The
+  // refusal here is the deterministic reading of that regime, which the
+  // spectral totalization of the cobordism layer scores as +inf.
+  double scale = 0.0;
+  for (const Complex &value : s_) {
+    if (!std::isfinite(value.real()) || !std::isfinite(value.imag()))
+      throw std::runtime_error("ChainHodge: a squared length is not finite; the masses have no value");
+    scale = std::max(scale, std::abs(value));
+  }
+  if (scale > 0.0 &&
+      std::log10(scale) * static_cast<double>(d + 1) > std::numeric_limits<double>::max_exponent10)
+  {
+    char magnitude[32];
+    std::snprintf(magnitude, sizeof magnitude, "%.3g", scale);
+    throw std::runtime_error("ChainHodge: a squared length of magnitude " + std::string(magnitude) +
+                             " puts the degree-" + std::to_string(d + 1) +
+                             " Cayley-Menger determinants outside double range; the masses have "
+                             "no value");
+  }
   cert_ = WhitneyMass::certificate(K_, s_, branch_);
   cert_.epsilon = epsilon;
   sparse_.reserve(static_cast<std::size_t>(d) + 1);
   boundary_.reserve(static_cast<std::size_t>(d) + 1);
   for (int k = 0; k <= d; ++k) {
     sparse_.push_back(WhitneyMass::assemble(K_, s_, k, preset_, branch_));
+    const SparseMatrix &metric = sparse_.back();
+    for (int outer = 0; outer < metric.outerSize(); ++outer)
+      for (SparseMatrix::InnerIterator it(metric, outer); it; ++it)
+        if (!std::isfinite(it.value().real()) || !std::isfinite(it.value().imag()))
+          throw std::runtime_error("ChainHodge: the degree-" + std::to_string(k) +
+                                   " sparse metric has a coefficient outside double range; the "
+                                   "squared lengths are out of range for it");
     boundary_.push_back(sparseBoundary(K_, k));
   }
   factor_.assign(static_cast<std::size_t>(d) + 1, nullptr);
