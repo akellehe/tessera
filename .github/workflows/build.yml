@@ -12,6 +12,9 @@ on:
 
 permissions:
   contents: read
+  # The ``shards`` job reads this repository's queued and in-progress workflow
+  # runs and their jobs.
+  actions: read
 
 # ``github.ref`` alone is not enough to separate these triggers: the nightly
 # schedule and a merge into main both report ``refs/heads/main``, so a merge
@@ -24,8 +27,92 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Decides whether the test job runs as one job or as two shards, one per
+  # self-hosted runner. There are exactly two runners, so a second shard only
+  # helps when the other runner is free; when it is not, two shards would queue
+  # behind whatever holds it and push that backlog further out. The runners'
+  # own busy flags (GET /repos/{owner}/{repo}/actions/runners) need the
+  # administration permission, which GITHUB_TOKEN cannot be granted in a
+  # workflow, so the decision reads what ``actions: read`` allows: this
+  # repository's queued and in-progress workflow runs, counting their jobs
+  # that are waiting for or running on a self-hosted runner. Counting jobs
+  # rather than runs keeps a run whose jobs are on GitHub-hosted runners (the
+  # documentation build) from reading as contention for ours. Two runs are
+  # left out: this one, and the run this one supersedes (same workflow, event,
+  # branch and head repository), which the concurrency group above is
+  # cancelling and whose runner is about to be free.
+  #
+  # Blind spots, each of which can make the decision read "free" when a runner
+  # is not: jobs of other repositories on the same runners, interactive work on
+  # the runner hosts, and anything queued after this job has decided. A wrong
+  # "free" costs a shard a wait in the queue; a wrong "busy" costs an unsharded
+  # run of the usual length. Pull requests, merges to main, the nightly
+  # schedule and manual runs are all decided the same way.
+  shards:
+    name: decide the shard count
+    runs-on: [self-hosted, tessera]
+    timeout-minutes: 5
+    outputs:
+      count: ${{ steps.decide.outputs.count }}
+      groups: ${{ steps.decide.outputs.groups }}
+    steps:
+      - name: Count the jobs of other runs waiting for or using the runners
+        id: decide
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const describe = (run) =>
+              `${run.name} run ${run.run_number} (${run.event}, ${run.head_branch})`;
+            let contending = [];
+            try {
+              const { data: me } = await github.rest.actions.getWorkflowRun(
+                { owner, repo, run_id: context.runId });
+              for (const status of ["queued", "in_progress"]) {
+                const runs = await github.paginate(
+                  github.rest.actions.listWorkflowRunsForRepo,
+                  { owner, repo, status, per_page: 100 });
+                for (const run of runs) {
+                  if (run.id === me.id) continue;
+                  if (run.workflow_id === me.workflow_id
+                      && run.event === me.event
+                      && run.head_branch === me.head_branch
+                      && run.head_repository?.full_name === me.head_repository?.full_name) {
+                    core.info(`not counted: ${describe(run)}, which this run supersedes `
+                      + "and the concurrency group is cancelling");
+                    continue;
+                  }
+                  const jobs = await github.paginate(
+                    github.rest.actions.listJobsForWorkflowRun,
+                    { owner, repo, run_id: run.id, per_page: 100 });
+                  for (const job of jobs) {
+                    const labels = job.labels || [];
+                    if (job.status === "completed" || !labels.includes("self-hosted")) continue;
+                    contending.push(`${describe(run)}: job "${job.name}" is ${job.status} `
+                      + `on [${labels.join(", ")}]`);
+                  }
+                }
+              }
+            } catch (error) {
+              core.warning(`could not read the repository's workflow runs: ${error.message}`);
+              contending = ["the repository's workflow runs could not be read"];
+            }
+            for (const line of contending) core.info(`counted: ${line}`);
+            const count = contending.length === 0 ? 2 : 1;
+            core.notice(count === 2
+              ? "2 shards: no other job is waiting for or using the self-hosted runners"
+              : `1 shard: ${contending.length} other job(s) waiting for or using the self-hosted runners`);
+            core.setOutput("count", String(count));
+            core.setOutput("groups", JSON.stringify(Array.from({ length: count }, (_, i) => i + 1)));
+
   pip-install:
-    name: pip install (py${{ matrix.python-version }})
+    # With two shards the jobs are "pip install (py3.13, shard 1 of 2)" and
+    # "pip install (py3.13, shard 2 of 2)"; with one, the unsharded name.
+    name: pip install (py${{ matrix.python-version }}${{ needs.shards.outputs.count > 1 && format(', shard {0} of {1}', matrix.group, needs.shards.outputs.count) || '' }})
+    needs: shards
+    # Runs even when ``shards`` failed: its outputs then fall back to one
+    # shard below, which is the unsharded job.
+    if: ${{ !cancelled() }}
     runs-on: [self-hosted, tessera]
     # Pinned to 24.04 so every runner computes the same floats regardless of the
     # host OS. The golden dumps in tests/observables, tests/chainhodge and
@@ -44,11 +131,15 @@ jobs:
     # limit cancelled the job, the runner carrying its other work) and 90
     # minutes on workstation05, after a 7-minute build. The limit must hold
     # the suite on a loaded runner, or a passing suite reads as a failure.
+    # It is per job, so each shard of a sharded run has it in full.
     timeout-minutes: 150
     strategy:
       fail-fast: false
       matrix:
         python-version: ["3.13"]
+        # One entry per shard of the test suite, [1] or [1, 2], from the
+        # ``shards`` job. Each job of the matrix builds the extension itself.
+        group: ${{ fromJSON(needs.shards.outputs.groups || '[1]') }}
     env:
       # Give the container its own tool cache.
       #
@@ -79,6 +170,11 @@ jobs:
       # neighbourliness on the shared box for a shorter lane.
       TESSERA_TEST_CPUS: "16"
       TESSERA_TEST_THREADS_PER_WORKER: "4"
+      # How many shards the test suite is divided into and which of them this
+      # job runs, from the ``shards`` job. .github/scripts/test-shard.sh turns
+      # them into pytest-split options, or into nothing for a single shard.
+      TESSERA_TEST_SPLITS: ${{ needs.shards.outputs.count || '1' }}
+      TESSERA_TEST_GROUP: ${{ matrix.group }}
       OPENBLAS_NUM_THREADS: "1"
       MKL_NUM_THREADS: "1"
       BLIS_NUM_THREADS: "1"
@@ -170,6 +266,14 @@ jobs:
       # merge-to-main, the nightly schedule, and manual dispatch run the FULL
       # suite. Coverage is split, never cut — every ``slow`` test still runs on
       # main/nightly. Both lanes run from the repo root so pytest finds tests/.
+      #
+      # Sharding: when the ``shards`` job divided the suite between the two
+      # runners, test-shard.sh prints the pytest-split options that select this
+      # job's shard, formed from the expected runtimes in .test_durations so
+      # the shards take about the same time (evenly by count when that file is
+      # absent); with one shard it prints nothing. The substitution is unquoted
+      # on purpose: it is a list of options for the shell to split into words.
+      # xdist still spreads the shard's tests over the workers above.
       - name: Run fast test suite (PR pushes)
         if: github.event_name == 'pull_request'
         env:
@@ -179,6 +283,7 @@ jobs:
           BLIS_NUM_THREADS: ${{ env.TESSERA_TEST_THREADS_PER_WORKER }}
         run: |
           python -m pytest tests/ -q -m "not slow" \
+            $(.github/scripts/test-shard.sh) \
             -n "$(.github/scripts/test-workers.sh)" --dist worksteal
 
       - name: Run full test suite (main / nightly / manual)
@@ -190,4 +295,5 @@ jobs:
           BLIS_NUM_THREADS: ${{ env.TESSERA_TEST_THREADS_PER_WORKER }}
         run: |
           python -m pytest tests/ -q \
+            $(.github/scripts/test-shard.sh) \
             -n "$(.github/scripts/test-workers.sh)" --dist worksteal
