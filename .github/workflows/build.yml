@@ -239,9 +239,19 @@ jobs:
       - name: Build and install (with dev extras for the test suite)
         run: python -m pip install -e ".[dev]" -v
 
+      # The same statistics also go on the run's summary page, so the hit
+      # rate can be read without opening the log.
       - name: Compiler cache statistics after the build
         if: ${{ !cancelled() }}
-        run: ccache --show-stats
+        run: |
+          ccache --show-stats | tee "$RUNNER_TEMP/ccache-stats.txt"
+          {
+            echo "### Compiler cache (ccache) for this build"
+            echo
+            echo '```'
+            cat "$RUNNER_TEMP/ccache-stats.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       # Compiler cache, part 2: save. Right after the build rather than in a
       # post-job step, so a red test suite does not throw away the objects a
