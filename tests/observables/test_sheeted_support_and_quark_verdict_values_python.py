@@ -22,6 +22,8 @@ import pytest
 from tessera import observables as obs
 from tessera.drivers import baryon_poles as bp
 
+from tests.drivers import _recursion_run_2026_09_23 as RUN
+
 E = obs.QuarkConditionEvidence
 Q = obs.QuarkConditions
 Passed = obs.QuarkConditionStatus.Passed
@@ -307,8 +309,10 @@ def _recursion_record(accepted=True, transport_norms=()):
 
 
 def _driver_verdict(spacetime, symmetry_residual=0.0, **recursion):
-    alignment = bp.aligned_doublet_frame(bp.monopole_support(),
-                                         bp.rotation_group())
+    alignment = bp.aligned_doublet_frame(
+        bp.monopole_support(), bp.rotation_group(),
+        RUN.TOLERANCES["degeneracy_tolerance"],
+        RUN.TOLERANCES["certificate_tolerance"])
     return bp.quark_conditions(spacetime, [alignment] * bp.SHEETS,
                                _recursion_record(**recursion),
                                symmetry_residual, None)

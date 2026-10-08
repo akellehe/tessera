@@ -22,6 +22,8 @@ import pytest
 from tessera import observables as obs
 from tessera.drivers import baryon_poles as bp
 
+from tests.drivers import _recursion_run_2026_09_23 as RUN
+
 MonopoleSupport = obs.MonopoleSupport
 SharpSpin = obs.SharpSpin
 SQRT3 = math.sqrt(3.0)
@@ -150,7 +152,11 @@ def test_the_six_edge_modes_are_two_plus_two_prime_plus_two_double_prime():
     assert doublet.coexact and doublet.coexact_residual < 1e-12
     assert doublet.eigenvalue == pytest.approx(4.0, abs=1e-12)
     assert [b.coexact for b in read.bands].count(True) == 1
-    alignment = bp.aligned_doublet_frame(support, group)
+    # at the run's tolerances: the declared 1e-15 sits below the rounding of
+    # the exactly degenerate pairs, which then do not group into bands
+    alignment = bp.aligned_doublet_frame(
+        support, group, RUN.TOLERANCES["degeneracy_tolerance"],
+        RUN.TOLERANCES["certificate_tolerance"])
     assert sorted(alignment["trialities"]) == [0, 1, 2]
     assert alignment["intertwining_residual"] < 1e-12
     np.testing.assert_allclose(alignment["averaged_eigenvalues"],
