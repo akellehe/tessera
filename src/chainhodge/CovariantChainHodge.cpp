@@ -234,7 +234,8 @@ std::optional<std::uint64_t> Connection::commonBasePoint(std::vector<Walk> &walk
 
 struct CovariantChainHodge::Factorization {
   Eigen::SparseLU<SparseMatrix> lu;
-  bool ok{false};
+  bool finite{true};  // every coefficient of the dressed metric is finite
+  bool ok{false};     // finite and factored without a zero pivot
 };
 
 SparseMatrix CovariantChainHodge::dress(const SparseMatrix &M,
@@ -732,19 +733,43 @@ Eigen::VectorXcd CovariantChainHodge::rho(int k, const std::map<std::uint64_t, C
   return out;
 }
 
+namespace {
+// Whether every stored coefficient of a sparse matrix is finite. A squared
+// length can be legal and still push a Whitney mass past double range; the LU
+// below must not see the result: SparseLU reports success on a matrix with an
+// inf or NaN coefficient (a NaN pivot never compares below the pivot
+// threshold), and its solve then returns finite values that mean nothing,
+// differing from run to run with the order the non-finite terms were summed.
+bool allCoefficientsFinite(const SparseMatrix &m) {
+  for (int outer = 0; outer < m.outerSize(); ++outer)
+    for (SparseMatrix::InnerIterator it(m, outer); it; ++it)
+      if (!std::isfinite(it.value().real()) || !std::isfinite(it.value().imag())) return false;
+  return true;
+}
+}  // namespace
+
 Eigen::MatrixXcd CovariantChainHodge::solveDressed(int k, const Eigen::MatrixXcd &rhs) const {
   auto &slot = factor_[static_cast<std::size_t>(k)];
   if (!slot) {
     auto f = std::make_shared<Factorization>();
-    f->lu.compute(dressed_[static_cast<std::size_t>(k)]);
-    f->ok = (f->lu.info() == Eigen::Success);
+    const SparseMatrix &metric = dressed_[static_cast<std::size_t>(k)];
+    f->finite = allCoefficientsFinite(metric);
+    if (f->finite) f->lu.compute(metric);
+    f->ok = f->finite && (f->lu.info() == Eigen::Success);
     slot = std::move(f);
   }
+  if (!slot->finite)
+    throw std::runtime_error("CovariantChainHodge: the dressed sparse metric at degree " +
+                             std::to_string(k) + " is not finite");
   if (!slot->ok)
     throw std::runtime_error("CovariantChainHodge: the dressed sparse metric at degree " +
                              std::to_string(k) + " is singular");
   if (rhs.cols() == 0) return Eigen::MatrixXcd(rhs.rows(), 0);
-  return slot->lu.solve(rhs);
+  Eigen::MatrixXcd solution = slot->lu.solve(rhs);
+  if (!solution.allFinite())
+    throw std::runtime_error("CovariantChainHodge: the solve against the dressed sparse metric at "
+                             "degree " + std::to_string(k) + " is not finite");
+  return solution;
 }
 
 Eigen::MatrixXcd CovariantChainHodge::applyG(int k, const Eigen::MatrixXcd &c) const {

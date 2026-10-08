@@ -529,7 +529,8 @@ def _cheap_scan_point(kappa, beta, config, on_content=None):
 
 def test_live_and_headless_outputs_are_identical(monkeypatch):
     monkeypatch.setattr(bp, "scan_point", _cheap_scan_point)
-    config = bp.default_config([1.0, 2.0], [0.5], selected_contents=[(3, 0, 0)])
+    config = bp.default_config([1.0, 2.0], [0.5], selected_contents=[(3, 0, 0)],
+                               tolerances=RUN.TOLERANCES)
     headless = bp.drive(dict(config))
     _stub_matplotlib(monkeypatch)
     drawn = []
@@ -551,7 +552,8 @@ def test_the_window_says_which_scan_point_is_running(monkeypatch):
     figures = []
     _stub_matplotlib(monkeypatch, figures=figures)
     bp.drive_live(bp.default_config([1.0, 2.0], [0.5],
-                                    selected_contents=[(3, 0, 0)]))
+                                    selected_contents=[(3, 0, 0)],
+                                    tolerances=RUN.TOLERANCES))
     messages = figures[0].messages()
     assert any(m.startswith("scan point 1 of 2 (kappa 1, beta 0.5) is "
                             "running: 0:00 elapsed") for m in messages)
@@ -566,7 +568,8 @@ def test_the_drivers_own_close_at_the_end_is_not_reported(monkeypatch,
     closes = []
     _stub_matplotlib(monkeypatch, closes=closes)
     bp.drive_live(bp.default_config([1.0], [0.5],
-                                    selected_contents=[(3, 0, 0)]))
+                                    selected_contents=[(3, 0, 0)],
+                                    tolerances=RUN.TOLERANCES))
     assert len(closes) == 1
     assert "was closed" not in capsys.readouterr().out
 
@@ -577,7 +580,8 @@ def test_keep_open_leaves_the_final_frame_on_screen(monkeypatch):
     figures, closes = [], []
     _stub_matplotlib(monkeypatch, figures=figures, closes=closes)
     bp.drive_live(bp.default_config([1.0], [0.5],
-                                    selected_contents=[(3, 0, 0)]),
+                                    selected_contents=[(3, 0, 0)],
+                                    tolerances=RUN.TOLERANCES),
                   keep_open=True)
     assert closes == []
     assert figures[0].messages()[-1] == \
@@ -621,7 +625,8 @@ def test_a_worker_error_reaches_the_main_thread(monkeypatch):
     monkeypatch.setattr(bp, "scan_point", exploding)
     _stub_matplotlib(monkeypatch)
     with pytest.raises(ValueError, match="the scan point failed"):
-        bp.drive_live(bp.default_config([1.0], [1.0]))
+        bp.drive_live(bp.default_config([1.0], [1.0],
+                                        tolerances=RUN.TOLERANCES))
 
 
 def test_closing_the_window_switches_the_run_to_headless(monkeypatch,
@@ -631,7 +636,8 @@ def test_closing_the_window_switches_the_run_to_headless(monkeypatch,
     point reaches the JSON-lines file, and stdout says so."""
     monkeypatch.setattr(bp, "scan_point", _cheap_scan_point)
     config = bp.default_config([1.0, 2.0, 3.0], [0.5],
-                               selected_contents=[(3, 0, 0)])
+                               selected_contents=[(3, 0, 0)],
+                               tolerances=RUN.TOLERANCES)
     headless = bp.drive(dict(config))
     figures = []
     _stub_matplotlib(monkeypatch, figures=figures)
@@ -658,7 +664,8 @@ def test_each_point_is_written_as_it_completes(monkeypatch, tmp_path):
     """A scan stopped after two points leaves both on disk."""
     monkeypatch.setattr(bp, "scan_point", _cheap_scan_point)
     config = bp.default_config([1.0, 2.0, 3.0], [0.5],
-                               selected_contents=[(3, 0, 0)])
+                               selected_contents=[(3, 0, 0)],
+                               tolerances=RUN.TOLERANCES)
     points = tmp_path / "run.points.jsonl"
     seen = []
 

@@ -472,8 +472,10 @@ class DressedAnchor {
 
   /// The chordal Fubini-Study distance between two reads' profiles, read as
   /// points of the same projective space: \f$ 0 \f$ when they are proportional
-  /// and \f$ 1 \f$ when they are orthogonal. It is a reported numerical
-  /// stability certificate. It is the one place a conjugate appears, and
+  /// and \f$ 1 \f$ when they are orthogonal, computed as the norm of the
+  /// residual of one unit profile against the other, so that proportional
+  /// profiles read as \f$ 0 \f$ to rounding rather than as the square root of
+  /// the rounding. It is a reported numerical stability certificate. It is the one place a conjugate appears, and
   /// nothing physical is derived from it; the exact statements are made with
   /// the transition ratios, which are conjugate-free.
   /// @throws std::invalid_argument when the two reads do not share an atlas or
