@@ -563,8 +563,10 @@ def _fibre_lift_residual(spacetime):
     """The quantity `quark_conditions` grades as the fibre lift: the relative
     departure of the T-averaged h_1 from block-scalar form on each doublet
     times the sheets, in the aligned frame."""
-    alignment = bp.aligned_doublet_frame(bp.monopole_support(),
-                                         bp.rotation_group())
+    alignment = bp.aligned_doublet_frame(
+        bp.monopole_support(), bp.rotation_group(),
+        RUN.TOLERANCES["degeneracy_tolerance"],
+        RUN.TOLERANCES["certificate_tolerance"])
     frame = bp._micro_frame([alignment] * 3)
     action = cob.JointAction(spacetime, bp.action_declaration(spacetime, 1.0,
                                                               1.0))

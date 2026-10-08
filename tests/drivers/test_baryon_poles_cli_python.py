@@ -26,6 +26,16 @@ from tessera import cobordism as cob
 from tessera import observables as obs
 from tessera.drivers import baryon_poles as bp
 
+from tests.drivers import _recursion_run_2026_09_23 as RUN
+
+#: The 2026-09-23 run's tolerances (`RUN.TOLERANCES`) as the command line's
+#: options. Every tolerance of the stack defaults to 1e-15, which is below the
+#: rounding of the spin read: at it the exact tetrahedron's degenerate pairs
+#: do not group into bands and no j = 1/2 doublet certifies, so a run that
+#: reads spin declares its tolerances, as the run did.
+RUN_OPTIONS = [token for key, value in RUN.TOLERANCES.items()
+               for token in ("--" + key.replace("_", "-"), repr(value))]
+
 HALF = str(bp.SPIN_HALF)
 THREE = str(bp.SPIN_THREE_HALVES)
 
@@ -187,7 +197,7 @@ def test_invalid_arguments_are_refused_by_name(argv, name, capsys):
 def test_main_writes_the_json_and_the_points_file(cheap, tmp_path):
     path = tmp_path / "poles.json"
     result = bp.main(["run", "--kappa", "0.5", "1", "--beta", "2",
-                      "--json", str(path), "--quiet"])
+                      "--json", str(path), "--quiet", *RUN_OPTIONS])
     assert [(p["kappa"], p["beta"]) for p in result["points"]] == \
         [(0.5, 2.0), (1.0, 2.0)]
     document = json.loads(path.read_text())
@@ -218,7 +228,7 @@ def test_main_passes_the_declared_options_to_every_point(cheap):
     bp.main(["run", "--kappa", "1", "--beta", "1",
              "--band-selection", "sort-every-iterate",
              "--eliminate", "lengths", "--edge-squared", "3",
-             "--isospin-doublet", "--quiet"])
+             "--isospin-doublet", "--quiet", *RUN_OPTIONS])
     (config,) = cheap
     assert config["band_selection"] == "sort-every-iterate"
     assert config["elimination"] == "lengths"
@@ -228,28 +238,28 @@ def test_main_passes_the_declared_options_to_every_point(cheap):
 
 
 def test_without_the_isospin_flag_the_config_does_not_carry_it(cheap):
-    bp.main(["run", "--kappa", "1", "--beta", "1", "--quiet"])
+    bp.main(["run", "--kappa", "1", "--beta", "1", "--quiet", *RUN_OPTIONS])
     assert "isospin_doublet" not in cheap[0]
 
 
 def test_main_without_json_writes_no_points_file(cheap, tmp_path,
                                                  monkeypatch):
     monkeypatch.chdir(tmp_path)
-    bp.main(["run", "--kappa", "1", "--beta", "1", "--quiet"])
+    bp.main(["run", "--kappa", "1", "--beta", "1", "--quiet", *RUN_OPTIONS])
     assert list(tmp_path.iterdir()) == []
 
 
 def test_main_renders_the_final_frame(cheap, tmp_path):
     path = tmp_path / "poles.png"
     bp.main(["run", "--kappa", "1", "2", "--beta", "1", "--out", str(path),
-             "--quiet"])
+             "--quiet", *RUN_OPTIONS])
     assert path.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
 
 
 def test_progress_and_summary_are_printed_unless_quiet(cheap, capsys):
     """The progress of each point and the final summary both carry every
     (content, doublet content) pair, the labelled minima and the ratios."""
-    bp.main(["run", "--kappa", "1", "--beta", "2"])
+    bp.main(["run", "--kappa", "1", "--beta", "2", *RUN_OPTIONS])
     out = capsys.readouterr().out
     assert out.count("kappa=1 beta=2: 1 contents, 0 refused") == 2
     for pair in ("[0, 2, 1] (triality 1)", "[1, 1, 1] (triality 0)"):
@@ -261,7 +271,7 @@ def test_progress_and_summary_are_printed_unless_quiet(cheap, capsys):
     assert out.count("s_N/s_D=") == 8
     assert "mode: controlled synthesis" in out
     assert "target m_N/m_Delta = 0.7616" in out
-    bp.main(["run", "--kappa", "1", "--beta", "2", "--quiet"])
+    bp.main(["run", "--kappa", "1", "--beta", "2", "--quiet", *RUN_OPTIONS])
     assert capsys.readouterr().out == ""
 
 
@@ -286,14 +296,15 @@ def test_main_live_runs_the_live_drive(cheap, monkeypatch, tmp_path):
     monkeypatch.setattr(bp, "hold_live_window",
                         lambda message: held.append(path.exists()))
     bp.main(["run", "--kappa", "1", "--beta", "1", "--live", "--quiet",
-             "--json", str(path)])
+             "--json", str(path), *RUN_OPTIONS])
     assert calls == [(False, str(tmp_path / "live.points.jsonl"), True)]
     assert path.exists()
     assert held == [True]
 
 
 def test_a_stopped_drive_says_so():
-    result = bp.drive(bp.default_config([1.0], [1.0]),
+    result = bp.drive(bp.default_config([1.0], [1.0],
+                                        tolerances=RUN.TOLERANCES),
                       stop_requested=lambda: True)
     assert result["stopped"] is True and result["points"] == []
 
@@ -789,12 +800,15 @@ def test_a_recursion_that_takes_no_turn_leaves_condition_1_not_evaluable(
 
     monkeypatch.setattr(cob, "LevelRecursionDeclaration", crowded)
     spacetime = bp.build_host()
-    recursion = bp.recursion_read(spacetime, bp.default_config([1.0], [1.0]))
+    recursion = bp.recursion_read(
+        spacetime, bp.default_config([1.0], [1.0], tolerances=RUN.TOLERANCES))
     assert recursion["levels"] == 0
     assert "dense crossover" in recursion["refusal"]
     assert "bands_accepted" not in recursion
-    alignment = bp.aligned_doublet_frame(bp.monopole_support(),
-                                         bp.rotation_group())
+    alignment = bp.aligned_doublet_frame(
+        bp.monopole_support(), bp.rotation_group(),
+        RUN.TOLERANCES["degeneracy_tolerance"],
+        RUN.TOLERANCES["certificate_tolerance"])
     verdict = bp.quark_conditions(spacetime, [alignment] * bp.SHEETS,
                                   recursion, 0.0, None)
     assert not verdict["certified"]
@@ -816,9 +830,12 @@ def test_a_recursion_that_takes_no_turn_leaves_condition_1_not_evaluable(
 @pytest.fixture(scope="module")
 def declared_verdict():
     spacetime = bp.build_host()
-    alignment = bp.aligned_doublet_frame(bp.monopole_support(),
-                                         bp.rotation_group())
-    recursion = bp.recursion_read(spacetime, bp.default_config([1.0], [1.0]))
+    alignment = bp.aligned_doublet_frame(
+        bp.monopole_support(), bp.rotation_group(),
+        RUN.TOLERANCES["degeneracy_tolerance"],
+        RUN.TOLERANCES["certificate_tolerance"])
+    recursion = bp.recursion_read(
+        spacetime, bp.default_config([1.0], [1.0], tolerances=RUN.TOLERANCES))
     return bp.quark_conditions(spacetime, [alignment] * bp.SHEETS,
                                recursion, 0.0, None)
 
