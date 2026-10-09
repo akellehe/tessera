@@ -29,6 +29,7 @@ import os
 import sys
 import tempfile
 import unittest
+import pytest
 
 import tessera as T
 
@@ -47,6 +48,12 @@ MC = cob.MultiCobordism
 #: modularity read and a full band enumeration.
 SMALL = 4
 SMALL_STEPS = 1
+
+# That drive takes about 3 minutes, paid once per process by whichever test
+# runs first in a worker (measured at 157 to 448 s in CI). No test of this
+# module runs without it, so the whole module is above the 30 s limit of the
+# pull-request tier and runs on main and nightly only.
+pytestmark = pytest.mark.slow
 
 #: One shared drive, built once — the whole suite reads it.
 _FRAME_CACHE = {}

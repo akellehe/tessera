@@ -275,6 +275,9 @@ def test_the_ward_identity_holds_on_every_pure_gauge_direction(
     assert ward["paramagnetic_alone"] > 1e-2
 
 
+# Measured at 40 s in CI, about 40 seconds: above the 30 s limit of the
+# pull-request tier, so it runs on main and nightly only.
+@pytest.mark.slow
 def test_the_elimination_matches_a_dense_reference(host_problem,
                                                    alignment):
     """-1/2 J^T A^D J on the three-particle space: the library's elimination in

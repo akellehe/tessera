@@ -21,6 +21,7 @@ raise:
 
 import cmath
 import unittest
+import pytest
 
 import tessera as T
 
@@ -200,6 +201,9 @@ class TheNodeDrivesItsOwnComplexTest(unittest.TestCase):
         self.assertEqual(total(live), node.objective())
         self.assertNotEqual(total(stale), node.objective())
 
+    # Measured at 49 s in CI, about 50 seconds: above the 30 s limit of the
+    # pull-request tier, so it runs on main and nightly only.
+    @pytest.mark.slow
     def test_the_stale_handle_stops_moving_once_a_move_lands(self):
         """The reason the animation's complex panel never updated.
 

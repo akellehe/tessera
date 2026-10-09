@@ -43,6 +43,13 @@ TAU_A = complex(0.3, 1.1)
 TAU_B = complex(-0.2, 0.8)
 
 
+# The driven complex below is built once per process and shared by every test:
+# about 30 s, paid by whichever test runs first in a worker (measured at 26 to
+# 30 s in CI). The module as a whole is at the 30 s limit of the pull-request
+# tier, so it runs on main and nightly only.
+pytestmark = pytest.mark.slow
+
+
 @pytest.fixture(scope="module")
 def driven():
     """One short qubit drive, with the node it drove and its dump.

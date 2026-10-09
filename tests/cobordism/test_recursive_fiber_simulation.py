@@ -318,6 +318,9 @@ class TrajectoryIdentityTest(unittest.TestCase):
         self.assertEqual(_cells(plain), _cells(overlaid))
         self.assertEqual(_lengths(plain), _lengths(overlaid))
 
+    # Measured at 84 s in CI, about 85 seconds: above the 30 s limit of the
+    # pull-request tier, so it runs on main and nightly only.
+    @pytest.mark.slow
     def test_the_full_relaxation_is_bit_identical_with_the_overlay_running(self):
         """Stage 2 takes no random draw, so this compares whole trajectories.
 
@@ -362,6 +365,9 @@ class TrajectoryIdentityTest(unittest.TestCase):
                                 for name in MC.objective_term_names()))
         self.assertEqual(scores[0], scores[1])
 
+    # Measured at 37 s in CI, about 35 seconds: above the 30 s limit of the
+    # pull-request tier, so it runs on main and nightly only.
+    @pytest.mark.slow
     def test_repeated_analysis_passes_never_move_the_objective(self):
         node = _node()
         node.set_analysis_config(_overlay_config(degrees=(1, 2),
@@ -470,6 +476,9 @@ class AdversarialFeedbackTest(unittest.TestCase):
             if quark["classification"] == "none":
                 self.assertTrue(quark["failed_certificates"])
 
+    # Measured at 37 s in CI, about 35 seconds: above the 30 s limit of the
+    # pull-request tier, so it runs on main and nightly only.
+    @pytest.mark.slow
     def test_flipping_every_particle_verdict_changes_no_objective_term(self):
         """Rerun with thresholds that make every certificate fail, then pass.
 
@@ -495,6 +504,9 @@ class AdversarialFeedbackTest(unittest.TestCase):
         for name in MC.objective_term_names():
             self.assertEqual(getattr(before, name), getattr(after, name))
 
+    # Measured at 36 s in CI, about 35 seconds: above the 30 s limit of the
+    # pull-request tier, so it runs on main and nightly only.
+    @pytest.mark.slow
     def test_running_the_overlay_never_changes_the_geometry(self):
         node = _node()
         node.set_analysis_config(_overlay_config(degrees=(1, 2),
@@ -523,6 +535,9 @@ class AdversarialFeedbackTest(unittest.TestCase):
         self.assertEqual(before.refine, after.refine)
         self.assertEqual(before.trigger, after.trigger)
 
+    # Measured at 103 s in CI, about 2 minutes: above the 30 s limit of the
+    # pull-request tier, so it runs on main and nightly only.
+    @pytest.mark.slow
     def test_the_gradient_is_unchanged_by_every_analysis_configuration(self):
         """Same relaxation from the same state, whatever the overlay reads."""
         results = []
@@ -615,6 +630,9 @@ class EmergenceSubmodeTest(unittest.TestCase):
         self.assertNotEqual(backreaction_objective, node.objective())
         self.assertEqual(node.objective_terms().carried_state_energy, 0.0)
 
+    # Measured at 42 s in CI, about 40 seconds: above the 30 s limit of the
+    # pull-request tier, so it runs on main and nightly only.
+    @pytest.mark.slow
     def test_backreaction_changes_the_trajectory_relative_to_strict(self):
         """By design: the declared state-energy term is a real coupling."""
         strict = _node()
@@ -629,6 +647,9 @@ class EmergenceSubmodeTest(unittest.TestCase):
         self.assertNotEqual(list(strict.run_stage2(max_iters=6)),
                             list(backreaction.run_stage2(max_iters=6)))
 
+    # Measured at 102 s in CI, about 2 minutes: above the 30 s limit of the
+    # pull-request tier, so it runs on main and nightly only.
+    @pytest.mark.slow
     def test_state_energy_trajectory_is_blind_to_post_hoc_analysis(self):
         """The backreaction acceptance bullet: disabling only the post-hoc
         certificate analysis leaves the state-energy trajectory unchanged."""
@@ -791,6 +812,9 @@ class EmergenceSubmodeTest(unittest.TestCase):
         node.run_recursive_analysis()
         self.assertEqual(json.loads(node.checkpoint_json)["mode"], "synthesis")
 
+    # Measured at 36 s in CI, about 35 seconds: above the 30 s limit of the
+    # pull-request tier, so it runs on main and nightly only.
+    @pytest.mark.slow
     def test_a_certificate_never_reaches_the_backreaction_term(self):
         """The state energy depends on Gamma and the geometry ONLY."""
         node = _node()

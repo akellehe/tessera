@@ -60,6 +60,9 @@ def test_zero_draws_means_every_candidate():
     assert "negative" in str(caught.value)
 
 
+# Measured at 64 s in CI, about 65 seconds: above the 30 s limit of the
+# pull-request tier, so it runs on main and nightly only.
+@pytest.mark.slow
 def test_the_drive_asks_stage_one_for_that_many(monkeypatch):
     """The number must reach `run_stage1`, not merely sit in the document.
 

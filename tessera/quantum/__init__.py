@@ -224,7 +224,7 @@ _EXPORTS = (
     "createQuantumVertex",
     "KoashiImotoResult", "KoashiImotoBlock", "KoashiImotoTolerances",
     "koashiImotoDecompose", "partialTraceA", "partialTraceB",
-    "mutualInformation",
+    "mutualInformation", "partialTrace", "randomCorrelatedState",
     # Free functions — compareOrders: pairwise agreement statistics between
     # two Posets on a shared label set (see docs/source/causal_sets.md).
     "compareOrders",

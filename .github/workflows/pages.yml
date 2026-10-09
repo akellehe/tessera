@@ -26,25 +26,65 @@ concurrency:
 jobs:
   build:
     name: Build the documentation
-    runs-on: ubuntu-latest
+    # The project's own runners, in the same pinned image as build.yml. On the
+    # GitHub-hosted runners the C++ compile below intermittently lost the
+    # machine partway through ("The runner has received a shutdown signal",
+    # exit code 143), so a red check said nothing about the documentation.
+    # The 24.04 container gives the toolchain build.yml builds against.
+    runs-on: [self-hosted, tessera]
+    container:
+      image: ubuntu:24.04
+    timeout-minutes: 90
+    env:
+      # As in build.yml: a container-local tool cache, so setup-python resolves
+      # a Python built for the image (its _ssl matches the image's OpenSSL),
+      # and capped build parallelism, so the job is a good neighbour on the
+      # shared runner boxes.
+      AGENT_TOOLSDIRECTORY: /opt/hostedtoolcache
+      TESSERA_CUDA: "0"
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"  # or match your project
-
       - name: Install system dependencies
+        # Runs before checkout on purpose: actions/checkout needs git, and the
+        # base image has none. Container steps run as root, so there is no sudo.
+        #
         # The docs build compiles the C++ extension (`pip install ".[dev]"`), so it
         # needs the same packages as build.yml: pybind11-dev for the
         # find_package(pybind11) cmake config, plus liblapack/libblas for the
         # quantum subsystem. doxygen produces the XML that breathe renders into
         # the C++ API pages. Without them the build fails, and on main so does
         # the deploy.
-        run: sudo apt-get update && sudo apt-get install -y doxygen pybind11-dev liblapack-dev libblas-dev
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            ca-certificates curl git \
+            build-essential cmake ninja-build \
+            doxygen pybind11-dev libeigen3-dev liblapack-dev libblas-dev
+
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      # The same rule as build.yml's "Size the build for the memory available"
+      # step: the heaviest translation units peak near 4.5 GiB in the compiler,
+      # 4 GiB stays free for the page cache and the rest of the box, at most 8
+      # jobs, at least 1. A fixed level of 8 fits primary01 (125 GB); on
+      # workstation05 (29 GB) it filled the swap, and 6 jobs from 18 GiB
+      # available thrashed the page cache until the job's limit cancelled it.
+      - name: Size the build for the runner's memory
+        run: |
+          avail_mib=$(( $(awk '/^MemAvailable:/ { print $2 }' /proc/meminfo) / 1024 ))
+          level=$(( (avail_mib - 4096) / 4608 ))
+          [ "$level" -gt 8 ] && level=8
+          [ "$level" -lt 1 ] && level=1
+          echo "CMAKE_BUILD_PARALLEL_LEVEL=$level" >> "$GITHUB_ENV"
+          echo "MemAvailable ${avail_mib} MiB -> CMAKE_BUILD_PARALLEL_LEVEL=${level}"
 
       - name: Install dependencies
         run: |

@@ -9,9 +9,20 @@ on:
     # pushes still gate the tree at least once a day, independent of merges.
     - cron: "0 7 * * *"
   workflow_dispatch:
+    inputs:
+      tier:
+        description: >-
+          Which tier to run: "full" is every test; "fast" is every test not
+          marked slow, as on a pull request.
+        type: choice
+        options: [full, fast]
+        default: full
 
 permissions:
   contents: read
+  # The ``shards`` job reads this repository's queued and in-progress workflow
+  # runs and their jobs.
+  actions: read
 
 # ``github.ref`` alone is not enough to separate these triggers: the nightly
 # schedule and a merge into main both report ``refs/heads/main``, so a merge
@@ -24,8 +35,106 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Decides whether the test job runs as one job or as two shards, one per
+  # self-hosted runner. There are exactly two runners, so a second shard only
+  # helps when the other runner is free; when it is not, two shards would queue
+  # behind whatever holds it and push that backlog further out. The runners'
+  # own busy flags (GET /repos/{owner}/{repo}/actions/runners) need the
+  # administration permission, which GITHUB_TOKEN cannot be granted in a
+  # workflow, so the decision reads what ``actions: read`` allows: this
+  # repository's queued and in-progress workflow runs, counting their jobs
+  # that are waiting for or running on a self-hosted runner. Counting jobs
+  # rather than runs keeps a run whose jobs are on GitHub-hosted runners (the
+  # documentation build) from reading as contention for ours. Two runs are
+  # left out: this one, and any earlier run for the same branch, event and
+  # head repository, of this workflow or the documentation one: both cancel a
+  # superseded run through their concurrency groups, so such a run is being
+  # torn down and its runner is about to be free. Runs for the same commit
+  # (the documentation build the same push starts, on the same runners) are
+  # not backlog either: they are this push's own work, so they are left out
+  # as well; a shard that lands behind one waits for a job this push would
+  # have run anyway.
+  #
+  # Blind spots, each of which can make the decision read "free" when a runner
+  # is not: jobs of other repositories on the same runners, interactive work on
+  # the runner hosts, and anything queued after this job has decided. A wrong
+  # "free" costs a shard a wait in the queue; a wrong "busy" costs an unsharded
+  # run of the usual length. Pull requests, merges to main, the nightly
+  # schedule and manual runs are all decided the same way.
+  shards:
+    name: decide the shard count
+    runs-on: [self-hosted, tessera]
+    timeout-minutes: 5
+    outputs:
+      count: ${{ steps.decide.outputs.count }}
+      groups: ${{ steps.decide.outputs.groups }}
+    steps:
+      - name: Count the jobs of other runs waiting for or using the runners
+        id: decide
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const describe = (run) =>
+              `${run.name} run ${run.run_number} (${run.event}, ${run.head_branch})`;
+            let contending = [];
+            try {
+              const { data: me } = await github.rest.actions.getWorkflowRun(
+                { owner, repo, run_id: context.runId });
+              for (const status of ["queued", "in_progress"]) {
+                const runs = await github.paginate(
+                  github.rest.actions.listWorkflowRunsForRepo,
+                  { owner, repo, status, per_page: 100 });
+                for (const run of runs) {
+                  if (run.id === me.id) continue;
+                  if (run.head_sha === me.head_sha) {
+                    core.info(`not counted: ${describe(run)}, a sibling of this run `
+                      + "(same commit, started by the same push)");
+                    continue;
+                  }
+                  if (run.event === me.event
+                      && run.head_branch === me.head_branch
+                      && run.head_repository?.full_name === me.head_repository?.full_name) {
+                    core.info(`not counted: ${describe(run)}, an earlier run for this branch `
+                      + "that its workflow's concurrency group is cancelling");
+                    continue;
+                  }
+                  const jobs = await github.paginate(
+                    github.rest.actions.listJobsForWorkflowRun,
+                    { owner, repo, run_id: run.id, per_page: 100 });
+                  for (const job of jobs) {
+                    if (job.status === "completed") continue;
+                    const labels = job.labels || [];
+                    const where = `${describe(run)}: job "${job.name}" is ${job.status} `
+                      + `on [${labels.join(", ")}]`;
+                    if (!labels.includes("self-hosted")) {
+                      core.info(`not counted: ${where}, not a self-hosted job`);
+                      continue;
+                    }
+                    contending.push(where);
+                  }
+                }
+              }
+            } catch (error) {
+              core.warning(`could not read the repository's workflow runs: ${error.message}`);
+              contending = ["the repository's workflow runs could not be read"];
+            }
+            for (const line of contending) core.info(`counted: ${line}`);
+            const count = contending.length === 0 ? 2 : 1;
+            core.notice(count === 2
+              ? "2 shards: no other job is waiting for or using the self-hosted runners"
+              : `1 shard: ${contending.length} other job(s) waiting for or using the self-hosted runners`);
+            core.setOutput("count", String(count));
+            core.setOutput("groups", JSON.stringify(Array.from({ length: count }, (_, i) => i + 1)));
+
   pip-install:
-    name: pip install (py${{ matrix.python-version }})
+    # With two shards the jobs are "pip install (py3.13, shard 1 of 2)" and
+    # "pip install (py3.13, shard 2 of 2)"; with one, the unsharded name.
+    name: pip install (py${{ matrix.python-version }}${{ needs.shards.outputs.count > 1 && format(', shard {0} of {1}', matrix.group, needs.shards.outputs.count) || '' }})
+    needs: shards
+    # Runs even when ``shards`` failed: its outputs then fall back to one
+    # shard below, which is the unsharded job.
+    if: ${{ !cancelled() }}
     runs-on: [self-hosted, tessera]
     # Pinned to 24.04 so every runner computes the same floats regardless of the
     # host OS. The golden dumps in tests/observables, tests/chainhodge and
@@ -44,11 +153,15 @@ jobs:
     # limit cancelled the job, the runner carrying its other work) and 90
     # minutes on workstation05, after a 7-minute build. The limit must hold
     # the suite on a loaded runner, or a passing suite reads as a failure.
+    # It is per job, so each shard of a sharded run has it in full.
     timeout-minutes: 150
     strategy:
       fail-fast: false
       matrix:
         python-version: ["3.13"]
+        # One entry per shard of the test suite, [1] or [1, 2], from the
+        # ``shards`` job. Each job of the matrix builds the extension itself.
+        group: ${{ fromJSON(needs.shards.outputs.groups || '[1]') }}
     env:
       # Give the container its own tool cache.
       #
@@ -69,16 +182,47 @@ jobs:
       AGENT_TOOLSDIRECTORY: /opt/hostedtoolcache
       TESSERA_CUDA: "0"
       # The runner box is shared (other self-hosted runners + interactive use);
-      # cap build and math-library parallelism so concurrent matrix jobs stay
-      # good neighbors. Tunable.
-      CMAKE_BUILD_PARALLEL_LEVEL: "8"
+      # cap math-library parallelism so concurrent matrix jobs stay good
+      # neighbors. Tunable. Build parallelism (CMAKE_BUILD_PARALLEL_LEVEL) is
+      # not a constant: the "Size the build" step below derives it from the
+      # memory the host actually has free when the job starts.
       OMP_NUM_THREADS: "8"
+      # Compiler cache. CMakeLists.txt already routes every compile through
+      # ccache when it is on the PATH; naming the launcher here makes that the
+      # CI contract rather than an auto-detected convenience. The cache
+      # directory sits inside the job workspace so actions/cache can persist
+      # it between jobs with no change to the runner hosts (the "compiler
+      # cache" steps below). The 2 GB cap keeps one archive well inside the
+      # repository's 10 GB cache quota; ccache evicts its oldest objects
+      # itself at the cap, so the archive never grows without bound.
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_MAXSIZE: 2G
+      # What ccache folds into every object's hash besides the preprocessed
+      # source and the flags. Its default (the compiler's mtime and size)
+      # cannot see that pyproject.toml compiles with -march=native: the flag
+      # text is the same on every host but the code it produces is not, and
+      # ccache has no special handling for it. `g++ -v` pins the exact
+      # compiler build; `-march=native -Q --help=target` prints the
+      # instruction-set flags "native" resolves to on this CPU. Together they
+      # make sure an object is reused only by a compiler that would have
+      # generated the same code. The actions/cache key below carries the same
+      # two facts so a cache from another toolchain or CPU is not even
+      # restored; this check is what keeps it safe at the object level
+      # regardless of how the directory travelled.
+      CCACHE_COMPILERCHECK: "%compiler% -v; %compiler% -march=native -Q --help=target"
       # Total CPU threads the test lanes may occupy, and how many of them each
       # pytest-xdist worker gets. Worker count is the quotient, computed by
       # .github/scripts/test-workers.sh. Raising TESSERA_TEST_CPUS trades
       # neighbourliness on the shared box for a shorter lane.
       TESSERA_TEST_CPUS: "16"
       TESSERA_TEST_THREADS_PER_WORKER: "4"
+      # How many shards the test suite is divided into and which of them this
+      # job runs, from the ``shards`` job. .github/scripts/test-shard.sh turns
+      # them into pytest-split options, or into nothing for a single shard.
+      TESSERA_TEST_SPLITS: ${{ needs.shards.outputs.count || '1' }}
+      TESSERA_TEST_GROUP: ${{ matrix.group }}
       OPENBLAS_NUM_THREADS: "1"
       MKL_NUM_THREADS: "1"
       BLIS_NUM_THREADS: "1"
@@ -92,13 +236,16 @@ jobs:
       # search path — so a green run asserts the build still selects
       # pybind11 >= 3.0 and never falls back to the system v2.
       # liblapack/libblas satisfy the (unconditional) quantum subsystem's
-      # BLAS/LAPACK need.
+      # BLAS/LAPACK need. ccache is the compiler cache the job env points
+      # CMake at; zstd is what actions/cache compresses the cache archive
+      # with when it is present (without it the archive falls back to gzip,
+      # slower to pack and larger to upload).
       - name: Install the toolchain (incl. pybind11 v2 regression trap)
         run: |
           apt-get update
           DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
             ca-certificates curl git \
-            build-essential cmake ninja-build \
+            build-essential cmake ninja-build ccache zstd \
             pybind11-dev libeigen3-dev liblapack-dev libblas-dev
 
       - uses: actions/checkout@v6
@@ -140,8 +287,108 @@ jobs:
             exit 1
           fi
 
+      # A full build is memory-bound, not CPU-bound: the template-heavy
+      # translation units (src/cobordism/MultiCobordism.cpp, the per-subsystem
+      # Bindings.cpp, the Eigen-dense chainhodge sources) each peak near 4.7 GB
+      # in cc1plus at -O3 -march=native. A fixed parallel level sized for the
+      # larger runner host (125 GB) ran eight such compilers on the 29 GB host
+      # while other work was using it: swap filled completely and one job died
+      # with exit 137 (the kernel's out-of-memory kill) in the build step. The
+      # container sees the host's /proc/meminfo, so the level comes from
+      # MemAvailable at the moment the job starts. MemAvailable counts the
+      # page cache as free, and a compile that consumes all of it evicts its
+      # own headers and compiler pages: on the 29 GB host, six compilers from
+      # 18 GiB available read the disk at 1.7 GB/s with the compilers in
+      # uninterruptible wait, and one translation unit took over an hour. So
+      # 4 GiB is held back for the page cache and the rest of the box, and
+      # each job is budgeted at its 4.5 GiB peak: 8 jobs on the large host,
+      # 3 on the small one when it is otherwise idle, 1 when it is not. The
+      # ceiling of 8 keeps the job a good neighbour on the shared box; nproc
+      # alone is the wrong input, the 29 GB host has 16 cores. CMakeLists.txt's
+      # Ninja job pools cap parallelism from *total* memory as well; the lower
+      # of the two applies.
+      - name: Size the build for the memory available
+        run: |
+          avail_mib=$(( $(awk '/^MemAvailable:/ { print $2 }' /proc/meminfo) / 1024 ))
+          jobs=$(( (avail_mib - 4096) / 4608 ))
+          if [ "$jobs" -gt 8 ]; then jobs=8; fi
+          if [ "$jobs" -lt 1 ]; then jobs=1; fi
+          echo "MemAvailable ${avail_mib} MiB, $(nproc --all) cores -> CMAKE_BUILD_PARALLEL_LEVEL=${jobs}"
+          echo "CMAKE_BUILD_PARALLEL_LEVEL=${jobs}" >> "$GITHUB_ENV"
+
+      # Compiler cache, part 1: restore. The key names everything an object
+      # depends on that a source hash cannot see: the image release, the
+      # exact compiler version (a changed compiler must never serve objects
+      # another one compiled: the golden-float dumps are reproducible on one
+      # toolchain only, see the container comment above), and the CPU model
+      # (the build is -march=native, so objects from the other runner host
+      # target a different instruction set), followed by a hash of the C++
+      # sources and build configuration. An exact match means a job with
+      # identical sources already filled the cache; the restore-keys prefix
+      # makes any earlier cache for the same toolchain and CPU a warm start
+      # when the sources moved, which is the common case for a pull request.
+      # Caches are scoped by branch: a pull request can restore its own and
+      # main's, and the push-to-main run after a merge keeps main's current.
+      - name: Fingerprint the toolchain for the compiler cache
+        id: toolchain
+        run: |
+          os_release="$(. /etc/os-release && echo "${ID}${VERSION_ID}")"
+          cxx="${CXX:-g++}"
+          gcc_version="$("$cxx" -dumpfullversion)"
+          cpu_model="$(grep -m1 '^model name' /proc/cpuinfo | cut -d: -f2- \
+            | tr -cs '[:alnum:]' '-' | sed 's/^-//; s/-*$//')"
+          prefix="ccache-${os_release}-gcc${gcc_version}-${cpu_model:-unknown-cpu}-"
+          echo "compiler ${cxx} ${gcc_version} on ${os_release}, cpu ${cpu_model:-unknown}"
+          echo "cache key prefix ${prefix}"
+          echo "ccache-key-prefix=${prefix}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the compiler cache
+        id: ccache-restore
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ${{ steps.toolchain.outputs.ccache-key-prefix }}${{ hashFiles('CMakeLists.txt', 'cmake/**', 'pyproject.toml', 'src/**', 'include/**', 'tests/**/*.cpp', 'tests/**/*.h', 'third_party/**/*.cc', 'third_party/**/*.h') }}
+          restore-keys: ${{ steps.toolchain.outputs.ccache-key-prefix }}
+
+      # Statistics are cumulative and travel with the cache directory, so the
+      # print before the build shows the restored cache's history and size;
+      # zeroing them afterwards makes the print after the build report this
+      # job alone, which is the hit rate worth reading.
+      - name: Compiler cache statistics before the build
+        run: |
+          ccache --show-stats --verbose
+          ccache --zero-stats
+
       - name: Build and install (with dev extras for the test suite)
         run: python -m pip install -e ".[dev]" -v
+
+      # The same statistics also go on the run's summary page, so the hit
+      # rate can be read without opening the log.
+      - name: Compiler cache statistics after the build
+        if: ${{ !cancelled() }}
+        run: |
+          ccache --show-stats | tee "$RUNNER_TEMP/ccache-stats.txt"
+          {
+            echo "### Compiler cache (ccache) for this build"
+            echo
+            echo '```'
+            cat "$RUNNER_TEMP/ccache-stats.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Compiler cache, part 2: save. Right after the build rather than in a
+      # post-job step, so a red test suite does not throw away the objects a
+      # cold build spends minutes compiling; a failed build still saves the objects
+      # it did produce (ccache stores successful compiles only). Skipped when
+      # the exact key was restored: that cache already holds these objects.
+      # Under a job matrix every shard restores the same key and the first
+      # shard to save wins; the others log that the cache exists and move on.
+      - name: Save the compiler cache
+        if: ${{ !cancelled() && steps.ccache-restore.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ${{ steps.ccache-restore.outputs.cache-primary-key }}
 
       - name: Import smoke test
         working-directory: ${{ runner.temp }}
@@ -166,23 +413,73 @@ jobs:
       # TESSERA_TEST_THREADS_PER_WORKER threads inside each test and
       # TESSERA_TEST_CPUS / TESSERA_TEST_THREADS_PER_WORKER tests at once.
       #
-      # PR pushes run only the fast lane (the ``slow`` tests deselected);
+      # PR pushes run only the fast lane (the ``slow`` tests deselected) on
+      # the tests the change can affect (see the selection step below);
       # merge-to-main, the nightly schedule, and manual dispatch run the FULL
-      # suite. Coverage is split, never cut — every ``slow`` test still runs on
-      # main/nightly. Both lanes run from the repo root so pytest finds tests/.
+      # suite (a manual dispatch may select the fast lane through its ``tier``
+      # input; ``inputs.tier`` is empty for every other event). Coverage is
+      # split, never cut — every ``slow`` test still runs on main/nightly.
+      # Both lanes run from the repo root so pytest finds tests/.
+      #
+      # Both lanes record how long every test took (setup + call + teardown)
+      # through pytest-split's ``--store-durations``, as the JSON file
+      # ``.test_durations`` at the repo root: test id -> seconds. The committed
+      # copy of that file is refreshed from the artifact uploaded below, and
+      # its measurements decide which tests carry the ``slow`` marker.
+      #
+      # Sharding: when the ``shards`` job divided the suite between the two
+      # runners, test-shard.sh prints the pytest-split options that select this
+      # job's shard, formed from the expected runtimes in .test_durations so
+      # the shards take about the same time (evenly by count when that file is
+      # absent); with one shard it prints nothing. The substitution is unquoted
+      # on purpose: it is a list of options for the shell to split into words.
+      # xdist still spreads the shard's tests over the workers above.
+      #
+      # A pull request runs only the tests its change can affect.
+      # .github/scripts/select_tests.py maps the changed paths to pytest paths
+      # from the tree's own import and include graphs, and selects the whole
+      # fast tier whenever a path has no known mapping; its log says what it
+      # chose and why. HEAD is the pull request's merge commit, whose first
+      # parent is the base branch tip, so the diff against the base is exactly
+      # the change the pull request makes. The shallow checkout lacks the base
+      # commit, so it is fetched first. When the diff cannot be computed the
+      # list is empty and the selector runs everything. A manual fast-tier
+      # run has no base to diff against and runs the whole tier the same way.
+      - name: Select the tests the change can affect (PR pushes)
+        if: github.event_name == 'pull_request' || inputs.tier == 'fast'
+        run: |
+          base="${{ github.event.pull_request.base.sha }}"
+          changed="${RUNNER_TEMP}/changed-paths.txt"
+          if [ -z "$base" ]; then
+            echo "no pull request base; running the full fast tier"
+            : > "$changed"
+          elif ! git fetch --no-tags --depth=1 origin "$base" \
+             || ! git diff --name-only "$base" HEAD > "$changed"; then
+            echo "could not diff against the base ${base}; running the full fast tier"
+            : > "$changed"
+          fi
+          echo "changed paths:"
+          sed 's/^/  /' "$changed"
+          python .github/scripts/select_tests.py \
+            --changed-paths "$changed" --output "${RUNNER_TEMP}/selected-tests.txt"
+
+      # The selection is one pytest path per line, none containing
+      # whitespace; flags appended after it apply to the same selection.
       - name: Run fast test suite (PR pushes)
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' || inputs.tier == 'fast'
         env:
           OMP_NUM_THREADS: ${{ env.TESSERA_TEST_THREADS_PER_WORKER }}
           OPENBLAS_NUM_THREADS: ${{ env.TESSERA_TEST_THREADS_PER_WORKER }}
           MKL_NUM_THREADS: ${{ env.TESSERA_TEST_THREADS_PER_WORKER }}
           BLIS_NUM_THREADS: ${{ env.TESSERA_TEST_THREADS_PER_WORKER }}
         run: |
-          python -m pytest tests/ -q -m "not slow" \
-            -n "$(.github/scripts/test-workers.sh)" --dist worksteal
+          python -m pytest $(cat "${RUNNER_TEMP}/selected-tests.txt") -q -m "not slow" \
+            $(.github/scripts/test-shard.sh) \
+            -n "$(.github/scripts/test-workers.sh)" --dist worksteal \
+            --store-durations --clean-durations --durations-path .test_durations
 
       - name: Run full test suite (main / nightly / manual)
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' && inputs.tier != 'fast'
         env:
           OMP_NUM_THREADS: ${{ env.TESSERA_TEST_THREADS_PER_WORKER }}
           OPENBLAS_NUM_THREADS: ${{ env.TESSERA_TEST_THREADS_PER_WORKER }}
@@ -190,4 +487,24 @@ jobs:
           BLIS_NUM_THREADS: ${{ env.TESSERA_TEST_THREADS_PER_WORKER }}
         run: |
           python -m pytest tests/ -q \
-            -n "$(.github/scripts/test-workers.sh)" --dist worksteal
+            $(.github/scripts/test-shard.sh) \
+            -n "$(.github/scripts/test-workers.sh)" --dist worksteal \
+            --store-durations --clean-durations --durations-path .test_durations
+
+      # The durations file from whichever lane ran, one artifact per shard
+      # (``--clean-durations`` above keeps each shard's file to the tests that
+      # shard ran, so the shards' files are disjoint and their union is the
+      # run's complete measurement). The committed copy is refreshed by
+      # downloading every ``test-durations-*`` artifact of a run (``gh run
+      # download <run-id>``) and updating the committed file with their union.
+      # A failed run still measured the tests that ran, hence ``!cancelled()``
+      # rather than ``success()``. The file is a dotfile, which upload-artifact
+      # skips unless told otherwise.
+      - name: Upload per-test durations
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-durations-py${{ matrix.python-version }}-shard${{ matrix.group }}
+          path: .test_durations
+          include-hidden-files: true
+          if-no-files-found: error

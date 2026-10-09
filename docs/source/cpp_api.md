@@ -330,6 +330,8 @@ internal interface as well, edit the Doxyfile and comment out its exclusions.
 ```
 ```{doxygenfile} KoashiImoto.hpp
 ```
+```{doxygenfile} DensityMatrix.hpp
+```
 ```{doxygenfile} Schmidt.hpp
 ```
 ```{doxygenfile} CausalCompare.hpp

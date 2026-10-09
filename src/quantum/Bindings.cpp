@@ -41,6 +41,7 @@
 #include "quantum/ChoiState.hpp"
 #include "quantum/CovarianceState.h"
 #include "quantum/DMRGRunner.hpp"
+#include "quantum/DensityMatrix.hpp"
 #include "quantum/GradedFock.h"
 #include "quantum/Holography.hpp"
 #include "quantum/LazyFock.h"
@@ -1375,6 +1376,28 @@ rhoAB is a (dimA * dimB) x (dimA * dimB) matrix in (A ⊗ B) ordering
           R"doc(Partial trace over the B factor of a bipartite ρ_AB.
 
 Returns a dimA x dimA density matrix.)doc");
+
+    m.def("partialTrace", &::tessera::quantum::partialTrace,
+          py::arg("rho"), py::arg("n"), py::arg("keep"),
+          R"doc(Reduced density matrix of an n-qubit state on the qubits in ``keep``.
+
+rho is 2^n x 2^n with qubit 0 the most significant bit of the row index (the
+ordering of rho_0 (x) rho_1 (x) ...). Every qubit not in ``keep`` is traced
+out; the kept qubits keep their listed order. Raises ValueError for n outside
+[1, 30], a rho of the wrong size, or a repeated or out-of-range index.)doc");
+
+    m.def("randomCorrelatedState",
+          [](int n, std::uint32_t seed) {
+              std::mt19937 rng(seed);
+              return ::tessera::quantum::randomCorrelatedState(n, rng);
+          },
+          py::arg("n"), py::arg("seed"),
+          R"doc(A random correlated mixed state on n qubits, seeded.
+
+rho = M M^dagger / Tr(M M^dagger), with M a 2^n x 2^n matrix whose entries
+have independent standard normal real and imaginary parts (a Ginibre matrix),
+drawn from a std::mt19937 seeded with ``seed``. Every pair of qubits shares
+mutual information. Raises ValueError for n outside [1, 30].)doc");
 
     m.def("mutualInformation",
           py::overload_cast<const Eigen::MatrixXcd&, int, int>(

@@ -143,6 +143,9 @@ def test_pulay_mixing_converges_where_plain_mixing_diverges():
     assert np.linalg.norm(x - fixed) < 1e-8
 
 
+# Measured at 51 s in CI, about 50 seconds: above the 30 s limit of the
+# pull-request tier, so it runs on main and nightly only.
+@pytest.mark.slow
 def test_a_self_consistent_crystal_on_the_mesh_matches_plane_waves():
     """One soft two-electron ion in a simple cubic cell at the zone centre: the
     same ionic potential and Hartree kernel convention in both codes, in the
@@ -365,6 +368,9 @@ def test_the_kinetic_eigenbasis_of_the_grid_is_closed_form(kappa):
     assert np.abs(energy - exact).max() < 1e-12 * np.abs(exact).max()
 
 
+# Measured at 30 s in CI, about 30 seconds: above the 30 s limit of the
+# pull-request tier, so it runs on main and nightly only.
+@pytest.mark.slow
 def test_a_converged_run_on_a_coarse_mesh_starts_the_next_mesh():
     """The orbitals of a coarse mesh are piecewise-linear functions; evaluated at
     the vertices of a mesh of twice the divisions they are the same functions

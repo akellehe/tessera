@@ -33,6 +33,9 @@ def test_states_are_told_apart_by_the_face_centred_translations(epm):
         gaas.zone_centre_read(epm, 9)
 
 
+# Measured at 33 s in CI, about 35 seconds: above the 30 s limit of the
+# pull-request tier, so it runs on main and nightly only.
+@pytest.mark.slow
 def test_the_valence_width_extrapolates_to_the_plane_wave_value(epm):
     """On meshes coarse enough for a test the gap itself is not yet in the
     asymptotic regime (the conduction states are the hardest to resolve), but

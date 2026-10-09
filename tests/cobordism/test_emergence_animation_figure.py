@@ -22,6 +22,7 @@ import os
 import sys
 import tempfile
 import unittest
+import pytest
 from types import SimpleNamespace
 
 import tessera as T
@@ -42,6 +43,13 @@ MC = cob.MultiCobordism
 #: never moved would let every assertion here pass while testing nothing.
 HOST = 4
 STEPS = 3
+
+# Every test reads the frames of one emergence run, computed once per process
+# by _frames() and kept in _CACHE: about 13 minutes, paid by whichever test
+# runs first in a worker (measured at 786 to 900 s in CI). No test of this
+# module runs without it, so the whole module is above the 30 s limit of the
+# pull-request tier and runs on main and nightly only.
+pytestmark = pytest.mark.slow
 
 _CACHE = {}
 
