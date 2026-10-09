@@ -46,9 +46,10 @@ jobs:
   # that are waiting for or running on a self-hosted runner. Counting jobs
   # rather than runs keeps a run whose jobs are on GitHub-hosted runners (the
   # documentation build) from reading as contention for ours. Two runs are
-  # left out: this one, and the run this one supersedes (same workflow, event,
-  # branch and head repository), which the concurrency group above is
-  # cancelling and whose runner is about to be free. Runs for the same commit
+  # left out: this one, and any earlier run for the same branch, event and
+  # head repository, of this workflow or the documentation one: both cancel a
+  # superseded run through their concurrency groups, so such a run is being
+  # torn down and its runner is about to be free. Runs for the same commit
   # (the documentation build the same push starts, on the same runners) are
   # not backlog either: they are this push's own work, so they are left out
   # as well; a shard that lands behind one waits for a job this push would
@@ -91,12 +92,11 @@ jobs:
                       + "(same commit, started by the same push)");
                     continue;
                   }
-                  if (run.workflow_id === me.workflow_id
-                      && run.event === me.event
+                  if (run.event === me.event
                       && run.head_branch === me.head_branch
                       && run.head_repository?.full_name === me.head_repository?.full_name) {
-                    core.info(`not counted: ${describe(run)}, which this run supersedes `
-                      + "and the concurrency group is cancelling");
+                    core.info(`not counted: ${describe(run)}, an earlier run for this branch `
+                      + "that its workflow's concurrency group is cancelling");
                     continue;
                   }
                   const jobs = await github.paginate(
