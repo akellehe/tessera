@@ -44,6 +44,13 @@ MC = cob.MultiCobordism
 HOST = 4
 STEPS = 3
 
+# Every test reads the frames of one emergence run, computed once per process
+# by _frames() and kept in _CACHE: about 13 minutes, paid by whichever test
+# runs first in a worker (measured at 786 to 900 s in CI). No test of this
+# module runs without it, so the whole module is above the 30 s limit of the
+# pull-request tier and runs on main and nightly only.
+pytestmark = pytest.mark.slow
+
 _CACHE = {}
 
 
@@ -123,9 +130,6 @@ class StabilizationTest(unittest.TestCase):
             self.assertAlmostEqual(placed[0]["coords"][vertex][1],
                                    position[1], places=12)
 
-    # Measured at 900 s in CI, about 15 minutes: above the 30 s limit of the
-    # pull-request tier, so it runs on main and nightly only.
-    @pytest.mark.slow
     def test_a_shared_vertex_does_not_swap_sides(self):
         """A reflection is the loudest MDS artefact: it mirrors the figure
         while the complex barely moved. After alignment a vertex that stays in
@@ -355,9 +359,6 @@ class CausalClassTest(unittest.TestCase):
         self.assertIn(ea.CausalClass.TIMELIKE, classes)
         self.assertNotIn(ea.CausalClass.MIXED, classes)
 
-    # Measured at 843 s in CI, about 14 minutes: above the 30 s limit of the
-    # pull-request tier, so it runs on main and nightly only.
-    @pytest.mark.slow
     def test_the_frame_carries_a_class_and_an_argument_per_drawn_edge(self):
         frame = _frames()[0]
         edges = frame.layout["edges"]
@@ -474,9 +475,6 @@ class ReadoutPresentationTest(unittest.TestCase):
 
 class RecordIsUntouchedTest(unittest.TestCase):
 
-    # Measured at 884 s in CI, about 15 minutes: above the 30 s limit of the
-    # pull-request tier, so it runs on main and nightly only.
-    @pytest.mark.slow
     def test_neither_the_layout_nor_the_dual_reaches_the_record(self):
         document = _frames()[-1].to_json()
         self.assertNotIn("layout", document)
