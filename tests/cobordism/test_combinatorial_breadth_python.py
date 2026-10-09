@@ -166,6 +166,9 @@ def test_a_negative_length_is_refused_by_name():
     assert "combinatorial length" in str(caught.value)
 
 
+# Measured at 156 s in CI, about 3 minutes: above the 30 s limit of the
+# pull-request tier, so it runs on main and nightly only.
+@pytest.mark.slow
 def test_the_drive_asks_stage_one_for_that_length(monkeypatch):
     """The number must reach `run_stage1`, not merely sit in the document."""
     seen = []
@@ -182,6 +185,9 @@ def test_the_drive_asks_stage_one_for_that_length(monkeypatch):
     assert seen and all(value == 2 for value in seen), seen
 
 
+# Measured at 174 s in CI, about 3 minutes: above the 30 s limit of the
+# pull-request tier, so it runs on main and nightly only.
+@pytest.mark.slow
 def test_legacy_stored_config_keys_are_replayed(monkeypatch):
     """Old run documents remain executable after the schema rename."""
     seen = []

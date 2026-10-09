@@ -135,6 +135,9 @@ def test_the_dump_is_schema_1_and_describes_the_driven_complex(driven):
     assert any(abs(edge[3]) > 0 for edge in document["edges"])
 
 
+# Measured at 30 s in CI, about 30 seconds: above the 30 s limit of the
+# pull-request tier, so it runs on main and nightly only.
+@pytest.mark.slow
 def test_the_dump_rebuilds_the_complex_to_rounding(driven):
     node, _result, document = driven
     rebuilt = rebuild(document)

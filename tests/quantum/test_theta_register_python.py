@@ -98,6 +98,9 @@ def test_t8_two_tori(twist):
     assert row["measured"]["distance_to_expected"] <= TOL
 
 
+# Measured at 36 s in CI, about 35 seconds: above the 30 s limit of the
+# pull-request tier, so it runs on main and nightly only.
+@pytest.mark.slow
 def test_t8_four_tori_is_a_product_operator():
     args = qa.build_parser().parse_args(["theta", "--tori", "4"])
     record = qa.theta(qa._verify_config(args))

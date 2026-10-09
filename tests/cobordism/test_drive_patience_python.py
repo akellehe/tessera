@@ -66,6 +66,9 @@ def test_a_patience_below_one_is_refused_by_name():
         ea.build_config(patience=-3)
 
 
+# Measured at 73 s in CI, about 75 seconds: above the 30 s limit of the
+# pull-request tier, so it runs on main and nightly only.
+@pytest.mark.slow
 def test_the_default_still_stops_on_the_first_stalled_unit():
     """The pre-existing exit, unchanged, and now with its count recorded."""
     config = ea.build_config(size=SMALL, steps=4, tolerance=IMPOSSIBLE)
@@ -75,6 +78,9 @@ def test_the_default_still_stops_on_the_first_stalled_unit():
     assert result.stalls == 1
 
 
+# Measured at 301 s in CI, about 5 minutes: above the 30 s limit of the
+# pull-request tier, so it runs on main and nightly only.
+@pytest.mark.slow
 def test_patience_runs_past_a_stalled_unit_and_stops_at_the_declared_count():
     """The substance of the flag.
 
@@ -90,6 +96,9 @@ def test_patience_runs_past_a_stalled_unit_and_stops_at_the_declared_count():
     assert result.stalls == 3
 
 
+# Measured at 224 s in CI, about 4 minutes: above the 30 s limit of the
+# pull-request tier, so it runs on main and nightly only.
+@pytest.mark.slow
 def test_a_patience_the_budget_cannot_reach_ends_on_the_budget():
     """Both limits are real, and the budget is the one that binds here.
 
@@ -105,6 +114,9 @@ def test_a_patience_the_budget_cannot_reach_ends_on_the_budget():
     assert result.stalls == 2
 
 
+# Measured at 460 s in CI, about 8 minutes: above the 30 s limit of the
+# pull-request tier, so it runs on main and nightly only.
+@pytest.mark.slow
 def test_an_improving_unit_leaves_no_stall_behind():
     # A unit that improves needs a drive that can move; on the default
     # spacelike seed, inside the allowable domain of the default Whitney
@@ -116,6 +128,9 @@ def test_an_improving_unit_leaves_no_stall_behind():
     assert result.stalls == 0
 
 
+# Measured at 1252 s in CI, about 21 minutes: above the 30 s limit of the
+# pull-request tier, so it runs on main and nightly only.
+@pytest.mark.slow
 def test_the_count_is_consecutive_and_an_improving_unit_resets_it(monkeypatch):
     """A run that stalls, recovers and stalls again is still making progress.
 
@@ -138,6 +153,9 @@ def test_the_count_is_consecutive_and_an_improving_unit_resets_it(monkeypatch):
     assert result.stalls == 2
 
 
+# Measured at 230 s in CI, about 4 minutes: above the 30 s limit of the
+# pull-request tier, so it runs on main and nightly only.
+@pytest.mark.slow
 def test_the_run_document_records_the_patience_and_the_stall_count():
     """A reader of a record must be able to tell the two stops apart.
 

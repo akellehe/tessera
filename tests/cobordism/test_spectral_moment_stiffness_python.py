@@ -178,6 +178,9 @@ def _directions(n, steps, midpoints, coordinates, spacetime):
     }
 
 
+# Measured at 515 s in CI, about 9 minutes: above the 30 s limit of the
+# pull-request tier, so it runs on main and nightly only.
+@pytest.mark.slow
 def test_the_stiffness_per_degree_of_freedom_does_not_fall_with_the_size_of_the_complex():
     """On flat periodic tori of n^3 vertices the Rayleigh quotient of the
     degree-one stiffness does not fall with n, along a uniform traceless

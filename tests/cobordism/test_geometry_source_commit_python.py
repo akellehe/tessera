@@ -66,6 +66,9 @@ def test_it_is_absent_rather_than_guessed_outside_a_work_tree(monkeypatch):
     assert "git" in absent.reason
 
 
+# Measured at 78 s in CI, about 80 seconds: above the 30 s limit of the
+# pull-request tier, so it runs on main and nightly only.
+@pytest.mark.slow
 def test_the_geometry_document_carries_it(source):
     config = ea.build_config(size=SMALL, steps=1, stage2_iters=1)
     result = ea.drive(config, progress=False)

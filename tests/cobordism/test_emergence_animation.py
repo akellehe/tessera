@@ -29,6 +29,7 @@ import os
 import sys
 import tempfile
 import unittest
+import pytest
 
 import tessera as T
 
@@ -68,6 +69,9 @@ def _frames():
 class DriveTest(unittest.TestCase):
     """The drive is unforced emergence, one frame per engine unit."""
 
+    # Measured at 165 s in CI, about 3 minutes: above the 30 s limit of the
+    # pull-request tier, so it runs on main and nightly only.
+    @pytest.mark.slow
     def test_one_frame_per_engine_unit_plus_the_initial_read(self):
         frames = _frames()
         self.assertEqual(len(frames), SMALL_STEPS + 1)
@@ -334,6 +338,9 @@ class OntologyTest(unittest.TestCase):
 class SerializationTest(unittest.TestCase):
     """The measurements round-trip through JSON."""
 
+    # Measured at 164 s in CI, about 3 minutes: above the 30 s limit of the
+    # pull-request tier, so it runs on main and nightly only.
+    @pytest.mark.slow
     def test_every_frame_round_trips(self):
         for frame in _frames():
             with self.subTest(step=frame.step):
@@ -646,6 +653,9 @@ class InstanceCertificateTest(unittest.TestCase):
         self.assertEqual(config["edge_disposition"],
                          ea.EdgeDisposition.TIMELIKE)
 
+    # Measured at 164 s in CI, about 3 minutes: above the 30 s limit of the
+    # pull-request tier, so it runs on main and nightly only.
+    @pytest.mark.slow
     def test_a_foliated_frame_says_on_its_face_that_it_is_prescribed(self):
         import matplotlib
         matplotlib.use("Agg")
@@ -714,6 +724,9 @@ class DriveFlagTest(unittest.TestCase):
             ea.MC = real
         return dict(_SpyNode.calls)
 
+    # Measured at 288 s in CI, about 5 minutes: above the 30 s limit of the
+    # pull-request tier, so it runs on main and nightly only.
+    @pytest.mark.slow
     def test_the_stage_and_depth_flags_reach_the_engine(self):
         calls = self._spy(stage1_iters=5, stage2_iters=9, tolerance=1e-30,
                           combinatorial_depth=3)
@@ -722,6 +735,9 @@ class DriveFlagTest(unittest.TestCase):
         self.assertEqual(calls["stage2"]["max_iters"], 9)
         self.assertEqual(calls["stage2"]["tolerance"], 1e-30)
 
+    # Measured at 166 s in CI, about 3 minutes: above the 30 s limit of the
+    # pull-request tier, so it runs on main and nightly only.
+    @pytest.mark.slow
     def test_the_defaults_are_the_declared_ones(self):
         calls = self._spy()
         self.assertEqual(calls["stage1"]["max_steps"],
@@ -752,6 +768,9 @@ class TerminatorTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             ea.DriveResult([], "converged")
 
+    # Measured at 85 s in CI, about 85 seconds: above the 30 s limit of the
+    # pull-request tier, so it runs on main and nightly only.
+    @pytest.mark.slow
     def test_an_impossible_tolerance_stops_the_run_early_and_says_so(self):
         """A tolerance no unit can meet must exit on the FIRST unit.
 
@@ -784,6 +803,9 @@ class TerminatorTest(unittest.TestCase):
 class LiveTest(unittest.TestCase):
     """`--live` shows a run as it happens, or refuses by name."""
 
+    # Measured at 448 s in CI, about 7 minutes: above the 30 s limit of the
+    # pull-request tier, so it runs on main and nightly only.
+    @pytest.mark.slow
     def test_frames_are_delivered_while_the_run_is_still_going(self):
         """The callback fires per unit, not once at the end.
 
@@ -828,6 +850,9 @@ class LiveTest(unittest.TestCase):
 class DriveDocumentTest(unittest.TestCase):
     """The run document records how the run was driven and how it ended."""
 
+    # Measured at 187 s in CI, about 3 minutes: above the 30 s limit of the
+    # pull-request tier, so it runs on main and nightly only.
+    @pytest.mark.slow
     def test_the_document_carries_every_flag_and_the_terminator(self):
         with tempfile.TemporaryDirectory() as directory:
             path = os.path.join(directory, "run.json")
