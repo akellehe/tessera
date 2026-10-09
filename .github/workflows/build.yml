@@ -289,26 +289,31 @@ jobs:
 
       # A full build is memory-bound, not CPU-bound: the template-heavy
       # translation units (src/cobordism/MultiCobordism.cpp, the per-subsystem
-      # Bindings.cpp, the Eigen-dense chainhodge sources) each peak at several
-      # GB in cc1plus at -O3 -march=native. A fixed parallel level sized for
-      # the larger runner host (125 GB) ran eight such compilers on the 29 GB
-      # host while other work was using it: swap filled completely,
-      # /proc/pressure/memory reported about 16% stall time, and one job died
-      # with exit 137 (the kernel's out-of-memory kill) in the build step.
-      # The container sees the host's /proc/meminfo, so size the build from
-      # MemAvailable at the moment the job starts: one compiler per 3 GiB
-      # free (the per-job peak CMakeLists.txt budgets for), at most 8 (the
-      # ceiling that keeps the job a good neighbour on the shared box), and
-      # at least 2. CMakeLists.txt's Ninja job pools cap parallelism from
-      # *total* memory as well; the lower of the two applies. nproc alone is
-      # the wrong input: the 29 GB host has 16 cores.
+      # Bindings.cpp, the Eigen-dense chainhodge sources) each peak near 4.7 GB
+      # in cc1plus at -O3 -march=native. A fixed parallel level sized for the
+      # larger runner host (125 GB) ran eight such compilers on the 29 GB host
+      # while other work was using it: swap filled completely and one job died
+      # with exit 137 (the kernel's out-of-memory kill) in the build step. The
+      # container sees the host's /proc/meminfo, so the level comes from
+      # MemAvailable at the moment the job starts. MemAvailable counts the
+      # page cache as free, and a compile that consumes all of it evicts its
+      # own headers and compiler pages: on the 29 GB host, six compilers from
+      # 18 GiB available read the disk at 1.7 GB/s with the compilers in
+      # uninterruptible wait, and one translation unit took over an hour. So
+      # 4 GiB is held back for the page cache and the rest of the box, and
+      # each job is budgeted at its 4.5 GiB peak: 8 jobs on the large host,
+      # 3 on the small one when it is otherwise idle, 1 when it is not. The
+      # ceiling of 8 keeps the job a good neighbour on the shared box; nproc
+      # alone is the wrong input, the 29 GB host has 16 cores. CMakeLists.txt's
+      # Ninja job pools cap parallelism from *total* memory as well; the lower
+      # of the two applies.
       - name: Size the build for the memory available
         run: |
-          avail_kib=$(awk '/^MemAvailable:/ { print $2 }' /proc/meminfo)
-          jobs=$(( avail_kib / (3 * 1024 * 1024) ))
+          avail_mib=$(( $(awk '/^MemAvailable:/ { print $2 }' /proc/meminfo) / 1024 ))
+          jobs=$(( (avail_mib - 4096) / 4608 ))
           if [ "$jobs" -gt 8 ]; then jobs=8; fi
-          if [ "$jobs" -lt 2 ]; then jobs=2; fi
-          echo "MemAvailable $(( avail_kib / 1024 )) MiB, $(nproc --all) cores -> CMAKE_BUILD_PARALLEL_LEVEL=${jobs}"
+          if [ "$jobs" -lt 1 ]; then jobs=1; fi
+          echo "MemAvailable ${avail_mib} MiB, $(nproc --all) cores -> CMAKE_BUILD_PARALLEL_LEVEL=${jobs}"
           echo "CMAKE_BUILD_PARALLEL_LEVEL=${jobs}" >> "$GITHUB_ENV"
 
       # Compiler cache, part 1: restore. The key names everything an object

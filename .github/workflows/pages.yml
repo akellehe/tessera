@@ -71,19 +71,20 @@ jobs:
         with:
           python-version: "3.12"
 
-      # One compiler process of this extension peaks near 2.2 GB. A fixed level
-      # of 8 fits primary01 (125 GB) but on workstation05 (29 GB) it filled the
-      # swap and the compile crawled past this job's limit (measured
-      # 2026-10-08: cancelled at 90 minutes, against 12 minutes when the box was
-      # free). The level follows the memory the container can see.
+      # The same rule as build.yml's "Size the build for the memory available"
+      # step: the heaviest translation units peak near 4.5 GiB in the compiler,
+      # 4 GiB stays free for the page cache and the rest of the box, at most 8
+      # jobs, at least 1. A fixed level of 8 fits primary01 (125 GB); on
+      # workstation05 (29 GB) it filled the swap, and 6 jobs from 18 GiB
+      # available thrashed the page cache until the job's limit cancelled it.
       - name: Size the build for the runner's memory
         run: |
-          avail_gb=$(( $(awk '/MemAvailable/ {print $2}' /proc/meminfo) / 1048576 ))
-          level=$(( avail_gb / 3 ))
+          avail_mib=$(( $(awk '/^MemAvailable:/ { print $2 }' /proc/meminfo) / 1024 ))
+          level=$(( (avail_mib - 4096) / 4608 ))
           [ "$level" -gt 8 ] && level=8
-          [ "$level" -lt 2 ] && level=2
+          [ "$level" -lt 1 ] && level=1
           echo "CMAKE_BUILD_PARALLEL_LEVEL=$level" >> "$GITHUB_ENV"
-          echo "parallel compile jobs: $level (MemAvailable ${avail_gb} GB)"
+          echo "MemAvailable ${avail_mib} MiB -> CMAKE_BUILD_PARALLEL_LEVEL=${level}"
 
       - name: Install dependencies
         run: |
