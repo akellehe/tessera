@@ -31,12 +31,19 @@
 #include "quantum/CausetChain.hpp"
 #include "spacetime/Spacetime.h"
 
+#include <complex>
 #include <algorithm>
 #include <iostream>
 #include <utility>
 #include <vector>
 
 namespace {
+
+// Spacetime::createEdge takes the complex edge length l, not the squared
+// length: Edge::isTimelike() reads the argument of l^2, so a timelike edge
+// of unit magnitude is l = sqrt(-1) = i and a spacelike one is l = 1.
+constexpr std::complex<double> kTimelikeLength{0.0, 1.0};
+constexpr std::complex<double> kSpacelikeLength{1.0, 0.0};
 
 tessera::mesh::VertexPtr make_vertex(tessera::spacetime::Spacetime& st, std::uint64_t id, int t) {
     return st.createVertex(id, std::vector<double>{static_cast<double>(t)});
@@ -57,9 +64,9 @@ bool acceptance_trivial_chain() {
     auto v1 = make_vertex(st, 1, 1);
     auto v2 = make_vertex(st, 2, 2);
     auto v3 = make_vertex(st, 3, 3);
-    st.createEdge(v0, v1, -1.0);
-    st.createEdge(v1, v2, -1.0);
-    st.createEdge(v2, v3, -1.0);
+    st.createEdge(v0, v1, kTimelikeLength);
+    st.createEdge(v1, v2, kTimelikeLength);
+    st.createEdge(v2, v3, kTimelikeLength);
 
     auto chain = tessera::quantum::Causet::chainFrom(st);
 
@@ -88,8 +95,8 @@ bool acceptance_branching_antichain() {
     auto v0 = make_vertex(st, 0, 0);
     auto v1 = make_vertex(st, 1, 1);
     auto v2 = make_vertex(st, 2, 1);
-    st.createEdge(v0, v1, -1.0);
-    st.createEdge(v0, v2, -1.0);
+    st.createEdge(v0, v1, kTimelikeLength);
+    st.createEdge(v0, v2, kTimelikeLength);
 
     auto chain = tessera::quantum::Causet::chainFrom(st);
 
@@ -142,8 +149,8 @@ bool acceptance_sparse_ids() {
     auto va = make_vertex(st, 7,  0);
     auto vb = make_vertex(st, 11, 1);
     auto vc = make_vertex(st, 19, 2);
-    st.createEdge(va, vb, -1.0);
-    st.createEdge(vb, vc, -1.0);
+    st.createEdge(va, vb, kTimelikeLength);
+    st.createEdge(vb, vc, kTimelikeLength);
 
     auto chain = tessera::quantum::Causet::chainFrom(st);
 
@@ -172,9 +179,9 @@ bool acceptance_skipping_edge_dropped() {
     auto v0 = make_vertex(st, 0, 0);
     auto v1 = make_vertex(st, 1, 1);
     auto v2 = make_vertex(st, 2, 2);
-    st.createEdge(v0, v1, -1.0);
-    st.createEdge(v1, v2, -1.0);
-    st.createEdge(v0, v2, -1.0);  // skips t=1 — should NOT be a hop
+    st.createEdge(v0, v1, kTimelikeLength);
+    st.createEdge(v1, v2, kTimelikeLength);
+    st.createEdge(v0, v2, kTimelikeLength);  // skips t=1 — should NOT be a hop
 
     auto chain = tessera::quantum::Causet::chainFrom(st);
 

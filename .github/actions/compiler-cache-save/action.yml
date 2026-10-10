@@ -1,0 +1,46 @@
+name: Save the compiler cache
+description: >-
+  Prints the compiler cache's statistics for the build that just ran, puts
+  them on the run's summary page, and saves the ccache directory the job's
+  CCACHE_DIR names to actions/cache under the key compiler-cache-restore
+  computed. Run it right after the build step, with a condition of
+  "not cancelled" so a failed build still saves the objects it produced.
+
+inputs:
+  cache-hit:
+    description: The cache-hit output of compiler-cache-restore.
+    required: true
+  cache-primary-key:
+    description: The cache-primary-key output of compiler-cache-restore.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    # The same statistics also go on the run's summary page, so the hit
+    # rate can be read without opening the log.
+    - name: Compiler cache statistics after the build
+      shell: bash
+      run: |
+        ccache --show-stats | tee "$RUNNER_TEMP/ccache-stats.txt"
+        {
+          echo "### Compiler cache (ccache) for this build"
+          echo
+          echo '```'
+          cat "$RUNNER_TEMP/ccache-stats.txt"
+          echo '```'
+        } >> "$GITHUB_STEP_SUMMARY"
+
+    # Saved right after the build rather than in a post-job step, so a red
+    # test suite or a broken Sphinx build does not throw away the objects a
+    # cold build spends minutes compiling; a failed build still saves the
+    # objects it did produce (ccache stores successful compiles only).
+    # Skipped when the exact key was restored: that cache already holds these
+    # objects. When several jobs restore the same key, the first to save wins;
+    # the others log that the cache exists and move on.
+    - name: Save the compiler cache
+      if: ${{ inputs.cache-hit != 'true' }}
+      uses: actions/cache/save@v5
+      with:
+        path: ${{ env.CCACHE_DIR }}
+        key: ${{ inputs.cache-primary-key }}

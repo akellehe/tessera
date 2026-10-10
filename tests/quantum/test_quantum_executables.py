@@ -138,3 +138,72 @@ class TestQuantumExecutables(unittest.TestCase):
         history and verify the comparison statistics are sensible
         (Kendall-τ in [-1, 1], no NaNs, vLr-monotonicity holds)."""
         self._run("test_causal_compare", "ALL PASS", timeout=180)
+
+    def test_causet_chain_extraction(self) -> None:
+        """Causet::chainFrom on hand-built spacetimes: a trivial chain of
+        single-vertex slices collapses to the 1D hopping list (0,1), (1,2),
+        …; a branching antichain and the other small cases of
+        docs/source/quantum-plan.md §6 give the documented site counts and
+        hopping pairs."""
+        self._run("test_causet_chain", "ALL PASS", timeout=120)
+
+    def test_cdt_causet_invariants(self) -> None:
+        """Structural invariants of Poset::fromSpacetime on a foliated CDT:
+        every timelike edge joins adjacent slices, so every Hasse cover spans
+        exactly one slice and the covers coincide with the chain-of-antichains
+        hopping pairs."""
+        self._run("test_cdt_causet_invariants", "ALL PASS", timeout=120)
+
+    def test_chain_causet_mpo(self) -> None:
+        """SchwingerHamiltonian::mpoChain reproduces SchwingerHamiltonian::mpo
+        on a chain causet: the ground-state energies of the two MPOs agree to
+        DMRG noise for a synthetic hopping list and for a chain extracted from
+        a toy spacetime (N ≤ 8), and malformed hopping lists are rejected."""
+        self._run("test_chain_causet_mpo", "ALL PASS", timeout=300)
+
+    def test_interaction_simulation_smoke(self) -> None:
+        """End-to-end smoke test of InteractionSimulation: the randomised
+        mixed-state initial layer, interaction and un-interaction moves, the
+        spectral dimension, the acceptance rate and the action after tune()
+        are all finite and in range."""
+        self._run("test_interaction_simulation", "PASS", timeout=300)
+
+    def test_interaction_simulation_charged_cartan_v01(self) -> None:
+        """The charged Cartan Monte Carlo (v0.1) additions to
+        InteractionSimulation: charge bookkeeping, the sign-bucketed
+        frontier, the annihilate and pairCreate moves, the observables, and
+        their interplay with interact and unInteract."""
+        self._run("test_interaction_simulation_v01", "PASS", timeout=300)
+
+    def test_interaction_simulation_qudit_basis_v02(self) -> None:
+        """The v0.2 qudit-basis additions to InteractionSimulation
+        (docs/source/quantum-experiments/charged_cartan_monte_carlo_v0.2.md)."""
+        self._run("test_interaction_simulation_v02", "PASS", timeout=300)
+
+    def test_mps_site_insertion_and_three_site_gate(self) -> None:
+        """The MPS mechanics an interaction event needs: insertSite splices a
+        product-state site between two sites and preserves the norm, the new
+        site's purity and the correlations across the cut; apply3SiteGate
+        with the identity is a no-op and with an entangler preserves the norm
+        and creates mutual information."""
+        self._run("test_mps_site_insertion", "PASS", timeout=120)
+
+    def test_poset_from_spacetime(self) -> None:
+        """Poset::fromSpacetime on hand-crafted spacetimes: a two-slice
+        ladder where every cross-slice timelike edge is a cover, a
+        three-slice chain whose slice-skipping edge the transitive reduction
+        removes, and the empty spacetime giving the empty poset."""
+        self._run("test_poset_from_spacetime", "ALL PASS", timeout=120)
+
+    def test_schmidt_invariants_dmrg(self) -> None:
+        """Universal invariants of the Schmidt spectra of Schwinger-model DMRG
+        ground states across a parameter sweep at N=6: every spectrum is
+        non-negative, sums to one, and has the rank the cut allows."""
+        self._run("test_schmidt_invariants_dmrg", "ALL PASS", timeout=300)
+
+    def test_sigma_ab_choi_state(self) -> None:
+        """Σ_AB as the 256-dimensional Choi state of the interaction unitary
+        (tessera issue 16): the pinned v0.2 baseline and the behaviour after
+        the fix, with the single-vertex marginal and the joint content
+        resolving to the same quantum object."""
+        self._run("test_sigma_ab_choi_state", "PASS", timeout=120)

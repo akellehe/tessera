@@ -34,6 +34,7 @@
 #include <itensor/all.h>
 #include <Eigen/Dense>
 
+#include <complex>
 #include <bit>
 #include <cmath>
 #include <cstdint>
@@ -48,6 +49,12 @@ using itensor::MPS;
 using itensor::InitState;
 
 namespace {
+
+// Spacetime::createEdge takes the complex edge length l, not the squared
+// length: Edge::isTimelike() reads the argument of l^2, so a timelike edge
+// of unit magnitude is l = sqrt(-1) = i and a spacelike one is l = 1.
+constexpr std::complex<double> kTimelikeLength{0.0, 1.0};
+constexpr std::complex<double> kSpacelikeLength{1.0, 0.0};
 
 // Réel Néel initial state for the Sz=0 sector.
 MPS neel_init(itensor::SpinHalf const& sites, int N) {
@@ -133,7 +140,7 @@ bool acceptance_spacetime_chain_extraction() {
     for (int t = 0; t + 1 < N; ++t) {
         st.createEdge(verts[static_cast<std::size_t>(t)],
                       verts[static_cast<std::size_t>(t + 1)],
-                      -1.0);   // squaredLength < 0 ⇒ timelike
+                      kTimelikeLength);
     }
 
     auto chain = tessera::quantum::Causet::chainFrom(st);
