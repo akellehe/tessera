@@ -448,21 +448,26 @@ def _log_slice(sl, names, S_global, log):
 
 # ============================================================ edge lengths
 
-LENGTH_MODES = ("inverse", "log", "mi", "vi")
-LENGTH_LABEL = {"inverse": "1/I(X:Y)", "log": "-ln(I(X:Y)/I_max)", "mi": "I(X:Y)",
-                "vi": "S(X|Y)+S(Y|X)"}
+LENGTH_MODES = ("inverse", "log", "log1p", "mi", "vi")
+LENGTH_LABEL = {"inverse": "1/I(X:Y)", "log": "-ln(I(X:Y)/I_max)",
+                "log1p": "a ln(1 + I_0/I(X:Y))", "mi": "I(X:Y)", "vi": "S(X|Y)+S(Y|X)"}
 
 
 def length_label(mode, geodesic=False):
     return ("shortest path over %s" % LENGTH_LABEL[mode]) if geodesic else LENGTH_LABEL[mode]
 
 
-def target_lengths(MI, mode, floor, S=None, geodesic=False):
+def target_lengths(MI, mode, floor, S=None, geodesic=False, scale=1.0, reference=I_MAX,
+                   normalise=True):
     """Edge lengths D and edge indicator W from the mutual information MI.
 
     A pair with I <= floor has no edge (W = 0). The modes:
       inverse  1/I(X:Y)
       log      -ln(I(X:Y)/I_MAX), via tessera.mesh.Edge.vanRaamsdonkLength
+      log1p    a ln(1 + I_0/I(X:Y)) with the scale a = `scale` and the
+               reference mutual information I_0 = `reference`: finite for
+               every I > 0, a ln(1 + I_0/I_MAX) at the largest I, divergent
+               as I -> 0
       mi       I(X:Y)
       vi       S(X|Y) + S(Y|X) = S(X) + S(Y) - 2 I(X:Y) (needs S, the
                one-qubit entropies); negative values, which a strongly
@@ -470,8 +475,8 @@ def target_lengths(MI, mode, floor, S=None, geodesic=False):
     With `geodesic`, every length is replaced by the shortest path through
     the edges, and a pair joined by some path gets an edge even when its own
     I is at or below the floor; pairs in separate components stay without
-    one. The result is scaled to mean edge length 1, or is (None, W) when no
-    pair has an edge.
+    one. The result is scaled to mean edge length 1 unless `normalise` is
+    False, or is (None, W) when no pair has an edge.
     """
     import tessera
     MI = np.asarray(MI, dtype=float)
@@ -489,6 +494,8 @@ def target_lengths(MI, mode, floor, S=None, geodesic=False):
         # are already without an edge
         D[present] = [tessera.mesh.Edge.vanRaamsdonkLength(float(I), I_MAX, 0.0)
                       for I in MI[present]]
+    elif mode == "log1p":
+        D[present] = scale * np.log1p(reference / MI[present])
     elif mode == "mi":
         D[present] = MI[present]
     elif mode == "vi":
@@ -510,7 +517,7 @@ def target_lengths(MI, mode, floor, S=None, geodesic=False):
                           directed=False)
         W = (np.isfinite(G) & off).astype(float)
         D = np.where(W > 0, G, 0.0)
-    return D / D[W > 0].mean(), W
+    return (D / D[W > 0].mean() if normalise else D), W
 
 
 def triangle_inequality_report(D, W, names):
@@ -707,6 +714,9 @@ def main(argv=None):
     parser.add_argument("--length", choices=LENGTH_MODES, default="inverse",
                         help="edge length from I(X:Y): 1/I (inverse, default), "
                              "-ln(I/I_max) (log), I (mi), or S(X)+S(Y)-2I (vi)")
+    parser.add_argument("--length-reference", type=float, default=I_MAX,
+                        help="I_0 of the log1p length a ln(1 + I_0/I) in nats (default "
+                             "I_max = 2 ln 2); its scale a cancels in the normalised lengths")
     parser.add_argument("--geodesic", action="store_true",
                         help="replace every length by the shortest path through the edges; "
                              "pairs at or below the floor get an edge when a path joins them")
@@ -748,12 +758,14 @@ def main(argv=None):
         log("  %7s" % names[i] + "".join(
             "%11s" % ("" if i == j else "%.6f" % MI[i, j]) for j in range(n)))
 
-    D, W = target_lengths(MI, args.length, args.mi_floor, S, args.geodesic)
+    D, W = target_lengths(MI, args.length, args.mi_floor, S, args.geodesic,
+                          reference=args.length_reference)
     label = length_label(args.length, args.geodesic)
     record = {"qubits": n, "entropy_unit": "nats", "S_global": result["S_global"],
               "S": S, "MI": MI, "interaction": result["interaction"],
               "length": {"mode": args.length, "geodesic": args.geodesic,
-                         "floor": args.mi_floor, "label": label}}
+                         "floor": args.mi_floor, "reference": args.length_reference,
+                         "label": label}}
     if D is None:
         log("GEOMETRY: no pair has I > %g; the complex is %d isolated vertices"
             % (args.mi_floor, n))

@@ -264,6 +264,22 @@ class TestLengths(unittest.TestCase):
             self.assertAlmostEqual(D[1, 2] / D[0, 2], f(1, 2) / f(0, 2), places=12, msg=mode)
             self.assertAlmostEqual(D[W > 0].mean(), 1.0, places=12)
 
+    def test_log1p_uses_its_formula_and_can_stay_unnormalised(self):
+        a, I0 = 2.5, 0.7
+        D, W = ec.target_lengths(self.MI, "log1p", 1e-12, scale=a, reference=I0,
+                                 normalise=False)
+        for i, j in ((0, 1), (0, 2), (1, 2)):
+            self.assertAlmostEqual(D[i, j], a * math.log(1 + I0 / self.MI[i, j]), places=12)
+        self.assertEqual(W.sum(), 6)
+        D1, _ = ec.target_lengths(self.MI, "log1p", 1e-12, scale=a, reference=I0)
+        self.assertAlmostEqual(D1[W > 0].mean(), 1.0, places=12)
+        np.testing.assert_allclose(D1[W > 0], D[W > 0] / D[W > 0].mean())
+        D2, _ = ec.target_lengths(self.MI, "log1p", 1e-12, reference=I0)
+        np.testing.assert_allclose(D2, D1)           # the scale cancels when normalised
+        D3, _ = ec.target_lengths(self.MI, "log1p", 1e-12, normalise=False)
+        self.assertAlmostEqual(D3[0, 1], math.log(1 + ec.I_MAX / self.MI[0, 1]), places=12)
+        self.assertEqual(ec.length_label("log1p"), "a ln(1 + I_0/I(X:Y))")
+
     def test_floor_and_errors(self):
         _, W = ec.target_lengths(self.MI, "inverse", 0.15)
         self.assertEqual((W[0, 2], W[0, 1]), (0, 1))
