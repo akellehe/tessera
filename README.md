@@ -78,21 +78,20 @@ translation units, whose objects hash identically across Python versions: on a
 CMake prints `Compiler cache enabled: ...` at configure time. Disable with
 `TESSERA_CCACHE=0`.
 
-**`mold` — Debug builds only.** A fast linker
-([`mold`](https://github.com/rui314/mold), else `lld`) is picked up
-automatically when installed:
+**`mold`.** A fast linker ([`mold`](https://github.com/rui314/mold), else
+`lld`) is picked up automatically when installed:
 
 ```bash
 sudo apt-get install mold        # or: brew install mold
 ```
 
-but it is not used for `Release` or `RelWithDebInfo`. `RelWithDebInfo` is the
-shipped build type, so the default `pip install -e .` links with the system `ld`
-regardless of what is installed. The reason: `lld` 18.1.3 silently emits an
-empty `_tessera.so` with no `PyInit__tessera` for that link-time-optimized link,
-and `import tessera` then fails. Both fast linkers are therefore restricted to
-`Debug`. CMake prints `Fast linker enabled: mold` only when it applies. Disable
-with `TESSERA_FAST_LINKER=0`.
+The shipped build type, `RelWithDebInfo`, and `Release` link with `mold` only,
+never with `lld`: `lld` 18.1.3 silently emits an empty `_tessera.so` with no
+`PyInit__tessera` for that link, and `import tessera` then fails. A full test
+run with every golden value confirmed the `mold` link, which takes about 2 s
+where the system `ld` takes about 38 s. CMake prints which linker it selected.
+`TESSERA_FAST_LINKER_RELEASE=0` keeps the system `ld` for those two build types,
+and `TESSERA_FAST_LINKER=0` disables the fast linkers for every build type.
 
 **Build parallelism is capped by memory.** The build is memory-bound rather than
 CPU-bound: the template-heavy translation units (`MultiCobordism.cpp`, the
