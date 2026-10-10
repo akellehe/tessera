@@ -18,7 +18,7 @@
 //       distance = 0.
 //
 // We bypass the topology-driven `Spacetime::build()` path and use the
-// public `createVertex(id, coords)` / `createEdge(src, tgt, sq)` API
+// public `createVertex(id, coords)` / `createEdge(src, tgt, length)` API
 // directly. That keeps the tests free of any CDT / Toroid topology
 // build requirements while still exercising the real VertexList /
 // EdgeList machinery.
@@ -26,6 +26,7 @@
 #include "Poset.h"
 #include "spacetime/Spacetime.h"
 
+#include <complex>
 #include <algorithm>
 #include <iostream>
 #include <set>
@@ -33,6 +34,12 @@
 #include <vector>
 
 namespace {
+
+// Spacetime::createEdge takes the complex edge length l, not the squared
+// length: Edge::isTimelike() reads the argument of l^2, so a timelike edge
+// of unit magnitude is l = sqrt(-1) = i and a spacelike one is l = 1.
+constexpr std::complex<double> kTimelikeLength{0.0, 1.0};
+constexpr std::complex<double> kSpacelikeLength{1.0, 0.0};
 
 // Convenience: build a vertex at integer time `t`, ID `id`, with 1D
 // coords {static_cast<double>(t)}. Vertex::getTime() returns |x_0| for
@@ -57,12 +64,12 @@ bool acceptance_two_slice_ladder() {
     auto v1 = make_vertex(st, 1, 0);
     auto v2 = make_vertex(st, 2, 1);
     auto v3 = make_vertex(st, 3, 1);
-    // Four cross-slice timelike edges (squaredLength < 0). No same-time
+    // Four cross-slice timelike edges (l = i, so l^2 = -1). No same-time
     // edges, so spacelike at the slice level is implicit.
-    st.createEdge(v0, v2, -1.0);
-    st.createEdge(v0, v3, -1.0);
-    st.createEdge(v1, v2, -1.0);
-    st.createEdge(v1, v3, -1.0);
+    st.createEdge(v0, v2, kTimelikeLength);
+    st.createEdge(v0, v3, kTimelikeLength);
+    st.createEdge(v1, v2, kTimelikeLength);
+    st.createEdge(v1, v3, kTimelikeLength);
 
     auto p = tessera::Poset::fromSpacetime(st);
     const std::vector<std::pair<int, int>> want{
@@ -88,9 +95,9 @@ bool acceptance_three_slice_with_skip() {
     // Adjacent-slice edges + a "skip" edge from t=0 directly to t=2.
     // The strict precedes-DAG has 0→1, 1→2, 0→2. Transitive reduction
     // should drop 0→2 because 0→1→2 already provides that order.
-    st.createEdge(v0, v1, -1.0);
-    st.createEdge(v1, v2, -1.0);
-    st.createEdge(v0, v2, -1.0);
+    st.createEdge(v0, v1, kTimelikeLength);
+    st.createEdge(v1, v2, kTimelikeLength);
+    st.createEdge(v0, v2, kTimelikeLength);
 
     auto p = tessera::Poset::fromSpacetime(st);
     const std::vector<std::pair<int, int>> want{{0, 1}, {1, 2}};
@@ -124,8 +131,8 @@ bool acceptance_only_spacelike_edges() {
     auto v2 = make_vertex(st, 2, 0);
     // Spacelike edges only — squaredLength > 0, all at the same time
     // slice. Should produce a Poset with 3 nodes and 0 covers.
-    st.createEdge(v0, v1, +1.0);
-    st.createEdge(v1, v2, +1.0);
+    st.createEdge(v0, v1, kSpacelikeLength);
+    st.createEdge(v1, v2, kSpacelikeLength);
 
     auto p = tessera::Poset::fromSpacetime(st);
     const bool ok = (p.getNodeCount() == 3) && p.covers().empty();
@@ -143,10 +150,10 @@ bool acceptance_self_comparison() {
     auto v1 = make_vertex(st, 1, 1);
     auto v2 = make_vertex(st, 2, 2);
     auto v3 = make_vertex(st, 3, 1);
-    st.createEdge(v0, v1, -1.0);
-    st.createEdge(v0, v3, -1.0);
-    st.createEdge(v1, v2, -1.0);
-    st.createEdge(v3, v2, -1.0);
+    st.createEdge(v0, v1, kTimelikeLength);
+    st.createEdge(v0, v3, kTimelikeLength);
+    st.createEdge(v1, v2, kTimelikeLength);
+    st.createEdge(v3, v2, kTimelikeLength);
 
     auto p = tessera::Poset::fromSpacetime(st);
     auto agree = tessera::compareOrders(p, p, p.getNodeCount());
@@ -173,9 +180,9 @@ bool acceptance_dense_remap() {
     auto v_md = make_vertex(st, 5,  1);
     auto v_hi = make_vertex(st, 11, 2);
     auto v_xx = make_vertex(st, 13, 2);
-    st.createEdge(v_lo, v_md, -1.0);
-    st.createEdge(v_md, v_hi, -1.0);
-    st.createEdge(v_md, v_xx, -1.0);
+    st.createEdge(v_lo, v_md, kTimelikeLength);
+    st.createEdge(v_md, v_hi, kTimelikeLength);
+    st.createEdge(v_md, v_xx, kTimelikeLength);
 
     auto p = tessera::Poset::fromSpacetime(st);
     // Ascending sort of {0, 5, 11, 13} → indices 0, 1, 2, 3. Covers
@@ -196,7 +203,7 @@ bool acceptance_to_dot_format() {
     tessera::spacetime::Spacetime st;
     auto v0 = make_vertex(st, 0, 0);
     auto v1 = make_vertex(st, 1, 1);
-    st.createEdge(v0, v1, -1.0);
+    st.createEdge(v0, v1, kTimelikeLength);
 
     auto p = tessera::Poset::fromSpacetime(st);
     const auto dot = p.toDot();

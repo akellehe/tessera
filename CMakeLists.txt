@@ -607,21 +607,42 @@ set_target_properties(tessera_quantum PROPERTIES
         CXX_STANDARD 20
         CXX_STANDARD_REQUIRED ON)
 
-enable_testing()
-file(GLOB TESSERA_QUANTUM_TESTS
-        CONFIGURE_DEPENDS
-        "${CMAKE_CURRENT_SOURCE_DIR}/tests/quantum/*.cpp")
-foreach(_test_src ${TESSERA_QUANTUM_TESTS})
-    get_filename_component(_test_name "${_test_src}" NAME_WE)
-    add_executable(${_test_name} "${_test_src}")
-    # tessera_quantum PUBLIC-links tessera_core, so tests get its symbols
-    # transitively without an explicit tessera_core link here.
-    target_link_libraries(${_test_name} PRIVATE tessera_quantum)
-    set_target_properties(${_test_name} PROPERTIES
-            CXX_STANDARD 20
-            CXX_STANDARD_REQUIRED ON)
-    add_test(NAME ${_test_name} COMMAND ${_test_name})
-endforeach()
+# ---- <C++ test executables> ----
+# Every tests/quantum/*.cpp is a standalone executable that links the whole
+# of libtessera_quantum.a, ITensor included: one compile and one link each,
+# which `pip install -e .` pays for on every build whether or not the work
+# at hand touches the quantum C++ tests. tests/quantum/test_quantum_executables.py
+# runs the executables under pytest (ctest runs them too) and skips the ones
+# it cannot find, so a development build can leave them out:
+#     TESSERA_BUILD_TESTS=0 pip install -e ".[dev]"
+# The default stays ON, so CI builds and runs them unchanged.
+option(TESSERA_BUILD_TESTS
+    "Build the C++ test executables under tests/quantum (the pytest wrappers and ctest run them)" ON)
+if (DEFINED ENV{TESSERA_BUILD_TESTS} AND NOT "$ENV{TESSERA_BUILD_TESTS}" STREQUAL "")
+    set(TESSERA_BUILD_TESTS $ENV{TESSERA_BUILD_TESTS})
+endif()
+if (TESSERA_BUILD_TESTS)
+    enable_testing()
+    file(GLOB TESSERA_QUANTUM_TESTS
+            CONFIGURE_DEPENDS
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/quantum/*.cpp")
+    foreach(_test_src ${TESSERA_QUANTUM_TESTS})
+        get_filename_component(_test_name "${_test_src}" NAME_WE)
+        add_executable(${_test_name} "${_test_src}")
+        # tessera_quantum PUBLIC-links tessera_core, so tests get its symbols
+        # transitively without an explicit tessera_core link here.
+        target_link_libraries(${_test_name} PRIVATE tessera_quantum)
+        set_target_properties(${_test_name} PROPERTIES
+                CXX_STANDARD 20
+                CXX_STANDARD_REQUIRED ON)
+        add_test(NAME ${_test_name} COMMAND ${_test_name})
+    endforeach()
+    list(LENGTH TESSERA_QUANTUM_TESTS _tessera_test_count)
+    message(STATUS "C++ test executables: ON (${_tessera_test_count} under tests/quantum).")
+else()
+    message(STATUS "C++ test executables: OFF (TESSERA_BUILD_TESTS=0); tests/quantum/test_quantum_executables.py skips them.")
+endif()
+# ---- </C++ test executables> ----
 
 # Wire the quantum bindings TU (added to TESSERA_PYBIND_SOURCES above)
 # into _tessera by linking against the implementation library.
