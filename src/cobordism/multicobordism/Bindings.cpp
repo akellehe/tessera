@@ -1412,6 +1412,10 @@ Right -- re-read after each drive call:
              "Only the carried state's energy density may enter the objective; "
              "every particle certificate stays firewalled from it.");
 
+  // `MultiCobordism::ObjectiveTerms` is a C++ alias of the namespace-level
+  // record bound in ObjectiveBindings.cpp; the Python class mirrors the alias.
+  multiCobordismClass.attr("ObjectiveTerms") = m.attr("ObjectiveTerms");
+
   py::class_<MultiCobordism::ObjectiveContribution>(multiCobordismClass,
       "ObjectiveContribution",
       "One objective's decomposition, labelled by the objective that produced "

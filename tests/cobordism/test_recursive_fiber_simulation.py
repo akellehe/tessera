@@ -186,11 +186,11 @@ class ObjectiveFirewallStructureTest(unittest.TestCase):
                     (name, word))
 
     def test_objective_terms_record_exposes_no_other_field(self):
-        exposed = {a for a in dir(MC.ObjectiveTerms) if not a.startswith("_")}
+        exposed = {a for a in dir(cob.ObjectiveTerms) if not a.startswith("_")}
         self.assertEqual(exposed, set(MC.objective_term_names()))
 
     def test_objective_of_is_static_and_sums_only_the_declared_terms(self):
-        terms = MC.ObjectiveTerms()
+        terms = cob.ObjectiveTerms()
         terms.regge_stationarity = 2.0
         terms.hodge_stationarity = 3.0
         terms.register_residual = 5.0

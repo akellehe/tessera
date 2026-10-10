@@ -37,5 +37,9 @@ class TestBindingNamespaces(unittest.TestCase):
         self.assertTrue(hasattr(tessera._tessera, "matter"))
 
 
+    def test_objective_terms_is_a_cobordism_record_aliased_on_multicobordism(self):
+        cobordism = tessera.cobordism
+        self.assertIs(cobordism.MultiCobordism.ObjectiveTerms, cobordism.ObjectiveTerms)
+
 if __name__ == "__main__":
     unittest.main()
