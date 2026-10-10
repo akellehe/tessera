@@ -10,10 +10,9 @@ from __future__ import annotations
 import unittest
 
 try:
+    from tessera import OrderAgreement, Poset
     from tessera.quantum import (
         TDVPConfig,
-        Poset,
-        OrderAgreement,
         CausalComparisonReport,
         Majorization,
         SchwingerQuench,

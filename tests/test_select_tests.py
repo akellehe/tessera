@@ -443,9 +443,11 @@ def real_tree():
 
 
 def test_real_tree_areas(real_tree):
-    assert {"mesh", "spacetime", "observables", "simulations", "cobordism", "chainhodge", "quantum"} \
+    assert {"mesh", "spacetime", "matter", "observables", "simulations", "cobordism", "chainhodge",
+            "quantum"} \
         <= real_tree.bound_areas
-    assert real_tree.star_exported_areas == {"mesh", "spacetime", "observables", "simulations"}
+    assert real_tree.star_exported_areas == {"mesh", "spacetime", "matter", "observables",
+                                             "simulations"}
     assert real_tree.notes == []
 
 

@@ -6,8 +6,15 @@ organised into submodules whose names match their C++ namespaces:
 * ``tessera.mesh``         — Vertex, Edge, Simplex, SimplexFilter, IDs
 * ``tessera.spacetime``    — Spacetime, Metric, Signature, topologies, Pachner moves
 * ``tessera.observables``  — SparseGraph, ModularityOptimizer, WilsonLoop, ...
-* ``tessera.simulations``  — CDT, ReggeSolver, Simulation base
-* ``tessera.quantum``      — Schwinger model, DMRG, TDVP, holography, InteractionSimulation
+* ``tessera.matter``       — MatterConfiguration, HingeType
+* ``tessera.simulations``  — CDT, ReggeSolver, InteractionSimulation, Simulation base
+* ``tessera.quantum``      — Schwinger model, DMRG, TDVP, holography
+* ``tessera.cobordism``    — cobordisms between PL manifolds
+* ``tessera.chainhodge``   — the chain-level Whitney Hodge pencil
+
+The files directly under ``include/`` and ``src/`` bind into the root
+``tessera`` namespace (``tessera.Poset``, ``tessera.compareOrders``,
+``tessera.ForceLayout``).
 
 For backward compatibility every public class is also re-exported at the
 top level, so ``from tessera import Spacetime`` continues to work alongside
@@ -15,7 +22,7 @@ the canonical ``from tessera.spacetime import Spacetime``.
 """
 
 # Root-namespace classes / free functions (Poset, OrderAgreement,
-# MatterConfiguration, HingeType, renderSpacetime, ForceLayout, ...).
+# compareOrders, renderSpacetime, ForceLayout, ...).
 from tessera._tessera import *                              # noqa: F401,F403
 from tessera._tessera import __doc__                        # noqa: F401
 
@@ -23,6 +30,7 @@ from tessera._tessera import __doc__                        # noqa: F401
 from tessera._tessera import (                              # noqa: F401
     mesh,
     spacetime,
+    matter,
     observables,
     simulations,
     cobordism,
@@ -47,7 +55,7 @@ from tessera._tessera import (                              # noqa: F401
 # succeeded. Let the package own the name.
 import sys as _sys                                          # noqa: E402
 
-for _submodule in (mesh, spacetime, observables, simulations, cobordism,
+for _submodule in (mesh, spacetime, matter, observables, simulations, cobordism,
                    chainhodge):
     _sys.modules[f"tessera.{_submodule.__name__.rsplit('.', 1)[-1]}"] = _submodule
 del _submodule
@@ -57,6 +65,7 @@ del _submodule
 # etc. continue to work.
 from tessera._tessera.mesh        import *                  # noqa: F401,F403
 from tessera._tessera.spacetime   import *                  # noqa: F401,F403
+from tessera._tessera.matter      import *                  # noqa: F401,F403
 from tessera._tessera.observables import *                  # noqa: F401,F403
 from tessera._tessera.simulations import *                  # noqa: F401,F403
 # NB: cobordism is intentionally NOT star-imported to the top level. It is a

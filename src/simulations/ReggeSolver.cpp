@@ -45,7 +45,7 @@ using namespace ::tessera::quantum;
 // =====================================================================
 
 ReggeSolver::ReggeSolver(std::shared_ptr<Spacetime> spacetime,
-                         MatterConfiguration matter)
+                         ::tessera::matter::MatterConfiguration matter)
     : spacetime_(std::move(spacetime)), matter_(std::move(matter)) {
     // Materialize the facet/coface lattice down to the (d-2)-hinges, in C++.
     //

@@ -27,7 +27,7 @@ panels, and --animate writes one frame per slice.
 This script holds no logic of its own. It runs
 ``tessera.drivers.root_lattice_spacetime``, which builds the network with
 ``tessera.drivers.entanglement_complex`` and stores the causal order in a
-``tessera.quantum.Poset``; every option passes through to the driver, see --help.
+``tessera.Poset``; every option passes through to the driver, see --help.
 
 Usage:
   python examples/root_lattice_spacetime/root_lattice_spacetime.py --save out.png

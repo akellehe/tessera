@@ -8,7 +8,7 @@
 
 namespace tessera::spacetime { class Spacetime; }
 
-namespace tessera {
+namespace tessera::constraints {
 using namespace ::tessera::spacetime;
 
 /// Types of constraints that can be applied to a spacetime.
@@ -52,6 +52,6 @@ class Constraint {
     virtual bool applies(const std::shared_ptr<Spacetime> &spacetime, const ConstraintType &type_) = 0;
 };
 
-} // tessera
+} // namespace tessera::constraints
 
 #endif //TESSERA_CONSTRAINT_H

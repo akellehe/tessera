@@ -207,9 +207,7 @@ def _make_poset_from_spacetime(dim: int, target: int):
         tessera.PREFERRED, tessera.Toroid())
     st.build(target)
 
-    # Poset is only exposed on the quantum submodule — the caller must
-    # have already guarded with ``_has_quantum``.
-    Poset = tessera.quantum.Poset
+    Poset = tessera.Poset
 
     def run():
         p = Poset.fromSpacetime(st)
@@ -392,10 +390,8 @@ def _build_tasks(quick: bool) -> list[BenchTask]:
         name=f"poset_from_spacetime_3d_n{poset_target}",
         category="graph",
         params={"dim": 3, "target": poset_target},
-        run=(_make_poset_from_spacetime(3, poset_target)
-                if has_q else (lambda: {})),
-        repeats=repeats,
-        skip_reason="" if has_q else "tessera.quantum not available")
+        run=_make_poset_from_spacetime(3, poset_target),
+        repeats=repeats)
     tasks.append(poset_task)
 
     chain_task = BenchTask(

@@ -12,7 +12,8 @@ import unittest
 import tessera
 
 try:
-    from tessera.quantum import CausetChain, Poset, Causet
+    from tessera import Poset
+    from tessera.quantum import CausetChain, Causet
     HAVE_QUANTUM = True
 except ImportError:
     HAVE_QUANTUM = False
@@ -79,7 +80,7 @@ class TestCausetChainFrom(unittest.TestCase):
 
 @unittest.skipUnless(HAVE_QUANTUM, "tessera built without TESSERA_QUANTUM=1")
 class TestPosetFromSpacetimePython(unittest.TestCase):
-    """Direct Python access to tessera.quantum.Poset.fromSpacetime."""
+    """Direct Python access to tessera.Poset.fromSpacetime."""
 
     def test_from_spacetime_returns_valid_poset(self) -> None:
         st = _build_default_cdt(num_simplices=20)

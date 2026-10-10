@@ -56,7 +56,7 @@ Definitions
   two related events scales with the longest chain joining them); the
   schedule's slice index is one linear extension of the order and only lays
   the events out from left to right. The order is stored as a
-  ``tessera.quantum.Poset`` whose cover edges are the Hasse diagram.
+  ``tessera.Poset`` whose cover edges are the Hasse diagram.
 * Path. With the walk, one unit of charge starts on a chosen qubit at t = 0
   and is carried across every event whose pair contains its current qubit;
   its worldline is the sequence of qubits visited, every step the root
@@ -225,11 +225,11 @@ def depths(P):
 
 
 def poset(evts):
-    """The causal set as a ``tessera.quantum.Poset``, one node per event and
-    one cover edge per link of the Hasse diagram; also P and the covers."""
-    from tessera import quantum
+    """The causal set as a ``tessera.Poset``, one node per event and one
+    cover edge per link of the Hasse diagram; also P and the covers."""
+    from tessera import Poset
     P, covers = causal_order(evts)
-    ps = quantum.Poset(len(evts))
+    ps = Poset(len(evts))
     for i, j in covers:
         ps.addCover(i, j)
     return ps, P, covers
