@@ -295,6 +295,7 @@ class TestRootLatticeSpacetime(unittest.TestCase):
         self.assertEqual(rc, 0, f"Script failed:\nstdout:\n{out}\nstderr:\n{err}")
         self.assertIn("WORLDLINE", out)
         self.assertIn("CAUSAL ORDER", out)
+        self.assertIn("exact for 4 qubits", out)
         self.assertTrue(os.path.exists(path), f"No output at {path}")
         self.assertGreater(os.path.getsize(path), 0)
         os.unlink(path)

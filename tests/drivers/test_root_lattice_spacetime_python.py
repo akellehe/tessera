@@ -3,19 +3,20 @@
 """The root-lattice-spacetime driver (`tessera.drivers.root_lattice_spacetime`).
 
 Covers the instrument:
-* the Coxeter-plane weights are the vertices of the regular n-gon, sum to
-  zero, and the roots are their differences; for four qubits the twelve
-  roots project onto the eight vectors (+-1, +-1), (+-2, 0), (0, +-2) of the
-  square lattice, opposite chords coinciding;
+* the Fourier coordinates are orthonormal in the zero-sum hyperplane, the
+  first two are the regular n-gon of the Coxeter plane, and they are exact
+  (an isometry) for three qubits in two coordinates and four in three, where
+  the twelve roots are the vertices of a cuboctahedron;
 * the lattice points within two root steps are the known shells of the
   hexagonal lattice for three qubits, and every point has zero sum;
 * the causal order is the transitive closure of "later and sharing a qubit",
-  its covers are the Hasse diagram, and the tessera Poset holds them;
+  its covers are the Hasse diagram, the depths are the longest chains, and
+  the tessera Poset holds the covers;
 * the walk rides exactly the events of its current qubit and its steps add
   up to e_end - e_start; the geodesic is the shortest path;
 * the lengths are a ln(1 + I_0 / I), unnormalised;
-* the command line runs end to end, prints what it promises and writes the
-  figure.
+* the command line runs end to end, prints what it promises, writes the
+  figure in two and three coordinates and the animation.
 The end-to-end tests skip cleanly when tessera was built without the quantum
 subsystem.
 """
@@ -32,33 +33,57 @@ from tessera.drivers import root_lattice_spacetime as rls
 
 class TestWeightsAndRoots(unittest.TestCase):
 
-    def test_the_weights_are_the_regular_polygon_and_sum_to_zero(self):
+    def test_the_fourier_coordinates_are_orthonormal_and_sum_to_zero(self):
+        for n in (3, 4, 5, 6, 7):
+            for dims in (2, 3):
+                W = rls.weights(n, dims)
+                self.assertEqual(W.shape, (n, dims))
+                np.testing.assert_allclose(W.sum(axis=0), 0.0, atol=1e-12)
+                used = min(dims, n - 1)
+                np.testing.assert_allclose(W[:, :used].T @ W[:, :used], np.eye(used),
+                                           atol=1e-12)
+                np.testing.assert_allclose(W[:, used:], 0.0)
+
+    def test_the_coxeter_plane_is_the_regular_polygon(self):
         for n in (3, 4, 6, 7):
             w = rls.coxeter_weights(n)
-            self.assertEqual(w.shape, (n, 2))
-            np.testing.assert_allclose(np.linalg.norm(w, axis=1), 1.0)
-            np.testing.assert_allclose(w.sum(axis=0), 0.0, atol=1e-12)
+            np.testing.assert_allclose(np.linalg.norm(w, axis=1), math.sqrt(2.0 / n))
             angles = np.arctan2(w[:, 1], w[:, 0]) % (2 * math.pi)
             np.testing.assert_allclose(angles, 2 * math.pi * np.arange(n) / n, atol=1e-12)
+
+    def test_three_and_four_qubits_are_drawn_exactly(self):
+        for n, dims in ((3, 2), (4, 3)):
+            W = rls.weights(n, dims)
+            for X, Y in ((0, 1), (0, 2), (1, 2), (0, n - 1)):
+                self.assertAlmostEqual(np.linalg.norm(W[X] - W[Y]), math.sqrt(2.0), places=12)
 
     def test_the_roots_are_the_differences_of_weights(self):
         n = 5
         rs = rls.roots(n)
         self.assertEqual(len(rs), n * (n - 1))
-        w = rls.coxeter_weights(n)
+        W = rls.weights(n, 3)
         for (X, Y), m in rs:
             self.assertEqual(m.sum(), 0)
             self.assertEqual(m[Y], 1)
             self.assertEqual(m[X], -1)
-            np.testing.assert_allclose(rls.project(m, w), w[Y] - w[X], atol=1e-12)
+            np.testing.assert_allclose(rls.project(m, W), W[Y] - W[X], atol=1e-12)
 
-    def test_four_qubits_project_onto_the_square_lattice(self):
+    def test_four_qubits_give_the_cuboctahedron(self):
+        W = rls.weights(4, 3)
+        R = rls.project([m for _, m in rls.roots(4)], W)
+        self.assertEqual(len(R), 12)
+        np.testing.assert_allclose(np.linalg.norm(R, axis=1), math.sqrt(2.0))
+        for v in R:                                   # every vertex has four neighbours
+            d = np.linalg.norm(R - v, axis=1)
+            self.assertEqual(int(np.sum(np.abs(d - math.sqrt(2.0)) < 1e-9)), 4)
+        self.assertEqual(len({tuple(np.round(v, 9)) for v in R}), 12)
+
+    def test_four_qubits_project_onto_the_square_lattice_in_the_plane(self):
         w = rls.coxeter_weights(4)
         projected = {tuple(np.round(rls.project(m, w), 9)) for _, m in rls.roots(4)}
-        expected = {(1.0, 1.0), (1.0, -1.0), (-1.0, 1.0), (-1.0, -1.0),
-                    (2.0, 0.0), (-2.0, 0.0), (0.0, 2.0), (0.0, -2.0)}
-        self.assertEqual({(float(a), float(b)) for a, b in projected}, expected)
-        self.assertEqual(len(rls.roots(4)), 12)
+        a, b = round(1 / math.sqrt(2.0), 9), round(math.sqrt(2.0), 9)
+        expected = {(a, a), (a, -a), (-a, a), (-a, -a), (b, 0.0), (-b, 0.0), (0.0, b), (0.0, -b)}
+        self.assertEqual({(float(x), float(y)) for x, y in projected}, expected)
 
     def test_the_lattice_within_two_steps_is_the_hexagonal_shells(self):
         pts = rls.lattice_points(3, steps=2)
@@ -66,8 +91,9 @@ class TestWeightsAndRoots(unittest.TestCase):
         self.assertTrue((pts.sum(axis=1) == 0).all())
         self.assertEqual(tuple(pts[0]), (0, 0, 0))
         radii = np.round(np.linalg.norm(rls.project(pts, rls.coxeter_weights(3)), axis=1), 6)
-        self.assertEqual(sorted(set(radii.tolist())), [0.0, round(math.sqrt(3), 6), 3.0,
-                                                       round(2 * math.sqrt(3), 6)])
+        self.assertEqual(sorted(set(radii.tolist())),
+                         [0.0, round(math.sqrt(2), 6), round(math.sqrt(6), 6),
+                          round(2 * math.sqrt(2), 6)])
         self.assertEqual(len(rls.lattice_points(4, steps=1)), 13)
 
     def test_qubit_names(self):
@@ -110,6 +136,11 @@ class TestCausalOrder(unittest.TestCase):
             self.assertTrue(P[i, j])
             self.assertFalse((P[i, :] & P[:, j]).any())
 
+    def test_the_depths_are_the_longest_chains(self):
+        P, _ = rls.causal_order(EVENTS)
+        self.assertEqual(rls.depths(P).tolist(), [0, 1, 0, 2, 2])
+        self.assertEqual(rls.depths(np.zeros((0, 0), dtype=bool)).tolist(), [])
+
     def test_the_poset_holds_the_covers(self):
         from tessera import quantum
         ps, P, covers = rls.poset(EVENTS)
@@ -131,6 +162,13 @@ class TestPaths(unittest.TestCase):
         self.assertEqual(m.tolist(), [-1, 0, 0, 1, 0])      # e_3 - e_0
         self.assertEqual(rls.walk(EVENTS, 4), [(3, 4, 3), (5, 3, 2)])
         self.assertEqual(rls.walk([], 2), [])
+
+    def test_the_walk_is_a_chain_of_the_causal_set(self):
+        P, _ = rls.causal_order(EVENTS)
+        times = [e[0] for e in EVENTS]
+        steps = rls.walk(EVENTS, 0)
+        for (t1, _, _), (t2, _, _) in zip(steps, steps[1:]):
+            self.assertTrue(P[times.index(t1), times.index(t2)])
 
     def test_the_walk_returns_on_a_repeated_pair(self):
         steps = rls.walk([(1, (0, 1)), (2, (0, 1))], 0)
@@ -180,7 +218,7 @@ class TestCommandLine(unittest.TestCase):
             rc = rls.main(extra)
         return rc, out.getvalue()
 
-    def test_the_walk_runs_and_writes_the_figure(self):
+    def test_the_walk_runs_and_writes_the_figure_in_three_coordinates(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = os.path.join(tmp, "walk.png")
             rc, out = self._run(["--qubits", "4", "--timesteps", "5", "--save", path,
@@ -189,15 +227,33 @@ class TestCommandLine(unittest.TestCase):
             self.assertTrue(os.path.exists(path) and os.path.getsize(path) > 0)
         self.assertIn("INFORMATION NETWORK", out)
         self.assertIn("ROOT LATTICE A_3: 12 roots", out)
+        self.assertIn("3 Fourier coordinates (exact for 4 qubits)", out)
         self.assertIn("CAUSAL ORDER: 5 events", out)
         self.assertIn("WORLDLINE of a unit of charge from A", out)
+        self.assertIn("step  1", out)
         self.assertIn("displacement:", out)
 
-    def test_the_geodesic_runs(self):
-        rc, out = self._run(["--qubits", "4", "--timesteps", "6", "--path", "geodesic",
-                             "--start", "B", "--end", "D", "--no-show"])
-        self.assertEqual(rc, 0)
+    def test_the_plane_and_the_geodesic(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "geodesic.png")
+            rc, out = self._run(["--qubits", "5", "--timesteps", "6", "--path", "geodesic",
+                                 "--start", "B", "--end", "D", "--lattice-dims", "2",
+                                 "--save", path, "--no-show"])
+            self.assertEqual(rc, 0)
+            self.assertTrue(os.path.exists(path) and os.path.getsize(path) > 0)
         self.assertIn("GEODESIC from B to D", out)
+        self.assertIn("2 Fourier coordinates (a projection for 5 qubits)", out)
+
+    def test_the_animation_has_one_frame_per_slice(self):
+        from PIL import Image
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "walk.gif")
+            rc, out = self._run(["--qubits", "4", "--timesteps", "3", "--animate", path,
+                                 "--no-show"])
+            self.assertEqual(rc, 0)
+            self.assertIn("ANIMATION: 4 frames", out)
+            with Image.open(path) as gif:
+                self.assertEqual(gif.n_frames, 4)
 
     def test_the_analysis_is_consistent_with_the_slices(self):
         from tessera.drivers import entanglement_complex as ec
@@ -205,6 +261,7 @@ class TestCommandLine(unittest.TestCase):
         rep = rls.analyse(result, 1e-12, 1.0, rls.I_MAX, "walk", 0)
         self.assertEqual(len(rep["events"]), 6)
         self.assertEqual(rep["T"], 6)
+        self.assertEqual(rep["weights"].shape, (4, 3))
         visited = rep["visited"]
         self.assertEqual(visited[0], 0)
         self.assertEqual(len(visited), len(rep["steps"]) + 1)
@@ -217,6 +274,9 @@ class TestCommandLine(unittest.TestCase):
             I = result["slices"][t]["MI"][X, Y]
             self.assertAlmostEqual(l, math.log1p(rls.I_MAX / I), places=10)
         self.assertEqual(rep["poset"].getCoverCount(), len(rep["covers"]))
+        self.assertEqual(len(rep["depth"]), 6)
+        with self.assertRaises(ValueError):
+            rls.analyse(result, 1e-12, 1.0, rls.I_MAX, "walk", 0, dims=4)
 
 
 if __name__ == "__main__":
