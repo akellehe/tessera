@@ -247,7 +247,7 @@ class FirewallTest(unittest.TestCase):
     def test_the_static_collapse_takes_no_instance(self):
         # `total` remains static: the step from a decomposition to the number
         # the optimizer compares still has no `this`.
-        terms = cob.MultiCobordism.ObjectiveTerms()
+        terms = cob.ObjectiveTerms()
         terms.regge_stationarity = 2.0
         terms.hodge_stationarity = 0.5
         self.assertEqual(cob.CobordismObjective.total(terms), 2.5)
