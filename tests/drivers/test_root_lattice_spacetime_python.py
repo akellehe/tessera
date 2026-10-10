@@ -255,6 +255,14 @@ class TestCommandLine(unittest.TestCase):
             with Image.open(path) as gif:
                 self.assertEqual(gif.n_frames, 4)
 
+    def test_twenty_qubits_run_on_the_pure_engine(self):
+        rc, out = self._run(["--qubits", "20", "--timesteps", "4", "--state", "pure",
+                             "--no-show"])
+        self.assertEqual(rc, 0)
+        self.assertIn("ROOT LATTICE A_19: 380 roots", out)
+        self.assertIn("381 lattice points within 1 root step(s)", out)
+        self.assertIn("a projection for 20 qubits", out)
+
     def test_the_analysis_is_consistent_with_the_slices(self):
         from tessera.drivers import entanglement_complex as ec
         result = ec.simulate(4, None, "1/2", 0, "global", 6, "all", False)

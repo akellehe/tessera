@@ -39,7 +39,13 @@ Definitions
   cuboctahedron; for more qubits the drawing is the orthogonal projection
   onto those modes, fixed by the cyclic order of the names and not by any
   fit. For n >= 5 the projected lattice is dense, so only the points within
-  two root steps of the origin are drawn.
+  two root steps of the origin are drawn, and beyond eight qubits only the
+  first shell, the tips of the roots: the second shell has of the order of
+  n^4 points.
+* Engines. The network runs on the mixed engine of ``entanglement_complex``
+  (the global density matrix, up to 14 qubits) or, with ``--state pure``, on
+  its pure engine (a state vector, up to 24 qubits, with pure input pairs);
+  every entropy and mutual information used here is exact in both.
 * Causal order. Every interaction is an event (X, Y, t). An event precedes a
   later one when their pairs share a qubit, and the order is the transitive
   closure of that relation, the causal set of the circuit. Two events on
@@ -92,6 +98,14 @@ LENGTH_MODE = "log1p"
 PATH_MODES = ("walk", "geodesic")
 LATTICE_DIMS = (2, 3)
 LATTICE_STEPS = 2
+#: Beyond this many qubits only the first shell of the lattice is drawn: the
+#: second shell of A_{n-1} has of the order of n^4 points.
+LATTICE_SHELL_LIMIT = 8
+
+
+def lattice_steps(n):
+    """How many root steps of the lattice the figure shows for n qubits."""
+    return LATTICE_STEPS if n <= LATTICE_SHELL_LIMIT else 1
 
 
 def qubit_index(token, n):
@@ -314,7 +328,8 @@ def analyse(result, floor, scale, reference, path_mode, start, end=None, dims=3)
     direct = geodesic(D, W, start, finish)
     direct_length = sum(float(D[X, Y]) for X, Y in zip(direct[:-1], direct[1:]))
     return {"n": n, "names": names, "T": T, "dims": dims, "weights": weights(n, dims),
-            "lattice": lattice_points(n), "slices": slices,
+            "lattice": lattice_points(n, lattice_steps(n)), "lattice_steps": lattice_steps(n),
+            "slices": slices, "state": result.get("state", "mixed"),
             "S": slices[-1]["S"], "MI": slices[-1]["MI"], "D": D, "W": W,
             "interacted": interacted, "events": evts, "event_lengths": event_lengths,
             "poset": ps, "precedes": P, "covers": covers, "depth": depths(P),
@@ -328,7 +343,8 @@ def analyse(result, floor, scale, reference, path_mode, start, end=None, dims=3)
 def print_report(rep, log=print):
     names, n = rep["names"], rep["n"]
     label = "l(X,Y) = %g ln(1 + %g / I(X:Y))" % (rep["scale"], rep["reference"])
-    log("INFORMATION NETWORK (final slice t = %d; entropies in nats; %s)" % (rep["T"], label))
+    log("INFORMATION NETWORK (final slice t = %d; entropies in nats; %s; %s global state)"
+        % (rep["T"], label, rep["state"]))
     for q in range(n):
         log("  S(%s) = %.6f" % (names[q], rep["S"][q]))
     for i, j in itertools.combinations(range(n), 2):
@@ -338,9 +354,10 @@ def print_report(rep, log=print):
                                                    "" if rep["interacted"][i, j] else
                                                    "   (never interacted)"))
     exact = "exact" if n == rep["dims"] + 1 else "a projection"
-    log("ROOT LATTICE A_%d: %d roots e_Y - e_X, %d lattice points within %d root steps; "
+    log("ROOT LATTICE A_%d: %d roots e_Y - e_X, %d lattice points within %d root step(s); "
         "drawn in %d Fourier coordinates (%s for %d qubits)"
-        % (n - 1, n * (n - 1), len(rep["lattice"]), LATTICE_STEPS, rep["dims"], exact, n))
+        % (n - 1, n * (n - 1), len(rep["lattice"]), rep["lattice_steps"], rep["dims"], exact,
+           n))
     m = len(rep["events"])
     log("CAUSAL ORDER: %d events, %d related pairs of %d, %d covers (Hasse links), "
         "depth up to %d" % (m, int(rep["precedes"].sum()), m * (m - 1) // 2,
@@ -459,9 +476,10 @@ def draw(rep, title, save=None, upto=None):
         ax.view_init(elev=22, azim=-55)
         ax.scatter(inside[:, 0], inside[:, 1], inside[:, 2], s=9, color=bp.INK_MUTED,
                    alpha=0.5)
+        many = n > LATTICE_SHELL_LIMIT
         ax.quiver(np.zeros(len(R)), np.zeros(len(R)), np.zeros(len(R)), R[:, 0], R[:, 1],
-                  R[:, 2], color=bp.INK_MUTED, alpha=0.5, linewidth=1.1,
-                  arrow_length_ratio=0.1)
+                  R[:, 2], color=bp.INK_MUTED, alpha=0.2 if many else 0.5,
+                  linewidth=0.5 if many else 1.1, arrow_length_ratio=0.1)
         ring = np.vstack([W3 - W3[start], (W3 - W3[start])[:1]])
         ax.plot(ring[:, 0], ring[:, 1], ring[:, 2], color=bp.INK_MUTED, linestyle="--",
                 linewidth=0.8, alpha=0.7)
@@ -494,11 +512,13 @@ def draw(rep, title, save=None, upto=None):
         bp.style_axis(ax)
         ax.set_aspect("equal")
         ax.scatter(pts[:, 0], pts[:, 1], s=9, color=bp.INK_MUTED, alpha=0.6, zorder=1)
+        many = n > LATTICE_SHELL_LIMIT
         for _, m in roots(n):
             v = project(m, W3)
             ax.annotate("", xy=v, xytext=(0.0, 0.0),
-                        arrowprops=dict(arrowstyle="->", color=bp.INK_MUTED, alpha=0.35,
-                                        linewidth=0.7), zorder=1)
+                        arrowprops=dict(arrowstyle="->", color=bp.INK_MUTED,
+                                        alpha=0.15 if many else 0.35,
+                                        linewidth=0.5 if many else 0.7), zorder=1)
         ring = W3 - W3[start]
         ax.add_patch(Polygon(ring, closed=True, fill=False, edgecolor=bp.INK_MUTED,
                              linestyle="--", linewidth=0.8, zorder=1))
@@ -590,7 +610,13 @@ def main(argv=None):
         description="The information network of a qubit network, the root lattice its "
                     "interactions translate, and the causal set the order of the "
                     "interactions makes of it, with one path on all three.")
-    parser.add_argument("--qubits", type=int, default=4, help="number of qubits (default 4)")
+    parser.add_argument("--qubits", type=int, default=4,
+                        help="number of qubits (default 4; at most %d with the mixed engine, "
+                             "%d with the pure one)" % (ec.MAX_QUBITS, ec.MAX_QUBITS_PURE))
+    parser.add_argument("--state", choices=ec.STATE_MODES, default="mixed",
+                        help="the engine of entanglement_complex: the global density matrix, "
+                             "or a pure global state with pure input pairs, which reaches "
+                             "%d qubits (default mixed)" % ec.MAX_QUBITS_PURE)
     parser.add_argument("--timesteps", type=int, default=16,
                         help="interactions, one per time slice (default 16)")
     parser.add_argument("--seed", type=int, default=0,
@@ -639,7 +665,8 @@ def main(argv=None):
         parser.error(str(exc))
 
     result = ec.simulate(args.qubits, None, args.swap_power, args.seed, "global",
-                         args.timesteps, args.pairs, False, print if args.verbose else ec._silent)
+                         args.timesteps, args.pairs, False, print if args.verbose else ec._silent,
+                         args.state)
     rep = analyse(result, args.mi_floor, args.length_scale, args.length_reference,
                   args.path, start, end, args.lattice_dims)
     print_report(rep)

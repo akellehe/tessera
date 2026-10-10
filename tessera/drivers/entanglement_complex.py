@@ -17,12 +17,27 @@ Definitions
 * I(X:Y) = S(X) + S(Y) - S(XY) is the mutual information of X and Y.
 * C = sum_i S(i) - S(all) is the total correlation of the network.
 
+* Two engines carry the global state. The mixed engine (``QubitNetwork``,
+  the default) keeps the density matrix, 2^(2n) entries, up to 14 qubits.
+  The pure engine (``PureQubitNetwork``, ``state="pure"``) keeps a state
+  vector of 2^n amplitudes, up to 24 qubits: SWAP^alpha is unitary, so a
+  network that starts pure stays pure, and the reduced state of a region is
+  the partial trace of |psi><psi| over the rest, mixed exactly when the
+  region is entangled with the rest. Every entropy and mutual information
+  below is exact in both engines; in the pure one S_global = 0 and the total
+  correlation is C = sum_i S(i). The pairwise marginals cannot be evolved on
+  their own (the marginal of X with a bystander Z after an interaction on
+  (X, Y) needs the three-qubit marginal, and so on), which is why a global
+  state is kept at all.
+
 Pipeline
 --------
 1. The qubits start in input pairs (A,B), (C,D), ...: the first three pairs
    in the explicit states below, every further pair in a seeded random
    correlated state. An odd count leaves the last qubit alone in a random
-   one-qubit state.
+   one-qubit state. The pure engine starts the explicit pairs in |00> and
+   every further pair in a seeded Haar-random pure state (the odd qubit in a
+   random pure state): a product state is pure only when every factor is.
 2. Round 1 applies one unitary to each input pair: explicit gates for the
    first three pairs, Haar-random unitaries for the rest.
 3. Interactions apply SWAP^alpha to pairs of qubits, either on a round-robin
@@ -61,6 +76,11 @@ import numpy as np
 #: Largest supported qubit count: the state is a dense 2^n x 2^n complex
 #: matrix (16 * 4^n bytes; 4 GB at n = 14).
 MAX_QUBITS = 14
+#: Largest qubit count of the pure engine: the state is a vector of 2^n
+#: amplitudes (16 * 2^n bytes; 256 MB at n = 24).
+MAX_QUBITS_PURE = 24
+#: The engines: the global density matrix, or a pure global state.
+STATE_MODES = ("mixed", "pure")
 #: The maximum mutual information between two qubits, in nats.
 I_MAX = 2.0 * math.log(2.0)
 #: Agreement required of the step identity at every time slice (float64).
@@ -246,27 +266,127 @@ class QubitNetwork:
         return float(np.trace(self.matrix()).real)
 
 
+class PureQubitNetwork:
+    """The global state of n qubits as a pure state: a (2,)*n tensor of
+    amplitudes, qubit 0 first (the most significant bit). The reduced state
+    of a region is the partial trace of |psi><psi| over the other qubits,
+    mixed exactly when the region is entangled with the rest."""
+
+    def __init__(self, n):
+        if not 2 <= n <= MAX_QUBITS_PURE:
+            raise ValueError("the qubit count of a pure network must be in [2, %d]"
+                             % MAX_QUBITS_PURE)
+        self.n = n
+        self.names = [chr(65 + i) for i in range(n)]
+        self.psi = None
+
+    def set_product(self, factors):
+        """factors: (qubit indices, state vector) pairs covering 0..n-1 in order."""
+        covered, out = [], np.ones(1, dtype=complex)
+        for qubits, vector in factors:
+            covered.extend(qubits)
+            out = np.kron(out, np.asarray(vector, dtype=complex).reshape(-1))
+        if covered != list(range(self.n)):
+            raise ValueError("factors must cover the qubits in order")
+        self.psi = out.reshape((2,) * self.n)
+
+    def apply_gate(self, U, pair):
+        """psi -> U psi with the 4 x 4 gate U on the qubits in `pair` (the
+        first listed qubit is U's first factor)."""
+        n = self.n
+        qi, qj = pair
+        u = np.asarray(U, dtype=complex).reshape(2, 2, 2, 2)
+        axes = list(range(n))
+        new_i, new_j = n, n + 1
+        out = axes.copy()
+        out[qi], out[qj] = new_i, new_j
+        self.psi = np.einsum(u, [new_i, new_j, qi, qj], self.psi, axes, out)
+
+    def vector(self):
+        """The 2^n amplitudes."""
+        return self.psi.reshape(-1)
+
+    def matrix(self):
+        """The 2^n x 2^n density matrix |psi><psi| (dense: small n only)."""
+        v = self.vector()
+        return np.outer(v, v.conj())
+
+    def reduced(self, keep):
+        """The reduced state on the qubits in `keep`, in their listed order:
+        the partial trace of |psi><psi| over the others."""
+        keep = [int(q) for q in keep]
+        rest = [q for q in range(self.n) if q not in keep]
+        M = np.transpose(self.psi, keep + rest).reshape(2 ** len(keep), -1)
+        return M @ M.conj().T
+
+    def entropy(self, keep):
+        """S(keep) in nats."""
+        from tessera import quantum
+        return quantum.MutualInformation.vonNeumannEntropy(self.reduced(keep))
+
+    def mutual_information(self, pair):
+        """I(i:j) in nats for the two qubits in `pair`."""
+        from tessera import quantum
+        return quantum.mutualInformation(self.reduced(pair), 2, 2)
+
+    def replace_by_marginals(self):
+        raise ValueError("a product of one-qubit marginals is a mixed state; "
+                         "the pure engine cannot carry it")
+
+    def trace(self):
+        """<psi|psi>, the trace of |psi><psi|."""
+        v = self.vector()
+        return float(np.vdot(v, v).real)
+
+
+def _density(state):
+    """The density matrix of an input state given as a density matrix or as
+    a state vector."""
+    state = np.asarray(state, dtype=complex)
+    if state.ndim == 1:
+        return np.outer(state, state.conj())
+    return state
+
+
 # ============================================================ simulation
 
-def build_inputs(n, seed):
+def random_pure_state(dim, seed):
+    """A Haar-random pure state of dimension `dim`: a normalised vector of
+    independent complex normal amplitudes, from `seed`."""
+    rng = np.random.default_rng(seed)
+    v = rng.normal(size=dim) + 1j * rng.normal(size=dim)
+    return v / np.linalg.norm(v)
+
+
+def build_inputs(n, seed, state="mixed"):
     """Input pairs, their states and round-1 unitaries, and (odd n) the
     state of the last qubit. Pairs beyond the explicit three draw their
     states from `tessera.quantum.randomCorrelatedState` and their unitaries
-    from `scipy.stats.unitary_group`, seeded from `seed`."""
+    from `scipy.stats.unitary_group`, seeded from `seed`. With
+    ``state="pure"`` the states are vectors: |00> for the explicit pairs,
+    Haar-random pure states for the rest and for the odd qubit."""
     from scipy.stats import unitary_group
     from tessera import quantum
+    if state not in STATE_MODES:
+        raise ValueError("the state must be one of %s" % (STATE_MODES,))
     pairs = [(2 * k, 2 * k + 1) for k in range(n // 2)]
     seeds = [int(s) for s in np.random.SeedSequence(seed).generate_state(2 * len(pairs) + 1)]
     states, unitaries = {}, {}
     for k, pair in enumerate(pairs):
         if k < len(EXPLICIT_STATES):
-            states[pair] = EXPLICIT_STATES[k]
+            states[pair] = (np.array([1, 0, 0, 0], dtype=complex) if state == "pure"
+                            else EXPLICIT_STATES[k])
             unitaries[pair] = EXPLICIT_UNITARIES[k]
         else:
-            states[pair] = quantum.randomCorrelatedState(2, seeds[2 * k])
+            states[pair] = (random_pure_state(4, seeds[2 * k]) if state == "pure"
+                            else quantum.randomCorrelatedState(2, seeds[2 * k]))
             unitaries[pair] = ("Haar(seed %d, pair %d)" % (seed, k),
                                unitary_group.rvs(4, random_state=seeds[2 * k + 1]))
-    single = quantum.randomCorrelatedState(1, seeds[-1]) if n % 2 else None
+    if n % 2:
+        single = (random_pure_state(2, seeds[-1]) if state == "pure"
+                  else quantum.randomCorrelatedState(1, seeds[-1]))
+    else:
+        single = None
     return pairs, states, unitaries, single
 
 
@@ -279,13 +399,19 @@ def _silent(_line):
 
 
 def simulate(n, rounds=None, alpha="1/2", seed=0, carry="global", timesteps=None,
-             pair_mode="all", regions=False, log=_silent):
+             pair_mode="all", regions=False, log=_silent, state="mixed"):
     """Prepare the inputs, apply round 1, then either `rounds` round-robin
     rounds or `timesteps` random time slices; return the final state's
     entropies and pairwise mutual information. `log` receives the report
-    lines (the command line passes `print`)."""
+    lines (the command line passes `print`). `state` picks the engine: the
+    global density matrix ("mixed") or a pure global state ("pure")."""
     from tessera import quantum
-    net = QubitNetwork(n)
+    if state not in STATE_MODES:
+        raise ValueError("the state must be one of %s" % (STATE_MODES,))
+    if state == "pure" and carry == "marginals":
+        raise ValueError("a product of marginals is mixed; carry='marginals' needs the "
+                         "mixed engine")
+    net = QubitNetwork(n) if state == "mixed" else PureQubitNetwork(n)
     names = net.names
     alpha = Fraction(alpha)
     interaction = swap_power(alpha)
@@ -295,14 +421,15 @@ def simulate(n, rounds=None, alpha="1/2", seed=0, carry="global", timesteps=None
         rounds = max(len(schedule) - 1, 0)
     if timesteps is not None and carry == "marginals":
         raise ValueError("time slices use the global state; carry='marginals' is not supported")
-    pairs, states, unitaries, single = build_inputs(n, seed)
+    pairs, states, unitaries, single = build_inputs(n, seed, state)
     for name, U in list(unitaries.values()) + [(label, interaction)]:
         _require_unitary(name, U)
 
-    log("INPUT STATES (%d qubits %s..%s; entropies in nats)" % (n, names[0], names[-1]))
+    log("INPUT STATES (%d qubits %s..%s; entropies in nats; %s global state)"
+        % (n, names[0], names[-1], state))
     S_global = 0.0
     for pair in pairs:
-        rho = states[pair]
+        rho = _density(states[pair])
         _require_density_matrix("rho_" + "".join(names[q] for q in pair), rho)
         S_pair = quantum.MutualInformation.vonNeumannEntropy(rho)
         S_global += S_pair
@@ -311,7 +438,9 @@ def simulate(n, rounds=None, alpha="1/2", seed=0, carry="global", timesteps=None
                ", ".join("%.6f" % v for v in np.linalg.eigvalsh(rho)),
                quantum.mutualInformation(rho, 2, 2)))
     if single is not None:
-        S_global += quantum.MutualInformation.vonNeumannEntropy(single)
+        S_global += quantum.MutualInformation.vonNeumannEntropy(_density(single))
+    if state == "pure":
+        S_global = 0.0
     log("  S_global = %.6f nats (constant: every step is unitary)" % S_global)
 
     factors = [(pair, states[pair]) for pair in pairs]
@@ -353,7 +482,7 @@ def simulate(n, rounds=None, alpha="1/2", seed=0, carry="global", timesteps=None
     for i, j in itertools.combinations(range(n), 2):
         MI[i, j] = MI[j, i] = net.mutual_information((i, j))
     return {"net": net, "names": names, "S": S, "MI": MI, "S_global": S_global,
-            "interaction": label, "slices": slices, "order": order}
+            "interaction": label, "slices": slices, "order": order, "state": state}
 
 
 # ============================================================ time slices
@@ -694,7 +823,13 @@ def main(argv=None):
                     "from their mutual information alone (no embedding): the "
                     "Vietoris-Rips filtration of the edge lengths, with simplex "
                     "counts and Betti numbers at every scale. Entropies are in nats.")
-    parser.add_argument("--qubits", type=int, default=6, help="number of qubits (default 6)")
+    parser.add_argument("--qubits", type=int, default=6,
+                        help="number of qubits (default 6; at most %d with the mixed engine, "
+                             "%d with the pure one)" % (MAX_QUBITS, MAX_QUBITS_PURE))
+    parser.add_argument("--state", choices=STATE_MODES, default="mixed",
+                        help="the engine: the global density matrix, or a pure global state "
+                             "with pure input pairs, which reaches %d qubits (default mixed)"
+                             % MAX_QUBITS_PURE)
     parser.add_argument("--rounds", type=int, default=None,
                         help="round-robin rounds after round 1 (default n - 2: every pair "
                              "meets once)")
@@ -740,13 +875,15 @@ def main(argv=None):
             parser.error("--regions supports at most %d qubits" % reg.MAX_QUBITS)
     if args.timesteps is not None and args.carry == "marginals":
         parser.error("--timesteps uses the global state; --carry marginals is not supported")
+    if args.state == "pure" and args.carry == "marginals":
+        parser.error("--carry marginals needs the mixed engine: a product of marginals is mixed")
     try:
         Fraction(args.swap_power)
     except (ValueError, ZeroDivisionError):
         parser.error("--swap-power must be a number such as 1/2 or 0.25")
 
     result = simulate(args.qubits, args.rounds, args.swap_power, args.seed, args.carry,
-                      args.timesteps, args.pairs, args.regions, log)
+                      args.timesteps, args.pairs, args.regions, log, args.state)
     names, MI, S = result["names"], result["MI"], result["S"]
     n = len(names)
 
@@ -761,7 +898,8 @@ def main(argv=None):
     D, W = target_lengths(MI, args.length, args.mi_floor, S, args.geodesic,
                           reference=args.length_reference)
     label = length_label(args.length, args.geodesic)
-    record = {"qubits": n, "entropy_unit": "nats", "S_global": result["S_global"],
+    record = {"qubits": n, "state": args.state, "entropy_unit": "nats",
+              "S_global": result["S_global"],
               "S": S, "MI": MI, "interaction": result["interaction"],
               "length": {"mode": args.length, "geodesic": args.geodesic,
                          "floor": args.mi_floor, "reference": args.length_reference,

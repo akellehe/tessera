@@ -308,6 +308,16 @@ class TestRootLatticeSpacetime(unittest.TestCase):
         self.assertIn("GEODESIC from A to C", out)
         os.unlink(path)
 
+    def test_twelve_qubits_on_the_pure_engine(self):
+        rc, out, err, path = run_example(
+            "root_lattice_spacetime/root_lattice_spacetime.py",
+            ["--qubits", "12", "--timesteps", "6", "--state", "pure"])
+        self.assertEqual(rc, 0, f"stderr:\n{err}")
+        self.assertIn("pure global state", out)
+        self.assertIn("ROOT LATTICE A_11: 132 roots", out)
+        self.assertIn("within 1 root step(s)", out)
+        os.unlink(path)
+
 
 class TestBuildBenchmark(unittest.TestCase):
     """Tests for examples/benchmarks/build_benchmark.py"""
