@@ -297,7 +297,7 @@ class HoldToUnitObjective(cob.CobordismObjective):
         return cob.CobordismObjective.declared_term_names()
 
     def terms(self, context):
-        terms = cob.MultiCobordism.ObjectiveTerms()
+        terms = cob.ObjectiveTerms()
         edges = context.spacetime.getEdgeList().toVector()
         # None means the whole cobordism; a list — even an empty one — means
         # exactly those coordinates.

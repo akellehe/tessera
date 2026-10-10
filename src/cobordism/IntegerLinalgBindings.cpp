@@ -5,7 +5,7 @@
 // characteristic numbers. One of the translation units that Bindings.cpp
 // registers in order (https://github.com/akellehe/tessera/issues/1453).
 
-#include "BindingsCommon.h"
+#include "Bindings.h"
 
 void register_cobordism_integer_linalg(py::module_ &m) {
   // Exact integer / GF(2) / inertia primitives. Matrices are passed flat

@@ -2,13 +2,14 @@
 // All rights reserved.
 
 // Python bindings of the observables subsystem: the entry point. The bound
-// classes live in bindings/*Bindings.cpp, one translation unit per family,
+// classes live in the *Bindings.cpp translation units of this directory, one
+// per family,
 // registered here in the order the single unit used to register them, so a
 // base class precedes its derived classes and the type of every default
 // argument is bound before a signature uses it
 // (https://github.com/akellehe/tessera/issues/1453).
 
-#include "bindings/BindingsCommon.h"
+#include "Bindings.h"
 
 void register_observables_effective_topology(py::module_ &m);
 void register_observables_graph_modularity(py::module_ &m);

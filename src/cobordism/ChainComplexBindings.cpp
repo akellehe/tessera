@@ -5,7 +5,7 @@
 // spectra. One of the translation units that Bindings.cpp registers in order
 // (https://github.com/akellehe/tessera/issues/1453).
 
-#include "BindingsCommon.h"
+#include "Bindings.h"
 
 void register_cobordism_chain_complex(py::module_ &m) {
   // Per-complex scalar measurements are Observables, as are the characteristic

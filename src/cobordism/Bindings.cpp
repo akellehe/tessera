@@ -2,20 +2,21 @@
 // All rights reserved.
 
 // Python bindings of the cobordism subsystem: the entry point. The bound
-// classes live in bindings/*Bindings.cpp, one translation unit per family,
+// classes live in the *Bindings.cpp translation units of this directory and in
+// multicobordism/Bindings.cpp, one per family,
 // registered here in the order the single unit used to register them, so a
 // base class precedes its derived classes and the type of every default
 // argument is bound before a signature uses it
 // (https://github.com/akellehe/tessera/issues/1453).
 
-#include "bindings/BindingsCommon.h"
+#include "Bindings.h"
 
 void register_cobordism_chain_complex(py::module_ &m);
 void register_cobordism_hodge(py::module_ &m);
 void register_cobordism_integer_linalg(py::module_ &m);
 void register_cobordism_pencil(py::module_ &m);
-void register_cobordism_multi_cobordism_read(py::module_ &m);
-void register_cobordism_multi_cobordism(py::module_ &m);
+void register_cobordism_objective(py::module_ &m);
+void register_cobordism_multicobordism(py::module_ &m);
 void register_cobordism_dag_proton_certificate(py::module_ &m);
 void register_cobordism_analytic_cache(py::module_ &m);
 void register_cobordism_recursive_quotient(py::module_ &m);
@@ -36,8 +37,8 @@ void register_cobordism(py::module_ m) {
   register_cobordism_hodge(m);
   register_cobordism_integer_linalg(m);
   register_cobordism_pencil(m);
-  register_cobordism_multi_cobordism_read(m);
-  register_cobordism_multi_cobordism(m);
+  register_cobordism_objective(m);
+  register_cobordism_multicobordism(m);
   register_cobordism_dag_proton_certificate(m);
   register_cobordism_analytic_cache(m);
   register_cobordism_recursive_quotient(m);

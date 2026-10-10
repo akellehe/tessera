@@ -5,7 +5,7 @@
 // tracker. One of the translation units that Bindings.cpp registers in order
 // (https://github.com/akellehe/tessera/issues/1453).
 
-#include "BindingsCommon.h"
+#include "Bindings.h"
 
 void register_observables_spectral_fiber(py::module_ &m) {
   // ========================================

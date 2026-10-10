@@ -6,7 +6,7 @@
 // Bindings.cpp registers in order
 // (https://github.com/akellehe/tessera/issues/1453).
 
-#include "BindingsCommon.h"
+#include "Bindings.h"
 
 void register_cobordism_ward_flux_bound_state(py::module_ &m) {
   // ── Section 13.4/13.5: the Ward flux and the intrinsic response ────────

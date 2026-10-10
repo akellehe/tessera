@@ -5,7 +5,7 @@
 // eigenstate synthesis. One of the translation units that Bindings.cpp
 // registers in order (https://github.com/akellehe/tessera/issues/1453).
 
-#include "BindingsCommon.h"
+#include "Bindings.h"
 
 void register_cobordism_hodge(py::module_ &m) {
   // ----- Hodge Laplacian: k=0 Hermitian graph, k>=1 metric Hodge -----

@@ -6,7 +6,7 @@
 // Bindings.cpp registers in order
 // (https://github.com/akellehe/tessera/issues/1453).
 
-#include "BindingsCommon.h"
+#include "Bindings.h"
 
 void register_observables_register_observable(py::module_ &m) {
   // ==========================================================================

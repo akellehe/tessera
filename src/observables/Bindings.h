@@ -1,13 +1,12 @@
-#pragma once
-// The shared prelude of the observables bindings: the includes, the
-// namespace aliases and the helpers that every *Bindings.cpp translation
-// unit in this directory uses. The bound classes themselves live in those
-// units, one family each, and Bindings.cpp in the parent directory registers
-// them in order (https://github.com/akellehe/tessera/issues/1453).
-
 // Copyright (c) 2026 Twin Vector Labs LLC.
 // All rights reserved.
 
+#pragma once
+
+// The shared prelude of the observables bindings: the includes, the namespace
+// aliases and the helpers that the binding translation units of this
+// directory use. Bindings.cpp registers them in order
+// (https://github.com/akellehe/tessera/issues/1453).
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <pybind11/options.h>
@@ -160,3 +159,4 @@ void emitSelectionWarning(const RegisterContext &ctx) {
 // Registers all tessera::observables classes into the `m` submodule
 // (i.e. `tessera.observables`). Called from src/bindings.cpp's
 // PYBIND11_MODULE entry point.
+
