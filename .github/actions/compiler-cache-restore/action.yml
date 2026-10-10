@@ -44,17 +44,17 @@ runs:
     # hash cannot see: the image release, the exact compiler version (a
     # changed compiler must never serve objects another one compiled: the
     # golden-float dumps are reproducible on one toolchain only, see the
-    # container comment in build.yml), and the CPU model (the build is
-    # -march=native, so objects from the other runner host target a different
-    # instruction set), followed by a hash of the C++ sources and build
-    # configuration. An exact match means a job with identical sources
-    # already filled the cache; the restore-keys prefix makes any earlier
-    # cache for the same toolchain and CPU a warm start when the sources
-    # moved, which is the common case for a pull request. Caches are scoped
-    # by branch: a pull request can restore its own and main's, and the
-    # push-to-main run after a merge keeps main's current. Both workflows use
-    # the same prefix, so the documentation build restores the objects the
-    # test build compiled, and the other way round.
+    # container comment in build.yml) and the instruction level the build
+    # targets (x86-64-v3, fixed in pyproject.toml, so the objects are the
+    # same on every host and both runners share one cache), followed by a
+    # hash of the C++ sources and build configuration. An exact match means
+    # a job with identical sources already filled the cache; the restore-keys
+    # prefix makes any earlier cache for the same toolchain a warm start when
+    # the sources moved, which is the common case for a pull request. Caches
+    # are scoped by branch: a pull request can restore its own and main's,
+    # and the push-to-main run after a merge keeps main's current. Both
+    # workflows use the same prefix, so the documentation build restores the
+    # objects the test build compiled, and the other way round.
     - name: Fingerprint the toolchain for the compiler cache
       id: toolchain
       shell: bash
@@ -62,10 +62,8 @@ runs:
         os_release="$(. /etc/os-release && echo "${ID}${VERSION_ID}")"
         cxx="${CXX:-g++}"
         gcc_version="$("$cxx" -dumpfullversion)"
-        cpu_model="$(grep -m1 '^model name' /proc/cpuinfo | cut -d: -f2- \
-          | tr -cs '[:alnum:]' '-' | sed 's/^-//; s/-*$//')"
-        prefix="ccache-${os_release}-gcc${gcc_version}-${cpu_model:-unknown-cpu}-"
-        echo "compiler ${cxx} ${gcc_version} on ${os_release}, cpu ${cpu_model:-unknown}"
+        prefix="ccache-${os_release}-gcc${gcc_version}-x86-64-v3-"
+        echo "compiler ${cxx} ${gcc_version} on ${os_release}, target x86-64-v3"
         echo "cache key prefix ${prefix}"
         echo "ccache-key-prefix=${prefix}" >> "$GITHUB_OUTPUT"
 

@@ -97,7 +97,7 @@ with `TESSERA_FAST_LINKER=0`.
 **Build parallelism is capped by memory.** The build is memory-bound rather than
 CPU-bound: the template-heavy translation units (`MultiCobordism.cpp`, the
 per-subsystem `Bindings.cpp`, the Eigen-dense chainhodge sources) each peak near
-4.7 GB in `cc1plus` at `-O3 -march=native`. Ninja's default parallelism is
+4.7 GB in `cc1plus` at `-O3 -march=x86-64-v3`. Ninja's default parallelism is
 *cores + 2*, so on a 16-core machine an unrestricted build launches 18 of those
 at once, exhausts memory, and the OOM killer reaps unrelated processes, leaving
 orphaned multi-GB `cc1plus` processes behind.

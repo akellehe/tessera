@@ -201,17 +201,14 @@ jobs:
       CCACHE_MAXSIZE: 2G
       # What ccache folds into every object's hash besides the preprocessed
       # source and the flags. Its default (the compiler's mtime and size)
-      # cannot see that pyproject.toml compiles with -march=native: the flag
-      # text is the same on every host but the code it produces is not, and
-      # ccache has no special handling for it. `g++ -v` pins the exact
-      # compiler build; `-march=native -Q --help=target` prints the
-      # instruction-set flags "native" resolves to on this CPU. Together they
-      # make sure an object is reused only by a compiler that would have
-      # generated the same code. The actions/cache key below carries the same
-      # two facts so a cache from another toolchain or CPU is not even
-      # restored; this check is what keeps it safe at the object level
-      # regardless of how the directory travelled.
-      CCACHE_COMPILERCHECK: "%compiler% -v; %compiler% -march=native -Q --help=target"
+      # says nothing about the compiler's identity; `g++ -v` pins the exact
+      # compiler build, so an object is reused only by the compiler that
+      # generated it. The build targets the fixed x86-64-v3 instruction level
+      # (pyproject.toml), so the code an object holds does not depend on the
+      # host and nothing about the CPU needs to enter the hash; the
+      # actions/cache key (the compiler-cache-restore action) carries the same
+      # facts, so a cache from another toolchain is not even restored.
+      CCACHE_COMPILERCHECK: "%compiler% -v"
       # Total CPU threads the test lanes may occupy, and how many of them each
       # pytest-xdist worker gets. Worker count is the quotient, computed by
       # .github/scripts/test-workers.sh. Raising TESSERA_TEST_CPUS trades
@@ -290,7 +287,7 @@ jobs:
       # A full build is memory-bound, not CPU-bound: the template-heavy
       # translation units (src/cobordism/MultiCobordism.cpp, the per-subsystem
       # Bindings.cpp, the Eigen-dense chainhodge sources) each peak near 4.7 GB
-      # in cc1plus at -O3 -march=native. A fixed parallel level sized for the
+      # in cc1plus at -O3 -march=x86-64-v3. A fixed parallel level sized for the
       # larger runner host (125 GB) ran eight such compilers on the 29 GB host
       # while other work was using it: swap filled completely and one job died
       # with exit 137 (the kernel's out-of-memory kill) in the build step. The
@@ -317,7 +314,7 @@ jobs:
           echo "CMAKE_BUILD_PARALLEL_LEVEL=${jobs}" >> "$GITHUB_ENV"
 
       # Compiler cache, part 1: restore. The key (image release, compiler
-      # version, CPU model, source hash), the restore-keys warm start and the
+      # version, instruction level, source hash), the restore-keys warm start and the
       # branch scoping are documented in the action, which pages.yml shares so
       # the test build and the documentation build fill one archive.
       - name: Restore the compiler cache

@@ -44,14 +44,14 @@ jobs:
       TESSERA_CUDA: "0"
       # The compiler cache, shared with build.yml: the same launcher, cache
       # directory, size cap and compiler check, so the two workflows fill and
-      # restore one archive per toolchain and CPU. build.yml's env block
+      # restore one archive per toolchain. build.yml's env block
       # explains each variable; the restore and save steps below are the
       # actions under .github/actions that both workflows use.
       CMAKE_C_COMPILER_LAUNCHER: ccache
       CMAKE_CXX_COMPILER_LAUNCHER: ccache
       CCACHE_DIR: ${{ github.workspace }}/.ccache
       CCACHE_MAXSIZE: 2G
-      CCACHE_COMPILERCHECK: "%compiler% -v; %compiler% -march=native -Q --help=target"
+      CCACHE_COMPILERCHECK: "%compiler% -v"
 
     steps:
       - name: Install system dependencies

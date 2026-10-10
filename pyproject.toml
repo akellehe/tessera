@@ -85,13 +85,18 @@ install.strip = false
 wheel.packages = ["tessera"]
 
 [tool.scikit-build.cmake.define]
-# -march=native: the module is built locally by `pip install -e`, never
-# shipped as a wheel, so targeting the host ISA is free. Without it the
-# build targets generic x86-64 — SSE2 only, no FMA — and Eigen's dense
-# kernels run at half the vector width (#733: measured 2.02x on the full
-# r_U evaluation at 261 cells). Use -march=x86-64-v3 instead if a build
-# ever has to run on a different machine; it measured the same here.
-CMAKE_CXX_FLAGS_RELWITHDEBINFO = "-O3 -g -gz -DNDEBUG -march=native -mtune=native"
+# -march=x86-64-v3: the AVX2 + FMA + BMI2 instruction level (no AVX-512),
+# which both CI runner hosts (an Intel Core Ultra 7 255H and an AMD Ryzen 9
+# 5900XT) and every developer machine of that level share, so the compiled
+# objects are identical everywhere and one compiler cache serves them all
+# (#1459). Without a level above the baseline the build targets generic
+# x86-64 — SSE2 only, no FMA — and Eigen's dense kernels run at half the
+# vector width (#733: measured 2.02x on the full r_U evaluation at 261
+# cells; x86-64-v3 measured the same as -march=native there). -mtune=generic
+# keeps the scheduling host-independent too. A build for a machine without
+# AVX2 overrides the flags; a build that wants AVX-512 code is a separate
+# decision (#1459, out of scope).
+CMAKE_CXX_FLAGS_RELWITHDEBINFO = "-O3 -g -gz -DNDEBUG -march=x86-64-v3 -mtune=generic"
 CMAKE_CUDA_FLAGS_RELWITHDEBINFO = "-O3 -g -DNDEBUG"
 # Do NOT add a [tool.scikit-build.cmake.define] override for Python_EXECUTABLE.
 # scikit-build-core already sets it (and CMAKE_PREFIX_PATH) to the build
