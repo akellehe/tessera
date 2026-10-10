@@ -22,7 +22,7 @@ require at least $N_4 > 5\,000$ to become visible.
 
 ## Distribution of (3,2)-simplices at fixed (4,1)-volume
 
-**Script:** `examples/n32_distribution.py` \
+**Script:** `examples/cdt/n32_distribution.py` \
 **Reproduces:** Figure 2, Ambjorn, Jurkiewicz & Loll,
 *Reconstructing the Universe*, Phys. Rev. D **72** (2005)
 \[[arXiv:hep-th/0505154](https://arxiv.org/abs/hep-th/0505154)\]
@@ -41,7 +41,7 @@ $N_4^{(3,2)} / N_4^{(4,1)} \approx 2.3$--$2.5$ is consistent with the
 paper's Table 1.
 
 ```bash
-python examples/n32_distribution.py \
+python examples/cdt/n32_distribution.py \
     --target-volumes 40000 80000 160000 --n-therm 500 \
     --n-meas 500 --meas-interval 50
 ```
@@ -56,7 +56,7 @@ python examples/n32_distribution.py \
 
 ## Spectral dimension
 
-**Script:** `examples/spectral_dimension.py` \
+**Script:** `examples/cdt/spectral_dimension.py` \
 **Reproduces:** Figures 9 and 10, Ambjorn, Jurkiewicz & Loll,
 *Reconstructing the Universe*, Phys. Rev. D **72** (2005)
 \[[arXiv:hep-th/0505154](https://arxiv.org/abs/hep-th/0505154)\]
@@ -81,7 +81,7 @@ increasing volume.  The paper's fit curve (red dashed) is overlaid for
 reference.
 
 ```bash
-python examples/spectral_dimension.py \
+python examples/cdt/spectral_dimension.py \
     --n-simplices 160000 --n-therm 500 --n-configs 50 \
     --n-walks 100 --max-sigma 500 --sweeps-between 50
 ```
@@ -95,7 +95,7 @@ python examples/spectral_dimension.py \
 
 ## Effective action and minisuperspace
 
-**Script:** `examples/effective_action.py` \
+**Script:** `examples/cdt/effective_action.py` \
 **Reproduces:** Figures 11, 12, 13, Ambjorn, Jurkiewicz & Loll,
 *Reconstructing the Universe*, Phys. Rev. D **72** (2005)
 \[[arXiv:hep-th/0505154](https://arxiv.org/abs/hep-th/0505154)\]
@@ -125,7 +125,7 @@ python examples/spectral_dimension.py \
   term drives $N_4$ toward the target.
 
 ```bash
-python examples/effective_action.py \
+python examples/cdt/effective_action.py \
     --n-simplices 160000 --n-therm 500 --n-meas 200 \
     --meas-interval 50
 ```
@@ -139,7 +139,7 @@ python examples/effective_action.py \
 
 ## Volume profiles in phases A, B, C
 
-**Script:** `examples/volume_profile_phases.py` \
+**Script:** `examples/cdt/volume_profile_phases.py` \
 **Reproduces:** Figures 4, 5, 6, Ambjorn, Jurkiewicz & Loll,
 *Reconstructing the Universe*, Phys. Rev. D **72** (2005)
 \[[arXiv:hep-th/0505154](https://arxiv.org/abs/hep-th/0505154)\]
@@ -164,7 +164,7 @@ To reproduce the paper's Fig. 6 shape, run with `--n-simplices 10000`
 or larger (estimated runtime: several hours).
 
 ```bash
-python examples/volume_profile_phases.py \
+python examples/cdt/volume_profile_phases.py \
     --n-simplices 80000 --n-therm 500 --n-meas 100 \
     --meas-interval 50
 ```
@@ -184,7 +184,7 @@ python examples/volume_profile_phases.py \
 
 ## Volume-volume correlator and Hausdorff dimension
 
-**Script:** `examples/volume_scaling.py` \
+**Script:** `examples/cdt/volume_scaling.py` \
 **Reproduces:** Figures 7, 8, 12, Ambjorn, Jurkiewicz & Loll,
 *Reconstructing the Universe*, Phys. Rev. D **72** (2005)
 \[[arXiv:hep-th/0505154](https://arxiv.org/abs/hep-th/0505154)\]
@@ -209,7 +209,7 @@ To reproduce the scaling collapse, run with `--n-simplices 10000` or
 larger and `--n-meas 100+`.
 
 ```bash
-python examples/volume_scaling.py \
+python examples/cdt/volume_scaling.py \
     --n-simplices 80000 --n-therm 500 --n-meas 200 \
     --meas-interval 50
 ```
@@ -223,7 +223,7 @@ python examples/volume_scaling.py \
 
 ## Phase diagram
 
-**Script:** `examples/phase_diagram.py` \
+**Script:** `examples/cdt/phase_diagram.py` \
 **Reproduces:** Figure 3, Ambjorn, Jurkiewicz & Loll,
 *Reconstructing the Universe*, Phys. Rev. D **72** (2005)
 \[[arXiv:hep-th/0505154](https://arxiv.org/abs/hep-th/0505154)\];
@@ -247,7 +247,7 @@ To see the phase boundaries, run with `--n-simplices 20000` or larger
 (estimated runtime: many hours per grid point).
 
 ```bash
-python examples/phase_diagram.py \
+python examples/cdt/phase_diagram.py \
     --n-simplices 10000 --n-sweeps 200 --grid-size 20
 ```
 
