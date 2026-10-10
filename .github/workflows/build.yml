@@ -245,7 +245,7 @@ jobs:
           apt-get update
           DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
             ca-certificates curl git \
-            build-essential cmake ninja-build ccache zstd \
+            build-essential cmake ninja-build ccache zstd mold \
             pybind11-dev libeigen3-dev liblapack-dev libblas-dev
 
       - uses: actions/checkout@v6

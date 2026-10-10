@@ -64,12 +64,13 @@ jobs:
         # quantum subsystem. doxygen produces the XML that breathe renders into
         # the C++ API pages. Without them the build fails, and on main so does
         # the deploy. ccache is the compiler cache the job env points CMake
-        # at, and zstd is what actions/cache compresses the cache archive with.
+        # at, zstd is what actions/cache compresses the cache archive with, and
+        # mold is the linker CMakeLists.txt selects for the module.
         run: |
           apt-get update
           DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
             ca-certificates curl git \
-            build-essential cmake ninja-build ccache zstd \
+            build-essential cmake ninja-build ccache zstd mold \
             doxygen pybind11-dev libeigen3-dev liblapack-dev libblas-dev
 
       - name: Checkout repository

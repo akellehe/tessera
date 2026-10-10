@@ -140,32 +140,48 @@ endif()
 # mold and lld cut link time sharply versus the default BFD ld. Preferred order
 # mold > lld. Auto-enabled when found; set TESSERA_FAST_LINKER=0 to opt out.
 #
-# Release is DELIBERATELY excluded. The Release module links with LTO
-# (-flto=auto, enabled by pybind11) at -O3, and lld 18.1.3 silently emits an
+# The Release and RelWithDebInfo module (the shipped configuration) links with
+# mold when it is installed, and never with lld: lld 18.1.3 silently emitted an
 # empty _tessera.so with no PyInit__tessera for that link, so `import tessera`
-# fails (#212). The identical Release objects link correctly under the default
-# BFD ld (and gold), and lld links Debug fine. CI is build-only and never
-# imports, so it slipped through. mold + Release is untested, so it is treated
-# as equally unsafe. The fast linker therefore only applies to non-Release
-# configs (Debug etc.), where it both links and runs and dev builds want the
-# speed; Release falls back to the system default linker. This is a
-# single-config build (scikit-build sets CMAKE_BUILD_TYPE), so a plain
-# CMAKE_BUILD_TYPE guard is sufficient. RelWithDebInfo is excluded for the
-# same reason: it is the Release build plus DWARF (#682) — same LTO link,
-# same lld/mold hazard.
-if (NOT "$ENV{TESSERA_FAST_LINKER}" STREQUAL "0"
-        AND NOT CMAKE_BUILD_TYPE STREQUAL "Release"
-        AND NOT CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
+# failed (#212), while lld links Debug fine. mold was validated for those links
+# by a full-suite CI run with every golden value reproduced (#1458, run
+# 38070988985 on primary01), and it links the module in about 2 s where BFD ld
+# takes about 38 s on the same runner. TESSERA_FAST_LINKER_RELEASE=0 keeps the
+# default linker for those two configurations. This is a single-config build
+# (scikit-build sets CMAKE_BUILD_TYPE), so a plain CMAKE_BUILD_TYPE guard is
+# sufficient.
+if (CMAKE_BUILD_TYPE STREQUAL "Release" OR CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
+    set(_tessera_release_link TRUE)
+else()
+    set(_tessera_release_link FALSE)
+endif()
+option(TESSERA_FAST_LINKER_RELEASE
+    "Link the Release and RelWithDebInfo module with mold when it is installed (never lld)" ON)
+if (DEFINED ENV{TESSERA_FAST_LINKER_RELEASE} AND NOT "$ENV{TESSERA_FAST_LINKER_RELEASE}" STREQUAL "")
+    set(TESSERA_FAST_LINKER_RELEASE $ENV{TESSERA_FAST_LINKER_RELEASE})
+endif()
+if (NOT "$ENV{TESSERA_FAST_LINKER}" STREQUAL "0")
     find_program(MOLD_PROGRAM mold)
     find_program(LLD_PROGRAM ld.lld)
-    if (MOLD_PROGRAM)
-        add_link_options(-fuse-ld=mold)
-        message(STATUS "Fast linker enabled: mold")
-    elseif (LLD_PROGRAM)
-        add_link_options(-fuse-ld=lld)
-        message(STATUS "Fast linker enabled: lld")
+    if (NOT _tessera_release_link)
+        if (MOLD_PROGRAM)
+            add_link_options(-fuse-ld=mold)
+            message(STATUS "Fast linker enabled: mold")
+        elseif (LLD_PROGRAM)
+            add_link_options(-fuse-ld=lld)
+            message(STATUS "Fast linker enabled: lld")
+        else()
+            message(STATUS "Fast linker not found — install lld or mold for faster links.")
+        endif()
+    elseif (TESSERA_FAST_LINKER_RELEASE)
+        if (MOLD_PROGRAM)
+            add_link_options(-fuse-ld=mold)
+            message(STATUS "Fast linker enabled for the ${CMAKE_BUILD_TYPE} link: mold.")
+        else()
+            message(STATUS "mold not found; the ${CMAKE_BUILD_TYPE} link uses the default linker (lld is never used for it, see #212).")
+        endif()
     else()
-        message(STATUS "Fast linker not found — install lld or mold for faster links.")
+        message(STATUS "Fast linker not used for the ${CMAKE_BUILD_TYPE} link (TESSERA_FAST_LINKER_RELEASE=0).")
     endif()
 endif()
 
