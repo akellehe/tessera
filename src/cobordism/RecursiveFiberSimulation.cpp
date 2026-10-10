@@ -5,8 +5,8 @@
 // modes, the one permitted carried-state energy coupling, the
 // particle-independent refinement rule, the post-hoc analysis overlay, and the
 // versioned checkpoint/replay path. The scalar objective stays in the
-// `MultiCobordism*.cpp` translation units and nothing here is reachable from
-// it.
+// translation units of src/cobordism/multicobordism/ and nothing here is
+// reachable from it.
 
 #include "cobordism/MultiCobordism.h"
 

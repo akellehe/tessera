@@ -6,7 +6,7 @@
 // members by responsibility
 // (https://github.com/akellehe/tessera/issues/1481).
 
-#include "MultiCobordismInternal.h"
+#include "Internal.h"
 
 namespace tessera::cobordism {
 

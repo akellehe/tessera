@@ -1344,7 +1344,7 @@ class AnalysisOverlayTest(unittest.TestCase):
         if not os.path.exists(overlay):     # installed wheel, not a checkout
             self.skipTest("source tree not available")
         engine = sorted(glob.glob(os.path.join(root, "src", "cobordism",
-                                               "MultiCobordism*")))
+                                               "multicobordism", "*")))
         self.assertTrue(engine)
         with open(overlay) as handle:
             overlay_text = handle.read()

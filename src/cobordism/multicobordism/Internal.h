@@ -1,12 +1,12 @@
 // Copyright (c) 2026 Twin Vector Labs LLC.
 // All rights reserved.
 
-// Private to the MultiCobordism implementation in
-// src/cobordism/MultiCobordism*.cpp, which defines the members declared in
-// include/cobordism/MultiCobordism.h by responsibility, one translation unit
-// each. This header carries the includes and using-declarations those units
-// share and the helpers more than one of them uses; a helper used by one
-// unit lives in that unit's anonymous namespace
+// Private to the implementation of MultiCobordism in this directory, whose
+// translation units define the members declared in
+// include/cobordism/MultiCobordism.h by responsibility, one unit each. This
+// header carries the includes and using-declarations those units share and
+// the helpers more than one of them uses; a helper used by one unit lives in
+// that unit's anonymous namespace
 // (https://github.com/akellehe/tessera/issues/1481).
 
 #pragma once

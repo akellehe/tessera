@@ -1282,12 +1282,11 @@ class TestTrackingCheckpointCache(unittest.TestCase):
 _OVERLAY_TRANSLATION_UNIT = "RecursiveFiberSimulation.cpp"
 
 #: Where the emergence objective and its gradient actually live: the class
-#: header and every translation unit that defines its members, with their
-#: private header. Nothing on this list may name a derived observable under
-#: any circumstances.
+#: header and every file of its implementation directory. Nothing on this
+#: list may name a derived observable under any circumstances.
 _OBJECTIVE_SOURCES = ("include/cobordism/MultiCobordism.h",) + tuple(
     sorted(str(p.relative_to(REPO_ROOT))
-           for p in (REPO_ROOT / "src" / "cobordism").glob("MultiCobordism*")))
+           for p in (REPO_ROOT / "src" / "cobordism" / "multicobordism").glob("*")))
 
 
 def _objective_source_offenders(needles):
@@ -1337,7 +1336,7 @@ class TestObjectiveGuardAndBenchmark(unittest.TestCase):
                    "DeterminantWindingRead", "classifyQuark", "classifyBaryon")
         if not (REPO_ROOT / "src" / "cobordism").exists():
             self.skipTest("source tree not available")
-        # The header plus at least the constructor's unit and the private
+        # The header plus at least one implementation unit and the private
         # header: an empty glob would make the check vacuous.
         self.assertGreaterEqual(len(_OBJECTIVE_SOURCES), 3)
         offenders = []
