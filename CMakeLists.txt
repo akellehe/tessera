@@ -497,9 +497,38 @@ else()
 endif()
 # ---- </tessera_core static library> --------------------------------------
 
+# ---- <Debug information of the binding units> ----
+# The pybind11 binding units (TESSERA_PYBIND_SOURCES above and the RL
+# subsystem's src/rl/Bindings.cpp below) are the largest translation units of
+# the build: each instantiates pybind11's dispatcher templates for every
+# function it binds, and with -g the compiler also describes every one of
+# those instantiations in DWARF. That debug information names pybind11's own
+# wrapper frames, which a stack trace or a profile passes straight through on
+# the way to the numerical code; that code lives in tessera_core and
+# tessera_quantum, whose -g (the build-type flags above) this switch leaves
+# alone. Off by default, so the binding units compile with -g0: a target's
+# compile options follow the build-type flags on the command line, so the
+# -g0 here overrides the -g of CMAKE_CXX_FLAGS_RELWITHDEBINFO. Measured on the
+# two largest units (#1454): see that issue for the compile time, the peak
+# compiler memory and the object size with and without it.
+option(TESSERA_BINDINGS_DEBUG_INFO
+    "Compile the pybind11 binding units with debug information (-g) instead of -g0" OFF)
+function(tessera_bindings_debug_info target)
+    if (NOT TESSERA_BINDINGS_DEBUG_INFO)
+        target_compile_options(${target} PRIVATE -g0)
+    endif()
+endfunction()
+if (TESSERA_BINDINGS_DEBUG_INFO)
+    message(STATUS "Binding units: debug information ON (-g).")
+else()
+    message(STATUS "Binding units: debug information OFF (-g0); -DTESSERA_BINDINGS_DEBUG_INFO=ON keeps it.")
+endif()
+# ---- </Debug information of the binding units> ----
+
 # ---- <Build the Python module> ----
 pybind11_add_module(_tessera MODULE ${TESSERA_PYBIND_SOURCES})
 target_link_libraries(_tessera PRIVATE tessera_core)
+tessera_bindings_debug_info(_tessera)
 
 set_target_properties(_tessera PROPERTIES
         CXX_VISIBILITY_PRESET default
@@ -671,6 +700,7 @@ if(Torch_FOUND)
     # that tessera_core drags in transitively.
     target_include_directories(_tessera_rl SYSTEM BEFORE PRIVATE ${TORCH_INCLUDE_DIRS})
     target_link_libraries(_tessera_rl PRIVATE tessera_rl)
+    tessera_bindings_debug_info(_tessera_rl)
     # RPATH to libtorch's lib so `import tessera._tessera_rl` resolves libtorch_cpu.so without
     # importing torch first (the tessera.rl facade also imports torch first — belt + suspenders).
     set_target_properties(_tessera_rl PROPERTIES
