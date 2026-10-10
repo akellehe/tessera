@@ -41,12 +41,12 @@ def run_example(script_name, extra_args=None, timeout=120):
 
 
 class TestVolumeProfilePhases(unittest.TestCase):
-    """Tests for examples/volume_profile_phases.py"""
+    """Tests for examples/cdt/volume_profile_phases.py"""
 
     def test_runs_and_saves_surface_plot(self):
         """Script should exit 0 and produce a surface PNG."""
         rc, out, err, path = run_example(
-            "volume_profile_phases.py",
+            "cdt/volume_profile_phases.py",
             ["--n-simplices", "80", "--n-therm", "3",
              "--n-meas", "2", "--meas-interval", "1"])
         self.assertEqual(rc, 0, f"Script failed:\nstdout:\n{out}\nstderr:\n{err}")
@@ -62,7 +62,7 @@ class TestVolumeProfilePhases(unittest.TestCase):
     def test_runs_all_three_phases(self):
         """stdout should mention all three phases."""
         rc, out, err, path = run_example(
-            "volume_profile_phases.py",
+            "cdt/volume_profile_phases.py",
             ["--n-simplices", "60", "--n-therm", "2",
              "--n-meas", "1", "--meas-interval", "1"])
         self.assertEqual(rc, 0, f"stderr:\n{err}")
@@ -76,7 +76,7 @@ class TestVolumeProfilePhases(unittest.TestCase):
     def test_reports_acceptance_rates(self):
         """Each phase should report acceptance rates."""
         rc, out, err, path = run_example(
-            "volume_profile_phases.py",
+            "cdt/volume_profile_phases.py",
             ["--n-simplices", "60", "--n-therm", "2",
              "--n-meas", "1", "--meas-interval", "1"])
         self.assertEqual(rc, 0, f"stderr:\n{err}")
@@ -88,11 +88,11 @@ class TestVolumeProfilePhases(unittest.TestCase):
 
 
 class TestSpectralDimension(unittest.TestCase):
-    """Tests for examples/spectral_dimension.py"""
+    """Tests for examples/cdt/spectral_dimension.py"""
 
     def test_runs_and_saves_plot(self):
         rc, out, err, path = run_example(
-            "spectral_dimension.py",
+            "cdt/spectral_dimension.py",
             ["--n-simplices", "80", "--n-therm", "3",
              "--n-configs", "1", "--n-walks", "2",
              "--max-sigma", "20", "--sweeps-between", "1"])
@@ -104,7 +104,7 @@ class TestSpectralDimension(unittest.TestCase):
     def test_builds_dual_adjacency(self):
         """Should report the dual-graph return probabilities were collected."""
         rc, out, err, path = run_example(
-            "spectral_dimension.py",
+            "cdt/spectral_dimension.py",
             ["--n-simplices", "80", "--n-therm", "2",
              "--n-configs", "1", "--n-walks", "1",
              "--max-sigma", "10", "--sweeps-between", "1",
@@ -117,11 +117,11 @@ class TestSpectralDimension(unittest.TestCase):
 
 
 class TestVolumeScaling(unittest.TestCase):
-    """Tests for examples/volume_scaling.py"""
+    """Tests for examples/cdt/volume_scaling.py"""
 
     def test_runs_and_saves_plot(self):
         rc, out, err, path = run_example(
-            "volume_scaling.py",
+            "cdt/volume_scaling.py",
             ["--n-simplices", "80", "--n-therm", "3",
              "--n-meas", "3", "--meas-interval", "1"])
         self.assertEqual(rc, 0, f"Script failed:\nstdout:\n{out}\nstderr:\n{err}")
@@ -132,7 +132,7 @@ class TestVolumeScaling(unittest.TestCase):
     def test_runs_multiple_sizes(self):
         """Should report results for multiple system sizes."""
         rc, out, err, path = run_example(
-            "volume_scaling.py",
+            "cdt/volume_scaling.py",
             ["--n-simplices", "60", "--n-therm", "2",
              "--n-meas", "2", "--meas-interval", "1"])
         self.assertEqual(rc, 0, f"stderr:\n{err}")
@@ -146,11 +146,11 @@ class TestVolumeScaling(unittest.TestCase):
 
 
 class TestPhaseDiagram(unittest.TestCase):
-    """Tests for examples/phase_diagram.py"""
+    """Tests for examples/cdt/phase_diagram.py"""
 
     def test_runs_and_saves_plot(self):
         rc, out, err, path = run_example(
-            "phase_diagram.py",
+            "cdt/phase_diagram.py",
             ["--n-simplices", "50", "--n-sweeps", "3",
              "--grid-size", "2"])
         self.assertEqual(rc, 0, f"Script failed:\nstdout:\n{out}\nstderr:\n{err}")
@@ -161,7 +161,7 @@ class TestPhaseDiagram(unittest.TestCase):
     def test_scans_correct_number_of_points(self):
         """A 3x3 grid should scan 9 points."""
         rc, out, err, path = run_example(
-            "phase_diagram.py",
+            "cdt/phase_diagram.py",
             ["--n-simplices", "40", "--n-sweeps", "2",
              "--grid-size", "3"])
         self.assertEqual(rc, 0, f"stderr:\n{err}")
@@ -174,7 +174,7 @@ class TestPhaseDiagram(unittest.TestCase):
     def test_classifies_into_known_phases(self):
         """All classified points should be A, B, or C."""
         rc, out, err, path = run_example(
-            "phase_diagram.py",
+            "cdt/phase_diagram.py",
             ["--n-simplices", "40", "--n-sweeps", "2",
              "--grid-size", "2"])
         self.assertEqual(rc, 0, f"stderr:\n{err}")
@@ -187,11 +187,11 @@ class TestPhaseDiagram(unittest.TestCase):
 
 
 class TestEffectiveAction(unittest.TestCase):
-    """Tests for examples/effective_action.py"""
+    """Tests for examples/cdt/effective_action.py"""
 
     def test_runs_and_saves_plot(self):
         rc, out, err, path = run_example(
-            "effective_action.py",
+            "cdt/effective_action.py",
             ["--n-simplices", "80", "--n-therm", "3",
              "--n-meas", "5", "--meas-interval", "1"])
         self.assertEqual(rc, 0, f"Script failed:\nstdout:\n{out}\nstderr:\n{err}")
@@ -201,7 +201,7 @@ class TestEffectiveAction(unittest.TestCase):
 
     def test_reports_configurations(self):
         rc, out, err, path = run_example(
-            "effective_action.py",
+            "cdt/effective_action.py",
             ["--n-simplices", "60", "--n-therm", "2",
              "--n-meas", "3", "--meas-interval", "1"])
         self.assertEqual(rc, 0, f"stderr:\n{err}")
@@ -212,11 +212,11 @@ class TestEffectiveAction(unittest.TestCase):
 
 
 class TestN32Distribution(unittest.TestCase):
-    """Tests for examples/n32_distribution.py"""
+    """Tests for examples/cdt/n32_distribution.py"""
 
     def test_runs_and_saves_plot(self):
         rc, out, err, path = run_example(
-            "n32_distribution.py",
+            "cdt/n32_distribution.py",
             ["--n-therm", "3", "--n-meas", "5",
              "--meas-interval", "1",
              "--target-volumes", "200", "400"])
@@ -228,7 +228,7 @@ class TestN32Distribution(unittest.TestCase):
     def test_reports_n41_and_n32_stats(self):
         """Should print mean and std for both simplex types."""
         rc, out, err, path = run_example(
-            "n32_distribution.py",
+            "cdt/n32_distribution.py",
             ["--n-therm", "2", "--n-meas", "3",
              "--meas-interval", "1",
              "--target-volumes", "200", "400"])
@@ -241,7 +241,7 @@ class TestN32Distribution(unittest.TestCase):
     def test_runs_multiple_target_volumes(self):
         """Should run at multiple target N41 values."""
         rc, out, err, path = run_example(
-            "n32_distribution.py",
+            "cdt/n32_distribution.py",
             ["--n-therm", "2", "--n-meas", "3",
              "--meas-interval", "1",
              "--target-volumes", "200", "400"])

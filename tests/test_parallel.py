@@ -365,7 +365,7 @@ class TestExamplesWithWorkers(unittest.TestCase):
 
     def test_spectral_dimension_workers(self):
         rc, out, err, path = self._run_example(
-            "spectral_dimension.py",
+            "cdt/spectral_dimension.py",
             ["--n-simplices", "60", "--n-therm", "2",
              "--n-configs", "4", "--n-walks", "2",
              "--max-sigma", "10", "--sweeps-between", "1",
@@ -376,7 +376,7 @@ class TestExamplesWithWorkers(unittest.TestCase):
 
     def test_effective_action_workers(self):
         rc, out, err, path = self._run_example(
-            "effective_action.py",
+            "cdt/effective_action.py",
             ["--n-simplices", "60", "--n-therm", "2",
              "--n-meas", "4", "--meas-interval", "1",
              "--workers", "2"])
@@ -387,7 +387,7 @@ class TestExamplesWithWorkers(unittest.TestCase):
 
     def test_phase_diagram_workers(self):
         rc, out, err, path = self._run_example(
-            "phase_diagram.py",
+            "cdt/phase_diagram.py",
             ["--n-simplices", "40", "--n-sweeps", "2",
              "--grid-size", "2", "--workers", "2"])
         self.assertEqual(rc, 0, f"stderr:\n{err}")
@@ -396,7 +396,7 @@ class TestExamplesWithWorkers(unittest.TestCase):
 
     def test_n32_distribution_workers(self):
         rc, out, err, path = self._run_example(
-            "n32_distribution.py",
+            "cdt/n32_distribution.py",
             ["--n-therm", "2", "--n-meas", "3",
              "--meas-interval", "1",
              "--target-volumes", "100", "200",
@@ -407,7 +407,7 @@ class TestExamplesWithWorkers(unittest.TestCase):
 
     def test_volume_scaling_workers(self):
         rc, out, err, path = self._run_example(
-            "volume_scaling.py",
+            "cdt/volume_scaling.py",
             ["--n-simplices", "60", "--n-therm", "2",
              "--n-meas", "2", "--meas-interval", "1",
              "--workers", "2"])
@@ -417,7 +417,7 @@ class TestExamplesWithWorkers(unittest.TestCase):
 
     def test_volume_profile_phases_workers(self):
         rc, out, err, path = self._run_example(
-            "volume_profile_phases.py",
+            "cdt/volume_profile_phases.py",
             ["--n-simplices", "60", "--n-therm", "2",
              "--n-meas", "1", "--meas-interval", "1",
              "--workers", "2"])
@@ -430,7 +430,7 @@ class TestExamplesWithWorkers(unittest.TestCase):
     def test_workers_1_still_works(self):
         """--workers 1 should give sequential execution."""
         rc, out, err, path = self._run_example(
-            "effective_action.py",
+            "cdt/effective_action.py",
             ["--n-simplices", "60", "--n-therm", "2",
              "--n-meas", "3", "--meas-interval", "1",
              "--workers", "1"])
