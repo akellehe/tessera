@@ -214,8 +214,8 @@ The CDT phase structure is accessible out of the box:
 | **C_dS** (de Sitter) | Extended 4D, matches S^4 | Moderate k_0, nonzero delta |
 
 ```bash
-python examples/phase_diagram.py        # scan the (k0, delta) plane
-python examples/volume_profile_phases.py # visualize blob/crumpled/polymer shapes
+python examples/cdt/phase_diagram.py        # scan the (k0, delta) plane
+python examples/cdt/volume_profile_phases.py # visualize blob/crumpled/polymer shapes
 ```
 
 ### Regge solver
@@ -259,12 +259,12 @@ The examples reproduce figures from the CDT literature, primarily:
 
 | Example | Figures reproduced | What it shows |
 |---------|-------------------|---------------|
-| `volume_profile_phases.py` | Figs 4-6 | Volume profiles in phases A (polymer), B (crumpled), C (de Sitter) |
-| `phase_diagram.py` | Fig 3 | Phase diagram scan over the (k_0, delta) coupling plane |
-| `spectral_dimension.py` | Figs 9-10 | Spectral dimension D_S: ~1.8 at short scales, ~4.0 at long scales |
-| `volume_scaling.py` | Figs 7-8, 12 | Hausdorff dimension D_H = 4 from volume-volume correlator collapse |
-| `effective_action.py` | Figs 11-13 | Effective action, D_2 scaling dimension, minisuperspace comparison |
-| `n32_distribution.py` | Fig 2 | N_32 distribution at fixed N_41 -- strong simplex-type coupling |
+| `cdt/volume_profile_phases.py` | Figs 4-6 | Volume profiles in phases A (polymer), B (crumpled), C (de Sitter) |
+| `cdt/phase_diagram.py` | Fig 3 | Phase diagram scan over the (k_0, delta) coupling plane |
+| `cdt/spectral_dimension.py` | Figs 9-10 | Spectral dimension D_S: ~1.8 at short scales, ~4.0 at long scales |
+| `cdt/volume_scaling.py` | Figs 7-8, 12 | Hausdorff dimension D_H = 4 from volume-volume correlator collapse |
+| `cdt/effective_action.py` | Figs 11-13 | Effective action, D_2 scaling dimension, minisuperspace comparison |
+| `cdt/n32_distribution.py` | Fig 2 | N_32 distribution at fixed N_41 -- strong simplex-type coupling |
 
 Each script includes the paper's coupling constants (k_0=2.2, delta=0.6) and prints reference values for comparison. Run any of them with `--help` to see the full parameter set.
 
