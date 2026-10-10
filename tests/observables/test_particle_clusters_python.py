@@ -1281,10 +1281,12 @@ class TestTrackingCheckpointCache(unittest.TestCase):
 #: are checked separately and have no exemption at all.
 _OVERLAY_TRANSLATION_UNIT = "RecursiveFiberSimulation.cpp"
 
-#: Where the emergence objective and its gradient actually live. Nothing on
-#: this list may name a derived observable under any circumstances.
-_OBJECTIVE_SOURCES = ("include/cobordism/MultiCobordism.h",
-                      "src/cobordism/MultiCobordism.cpp")
+#: Where the emergence objective and its gradient actually live: the class
+#: header and every file of its implementation directory. Nothing on this
+#: list may name a derived observable under any circumstances.
+_OBJECTIVE_SOURCES = ("include/cobordism/MultiCobordism.h",) + tuple(
+    sorted(str(p.relative_to(REPO_ROOT))
+           for p in (REPO_ROOT / "src" / "cobordism" / "multicobordism").glob("*")))
 
 
 def _objective_source_offenders(needles):
@@ -1332,11 +1334,14 @@ class TestObjectiveGuardAndBenchmark(unittest.TestCase):
                    "ExchangeHolonomy", "PersistentModularity",
                    "RecursiveQuotient", "WilsonHolonomyRead",
                    "DeterminantWindingRead", "classifyQuark", "classifyBaryon")
+        if not (REPO_ROOT / "src" / "cobordism").exists():
+            self.skipTest("source tree not available")
+        # The header plus at least one implementation unit and the private
+        # header: an empty glob would make the check vacuous.
+        self.assertGreaterEqual(len(_OBJECTIVE_SOURCES), 3)
         offenders = []
         for relative in _OBJECTIVE_SOURCES:
             path = REPO_ROOT / relative
-            if not path.exists():
-                continue
             text = path.read_text(errors="ignore")
             for needle in needles:
                 if needle in text:

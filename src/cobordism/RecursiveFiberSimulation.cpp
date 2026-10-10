@@ -4,8 +4,9 @@
 // The recursive-analysis integration of `MultiCobordism`: the simulation
 // modes, the one permitted carried-state energy coupling, the
 // particle-independent refinement rule, the post-hoc analysis overlay, and the
-// versioned checkpoint/replay path. The scalar objective stays in
-// `MultiCobordism.cpp` and nothing here is reachable from it.
+// versioned checkpoint/replay path. The scalar objective stays in the
+// translation units of src/cobordism/multicobordism/ and nothing here is
+// reachable from it.
 
 #include "cobordism/MultiCobordism.h"
 
