@@ -68,6 +68,28 @@ The rendering above is the default run: four qubits, 16 interactions of
 sqrt(SWAP) drawn from all pairs, the walk from A, the lattice in three
 coordinates.
 
+## Twenty qubits on the pure engine
+
+```
+python examples/root_lattice_spacetime/root_lattice_spacetime.py --state pure --qubits 20 --timesteps 40 --save twenty.png
+```
+
+`--state pure` runs the network of `tessera.drivers.entanglement_complex` on
+its pure engine: a state vector of 2^n amplitudes instead of the global
+density matrix of 2^(2n) entries, with pure input pairs (the explicit gates
+applied to |00⟩, Haar-random pure states for the rest). SWAP^α is unitary, so
+the global state stays pure, and every one- and two-qubit marginal, entropy
+and mutual information is an exact partial trace of it; the subsystems are
+mixed exactly when they are entangled with the rest, which is the case from
+the first interaction on. The engine reaches 24 qubits; the run below, 20
+qubits and 40 interactions, takes about twenty seconds and a quarter of a
+gigabyte. Beyond eight qubits the lattice panel draws only the first shell,
+the tips of the roots, since the second shell of A_{n−1} has of the order of
+n^4 points; for 20 qubits the drawing is a projection of the 19-dimensional
+lattice.
+
+![Twenty qubits and 40 sqrt(SWAP) interactions on the pure engine](root_lattice_spacetime_20.png)
+
 ## The three panels
 
 Every step of the path carries the same number and the same colour on all

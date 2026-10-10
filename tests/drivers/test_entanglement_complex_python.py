@@ -213,6 +213,94 @@ class TestQubitNetwork(unittest.TestCase):
 
 
 @unittest.skipUnless(HAVE_QUANTUM, "tessera built without the quantum subsystem")
+class TestPureNetwork(unittest.TestCase):
+    """The pure engine against the mixed one on the same pure inputs."""
+
+    def _both(self, n, seed=3):
+        pairs, states, unitaries, single = ec.build_inputs(n, seed, "pure")
+        pure, mixed = ec.PureQubitNetwork(n), ec.QubitNetwork(n)
+        factors = [(pair, states[pair]) for pair in pairs]
+        if single is not None:
+            factors.append(((n - 1,), single))
+        pure.set_product(factors)
+        mixed.set_product([(q, ec._density(v)) for q, v in factors])
+        gates = [(unitaries[pair][1], pair) for pair in pairs]
+        gates += [(ec.swap_power(0.5), (0, n - 1)), (ec.swap_power(0.5), (1, 2)),
+                  (ec.swap_power(0.25), (0, 2))]
+        for U, pair in gates:
+            pure.apply_gate(U, pair)
+            mixed.apply_gate(U, pair)
+        return pure, mixed
+
+    def test_pure_inputs_are_unit_vectors_and_products(self):
+        pairs, states, unitaries, single = ec.build_inputs(5, 7, "pure")
+        for pair in pairs:
+            v = states[pair]
+            self.assertEqual(v.shape, (4,))
+            self.assertAlmostEqual(np.linalg.norm(v), 1.0, places=12)
+            rho = ec._density(v)
+            np.testing.assert_allclose(rho @ rho, rho, atol=1e-12)          # pure
+        np.testing.assert_allclose(states[pairs[0]], [1, 0, 0, 0])
+        self.assertEqual(single.shape, (2,))
+        self.assertAlmostEqual(np.linalg.norm(single), 1.0, places=12)
+        with self.assertRaises(ValueError):
+            ec.build_inputs(4, 0, "thermal")
+
+    def test_the_two_engines_agree(self):
+        for n in (4, 5):
+            pure, mixed = self._both(n)
+            self.assertAlmostEqual(pure.trace(), 1.0, places=12)
+            np.testing.assert_allclose(pure.matrix(), mixed.matrix(), atol=1e-12)
+            for q in range(n):
+                np.testing.assert_allclose(pure.reduced((q,)), mixed.reduced((q,)), atol=1e-12)
+                self.assertAlmostEqual(pure.entropy((q,)), mixed.entropy((q,)), places=10)
+            for pair in itertools.combinations(range(n), 2):
+                np.testing.assert_allclose(pure.reduced(pair), mixed.reduced(pair), atol=1e-12)
+                np.testing.assert_allclose(pure.reduced(pair[::-1]),
+                                           mixed.reduced(pair[::-1]), atol=1e-12)
+                self.assertAlmostEqual(pure.mutual_information(pair),
+                                       mixed.mutual_information(pair), places=10)
+            self.assertAlmostEqual(pure.entropy(range(n)), 0.0, places=9)   # the whole is pure
+            # a region and its complement have the same entropy in a pure state
+            self.assertAlmostEqual(pure.entropy((0, 1)), pure.entropy(range(2, n)), places=9)
+
+    def test_subsystems_of_the_pure_state_are_mixed(self):
+        pure, _ = self._both(4)
+        self.assertGreater(pure.entropy((0,)), 0.1)
+        self.assertGreater(pure.entropy((0, 1)), 0.1)
+
+    def test_simulate_pure_keeps_the_budget_at_sixteen_qubits(self):
+        result = ec.simulate(16, None, "1/2", 1, "global", 5, "all", False, state="pure")
+        self.assertEqual(result["state"], "pure")
+        self.assertEqual(result["S_global"], 0.0)
+        for sl in result["slices"][1:]:
+            self.assertLess(sl["identity_err"], ec.STEP_IDENTITY_TOL)
+            self.assertAlmostEqual(sl["C"], sl["sumS"], places=12)
+        self.assertEqual(result["MI"].shape, (16, 16))
+        self.assertTrue((result["S"] >= -1e-12).all())
+
+    def test_refusals(self):
+        with self.assertRaises(ValueError):
+            ec.PureQubitNetwork(ec.MAX_QUBITS_PURE + 1)
+        with self.assertRaises(ValueError):
+            ec.PureQubitNetwork(4).replace_by_marginals()
+        with self.assertRaises(ValueError):
+            ec.simulate(4, 1, "1/2", 0, "marginals", None, "all", False, state="pure")
+        with self.assertRaises(ValueError):
+            ec.simulate(4, 1, "1/2", 0, "global", None, "all", False, state="thermal")
+
+    def test_the_command_line_runs_the_pure_engine(self):
+        import io
+        from contextlib import redirect_stdout
+        out = io.StringIO()
+        with redirect_stdout(out):
+            rc = ec.main(["--qubits", "12", "--timesteps", "4", "--state", "pure", "--no-show"])
+        self.assertEqual(rc, 0)
+        self.assertIn("pure global state", out.getvalue())
+        self.assertIn("S_global = 0.000000", out.getvalue())
+
+
+@unittest.skipUnless(HAVE_QUANTUM, "tessera built without the quantum subsystem")
 class TestInformationIdentities(unittest.TestCase):
     a, b, c, d = bits(0), bits(1), bits(2), bits(3)
 
