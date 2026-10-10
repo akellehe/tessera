@@ -80,7 +80,7 @@ Varying `k0` and `delta` produces three qualitatively different geometries:
 Scan the coupling-constant plane to see all three phases:
 
 ```bash
-python examples/phase_diagram.py --n-simplices 2000 --n-sweeps 200 --grid-size 10 \
+python examples/cdt/phase_diagram.py --n-simplices 2000 --n-sweeps 200 --grid-size 10 \
     --save phase_diagram.png
 ```
 
@@ -96,7 +96,7 @@ phase boundaries. The white star marks the de Sitter point used in
 Generate volume profiles for each phase -- the spatial volume N3 as a function of time:
 
 ```bash
-python examples/volume_profile_phases.py --n-simplices 5000 --n-therm 100 \
+python examples/cdt/volume_profile_phases.py --n-simplices 5000 --n-therm 100 \
     --save volume_profiles.png
 ```
 
@@ -131,7 +131,7 @@ dimension, which interpolates between $D_S \approx 1.8$ at short distances and
 $D_S \approx 4$ at large scales:
 
 ```bash
-python examples/spectral_dimension.py --n-simplices 10000 --n-configs 10 \
+python examples/cdt/spectral_dimension.py --n-simplices 10000 --n-configs 10 \
     --save spectral_dimension.png
 ```
 
@@ -143,7 +143,7 @@ Measure the volume-volume correlator at multiple system sizes to extract the
 Hausdorff dimension (expected $D_H \approx 4$ in phase C):
 
 ```bash
-python examples/volume_scaling.py --n-simplices 5000 --n-meas 50 \
+python examples/cdt/volume_scaling.py --n-simplices 5000 --n-meas 50 \
     --save volume_scaling.png
 ```
 
@@ -154,7 +154,7 @@ python examples/volume_scaling.py --n-simplices 5000 --n-meas 50 \
 Compare the measured volume fluctuations to the minisuperspace prediction:
 
 ```bash
-python examples/effective_action.py --n-simplices 10000 --n-meas 100 \
+python examples/cdt/effective_action.py --n-simplices 10000 --n-meas 100 \
     --save effective_action.png
 ```
 
