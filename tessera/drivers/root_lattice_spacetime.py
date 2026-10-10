@@ -407,6 +407,11 @@ def draw(rep, title, save=None):
     # (3) the spacetime
     ax = fig.add_subplot(grid[2], projection="3d")
     ax.set_facecolor(bp.SURFACE)
+    ax.view_init(elev=24, azim=-58)
+    ring = np.vstack([w, w[:1]])
+    for z in (0, T):
+        ax.plot(ring[:, 0], ring[:, 1], [z] * len(ring), color=bp.INK_MUTED, linewidth=0.8,
+                linestyle="--", alpha=0.7)
     for q in range(n):
         ax.plot([w[q, 0]] * 2, [w[q, 1]] * 2, [0, T], color=palette[q % len(palette)],
                 linewidth=1.0, alpha=0.8)
