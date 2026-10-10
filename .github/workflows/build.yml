@@ -316,79 +316,27 @@ jobs:
           echo "MemAvailable ${avail_mib} MiB, $(nproc --all) cores -> CMAKE_BUILD_PARALLEL_LEVEL=${jobs}"
           echo "CMAKE_BUILD_PARALLEL_LEVEL=${jobs}" >> "$GITHUB_ENV"
 
-      # Compiler cache, part 1: restore. The key names everything an object
-      # depends on that a source hash cannot see: the image release, the
-      # exact compiler version (a changed compiler must never serve objects
-      # another one compiled: the golden-float dumps are reproducible on one
-      # toolchain only, see the container comment above), and the CPU model
-      # (the build is -march=native, so objects from the other runner host
-      # target a different instruction set), followed by a hash of the C++
-      # sources and build configuration. An exact match means a job with
-      # identical sources already filled the cache; the restore-keys prefix
-      # makes any earlier cache for the same toolchain and CPU a warm start
-      # when the sources moved, which is the common case for a pull request.
-      # Caches are scoped by branch: a pull request can restore its own and
-      # main's, and the push-to-main run after a merge keeps main's current.
-      - name: Fingerprint the toolchain for the compiler cache
-        id: toolchain
-        run: |
-          os_release="$(. /etc/os-release && echo "${ID}${VERSION_ID}")"
-          cxx="${CXX:-g++}"
-          gcc_version="$("$cxx" -dumpfullversion)"
-          cpu_model="$(grep -m1 '^model name' /proc/cpuinfo | cut -d: -f2- \
-            | tr -cs '[:alnum:]' '-' | sed 's/^-//; s/-*$//')"
-          prefix="ccache-${os_release}-gcc${gcc_version}-${cpu_model:-unknown-cpu}-"
-          echo "compiler ${cxx} ${gcc_version} on ${os_release}, cpu ${cpu_model:-unknown}"
-          echo "cache key prefix ${prefix}"
-          echo "ccache-key-prefix=${prefix}" >> "$GITHUB_OUTPUT"
-
+      # Compiler cache, part 1: restore. The key (image release, compiler
+      # version, CPU model, source hash), the restore-keys warm start and the
+      # branch scoping are documented in the action, which pages.yml shares so
+      # the test build and the documentation build fill one archive.
       - name: Restore the compiler cache
-        id: ccache-restore
-        uses: actions/cache/restore@v5
-        with:
-          path: ${{ env.CCACHE_DIR }}
-          key: ${{ steps.toolchain.outputs.ccache-key-prefix }}${{ hashFiles('CMakeLists.txt', 'cmake/**', 'pyproject.toml', 'src/**', 'include/**', 'tests/**/*.cpp', 'tests/**/*.h', 'third_party/**/*.cc', 'third_party/**/*.h') }}
-          restore-keys: ${{ steps.toolchain.outputs.ccache-key-prefix }}
-
-      # Statistics are cumulative and travel with the cache directory, so the
-      # print before the build shows the restored cache's history and size;
-      # zeroing them afterwards makes the print after the build report this
-      # job alone, which is the hit rate worth reading.
-      - name: Compiler cache statistics before the build
-        run: |
-          ccache --show-stats --verbose
-          ccache --zero-stats
+        id: ccache
+        uses: ./.github/actions/compiler-cache-restore
 
       - name: Build and install (with dev extras for the test suite)
         run: python -m pip install -e ".[dev]" -v
 
-      # The same statistics also go on the run's summary page, so the hit
-      # rate can be read without opening the log.
-      - name: Compiler cache statistics after the build
-        if: ${{ !cancelled() }}
-        run: |
-          ccache --show-stats | tee "$RUNNER_TEMP/ccache-stats.txt"
-          {
-            echo "### Compiler cache (ccache) for this build"
-            echo
-            echo '```'
-            cat "$RUNNER_TEMP/ccache-stats.txt"
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      # Compiler cache, part 2: save. Right after the build rather than in a
-      # post-job step, so a red test suite does not throw away the objects a
-      # cold build spends minutes compiling; a failed build still saves the objects
-      # it did produce (ccache stores successful compiles only). Skipped when
-      # the exact key was restored: that cache already holds these objects.
-      # Under a job matrix every shard restores the same key and the first
-      # shard to save wins; the others log that the cache exists and move on.
+      # Compiler cache, part 2: statistics and save, right after the build so
+      # a red test suite keeps the objects a cold build spent minutes on. Under
+      # a job matrix every shard restores the same key and the first shard to
+      # save wins; the others log that the cache exists and move on.
       - name: Save the compiler cache
-        if: ${{ !cancelled() && steps.ccache-restore.outputs.cache-hit != 'true' }}
-        uses: actions/cache/save@v5
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/compiler-cache-save
         with:
-          path: ${{ env.CCACHE_DIR }}
-          key: ${{ steps.ccache-restore.outputs.cache-primary-key }}
+          cache-hit: ${{ steps.ccache.outputs.cache-hit }}
+          cache-primary-key: ${{ steps.ccache.outputs.cache-primary-key }}
 
       - name: Import smoke test
         working-directory: ${{ runner.temp }}
