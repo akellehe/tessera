@@ -353,6 +353,10 @@ list(FILTER TESSERA_CORE_SOURCES EXCLUDE REGEX "/src/bindings\\.cpp$")
 list(FILTER TESSERA_CORE_SOURCES EXCLUDE REGEX "/src/[^/]+/Bindings\\.cpp$")
 list(FILTER TESSERA_CORE_SOURCES EXCLUDE REGEX
     "/src/observables/IsospinDoubletBindings\\.cpp$")
+# The binding units of a subsystem that splits its bindings across several
+# translation units live in src/<subsystem>/bindings/ and belong to _tessera
+# too (#1453).
+list(FILTER TESSERA_CORE_SOURCES EXCLUDE REGEX "/src/[^/]+/bindings/")
 
 # Sources for the pybind11 module. The quantum bindings are always built.
 set(TESSERA_PYBIND_SOURCES
