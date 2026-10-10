@@ -285,6 +285,29 @@ class TestEntanglementComplex(unittest.TestCase):
         os.unlink(path)
 
 
+class TestRootLatticeSpacetime(unittest.TestCase):
+    """Tests for examples/root_lattice_spacetime/root_lattice_spacetime.py"""
+
+    def test_runs_and_saves_the_three_panels(self):
+        rc, out, err, path = run_example(
+            "root_lattice_spacetime/root_lattice_spacetime.py",
+            ["--qubits", "4", "--timesteps", "5"])
+        self.assertEqual(rc, 0, f"Script failed:\nstdout:\n{out}\nstderr:\n{err}")
+        self.assertIn("WORLDLINE", out)
+        self.assertIn("CAUSAL ORDER", out)
+        self.assertTrue(os.path.exists(path), f"No output at {path}")
+        self.assertGreater(os.path.getsize(path), 0)
+        os.unlink(path)
+
+    def test_geodesic_path(self):
+        rc, out, err, path = run_example(
+            "root_lattice_spacetime/root_lattice_spacetime.py",
+            ["--qubits", "4", "--timesteps", "5", "--path", "geodesic", "--end", "C"])
+        self.assertEqual(rc, 0, f"stderr:\n{err}")
+        self.assertIn("GEODESIC from A to C", out)
+        os.unlink(path)
+
+
 class TestBuildBenchmark(unittest.TestCase):
     """Tests for examples/benchmarks/build_benchmark.py"""
 
