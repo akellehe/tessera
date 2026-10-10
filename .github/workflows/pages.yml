@@ -42,6 +42,16 @@ jobs:
       # shared runner boxes.
       AGENT_TOOLSDIRECTORY: /opt/hostedtoolcache
       TESSERA_CUDA: "0"
+      # The compiler cache, shared with build.yml: the same launcher, cache
+      # directory, size cap and compiler check, so the two workflows fill and
+      # restore one archive per toolchain and CPU. build.yml's env block
+      # explains each variable; the restore and save steps below are the
+      # actions under .github/actions that both workflows use.
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_MAXSIZE: 2G
+      CCACHE_COMPILERCHECK: "%compiler% -v; %compiler% -march=native -Q --help=target"
 
     steps:
       - name: Install system dependencies
@@ -53,12 +63,13 @@ jobs:
         # find_package(pybind11) cmake config, plus liblapack/libblas for the
         # quantum subsystem. doxygen produces the XML that breathe renders into
         # the C++ API pages. Without them the build fails, and on main so does
-        # the deploy.
+        # the deploy. ccache is the compiler cache the job env points CMake
+        # at, and zstd is what actions/cache compresses the cache archive with.
         run: |
           apt-get update
           DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
             ca-certificates curl git \
-            build-essential cmake ninja-build \
+            build-essential cmake ninja-build ccache zstd \
             doxygen pybind11-dev libeigen3-dev liblapack-dev libblas-dev
 
       - name: Checkout repository
@@ -66,10 +77,13 @@ jobs:
         with:
           submodules: recursive
 
+      # The version build.yml's matrix compiles against. The binding units
+      # include Python.h, so the compiler cache serves their objects to this
+      # job only when it compiles against the same Python.
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
-          python-version: "3.12"
+          python-version: "3.13"
 
       # The same rule as build.yml's "Size the build for the memory available"
       # step: the heaviest translation units peak near 4.5 GiB in the compiler,
@@ -86,11 +100,26 @@ jobs:
           echo "CMAKE_BUILD_PARALLEL_LEVEL=$level" >> "$GITHUB_ENV"
           echo "MemAvailable ${avail_mib} MiB -> CMAKE_BUILD_PARALLEL_LEVEL=${level}"
 
-      - name: Install dependencies
+      - name: Restore the compiler cache
+        id: ccache
+        uses: ./.github/actions/compiler-cache-restore
+
+      - name: Build and install the extension (with dev extras)
         run: |
-           python -m pip install --upgrade pip
-           pip install ".[dev]"
-           pip install -r docs/requirements.txt
+          python -m pip install --upgrade pip
+          pip install ".[dev]"
+
+      # Right after the build, so a broken Sphinx build still keeps the
+      # objects this job compiled for the next one.
+      - name: Save the compiler cache
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/compiler-cache-save
+        with:
+          cache-hit: ${{ steps.ccache.outputs.cache-hit }}
+          cache-primary-key: ${{ steps.ccache.outputs.cache-primary-key }}
+
+      - name: Install the documentation requirements
+        run: pip install -r docs/requirements.txt
 
       # No pytest here: the suite exceeds the runner's time budget, and build.yml
       # already covers it. This workflow compiles the extension and builds the

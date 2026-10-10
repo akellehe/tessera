@@ -1,0 +1,88 @@
+name: Restore the compiler cache
+description: >-
+  Fingerprints the C++ toolchain, restores the ccache directory the job's
+  CCACHE_DIR names from actions/cache, and prints the restored cache's
+  statistics. Run it after the checkout and before the build; pair it with
+  compiler-cache-save right after the build.
+
+# The job that uses this action sets the ccache environment itself
+# (CMAKE_C_COMPILER_LAUNCHER, CMAKE_CXX_COMPILER_LAUNCHER, CCACHE_DIR,
+# CCACHE_MAXSIZE, CCACHE_COMPILERCHECK; see .github/workflows/build.yml for
+# what each one is for) and installs ccache and zstd in its container. The
+# action only persists the directory the job points ccache at, so both
+# workflows that compile the extension share one definition of the key and
+# one archive per toolchain and CPU.
+
+outputs:
+  cache-hit:
+    description: "'true' when a cache under the exact key was restored"
+    value: ${{ steps.restore.outputs.cache-hit }}
+  cache-primary-key:
+    description: The exact key, which compiler-cache-save stores under.
+    value: ${{ steps.restore.outputs.cache-primary-key }}
+
+runs:
+  using: composite
+  steps:
+    # A job that forgot the environment would otherwise cache nothing in
+    # silence: actions/cache would restore into an empty path and ccache
+    # would write to its default directory, which nothing persists.
+    - name: Check the job's ccache configuration
+      shell: bash
+      run: |
+        if [ -z "${CCACHE_DIR:-}" ]; then
+          echo "::error::CCACHE_DIR is not set in the job environment; see .github/workflows/build.yml"
+          exit 1
+        fi
+        if ! command -v ccache >/dev/null; then
+          echo "::error::ccache is not installed in this container; add it to the job's apt-get install step"
+          exit 1
+        fi
+        echo "ccache $(ccache --version | head -1) will cache under ${CCACHE_DIR}"
+
+    # The cache key records what the compiled objects depend on that a source
+    # hash cannot see: the image release, the exact compiler version (a
+    # changed compiler must never serve objects another one compiled: the
+    # golden-float dumps are reproducible on one toolchain only, see the
+    # container comment in build.yml), and the CPU model (the build is
+    # -march=native, so objects from the other runner host target a different
+    # instruction set), followed by a hash of the C++ sources and build
+    # configuration. An exact match means a job with identical sources
+    # already filled the cache; the restore-keys prefix makes any earlier
+    # cache for the same toolchain and CPU a warm start when the sources
+    # moved, which is the common case for a pull request. Caches are scoped
+    # by branch: a pull request can restore its own and main's, and the
+    # push-to-main run after a merge keeps main's current. Both workflows use
+    # the same prefix, so the documentation build restores the objects the
+    # test build compiled, and the other way round.
+    - name: Fingerprint the toolchain for the compiler cache
+      id: toolchain
+      shell: bash
+      run: |
+        os_release="$(. /etc/os-release && echo "${ID}${VERSION_ID}")"
+        cxx="${CXX:-g++}"
+        gcc_version="$("$cxx" -dumpfullversion)"
+        cpu_model="$(grep -m1 '^model name' /proc/cpuinfo | cut -d: -f2- \
+          | tr -cs '[:alnum:]' '-' | sed 's/^-//; s/-*$//')"
+        prefix="ccache-${os_release}-gcc${gcc_version}-${cpu_model:-unknown-cpu}-"
+        echo "compiler ${cxx} ${gcc_version} on ${os_release}, cpu ${cpu_model:-unknown}"
+        echo "cache key prefix ${prefix}"
+        echo "ccache-key-prefix=${prefix}" >> "$GITHUB_OUTPUT"
+
+    - name: Restore the compiler cache
+      id: restore
+      uses: actions/cache/restore@v5
+      with:
+        path: ${{ env.CCACHE_DIR }}
+        key: ${{ steps.toolchain.outputs.ccache-key-prefix }}${{ hashFiles('CMakeLists.txt', 'cmake/**', 'pyproject.toml', 'src/**', 'include/**', 'tests/**/*.cpp', 'tests/**/*.h', 'third_party/**/*.cc', 'third_party/**/*.h') }}
+        restore-keys: ${{ steps.toolchain.outputs.ccache-key-prefix }}
+
+    # Statistics are cumulative and travel with the cache directory, so the
+    # print before the build shows the restored cache's history and size;
+    # zeroing them afterwards makes the print after the build report this
+    # job alone, which is the hit rate worth reading.
+    - name: Compiler cache statistics before the build
+      shell: bash
+      run: |
+        ccache --show-stats --verbose
+        ccache --zero-stats
