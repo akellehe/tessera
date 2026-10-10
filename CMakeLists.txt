@@ -153,19 +153,46 @@ endif()
 # CMAKE_BUILD_TYPE guard is sufficient. RelWithDebInfo is excluded for the
 # same reason: it is the Release build plus DWARF (#682) — same LTO link,
 # same lld/mold hazard.
-if (NOT "$ENV{TESSERA_FAST_LINKER}" STREQUAL "0"
-        AND NOT CMAKE_BUILD_TYPE STREQUAL "Release"
-        AND NOT CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
+#
+# mold for the Release and RelWithDebInfo link is a separate, opt-in switch
+# (#1458): TESSERA_FAST_LINKER_RELEASE=1 links those configurations with
+# mold when it is installed, and never with lld, whose LTO failure above is
+# the reason for the exclusion. The switch exists so a CI run of the full
+# suite, golden-value tests included, can show that the mold link reproduces
+# the BFD link's floating-point values before mold becomes the default for
+# those links.
+if (CMAKE_BUILD_TYPE STREQUAL "Release" OR CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
+    set(_tessera_release_link TRUE)
+else()
+    set(_tessera_release_link FALSE)
+endif()
+option(TESSERA_FAST_LINKER_RELEASE
+    "Link the Release and RelWithDebInfo module with mold when it is installed (never lld)" OFF)
+if (DEFINED ENV{TESSERA_FAST_LINKER_RELEASE} AND NOT "$ENV{TESSERA_FAST_LINKER_RELEASE}" STREQUAL "")
+    set(TESSERA_FAST_LINKER_RELEASE $ENV{TESSERA_FAST_LINKER_RELEASE})
+endif()
+if (NOT "$ENV{TESSERA_FAST_LINKER}" STREQUAL "0")
     find_program(MOLD_PROGRAM mold)
     find_program(LLD_PROGRAM ld.lld)
-    if (MOLD_PROGRAM)
-        add_link_options(-fuse-ld=mold)
-        message(STATUS "Fast linker enabled: mold")
-    elseif (LLD_PROGRAM)
-        add_link_options(-fuse-ld=lld)
-        message(STATUS "Fast linker enabled: lld")
+    if (NOT _tessera_release_link)
+        if (MOLD_PROGRAM)
+            add_link_options(-fuse-ld=mold)
+            message(STATUS "Fast linker enabled: mold")
+        elseif (LLD_PROGRAM)
+            add_link_options(-fuse-ld=lld)
+            message(STATUS "Fast linker enabled: lld")
+        else()
+            message(STATUS "Fast linker not found — install lld or mold for faster links.")
+        endif()
+    elseif (TESSERA_FAST_LINKER_RELEASE)
+        if (MOLD_PROGRAM)
+            add_link_options(-fuse-ld=mold)
+            message(STATUS "Fast linker enabled for the ${CMAKE_BUILD_TYPE} link: mold (TESSERA_FAST_LINKER_RELEASE).")
+        else()
+            message(STATUS "TESSERA_FAST_LINKER_RELEASE is set but mold is not installed; the ${CMAKE_BUILD_TYPE} link uses the default linker.")
+        endif()
     else()
-        message(STATUS "Fast linker not found — install lld or mold for faster links.")
+        message(STATUS "Fast linker not used for the ${CMAKE_BUILD_TYPE} link; TESSERA_FAST_LINKER_RELEASE=1 selects mold.")
     endif()
 endif()
 
