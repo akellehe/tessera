@@ -52,8 +52,8 @@ def _diffusion_regime_dS(graph, sigma_min: float, sigma_max: float,
                           n: int = 64) -> tuple[list[float], list[float]]:
     sigmas = [sigma_min * (sigma_max / sigma_min) ** (k / (n - 1))
               for k in range(n)]
-    P = graph.returnProbability(sigmas, 30)
-    dS = graph.spectralDimensionSmoothed(sigmas, P, 7, 2)
+    P = graph.return_probability(sigmas, 30)
+    dS = graph.spectral_dimension_smoothed(sigmas, P, 7, 2)
     return sigmas, dS
 
 
@@ -81,7 +81,7 @@ class TestKnownGraphs(unittest.TestCase):
         is still in the local-lattice transient; above σ ≈ N the
         finite-size saturation pulls D_S below 1."""
         n = 80
-        g = EmergentGraph.fromWeightedEdges(n, _chain_edges(n))
+        g = EmergentGraph.from_weighted_edges(n, _chain_edges(n))
         sigmas, dS = _diffusion_regime_dS(g, 0.5, 200.0, n=64)
         plateau = self._plateau_value(sigmas, dS, 3.0, 30.0)
         self.assertAlmostEqual(plateau, 1.0, delta=0.1,
@@ -94,7 +94,7 @@ class TestKnownGraphs(unittest.TestCase):
         feel the boundary)."""
         w = h = 16
         n = w * h
-        g = EmergentGraph.fromWeightedEdges(n, _square_lattice_edges(w, h))
+        g = EmergentGraph.from_weighted_edges(n, _square_lattice_edges(w, h))
         sigmas, dS = _diffusion_regime_dS(g, 0.1, 1000.0, n=64)
         finite = [d for d in dS if d == d]
         peak = max(finite)
@@ -106,10 +106,10 @@ class TestKnownGraphs(unittest.TestCase):
         ~1/(N+1), the random walk has fully thermalised and the
         return probability is a constant 1/N — so D_S → 0."""
         n = 24
-        g = EmergentGraph.fromWeightedEdges(n, _complete_edges(n))
+        g = EmergentGraph.from_weighted_edges(n, _complete_edges(n))
         # At σ = 10 ≫ 1/N, P should be at saturation = 1/N.
         sigmas = [0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0]
-        P = g.returnProbability(sigmas, 30)
+        P = g.return_probability(sigmas, 30)
         # P at σ = 10 ≈ 1/n; D_S there ≈ 0 since log P is flat.
         self.assertAlmostEqual(P[-1], 1.0 / n, delta=1e-6,
             msg=f"K_{n} P(σ=10) = {P[-1]}; expected 1/n = {1/n:.4f}")

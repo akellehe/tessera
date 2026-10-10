@@ -85,7 +85,7 @@ class MultiCobordismCxxTest(unittest.TestCase):
             host = _closed_s4(n_refine=20, seed=3)
             opt = CXX(host, [[1, w, w * w], [1, w * w, w]], [[1, w, w * w]], degrees=[3],
                       gamma=1.0, seed=seed)
-            sv = [v.getId() for v in host.getVertexList().toVector()][:2]
+            sv = [v.get_id() for v in host.get_vertex_list().to_vector()][:2]
             opt.seed_inputs(sv)
             opt.run_stage1(max_steps=25, n_candidate_moves=8)
             if list(CXX.betti(opt.st))[3] >= 1:
@@ -101,7 +101,7 @@ class MultiCobordismCxxTest(unittest.TestCase):
         host = _closed_s4(n_refine=12, seed=3)
         opt = CXX(host, [[1, w, w * w], [1, w * w, w]], [[1, w, w * w]],
                   degrees=[3], gamma=1.0, seed=3)
-        opt.seed_inputs([v.getId() for v in host.getVertexList().toVector()][:2])
+        opt.seed_inputs([v.get_id() for v in host.get_vertex_list().to_vector()][:2])
 
         # Budget cap: one iteration under a tight tol on the fresh, jittered (non-
         # stationary) geometry takes a single improving step and stops on the iteration
@@ -136,7 +136,7 @@ class MultiCobordismCxxTest(unittest.TestCase):
         # block() is the whole relaxed cobordism (None only if nothing emerged)
         block = p.block()
         if block is not None:
-            self.assertGreater(len(block.getEdgeList().toVector()), 0)
+            self.assertGreater(len(block.get_edge_list().to_vector()), 0)
 
     def test_recombination_two_in_two_out(self):
         # 2->2 recombination in ONE co-optimized node: 2 input pairs, 2 outputs.
@@ -144,7 +144,7 @@ class MultiCobordismCxxTest(unittest.TestCase):
         host = _closed_s4(n_refine=14, seed=3)
         opt = CXX(host, [[1, -1, 0], [1, 0, -1]], [[1, w, w * w], [1, w * w, w]],
                   degrees=[3], gamma=1.0, seed=3)
-        sv = [v.getId() for v in host.getVertexList().toVector()]
+        sv = [v.get_id() for v in host.get_vertex_list().to_vector()]
         opt.seed_inputs(sv[:2])
         opt.seed_outputs(sv[2:4])   # two output blocks, co-optimized
         opt.run_stage1(max_steps=6, n_candidate_moves=4)

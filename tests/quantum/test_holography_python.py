@@ -38,15 +38,15 @@ def _small_holography_config(N: int = 6, m: float = 0.5,
     cfg.tdvp = TDVPConfig()
     cfg.tdvp.N = N
     cfg.tdvp.a = 1.0; cfg.tdvp.g = 1.0; cfg.tdvp.m = m; cfg.tdvp.L0 = 0.0
-    cfg.tdvp.dmrgMaxBondDim = 32; cfg.tdvp.dmrgNSweeps = 8
-    cfg.tdvp.dmrgKrylovDim = 4; cfg.tdvp.dmrgCutoff = 1e-12
+    cfg.tdvp.dmrg_max_bond_dim = 32; cfg.tdvp.dmrg_n_sweeps = 8
+    cfg.tdvp.dmrg_krylov_dim = 4; cfg.tdvp.dmrg_cutoff = 1e-12
     cfg.tdvp.i0 = 1; cfg.tdvp.d = 3
-    cfg.tdvp.dt = 0.2; cfg.tdvp.T = T; cfg.tdvp.snapshotEvery = 1
-    cfg.tdvp.maxBondDim = 40; cfg.tdvp.cutoff = 1e-10; cfg.tdvp.krylovDim = 10
-    cfg.tdvp.quiet = True; cfg.tdvp.conserveQns = True
-    cfg.sigmaMin = 0.1; cfg.sigmaMax = 100.0; cfg.sigmaCount = 24
-    cfg.epsilonI = 1e-8
-    cfg.krylovDim = 30
+    cfg.tdvp.dt = 0.2; cfg.tdvp.T = T; cfg.tdvp.snapshot_every = 1
+    cfg.tdvp.max_bond_dim = 40; cfg.tdvp.cutoff = 1e-10; cfg.tdvp.krylov_dim = 10
+    cfg.tdvp.quiet = True; cfg.tdvp.conserve_qns = True
+    cfg.sigma_min = 0.1; cfg.sigma_max = 100.0; cfg.sigma_count = 24
+    cfg.epsilon_i = 1e-8
+    cfg.krylov_dim = 30
     return cfg
 
 
@@ -61,25 +61,25 @@ class TestHolographyConfig(unittest.TestCase):
 
     def test_sigma_min_must_be_positive(self) -> None:
         cfg = HolographyConfig()
-        cfg.sigmaMin = -0.1
+        cfg.sigma_min = -0.1
         with self.assertRaises(Exception):
             cfg.validate()
 
     def test_sigma_max_must_exceed_min(self) -> None:
         cfg = HolographyConfig()
-        cfg.sigmaMin = 1.0; cfg.sigmaMax = 0.5
+        cfg.sigma_min = 1.0; cfg.sigma_max = 0.5
         with self.assertRaises(Exception):
             cfg.validate()
 
     def test_sigma_count_minimum(self) -> None:
         cfg = HolographyConfig()
-        cfg.sigmaCount = 4
+        cfg.sigma_count = 4
         with self.assertRaises(Exception):
             cfg.validate()
 
     def test_negative_epsilon_rejected(self) -> None:
         cfg = HolographyConfig()
-        cfg.epsilonI = -1e-10
+        cfg.epsilon_i = -1e-10
         with self.assertRaises(Exception):
             cfg.validate()
 
@@ -91,38 +91,38 @@ class TestMutualInformationProfile(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.cfg = _small_holography_config(N=6, m=0.5, T=0.4)
-        cls.cfg.tdvp.recordMutualInformation = True
+        cls.cfg.tdvp.record_mutual_information = True
         cls.quench = SchwingerQuench(cls.cfg.tdvp).evolve()
 
     def test_profile_dimensions(self) -> None:
         profile = MutualInformationProfile(self.quench.snapshots, self.cfg)
-        self.assertEqual(profile.nSites, self.cfg.tdvp.N)
-        self.assertEqual(profile.nSnapshots, len(self.quench.snapshots))
+        self.assertEqual(profile.n_sites, self.cfg.tdvp.N)
+        self.assertEqual(profile.n_snapshots, len(self.quench.snapshots))
         self.assertEqual(
-            profile.nLabels,
+            profile.n_labels,
             self.cfg.tdvp.N * len(self.quench.snapshots))
 
     def test_diagonal_is_zero(self) -> None:
         """I(v, v) = 0 by construction (S(ρ) - S(ρ) = 0)."""
         profile = MutualInformationProfile(self.quench.snapshots, self.cfg)
-        for v in range(profile.nLabels):
-            self.assertAlmostEqual(profile.atFlat(v, v), 0.0, places=12)
+        for v in range(profile.n_labels):
+            self.assertAlmostEqual(profile.at_flat(v, v), 0.0, places=12)
 
     def test_symmetry(self) -> None:
         profile = MutualInformationProfile(self.quench.snapshots, self.cfg)
-        n = profile.nLabels
+        n = profile.n_labels
         for v in range(n):
             for w in range(v + 1, n):
                 self.assertAlmostEqual(
-                    profile.atFlat(v, w), profile.atFlat(w, v), places=12)
+                    profile.at_flat(v, w), profile.at_flat(w, v), places=12)
 
     def test_non_negativity(self) -> None:
         """Mutual information is non-negative on a pure state."""
         profile = MutualInformationProfile(self.quench.snapshots, self.cfg)
-        n = profile.nLabels
+        n = profile.n_labels
         for v in range(n):
             for w in range(n):
-                I = profile.atFlat(v, w)
+                I = profile.at_flat(v, w)
                 # Allow tiny negative numerical noise from finite-precision SVD
                 self.assertGreaterEqual(I, -1e-10,
                     msg=f"I({v},{w}) = {I} is too negative")
@@ -130,19 +130,19 @@ class TestMutualInformationProfile(unittest.TestCase):
     def test_within_snapshot_block_is_dense_cross_block_zero(self) -> None:
         """v1 has spatial MI only — cross-snapshot blocks are exact zero."""
         profile = MutualInformationProfile(self.quench.snapshots, self.cfg)
-        nSites = profile.nSites
-        for v in range(profile.nLabels):
-            for w in range(profile.nLabels):
-                sv = profile.snapshotOf(v)
-                sw = profile.snapshotOf(w)
+        nSites = profile.n_sites
+        for v in range(profile.n_labels):
+            for w in range(profile.n_labels):
+                sv = profile.snapshot_of(v)
+                sw = profile.snapshot_of(w)
                 if sv != sw:
-                    self.assertEqual(profile.atFlat(v, w), 0.0,
+                    self.assertEqual(profile.at_flat(v, w), 0.0,
                         msg="v1: cross-snapshot MI must be exact 0")
 
     def test_weighted_adjacency_coo_format(self) -> None:
         profile = MutualInformationProfile(self.quench.snapshots, self.cfg)
-        rows, cols, weights, n = profile.weightedAdjacency()
-        self.assertEqual(n, profile.nLabels)
+        rows, cols, weights, n = profile.weighted_adjacency()
+        self.assertEqual(n, profile.n_labels)
         self.assertEqual(len(rows), len(cols))
         self.assertEqual(len(rows), len(weights))
         # Symmetric — each edge listed twice.
@@ -151,7 +151,7 @@ class TestMutualInformationProfile(unittest.TestCase):
             self.assertIn((c, r), edge_set, "asymmetric COO output")
         # Weights all > epsilonI
         for w in weights:
-            self.assertGreater(w, self.cfg.epsilonI)
+            self.assertGreater(w, self.cfg.epsilon_i)
 
 
 @unittest.skipUnless(HAVE_QUANTUM, "tessera built without TESSERA_QUANTUM=1")
@@ -161,19 +161,19 @@ class TestEmergentGraph(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.cfg = _small_holography_config(N=6, m=0.5, T=0.4)
-        cls.cfg.tdvp.recordMutualInformation = True
+        cls.cfg.tdvp.record_mutual_information = True
         cls.quench = SchwingerQuench(cls.cfg.tdvp).evolve()
 
     def test_graph_has_vertices(self) -> None:
         profile = MutualInformationProfile(self.quench.snapshots, self.cfg)
         graph = EmergentGraph(profile)
-        self.assertEqual(graph.nVertices, profile.nLabels)
-        self.assertGreater(graph.nEdges, 0)
+        self.assertEqual(graph.n_vertices, profile.n_labels)
+        self.assertGreater(graph.n_edges, 0)
 
     @staticmethod
     def _dense_laplacian(graph):
         import scipy.sparse as sp
-        rows, cols, vals, n = graph.laplacianCOO()
+        rows, cols, vals, n = graph.laplacian_coo()
         return sp.csr_matrix((vals, (rows, cols)), shape=(n, n)).toarray()
 
     def test_laplacian_is_symmetric(self) -> None:
@@ -204,7 +204,7 @@ class TestEmergentGraph(unittest.TestCase):
         profile = MutualInformationProfile(self.quench.snapshots, self.cfg)
         graph = EmergentGraph(profile)
         sigmas = [1e-14, 1e-12, 1e-10]
-        P = graph.returnProbability(sigmas, 30)
+        P = graph.return_probability(sigmas, 30)
         for p, s in zip(P, sigmas):
             # σ · max_degree is the leading deviation; bounded above by
             # σ · (N · max_MI) and we know N is small.
@@ -218,7 +218,7 @@ class TestEmergentGraph(unittest.TestCase):
         profile = MutualInformationProfile(self.quench.snapshots, self.cfg)
         graph = EmergentGraph(profile)
         sigmas = [0.01 * (2 ** k) for k in range(12)]
-        P = graph.returnProbability(sigmas, 30)
+        P = graph.return_probability(sigmas, 30)
         for k in range(len(P) - 1):
             self.assertGreaterEqual(P[k], P[k + 1] - 1e-10,
                 msg=f"P({sigmas[k]}) = {P[k]} < P({sigmas[k+1]}) = {P[k+1]}")
@@ -226,7 +226,7 @@ class TestEmergentGraph(unittest.TestCase):
     def test_to_dot_is_valid_dot(self) -> None:
         profile = MutualInformationProfile(self.quench.snapshots, self.cfg)
         graph = EmergentGraph(profile)
-        dot = graph.toDot()
+        dot = graph.to_dot()
         self.assertIn("graph emergent {", dot)
         self.assertIn("--", dot)  # at least one undirected edge
 
@@ -239,7 +239,7 @@ class TestSpectralDimensionPureMath(unittest.TestCase):
         """If P is constant, log P has slope 0, so D_S = 0."""
         sigmas = [0.1 * (2 ** k) for k in range(10)]
         P = [0.5] * 10
-        dS = EmergentGraph.spectralDimension(sigmas, P)
+        dS = EmergentGraph.spectral_dimension(sigmas, P)
         for d in dS:
             self.assertAlmostEqual(d, 0.0, places=10)
 
@@ -247,7 +247,7 @@ class TestSpectralDimensionPureMath(unittest.TestCase):
         """If P(σ) = σ^{-1}, then d log P / d log σ = -1, D_S = 2."""
         sigmas = [0.1 * (10 ** (0.1 * k)) for k in range(40)]
         P = [1.0 / s for s in sigmas]
-        dS = EmergentGraph.spectralDimension(sigmas, P)
+        dS = EmergentGraph.spectral_dimension(sigmas, P)
         # Interior points: D_S = 2 exactly (the finite-difference formula
         # on a perfect power law is exact). Endpoints use one-sided
         # differences and pick up the same slope.
@@ -263,22 +263,22 @@ class TestEmergentSpectralDimensionPipeline(unittest.TestCase):
         cfg = _small_holography_config(N=6, m=0.5, T=0.4)
         result = EmergentSpectralDimension(cfg).compute()
 
-        self.assertEqual(len(result.sigmas), cfg.sigmaCount)
-        self.assertEqual(len(result.P),      cfg.sigmaCount)
-        self.assertEqual(len(result.dS),     cfg.sigmaCount)
-        self.assertEqual(result.graphNVertices,
-                         cfg.tdvp.N * len(result.snapshotTimes))
-        self.assertGreater(result.graphNEdges, 0)
+        self.assertEqual(len(result.sigmas), cfg.sigma_count)
+        self.assertEqual(len(result.P),      cfg.sigma_count)
+        self.assertEqual(len(result.d_s),     cfg.sigma_count)
+        self.assertEqual(result.graph_n_vertices,
+                         cfg.tdvp.N * len(result.snapshot_times))
+        self.assertGreater(result.graph_n_edges, 0)
 
     def test_pipeline_records_tdvp_summary(self) -> None:
         cfg = _small_holography_config(N=6, m=0.5, T=0.4)
         result = EmergentSpectralDimension(cfg).compute()
         # Snapshot times, bondDims, energies all populated.
-        self.assertGreater(len(result.snapshotTimes), 0)
-        self.assertEqual(len(result.snapshotTimes),
-                         len(result.snapshotBondDims))
-        self.assertEqual(len(result.snapshotTimes),
-                         len(result.snapshotEnergies))
+        self.assertGreater(len(result.snapshot_times), 0)
+        self.assertEqual(len(result.snapshot_times),
+                         len(result.snapshot_bond_dims))
+        self.assertEqual(len(result.snapshot_times),
+                         len(result.snapshot_energies))
 
     def test_pipeline_idempotent(self) -> None:
         """Two compute() calls on the same instance give the same numbers."""
@@ -297,16 +297,16 @@ class TestEmergentSpectralDimensionPipeline(unittest.TestCase):
         """The two entry points must agree when fed the same TDVP run."""
         cfg = _small_holography_config(N=6, m=0.5, T=0.4)
         # Force MI recording so we can re-use the quench result.
-        cfg.tdvp.recordMutualInformation = True
+        cfg.tdvp.record_mutual_information = True
         quench = SchwingerQuench(cfg.tdvp).evolve()
         runner = EmergentSpectralDimension(cfg)
         # compute() will re-run TDVP from scratch — deterministic, so
         # should give the same result as computeFromSnapshots.
-        a = runner.computeFromSnapshots(quench)
+        a = runner.compute_from_snapshots(quench)
         b = runner.compute()
         for i, (pa, pb) in enumerate(zip(a.P, b.P)):
             self.assertAlmostEqual(pa, pb, places=8)
-        self.assertAlmostEqual(a.dInfinity, b.dInfinity, places=6)
+        self.assertAlmostEqual(a.d_infinity, b.d_infinity, places=6)
 
 
 @unittest.skipUnless(HAVE_QUANTUM, "tessera built without TESSERA_QUANTUM=1")
@@ -319,10 +319,10 @@ class TestAmbjornLollFit(unittest.TestCase):
         sigmas = [0.01 * (10 ** (0.05 * k)) for k in range(60)]
         dS = [D_inf_true - C_true / (B_true + s) for s in sigmas]
         result = AmbjornLollFit.fit(sigmas, dS)
-        self.assertAlmostEqual(result.dInfinity, D_inf_true, places=6)
+        self.assertAlmostEqual(result.d_infinity, D_inf_true, places=6)
         self.assertAlmostEqual(result.C,         C_true,     places=6)
         self.assertAlmostEqual(result.B,         B_true,     places=6)
-        self.assertLess(result.chiSquared, 1e-12)
+        self.assertLess(result.chi_squared, 1e-12)
 
 
 @unittest.skipUnless(HAVE_QUANTUM, "tessera built without TESSERA_QUANTUM=1")
@@ -341,7 +341,7 @@ class TestMassSensitivity(unittest.TestCase):
         # At least one D_S(σ) value must differ noticeably between the
         # two — a numeric stand-in for "the profile responds to physics".
         max_abs_diff = max(
-            abs(a - b) for a, b in zip(r_heavy.dS, r_light.dS)
+            abs(a - b) for a, b in zip(r_heavy.d_s, r_light.d_s)
             if not (math.isnan(a) or math.isnan(b))
         )
         self.assertGreater(max_abs_diff, 1e-3,

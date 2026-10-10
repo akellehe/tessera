@@ -169,9 +169,9 @@ def measure_geometry(node):
         return {"obstruction": "requires two declared ports; no tensor-factor map is defined for a direct sum"}
     assembled = cob.PencilLayer.assemble([node.spacetime()])
     op = assembled.op
-    pencil = np.asarray(op.pencilAux(1))
+    pencil = np.asarray(op.pencil_aux(1))
     # Minv is the inverse chain metric, i.e. the Whitney cochain mass.
-    mass = np.asarray(op.Minv(1).todense())
+    mass = np.asarray(op.m_inv(1).todense())
     connection = op.connection()
     size = pencil.shape[0]
     identity = np.eye(size, dtype=complex)
@@ -181,7 +181,7 @@ def measure_geometry(node):
         if marking is None:
             return {"obstruction": "both ports require geometric markings"}
         period_rows.append(np.asarray([
-            [connection.transportedPeriod(identity[:, column], walk)
+            [connection.transported_period(identity[:, column], walk)
              for column in range(size)] for walk in marking.cycles]))
         derived = node.derive_input_frame(index)
         if derived.obstruction:
@@ -197,7 +197,7 @@ def measure_geometry(node):
         # normalized by (F^vee)^T M_own F = I. Pair it with whole cochains
         # through the WHOLE Whitney mass, using the shared Gram primitive.
         embedded[indices] = np.asarray(frame.dual_images)
-        gram_rows.append(np.asarray(chainhodge.PencilSchur.gramBlock(mass, embedded, identity)))
+        gram_rows.append(np.asarray(chainhodge.PencilSchur.gram_block(mass, embedded, identity)))
     result = {"schema": 1, "degree": 1, "primitive_data": "simplex topology, scalar lengths and phases",
               "boundary_included": True, "readouts": {}}
     result["readouts"]["periods"] = recover_whole_relation(pencil, *period_rows)

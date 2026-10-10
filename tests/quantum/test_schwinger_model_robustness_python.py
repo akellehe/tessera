@@ -34,8 +34,8 @@ def _basic_config(N: int = 4, m: float = 0.0, g: float = 1.0,
     cfg.g = g
     cfg.m = m
     cfg.L0 = L0
-    cfg.maxBondDim = maxBondDim
-    cfg.nSweeps = nSweeps
+    cfg.max_bond_dim = maxBondDim
+    cfg.n_sweeps = nSweeps
     return cfg
 
 
@@ -50,12 +50,12 @@ class TestQuantumConfigDefaults(unittest.TestCase):
         self.assertEqual(cfg.m, 0.0)
         self.assertEqual(cfg.g, 1.0)
         self.assertEqual(cfg.L0, 0.0)
-        self.assertEqual(cfg.maxBondDim, 100)
-        self.assertEqual(cfg.nSweeps, 12)
+        self.assertEqual(cfg.max_bond_dim, 100)
+        self.assertEqual(cfg.n_sweeps, 12)
         self.assertEqual(cfg.cutoff, 1e-12)
-        self.assertEqual(cfg.krylovDim, 4)
+        self.assertEqual(cfg.krylov_dim, 4)
         self.assertTrue(cfg.quiet)
-        self.assertTrue(cfg.conserveQns)
+        self.assertTrue(cfg.conserve_qns)
 
     def test_repr_contains_key_fields(self) -> None:
         cfg = _basic_config(N=8, m=0.25, g=1.0, L0=0.5)
@@ -112,7 +112,7 @@ class TestEnergyIdentities(unittest.TestCase):
             cfg = _basic_config(N=N, m=m, L0=L0)
             r = SchwingerModel(cfg).solve()
             self.assertAlmostEqual(
-                r.energy, r.operatorEnergy + r.constant, places=12,
+                r.energy, r.operator_energy + r.constant, places=12,
                 msg=f"Identity violated at N={N} m={m} L0={L0}",
             )
 
@@ -132,11 +132,11 @@ class TestVariationalDescent(unittest.TestCase):
     dimension, more sweeps) can only lower (or hold) the energy."""
 
     def test_increasing_bond_dim_lowers_energy(self) -> None:
-        cfg = _basic_config(N=10, m=0.25, maxBondDim=4, nSweeps=8)
+        cfg = _basic_config(N=10, m=0.25, maxBondDim=4, n_sweeps=8)
         energies = []
         for D in (4, 8, 16, 32):
-            cfg.maxBondDim = D
-            energies.append(SchwingerModel(cfg).solve().operatorEnergy)
+            cfg.max_bond_dim = D
+            energies.append(SchwingerModel(cfg).solve().operator_energy)
         for i in range(len(energies) - 1):
             self.assertLessEqual(
                 energies[i + 1], energies[i] + 1e-10,
@@ -145,10 +145,10 @@ class TestVariationalDescent(unittest.TestCase):
 
     def test_increasing_sweep_count_converges(self) -> None:
         cfg = _basic_config(N=8, m=0.0, maxBondDim=32)
-        cfg.nSweeps = 4
-        e4 = SchwingerModel(cfg).solve().operatorEnergy
-        cfg.nSweeps = 16
-        e16 = SchwingerModel(cfg).solve().operatorEnergy
+        cfg.n_sweeps = 4
+        e4 = SchwingerModel(cfg).solve().operator_energy
+        cfg.n_sweeps = 16
+        e16 = SchwingerModel(cfg).solve().operator_energy
         self.assertLessEqual(e16, e4 + 1e-10)
 
 
@@ -157,12 +157,12 @@ class TestReproducibility(unittest.TestCase):
     """Same config in → same result out."""
 
     def test_two_runs_agree(self) -> None:
-        cfg = _basic_config(N=8, m=0.125, L0=0.2, maxBondDim=32, nSweeps=8)
+        cfg = _basic_config(N=8, m=0.125, L0=0.2, maxBondDim=32, n_sweeps=8)
         a = SchwingerModel(cfg).solve()
         b = SchwingerModel(cfg).solve()
         self.assertAlmostEqual(a.energy, b.energy, places=12)
-        self.assertAlmostEqual(a.operatorEnergy, b.operatorEnergy, places=12)
-        self.assertEqual(a.bondDim, b.bondDim)
+        self.assertAlmostEqual(a.operator_energy, b.operator_energy, places=12)
+        self.assertEqual(a.bond_dim, b.bond_dim)
 
 
 @unittest.skipUnless(HAVE_QUANTUM, "tessera built without TESSERA_QUANTUM=1")
@@ -171,9 +171,9 @@ class TestConserveQNsFlag(unittest.TestCase):
 
     def test_qn_vs_no_qn_match(self) -> None:
         cfg_qn = _basic_config(N=8, m=0.125, maxBondDim=32)
-        cfg_qn.conserveQns = True
+        cfg_qn.conserve_qns = True
         cfg_noqn = _basic_config(N=8, m=0.125, maxBondDim=32)
-        cfg_noqn.conserveQns = False
+        cfg_noqn.conserve_qns = False
         e_qn = SchwingerModel(cfg_qn).solve().energy
         e_noqn = SchwingerModel(cfg_noqn).solve().energy
         self.assertAlmostEqual(e_qn, e_noqn, places=6)
@@ -214,7 +214,7 @@ class TestAnalyticLimits(unittest.TestCase):
         """g = 0, m = 0: GS energy is the half-filled OBC chain free-fermion
         sum Σ_{j=N/2+1..N} (1/a) cos(πj/(N+1))."""
         for N in (4, 6, 8, 10):
-            cfg = _basic_config(N=N, m=0.0, g=0.0, maxBondDim=32, nSweeps=10)
+            cfg = _basic_config(N=N, m=0.0, g=0.0, maxBondDim=32, n_sweeps=10)
             e_dmrg = SchwingerModel(cfg).solve().energy
             e_analytic = sum(
                 math.cos(math.pi * j / (N + 1))
@@ -230,7 +230,7 @@ class TestAnalyticLimits(unittest.TestCase):
         """m → ∞ limit: GS approaches |↑↓↑↓…⟩, with energy
         E → -mN/2 + g²aN/4 (for L0 = 0, even N)."""
         N, m, g = 6, 50.0, 1.0
-        cfg = _basic_config(N=N, m=m, g=g, maxBondDim=64, nSweeps=14)
+        cfg = _basic_config(N=N, m=m, g=g, maxBondDim=64, n_sweeps=14)
         e_dmrg = SchwingerModel(cfg).solve().energy
         e_asymptotic = -m * N / 2.0 + g * g * 1.0 * N / 4.0
         allowed = (N - 1) / (m * 1.0) * 2.0

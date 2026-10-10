@@ -25,7 +25,7 @@ def _build(topology):
 
 
 def _cc(topology):
-    return cob.ChainComplex.fromSpacetime(_build(topology))
+    return cob.ChainComplex.from_spacetime(_build(topology))
 
 
 class TestHomology(unittest.TestCase):
@@ -36,9 +36,9 @@ class TestHomology(unittest.TestCase):
             with self.subTest(n=n):
                 cc = _cc(tessera.SimplexBoundarySphere(n))
                 expected = [1] + [0] * (n - 1) + [1]
-                self.assertEqual(cc.bettiNumbers(), expected)
-                self.assertEqual(cc.bettiNumbersGF2(), expected)
-                self.assertEqual(cc.eulerCharacteristic(), 1 + (-1) ** n)
+                self.assertEqual(cc.betti_numbers(), expected)
+                self.assertEqual(cc.betti_numbers_gf2(), expected)
+                self.assertEqual(cc.euler_characteristic(), 1 + (-1) ** n)
                 for k in range(n + 1):
                     self.assertEqual(list(cc.torsion(k)), [])
 
@@ -47,16 +47,16 @@ class TestHomology(unittest.TestCase):
         for n in range(1, 6):
             with self.subTest(n=n):
                 cc = _cc(tessera.SolidSimplex(n))
-                self.assertEqual(cc.bettiNumbers(), [1] + [0] * n)
-                self.assertEqual(cc.eulerCharacteristic(), 1)
+                self.assertEqual(cc.betti_numbers(), [1] + [0] * n)
+                self.assertEqual(cc.euler_characteristic(), 1)
 
     def test_rp2_homology(self):
         # ℝP²: H_0=Z, H_1=Z/2 (torsion!), H_2=0 over Z; (1,1,1) over GF(2).
         cc = _cc(tessera.RealProjectivePlane())
-        self.assertEqual(cc.bettiNumbers(), [1, 0, 0])
-        self.assertEqual(cc.bettiNumbersGF2(), [1, 1, 1])
+        self.assertEqual(cc.betti_numbers(), [1, 0, 0])
+        self.assertEqual(cc.betti_numbers_gf2(), [1, 1, 1])
         self.assertEqual(list(cc.torsion(1)), [2])
-        self.assertEqual(cc.eulerCharacteristic(), 1)
+        self.assertEqual(cc.euler_characteristic(), 1)
 
     def test_boundary_composes_to_zero_all_fixtures(self):
         for topology in (tessera.SimplexBoundarySphere(1),
@@ -64,7 +64,7 @@ class TestHomology(unittest.TestCase):
                          tessera.SolidSimplex(3),
                          tessera.RealProjectivePlane()):
             with self.subTest(topology=type(topology).__name__):
-                self.assertTrue(_cc(topology).boundaryComposesToZero())
+                self.assertTrue(_cc(topology).boundary_composes_to_zero())
 
     def test_euler_matches_betti_alternating_sum(self):
         # χ = Σ (−1)^k b_k  (free ranks; torsion doesn't affect χ).
@@ -74,13 +74,13 @@ class TestHomology(unittest.TestCase):
                          tessera.RealProjectivePlane()):
             with self.subTest(topology=type(topology).__name__):
                 cc = _cc(topology)
-                betti = cc.bettiNumbers()
+                betti = cc.betti_numbers()
                 chi = sum((-1) ** k * b for k, b in enumerate(betti))
-                self.assertEqual(chi, cc.eulerCharacteristic())
+                self.assertEqual(chi, cc.euler_characteristic())
 
     def test_boundary_matrix_shape_and_entries(self):
         cc = _cc(tessera.SimplexBoundarySphere(2))  # S^2: f=(4,6,4)
-        d1 = cc.boundaryMatrix(1)  # 4x6
+        d1 = cc.boundary_matrix(1)  # 4x6
         self.assertEqual(len(d1), 4 * 6)
         self.assertTrue(all(v in (-1, 0, 1) for v in d1))
         # each edge column has exactly one +1 and one -1

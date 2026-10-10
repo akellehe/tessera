@@ -36,19 +36,19 @@ def _host():
     values = {(0, 1): (-2.0 + 0.0j, 0.0),              # timelike
               (0, 2): (1.0 + 0.25j, 0.0),              # analytically continued
               (1, 2): (1.5 + 0.0j, complex(0.7, -0.3))}  # spacelike, twisted
-    for e in st.getEdgeList().toVector():
-        a, b = e.getSource().getId(), e.getTarget().getId()
+    for e in st.get_edge_list().to_vector():
+        a, b = e.get_source().get_id(), e.get_target().get_id()
         sq, ph = values[(min(a, b), max(a, b))]
-        e.setLength(cmath.sqrt(complex(sq)))
-        e.setPhase(ph)
+        e.set_length(cmath.sqrt(complex(sq)))
+        e.set_phase(ph)
     return st, values
 
 
 def _canonical_timelike(st):
     out = {}
-    for e in st.getEdgeList().toVector():
-        a, b = e.getSource().getId(), e.getTarget().getId()
-        out[(min(a, b), max(a, b))] = e.isTimelike()
+    for e in st.get_edge_list().to_vector():
+        a, b = e.get_source().get_id(), e.get_target().get_id()
+        out[(min(a, b), max(a, b))] = e.is_timelike()
     return out
 
 

@@ -117,7 +117,7 @@ class RetainedFrameTest(unittest.TestCase):
     def test_the_adjacent_frame_overlap_is_measured(self):
         """The unchanged geometry repeats its support, so the smallest
         adjacent-frame overlap along the track is exactly one — MEASURED by
-        `PersistentModularity.trackAcrossFrames`, not assumed."""
+        `PersistentModularity.track_across_frames`, not assumed."""
         for quark in self.three["particles"]["quarks"]:
             if quark["frame_lifetime"] and quark["frame_lifetime"] > 1.0:
                 self.assertEqual(quark["frame_min_overlap"], 1.0)

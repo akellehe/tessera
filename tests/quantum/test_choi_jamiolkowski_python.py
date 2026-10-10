@@ -65,9 +65,9 @@ class TestTransitionAmplitudeDuality(unittest.TestCase):
                 self.assertAlmostEqual(abs(amp_ref - trace_ref), 0.0, delta=1e-12)
 
                 # C++ under test ----------------------------------------------
-                amp = ChoiJamiolkowski.transitionAmplitude(
+                amp = ChoiJamiolkowski.transition_amplitude(
                     psiA.tolist(), _flat(U), psiB.tolist(), 2, 2)
-                UT_cpp = ChoiJamiolkowski.transitionOperator(
+                UT_cpp = ChoiJamiolkowski.transition_operator(
                     psiA.tolist(), psiB.tolist(), 2, 2)
                 vecU_cpp = ChoiJamiolkowski.vectorize(_flat(U), 2, 2)
                 vecUT_cpp = ChoiJamiolkowski.vectorize(UT_cpp, 2, 2)
@@ -96,15 +96,15 @@ class TestSchmidtRankAndSingularValues(unittest.TestCase):
         psiA = _unit(_rand_complex(rng, 2))
         psiB = _unit(_rand_complex(rng, 2))
 
-        U_T = ChoiJamiolkowski.transitionOperator(
+        U_T = ChoiJamiolkowski.transition_operator(
             psiA.tolist(), psiB.tolist(), 2, 2)
-        sv = ChoiJamiolkowski.singularValues(U_T, 2, 2)
+        sv = ChoiJamiolkowski.singular_values(U_T, 2, 2)
 
         # |psiA><psiB| with unit psiA, psiB has singular values (1, 0).
         self.assertEqual(len(sv), 2)
         self.assertAlmostEqual(sv[0], 1.0, delta=1e-12)
         self.assertAlmostEqual(sv[1], 0.0, delta=1e-12)
-        self.assertEqual(ChoiJamiolkowski.schmidtRank(U_T, 2, 2), 1)
+        self.assertEqual(ChoiJamiolkowski.schmidt_rank(U_T, 2, 2), 1)
 
         # Cross-check the spectrum against a numpy SVD of |psiA><psiB|.
         sv_ref = np.linalg.svd(np.outer(psiA, psiB.conj()), compute_uv=False)
@@ -119,10 +119,10 @@ class TestSchmidtRankAndSingularValues(unittest.TestCase):
         np.testing.assert_allclose(
             np.array(vec), np.array([1, 0, 0, 1], dtype=complex), atol=1e-12)
 
-        sv = ChoiJamiolkowski.singularValues(I2, 2, 2)
+        sv = ChoiJamiolkowski.singular_values(I2, 2, 2)
         np.testing.assert_allclose(
             sorted(sv, reverse=True), [1.0, 1.0], atol=1e-12)
-        self.assertEqual(ChoiJamiolkowski.schmidtRank(I2, 2, 2), 2)
+        self.assertEqual(ChoiJamiolkowski.schmidt_rank(I2, 2, 2), 2)
 
     def test_pauli_x_is_entangled_rank_two(self) -> None:
         sx = _flat(np.array([[0, 1], [1, 0]]))
@@ -132,10 +132,10 @@ class TestSchmidtRankAndSingularValues(unittest.TestCase):
         np.testing.assert_allclose(
             np.array(vec), np.array([0, 1, 1, 0], dtype=complex), atol=1e-12)
 
-        sv = ChoiJamiolkowski.singularValues(sx, 2, 2)
+        sv = ChoiJamiolkowski.singular_values(sx, 2, 2)
         np.testing.assert_allclose(
             sorted(sv, reverse=True), [1.0, 1.0], atol=1e-12)
-        self.assertEqual(ChoiJamiolkowski.schmidtRank(sx, 2, 2), 2)
+        self.assertEqual(ChoiJamiolkowski.schmidt_rank(sx, 2, 2), 2)
 
 
 @unittest.skipUnless(HAVE_QUANTUM, "tessera built without the quantum subsystem")
@@ -146,7 +146,7 @@ class TestChoiStateAndMatrix(unittest.TestCase):
         # (1/√d) vec(I_d) = (1/√d) Σ_k |k,k⟩ — the maximally entangled |Φ⁺⟩.
         for d in (2, 3, 4):
             with self.subTest(d=d):
-                state = np.array(ChoiJamiolkowski.choiState(_flat(np.eye(d)), d))
+                state = np.array(ChoiJamiolkowski.choi_state(_flat(np.eye(d)), d))
                 np.testing.assert_allclose(
                     state, np.eye(d).flatten() / np.sqrt(d), atol=1e-12)
                 self.assertAlmostEqual(np.linalg.norm(state), 1.0, delta=1e-12)
@@ -156,7 +156,7 @@ class TestChoiStateAndMatrix(unittest.TestCase):
         for d in (2, 3):
             with self.subTest(d=d):
                 U = _rand_complex(rng, d, d)
-                state = np.array(ChoiJamiolkowski.choiState(_flat(U), d))
+                state = np.array(ChoiJamiolkowski.choi_state(_flat(U), d))
                 np.testing.assert_allclose(
                     state, U.flatten() / np.sqrt(d), atol=1e-12)
 
@@ -166,13 +166,13 @@ class TestChoiStateAndMatrix(unittest.TestCase):
         rng = np.random.default_rng(3)
         d, n = 2, 4
         Q, _ = np.linalg.qr(_rand_complex(rng, d, d))   # a unitary
-        J = np.array(ChoiJamiolkowski.choiMatrix(_flat(Q), d)).reshape(n, n)
+        J = np.array(ChoiJamiolkowski.choi_matrix(_flat(Q), d)).reshape(n, n)
         np.testing.assert_allclose(J, J.conj().T, atol=1e-12)        # Hermitian
         self.assertAlmostEqual(np.trace(J).real, 1.0, delta=1e-12)   # Tr = 1
         evals = np.linalg.eigvalsh(J)
         self.assertAlmostEqual(evals[-1], 1.0, delta=1e-12)          # rank 1
         np.testing.assert_allclose(evals[:-1], 0.0, atol=1e-12)
-        state = np.array(ChoiJamiolkowski.choiState(_flat(Q), d))
+        state = np.array(ChoiJamiolkowski.choi_state(_flat(Q), d))
         np.testing.assert_allclose(J, np.outer(state, state.conj()), atol=1e-12)
 
     def test_choi_matrix_marginal_is_maximally_mixed_for_unitary(self) -> None:
@@ -181,7 +181,7 @@ class TestChoiStateAndMatrix(unittest.TestCase):
         rng = np.random.default_rng(5)
         d = 4
         Q, _ = np.linalg.qr(_rand_complex(rng, d, d))
-        J4 = np.array(ChoiJamiolkowski.choiMatrix(_flat(Q), d)).reshape(d, d, d, d)
+        J4 = np.array(ChoiJamiolkowski.choi_matrix(_flat(Q), d)).reshape(d, d, d, d)
         rho_A = np.einsum("ijkj->ik", J4)               # trace over factor B
         np.testing.assert_allclose(rho_A, np.eye(d) / d, atol=1e-12)
 

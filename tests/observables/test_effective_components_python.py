@@ -32,8 +32,8 @@ def bridged_rings(count, bridge=BRIDGE, crossover=512):
     above the bridge level."""
     cells = [[6 * j + i, 6 * j + (i + 1) % 6] for j in range(count) for i in range(6)]
     bridges = [(6 * j, 6 * j + 6) for j in range(count - 1)]
-    K = cob.ChainComplex.fromTopCells(cells + [list(b) for b in bridges])
-    edges = [tuple(e) for e in K.kSimplexVertices(1)]
+    K = cob.ChainComplex.from_top_cells(cells + [list(b) for b in bridges])
+    edges = [tuple(e) for e in K.k_simplex_vertices(1)]
     s = [bridge if e in bridges else 1.0 for e in edges]
     return K, edges, _operator(K, s, crossover)
 
@@ -58,21 +58,21 @@ def kuhn_block(n, hollow=False):
                 p[axis] += 1
                 cell.append(vid(p))
             cells.append(cell)
-    K = cob.ChainComplex.fromTopCells(cells)
+    K = cob.ChainComplex.from_top_cells(cells)
     point = {vid(p): np.array(p, dtype=float) for p in itertools.product(range(side), repeat=3)}
-    s = [float(np.sum((point[a] - point[b]) ** 2)) for a, b in K.kSimplexVertices(1)]
+    s = [float(np.sum((point[a] - point[b]) ** 2)) for a, b in K.k_simplex_vertices(1)]
     return K, _operator(K, s)
 
 
 def tetrahedron_boundary():
-    K = cob.ChainComplex.fromTopCells([[0, 1, 2], [0, 1, 3], [0, 2, 3], [1, 2, 3]])
+    K = cob.ChainComplex.from_top_cells([[0, 1, 2], [0, 1, 3], [0, 2, 3], [1, 2, 3]])
     return K, _operator(K, [1.0] * 6)
 
 
 def boundary_matrix(K, k):
     """The integer boundary map d_k as a dense array (n_{k-1} x n_k)."""
-    rows = {tuple(c): i for i, c in enumerate(K.kSimplexVertices(k - 1))}
-    cols = K.kSimplexVertices(k)
+    rows = {tuple(c): i for i, c in enumerate(K.k_simplex_vertices(k - 1))}
+    cols = K.k_simplex_vertices(k)
     D = np.zeros((len(rows), len(cols)))
     for j, cell in enumerate(cols):
         for i in range(len(cell)):
@@ -100,9 +100,9 @@ class TestTheGapIsRequired:
         _, _, cov = covariant_torus(cubic_grid(4), crossover=8)
         default = obs.EffectiveTopology.read(cov, 60.0).degrees()[0]
         assert default.rank == 7 and default.gap == pytest.approx(2.0, rel=1e-9)
-        assert default.minimumGap == 10.0 and not default.certified
+        assert default.minimum_gap == 10.0 and not default.certified
         relaxed = obs.EffectiveTopology.read(cov, 60.0, minimum_gap=1.5).degrees()[0]
-        assert relaxed.minimumGap == 1.5 and relaxed.separated and relaxed.certified
+        assert relaxed.minimum_gap == 1.5 and relaxed.separated and relaxed.certified
 
     @pytest.mark.parametrize("fixture, betti", [
         (lambda: covariant_torus(cubic_grid(3))[::2], [1, 3, 3, 1]),
@@ -115,7 +115,7 @@ class TestTheGapIsRequired:
         top of every spectrum, a certified count equals the Betti number of
         its degree, and every count that differs from it is refused by its gap."""
         K, cov = fixture()
-        assert list(K.bettiNumbers()) == betti
+        assert list(K.betti_numbers()) == betti
         sweep = obs.EffectivePersistence.sweep(cov, list(np.geomspace(1e-8, 1e4, 49)))
         certified_somewhere = [False] * len(betti)
         for read in sweep.reads():
@@ -143,11 +143,11 @@ class TestPersistence:
         _, _, cov = bridged_rings(2)
         scales = list(np.geomspace(1e-3, 2e-2, 6))
         persistence = obs.EffectivePersistence.sweep(cov, scales)
-        assert persistence.persistentRank(0) == 2 and persistence.persistentRank(1) == 3
+        assert persistence.persistent_rank(0) == 2 and persistence.persistent_rank(1) == 3
         assert persistence.betti() == [2, 3] and persistence.certified()
         [plateau] = persistence.plateaus(0)
         assert (plateau.rank, plateau.first, plateau.last, plateau.length()) == (2, 0, 5, 6)
-        assert plateau.firstEpsilon == scales[0] and plateau.lastEpsilon == scales[-1]
+        assert plateau.first_epsilon == scales[0] and plateau.last_epsilon == scales[-1]
         assert plateau.gap > 100.0
         verdict = obs.EffectiveComponents(2, 1).certify(persistence)
         assert verdict.holds() and verdict.scales == scales and verdict.epsilon == scales[0]
@@ -159,7 +159,7 @@ class TestPersistence:
         persistence = obs.EffectivePersistence.sweep(cov, [bridge / 100, bridge / 10, 10 * bridge, 100 * bridge])
         runs = persistence.plateaus(0)
         assert [(p.rank, p.first, p.last) for p in runs] == [(1, 0, 1), (2, 2, 3)]
-        assert persistence.persistentRank(0) == -1 and not persistence.certified()
+        assert persistence.persistent_rank(0) == -1 and not persistence.certified()
         verdict = obs.EffectiveComponents(2, 1).certify(persistence)
         assert verdict.measured[0] == -1 and not verdict.certified and not verdict.holds()
 
@@ -168,14 +168,14 @@ class TestPersistence:
         first = np.sort(np.abs(np.array(cov.spectrum(0).eigenvalues)))[1]
         persistence = obs.EffectivePersistence.sweep(cov, [0.1 * first, 1.01 * first, 0.2 * first])
         assert [(p.rank, p.first, p.last) for p in persistence.plateaus(0)] == [(1, 0, 0), (1, 2, 2)]
-        assert persistence.persistentRank(0) == -1
+        assert persistence.persistent_rank(0) == -1
 
     def test_persistence_across_a_family_of_operators(self):
         """A sequence of operators read at one scale, here bridges of growing
         length standing for a relaxation: two components throughout."""
         reads = [obs.EffectiveTopology.read(bridged_rings(2, bridge)[2], 0.01) for bridge in (1e4, 1e5, 1e6)]
         persistence = obs.EffectivePersistence(reads)
-        assert persistence.persistentRank(0) == 2 and len(persistence.reads()) == 3
+        assert persistence.persistent_rank(0) == 2 and len(persistence.reads()) == 3
         assert obs.EffectiveComponents(2, 1).certify(persistence).holds()
 
     def test_refusals(self):
@@ -198,7 +198,7 @@ class TestExactCoexactSplit:
 
     def test_two_bridged_rings_have_one_bridge_flow_and_two_holes(self):
         K, edges, cov = bridged_rings(2)
-        assert list(K.bettiNumbers()) == [1, 2]
+        assert list(K.betti_numbers()) == [1, 2]
         split = obs.EffectiveTopology.split(cov, 1, 0.01)
         assert split.band.rank == 3 and split.band.certified
         assert (split.exact, split.coexact) == (1, 2) and split.certified
@@ -208,18 +208,18 @@ class TestExactCoexactSplit:
         kernel = obs.EffectiveTopology.read(cov, 1e-10).degrees()[0].rank
         assert split.exact == zero - kernel == 1
         # The effective holes are the coexact part, and here the incidence holes.
-        assert split.coexact == K.bettiNumbers()[1]
+        assert split.coexact == K.betti_numbers()[1]
         # The bridge flow is largest on the bridge and carries one ring's
         # divergence into the other; the holes are cycles.
-        flow = split.exactFrame[:, 0]
+        flow = split.exact_frame[:, 0]
         assert edges[int(np.argmax(np.abs(flow)))] == (0, 6)
         D = boundary_matrix(K, 1)
         divergence = (D @ flow) / flow[edges.index((0, 6))]
         assert np.all(divergence[:6].real < 0) and np.all(divergence[6:].real > 0)
-        assert np.abs(D @ split.coexactFrame).max() < 1e-12
-        assert split.closure < 1e-10 and split.frameResidual < 1e-10
-        assert split.splitGap > 1e6 and split.rankTolerance < 1e-10
-        assert len(split.boundarySingularValues) == 3
+        assert np.abs(D @ split.coexact_frame).max() < 1e-12
+        assert split.closure < 1e-10 and split.frame_residual < 1e-10
+        assert split.split_gap > 1e6 and split.rank_tolerance < 1e-10
+        assert len(split.boundary_singular_values) == 3
 
     def test_below_the_bridge_level_only_the_holes_remain(self):
         _, _, cov = bridged_rings(2)
@@ -231,7 +231,7 @@ class TestExactCoexactSplit:
         for k in (1, 2):
             split = obs.EffectiveTopology.split(cov, k, 1.0)
             assert (split.exact, split.coexact) == (0, 3) and split.certified
-            assert np.abs(boundary_matrix(K, k) @ split.coexactFrame).max() < 1e-10
+            assert np.abs(boundary_matrix(K, k) @ split.coexact_frame).max() < 1e-10
         # A coarser window takes in the exact first shell of degree one:
         # d_1^# of the six axis waves of degree zero.
         first = np.sort(np.abs(np.array(cov.spectrum(0).eigenvalues)))[1]
@@ -261,12 +261,12 @@ class TestVoids:
 
     def test_a_cavity_is_one_effective_void(self):
         K, cov = kuhn_block(3, hollow=True)
-        assert list(K.bettiNumbers()) == [1, 0, 1, 0]
+        assert list(K.betti_numbers()) == [1, 0, 1, 0]
         voids = obs.EffectiveTopology.voids(cov, 1e-6)
         assert voids.band.degree == 2 and voids.band.rank == 1 and voids.band.gap > 1e8
         assert (voids.exact, voids.coexact) == (0, 1) and voids.certified
         # The enclosing surface is a 2-cycle that bounds nothing in the complex.
-        surface = voids.coexactFrame[:, 0]
+        surface = voids.coexact_frame[:, 0]
         assert np.abs(boundary_matrix(K, 2) @ surface).max() < 1e-10
         D3 = boundary_matrix(K, 3)
         residual = surface - D3 @ np.linalg.lstsq(D3, surface, rcond=None)[0]
@@ -274,7 +274,7 @@ class TestVoids:
 
     def test_the_filled_block_has_no_void(self):
         K, cov = kuhn_block(3)
-        assert list(K.bettiNumbers()) == [1, 0, 0, 0]
+        assert list(K.betti_numbers()) == [1, 0, 0, 0]
         voids = obs.EffectiveTopology.voids(cov, 1e-6)
         assert (voids.band.rank, voids.exact, voids.coexact) == (0, 0, 0) and voids.certified
 
@@ -300,7 +300,7 @@ class TestComponentSupports:
             inside = np.array([v in c.support for v in range(6 * count)])
             assert np.abs(c.committor[inside] - 1.0).max() < 0.05
             assert np.abs(c.committor[~inside]).max() < 0.05
-        assert partition.partitionDefect < 1e-10 and partition.pivotConditioning < 10.0
+        assert partition.partition_defect < 1e-10 and partition.pivot_conditioning < 10.0
 
     def test_two_bridged_rings_are_two_supports(self):
         self._assert_rings(obs.EffectiveTopology.components(bridged_rings(2)[2], 0.01), 2)

@@ -30,7 +30,7 @@ simplices, or as a function of geodesic distance from a reference vertex.
 For point particles, the matter action is the proper-time action:
 S_matter = -M Σ √(-ℓ²) along the worldline.)doc")
       .def(py::init<>())
-      .def("setWorldlineMass", &MatterConfiguration::setWorldlineMass,
+      .def("set_worldline_mass", &MatterConfiguration::setWorldlineMass,
            py::arg("center"), py::arg("mass"), py::arg("spacetime"),
            R"doc(Assign a static point mass along its worldline through all time slices.
 
@@ -42,27 +42,27 @@ Args:
     center: A vertex on the worldline (any time slice).
     mass: The mass in geometrized units (G=c=1).
     spacetime: The spacetime to trace through.)doc")
-      .def("setEnergyDensity", &MatterConfiguration::setEnergyDensity,
+      .def("set_energy_density", &MatterConfiguration::setEnergyDensity,
            py::arg("simplex"), py::arg("rho"),
            R"doc(Assign energy density to a top-simplex.
 
 Args:
     simplex: The simplex to assign density to.
     rho: Energy density in geometrized units.)doc")
-      .def("setRadialProfile", &MatterConfiguration::setRadialProfile,
-           py::arg("center"), py::arg("rhoOfR"),
+      .def("set_radial_profile", &MatterConfiguration::setRadialProfile,
+           py::arg("center"), py::arg("rho_of_r"),
            R"doc(Assign energy density as a function of geodesic distance.
 
 Args:
     center: The reference vertex.
     rhoOfR: A callable taking distance (float) and returning density (float).)doc")
-      .def_static("buildWorldline", &MatterConfiguration::buildWorldline,
+      .def_static("build_worldline", &MatterConfiguration::buildWorldline,
            py::arg("center"), py::arg("spacetime"),
            py::return_value_policy::copy,
            R"doc(Trace a worldline from center through all time slices.
 
 Returns a list of vertices, one per time slice, ordered by time.)doc")
-      .def_static("classifyHinge", &MatterConfiguration::classifyHinge,
+      .def_static("classify_hinge", &MatterConfiguration::classifyHinge,
            py::arg("hinge"),
            R"doc(Classify a hinge as SPATIAL (all vertices at one time) or TIMELIKE.)doc");
 }

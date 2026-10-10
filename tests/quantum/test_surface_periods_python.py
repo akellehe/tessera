@@ -26,7 +26,7 @@ def _flat_torus_data(tau, n):
             i, j = (int(v) for v in edges[int(e)])
             out.append((i, j) if sign > 0 else (j, i))
         return out
-    return torus, faces, lengths, cycle(torus.cycle_A()), cycle(torus.cycle_B())
+    return torus, faces, lengths, cycle(torus.cycle_a()), cycle(torus.cycle_b())
 
 
 @pytest.mark.parametrize("tau", [0.3 + 1.1j, -0.2 + 0.8j, 1j])
@@ -83,7 +83,7 @@ def _tubed_surface(tau_1, tau_2, n, waist, length, layers=2):
         ring = [(1 - s) * la[i] + s * lb[i] for i in range(3)]
         centroid = sum(ring) / 3
         positions.append([np.array([*(centroid + scale * (p - centroid)), l * length]) for p in ring])
-    # prism cells over {0,1,2} as Spacetime.prismCells would produce them, as their boundary triangles
+    # prism cells over {0,1,2} as Spacetime.prism_cells would produce them, as their boundary triangles
     def prism_faces():
         out = set()
         for l in range(layers):

@@ -15,7 +15,7 @@ common base point -- the first vertex of A's walk on B's, the
 every read (``derive_input_frame``): the zero mode of the block's own
 covariant Whitney pencil on its live surface (lengths and phases,
 ``block_surface_subcomplex``), normalized to transported periods (1, 0) and
-(0, 1) over the cycles from the base point (``Connection.transportedPeriod``),
+(0, 1) over the cycles from the base point (``Connection.transported_period``),
 with dual images from the DUAL kernel (the same zero mode under the inverse
 links) so that ``F^vee.T @ M_1^U @ F == I`` on the block's own pencil -- T3's
 contract, paired between the kernel and the dual kernel as the qubit spec
@@ -114,12 +114,12 @@ SEED_OUTPUT_LEAKS = {3: (3.099981154846e-3, 9.344558825278e-3), 4: (4.0064150207
 
 @pytest.fixture
 def whitney_default():
-    previous = HL.defaultMetricSource()
-    HL.setDefaultMetricSource(cob.HodgeMetricSource.WhitneyPencil)
+    previous = HL.default_metric_source()
+    HL.set_default_metric_source(cob.HodgeMetricSource.WhitneyPencil)
     try:
         yield
     finally:
-        HL.setDefaultMetricSource(previous)
+        HL.set_default_metric_source(previous)
 
 
 # --------------------------------------------------------------------------- #
@@ -160,7 +160,7 @@ def host_marking(q, ids):
             out.append((ids[int(i)], ids[int(j)]) if sign > 0 else (ids[int(j)], ids[int(i)]))
         return out
 
-    return [cycle(q.cycle_A()), cycle(q.cycle_B())]
+    return [cycle(q.cycle_a()), cycle(q.cycle_b())]
 
 
 def collar(n, weight=1e6, einstein_hilbert=False, real_squared_lengths_only=False, seed_value=0, layers=1):
@@ -223,11 +223,11 @@ def spin_half_chi(psi, phi):
 
 
 def edge_keys(st):
-    return [(e.getSource().getId(), e.getTarget().getId()) for e in st.getEdgeList().toVector()]
+    return [(e.get_source().get_id(), e.get_target().get_id()) for e in st.get_edge_list().to_vector()]
 
 
 def squared_lengths(st):
-    return np.array([complex(e.getLength()) ** 2 for e in st.getEdgeList().toVector()])
+    return np.array([complex(e.get_length()) ** 2 for e in st.get_edge_list().to_vector()])
 
 
 def holomorphic(packed):
@@ -250,12 +250,12 @@ def region_masks(st, seed):
 
 
 def central_difference(node, index, edge, h=1e-6):
-    s0 = complex(edge.getLength()) ** 2
-    edge.setLength(np.sqrt(s0 + h))
+    s0 = complex(edge.get_length()) ** 2
+    edge.set_length(np.sqrt(s0 + h))
     plus = node.input_state_residual(index)
-    edge.setLength(np.sqrt(s0 - h))
+    edge.set_length(np.sqrt(s0 - h))
     minus = node.input_state_residual(index)
-    edge.setLength(np.sqrt(s0))
+    edge.set_length(np.sqrt(s0))
     return (plus - minus) / (2 * h)
 
 
@@ -268,10 +268,10 @@ def gauged_torus(q, g):
     """The torus read through its own Spacetime with the pure gauge
     phi_e = g(target) - g(source) on every edge's stored orientation."""
     st = q.spacetime()
-    for edge in st.getEdgeList().toVector():
-        u, v = edge.getSource().getId(), edge.getTarget().getId()
-        edge.setPhase(g[v] - g[u])
-    return st, quiet(lambda: obs.SimplicialQubit(st, list(q.cycle_A()), list(q.cycle_B())))
+    for edge in st.get_edge_list().to_vector():
+        u, v = edge.get_source().get_id(), edge.get_target().get_id()
+        edge.set_phase(g[v] - g[u])
+    return st, quiet(lambda: obs.SimplicialQubit(st, list(q.cycle_a()), list(q.cycle_b())))
 
 
 def hexc(z):
@@ -300,7 +300,7 @@ def test_derived_frame_equals_the_period_frame_on_the_seed(n, whitney_default):
         assert np.allclose(np.asarray(marking.coefficients), [1.0, complex(q.tau())])
         # the base point and the walks are the torus's through the id map
         assert marking.base_vertex == ids[index][int(q.base_vertex())]
-        for cycle, walk in zip(marking.cycles, (q.walk_A(), q.walk_B())):
+        for cycle, walk in zip(marking.cycles, (q.walk_a(), q.walk_b())):
             assert [tuple(int(x) for x in step) for step in cycle] == \
                 [(ids[index][int(u)], ids[index][int(v)]) for u, v in walk]
         derived = node.derive_input_frame(index)
@@ -470,9 +470,9 @@ def gauged_collar(n, seed_value=0):
         local = gauge_function(len(q.vertices()), gauge_seed)
         g.update({mapping[i]: local[i] for i in range(len(local))})
         reads.append(gauged_torus(q, local))
-    for edge in st.getEdgeList().toVector():
-        u, v = edge.getSource().getId(), edge.getTarget().getId()
-        edge.setPhase(g[v] - g[u])
+    for edge in st.get_edge_list().to_vector():
+        u, v = edge.get_source().get_id(), edge.get_target().get_id()
+        edge.set_phase(g[v] - g[u])
     node = MC(st, [[1.0 + 0j], [1.0 + 0j]], [], degrees=[1], seed=seed_value, einstein_hilbert=False)
     node.seed_inputs([sorted(m.values()) for m in ids])
     node.use_fiber_residuals(True)
@@ -554,7 +554,7 @@ def test_gradient_euler_identity_support_and_sign(whitney_default):
     ids = seed.vertex_ids
     mark(node, (qa, qb), ids)
     st = node.spacetime()
-    edges = st.getEdgeList().toVector()
+    edges = st.get_edge_list().to_vector()
     on_a, on_b, bulk = region_masks(st, seed)
     gradients = []
     for index in range(2):
@@ -667,15 +667,15 @@ def degree0_fiber(psi):
 
 
 def tops(st):
-    return sorted(tuple(sorted(v.getId() for v in s.getVertices())) for s in st.getTopSimplices())
+    return sorted(tuple(sorted(v.get_id() for v in s.get_vertices())) for s in st.get_top_simplices())
 
 
 def edge_geometry(st):
     out = {}
-    for e in st.getEdgeList().toVector():
-        u, v = e.getSource().getId(), e.getTarget().getId()
-        phase = complex(e.getPhase())
-        out[(min(u, v), max(u, v))] = (complex(e.getLength()), phase if u < v else 0j - phase)
+    for e in st.get_edge_list().to_vector():
+        u, v = e.get_source().get_id(), e.get_target().get_id()
+        phase = complex(e.get_phase())
+        out[(min(u, v), max(u, v))] = (complex(e.get_length()), phase if u < v else 0j - phase)
     return out
 
 
@@ -696,10 +696,10 @@ def pristine_dump():
     psi, phi = (rng.normal(size=4) + 1j * rng.normal(size=4) for _ in range(2))
     node = MC(MC.seed_simplex(3), [[1.0 + 0j, 0j, 0j, 0j], [1.0 + 0j, 0j, 0j, 0j]], [], degrees=[0],
               seed=0, precone=8, einstein_hilbert=False)
-    for e in node.spacetime().getEdgeList().toVector():
+    for e in node.spacetime().get_edge_list().to_vector():
         s = 1.0 + 0.15 * rng.uniform(-1, 1) + 1j * 0.15 * rng.uniform(-1, 1)
-        e.setLength(np.sqrt(complex(s)))
-    tets = [tuple(int(v) for v in t) for t in cob.ChainComplex.fromSpacetime(node.spacetime()).kSimplexVertices(3)]
+        e.set_length(np.sqrt(complex(s)))
+    tets = [tuple(int(v) for v in t) for t in cob.ChainComplex.from_spacetime(node.spacetime()).k_simplex_vertices(3)]
     a, b = next((x, y) for x, y in itertools.combinations(tets, 2) if not set(x) & set(y))
     node.seed_inputs([0, 1])
     node.attach_input_fiber(0, degree0_fiber(psi), [[v] for v in a])
@@ -735,8 +735,8 @@ def pristine_dump():
     }
     qa, qb, seed, unmarked = collar(3, weight=1e6)
     st = unmarked.spacetime()
-    for e in st.getEdgeList().toVector():
-        e.setLength(complex(e.getLength()) * (1.0 + 0.05 * rng.uniform(-1, 1)))
+    for e in st.get_edge_list().to_vector():
+        e.set_length(complex(e.get_length()) * (1.0 + 0.05 * rng.uniform(-1, 1)))
     own = {
         "block_residuals": [float(unmarked.fiber_residual_for_input_block(i)).hex() for i in range(2)],
         "r_u": float(unmarked.r_u(st)).hex(),
@@ -802,6 +802,6 @@ def test_ordinary_nodes_and_supplied_frames_match_the_saved_dump(whitney_default
 
 
 if __name__ == "__main__":
-    HL.setDefaultMetricSource(cob.HodgeMetricSource.WhitneyPencil)
+    HL.set_default_metric_source(cob.HodgeMetricSource.WhitneyPencil)
     pathlib.Path(sys.argv[1]).write_text(json.dumps(pristine_dump(), sort_keys=True))
     print("wrote", sys.argv[1])

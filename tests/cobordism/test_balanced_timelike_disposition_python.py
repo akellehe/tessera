@@ -28,18 +28,18 @@ def _cone(balanced, timelike):
     spacetime = node.st
 
     def keys():
-        return {(min(e.getSource().getId(), e.getTarget().getId()),
-                 max(e.getSource().getId(), e.getTarget().getId()))
-                for e in spacetime.getEdgeList().toVector()}
+        return {(min(e.get_source().get_id(), e.get_target().get_id()),
+                 max(e.get_source().get_id(), e.get_target().get_id()))
+                for e in spacetime.get_edge_list().to_vector()}
 
     before = keys()
     cone = cobordism.SurgicalCone(spacetime)
-    cell = sorted(v.getId() for v in spacetime.getTopSimplices()[0].getVertices())
-    accepted, reason = cone.coneIn(cell[:-1], timelike)
+    cell = sorted(v.get_id() for v in spacetime.get_top_simplices()[0].get_vertices())
+    accepted, reason = cone.cone_in(cell[:-1], timelike)
     assert accepted, reason
-    return [e.getLength() ** 2 for e in spacetime.getEdgeList().toVector()
-            if (min(e.getSource().getId(), e.getTarget().getId()),
-                max(e.getSource().getId(), e.getTarget().getId())) not in before]
+    return [e.get_length() ** 2 for e in spacetime.get_edge_list().to_vector()
+            if (min(e.get_source().get_id(), e.get_target().get_id()),
+                max(e.get_source().get_id(), e.get_target().get_id())) not in before]
 
 
 class BalancedTimelikeDispositionTest(unittest.TestCase):

@@ -37,7 +37,7 @@ DIAGONAL = cob.HodgeMetricSource.DiagonalWeights
 def _hodge(spacetime, weights=None, source=DIAGONAL):
     """The diagonal-weight Hodge operator this module's anchors are taken of."""
     if weights is None:
-        weights = cob.HodgeLaplacian.defaultWeightConvention()
+        weights = cob.HodgeLaplacian.default_weight_convention()
     return cob.HodgeLaplacian(spacetime, weights, source)
 
 
@@ -50,24 +50,24 @@ def _graph(num_vertices, edges, vertex_ids=None):
     st = tessera.Spacetime(metric, tessera.HERMITIAN_WEIGHTED, 1.0, 1.0,
                            tessera.PREFERRED, tessera.Toroid())
     ids = vertex_ids if vertex_ids is not None else list(range(num_vertices))
-    verts = {i: st.createVertex(ids[i]) for i in range(num_vertices)}
+    verts = {i: st.create_vertex(ids[i]) for i in range(num_vertices)}
     for src, tgt, _, _ in edges:
-        st.createSimplex([verts[src], verts[tgt]])
+        st.create_simplex([verts[src], verts[tgt]])
     by_pair = {}
-    for e in st.getEdgeList().toVector():
-        key = (e.getSource().getId(), e.getTarget().getId())
+    for e in st.get_edge_list().to_vector():
+        key = (e.get_source().get_id(), e.get_target().get_id())
         by_pair[key] = e
     for src, tgt, squared_length, phase in edges:
         key = (ids[src], ids[tgt])
         reverse = (ids[tgt], ids[src])
         if key in by_pair:
             edge = by_pair[key]
-            edge.setLength(cmath.sqrt(complex(squared_length)))
-            edge.setPhase(phase)
+            edge.set_length(cmath.sqrt(complex(squared_length)))
+            edge.set_phase(phase)
         else:
             edge = by_pair[reverse]
-            edge.setLength(cmath.sqrt(complex(squared_length)))
-            edge.setPhase(-phase)
+            edge.set_length(cmath.sqrt(complex(squared_length)))
+            edge.set_phase(-phase)
     return st
 
 
@@ -100,7 +100,7 @@ class TestKroneckerSumMatrix(unittest.TestCase):
         rng = np.random.default_rng(79)
         a = rng.normal(size=(3, 3)) + 1j * rng.normal(size=(3, 3))
         b = rng.normal(size=(4, 4)) + 1j * rng.normal(size=(4, 4))
-        got = np.array(cob.SpacetimeComposition.kroneckerSum(
+        got = np.array(cob.SpacetimeComposition.kronecker_sum(
             [complex(z) for z in a.reshape(-1)], 3,
             [complex(z) for z in b.reshape(-1)], 4)).reshape(12, 12)
         expected = np.kron(a, np.eye(4)) + np.kron(np.eye(3), b)
@@ -112,7 +112,7 @@ class TestKroneckerSumMatrix(unittest.TestCase):
         b = rng.normal(size=(4, 4)) + 1j * rng.normal(size=(4, 4))
         spec_a = np.linalg.eigvals(a)
         spec_b = np.linalg.eigvals(b)
-        pairwise = cob.KuennethProduct.pairwiseSpectrum(
+        pairwise = cob.KuennethProduct.pairwise_spectrum(
             [complex(z) for z in spec_a], [complex(z) for z in spec_b])
         dense = sorted(np.linalg.eigvals(np.kron(a, np.eye(4)) +
                                          np.kron(np.eye(3), b)),
@@ -132,7 +132,7 @@ class TestProductCertificate(unittest.TestCase):
         product = _graph(6, _cartesian_product_edges(3, _A_EDGES, 2, _B_EDGES,
                                                      pair_to_index))
         pairing = self._pairing(pair_to_index)
-        cert = cob.KuennethProduct.productCertificate(product, a, b, pairing)
+        cert = cob.KuennethProduct.product_certificate(product, a, b, pairing)
         self.assertEqual(cert.grade, cob.CertificateGrade.AlgebraicallyExact)
         self.assertTrue(cert.holds(), cert.describe())
         self.assertLess(cert.residual, 1e-14)
@@ -142,7 +142,7 @@ class TestProductCertificate(unittest.TestCase):
         spec_a = _hodge(a).eigenvalues(0)
         spec_b = _hodge(b).eigenvalues(0)
         spec_product = _hodge(product).eigenvalues(0)
-        pairwise = cob.KuennethProduct.pairwiseSpectrum(spec_a, spec_b)
+        pairwise = cob.KuennethProduct.pairwise_spectrum(spec_a, spec_b)
         np.testing.assert_allclose(np.sort(np.real(spec_product)),
                                    np.sort(np.real(pairwise)),
                                    rtol=0, atol=1e-10)
@@ -163,7 +163,7 @@ class TestProductCertificate(unittest.TestCase):
                    for u in range(3) for v in range(2)]
         rng = np.random.default_rng(89)
         rng.shuffle(pairing)
-        cert = cob.KuennethProduct.productCertificate(product, a, b, pairing)
+        cert = cob.KuennethProduct.product_certificate(product, a, b, pairing)
         self.assertTrue(cert.holds(), cert.describe())
         self.assertLess(cert.residual, 1e-14)
 
@@ -183,7 +183,7 @@ class TestProductCertificate(unittest.TestCase):
             (tgt, src, w, -phi) if k % 2 else (src, tgt, w, phi)
             for k, (src, tgt, w, phi) in enumerate(edges)]
         product = _graph(6, reversed_edges)
-        cert = cob.KuennethProduct.productCertificate(
+        cert = cob.KuennethProduct.product_certificate(
             product, a, b, self._pairing(pair_to_index))
         self.assertTrue(cert.holds(), cert.describe())
         self.assertLess(cert.residual, 1e-14)
@@ -200,7 +200,7 @@ class TestProductCertificate(unittest.TestCase):
                                                      pair_to_index))
         swapped = {(u, v): 2 * ((u + 1) % 3) + v
                    for u in range(3) for v in range(2)}
-        cert = cob.KuennethProduct.productCertificate(
+        cert = cob.KuennethProduct.product_certificate(
             product, a, b, self._pairing(swapped))
         self.assertFalse(cert.holds())
 
@@ -214,9 +214,9 @@ class TestProductCertificate(unittest.TestCase):
             st = tessera.Spacetime(metric, tessera.CDT, 1.0, 1.0,
                                    tessera.PREFERRED, topology)
             st.build()
-            for e in st.getEdgeList().toVector():
-                e.setLength(1.0 + 0j)
-                e.setPhase(0.0)
+            for e in st.get_edge_list().to_vector():
+                e.set_length(1.0 + 0j)
+                e.set_phase(0.0)
             return st
 
         circle_a = build(tessera.SimplexBoundarySphere(1))
@@ -226,7 +226,7 @@ class TestProductCertificate(unittest.TestCase):
             tessera.SimplexBoundarySphere(1)))
         # SimplicialProduct assigns product vertex (u, v) the id u*|V(B)|+v.
         pairing = [(u * 3 + v, u, v) for u in range(3) for v in range(3)]
-        cert = cob.KuennethProduct.productCertificate(torus, circle_a,
+        cert = cob.KuennethProduct.product_certificate(torus, circle_a,
                                                       circle_b, pairing)
         self.assertFalse(cert.holds())
         self.assertGreater(cert.residual, 1e-3)
@@ -240,12 +240,12 @@ class TestProductCertificate(unittest.TestCase):
                                                      pair_to_index))
         good = self._pairing(pair_to_index)
         with self.assertRaises(ValueError):  # wrong size
-            cob.KuennethProduct.productCertificate(product, a, b, good[:-1])
+            cob.KuennethProduct.product_certificate(product, a, b, good[:-1])
         with self.assertRaises(ValueError):  # duplicate product vertex
-            cob.KuennethProduct.productCertificate(
+            cob.KuennethProduct.product_certificate(
                 product, a, b, good[:-1] + [good[0]])
         with self.assertRaises(ValueError):  # unknown identifier
-            cob.KuennethProduct.productCertificate(
+            cob.KuennethProduct.product_certificate(
                 product, a, b, good[:-1] + [(999, 2, 1)])
 
 

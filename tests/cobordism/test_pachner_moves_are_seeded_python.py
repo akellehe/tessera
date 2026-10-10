@@ -6,8 +6,8 @@ Runs were not reproducible from their seed. Identical fresh processes given the
 same seed diverge -- measured during #579 and since treated as inherent to the
 engine. It was not inherent. `MultiCobordism` hands each Pachner move a payload
 seed and builds a local ``std::mt19937`` from it, but only ``AddMove`` used that
-engine to choose its target. ``RemoveMove`` called ``getRandomVertex()`` and
-``FlipMove``/``IFlipMove``/``ShiftMove`` called ``getRandomTopSimplex()``, and
+engine to choose its target. ``RemoveMove`` called ``get_random_vertex()`` and
+``FlipMove``/``IFlipMove``/``ShiftMove`` called ``get_random_top_simplex()``, and
 those no-argument overloads read ``Spacetime::rng``:
 
     std::mt19937 rng{std::random_device{}()};
@@ -62,9 +62,9 @@ def node(seed, precone=PRECONE):
 
 def shape(spacetime):
     """What the complex IS, as counts a move would change."""
-    return (len(spacetime.getTopSimplices()),
-            len(spacetime.getEdgeList().toVector()),
-            len(spacetime.getVertexList().toVector()))
+    return (len(spacetime.get_top_simplices()),
+            len(spacetime.get_edge_list().to_vector()),
+            len(spacetime.get_vertex_list().to_vector()))
 
 
 def stepped(seed, draws=DRAWS, steps=3):

@@ -32,8 +32,8 @@ def _edge(length):
 
 
 def _cases(edge):
-    return (edge.isSpacelike(), edge.isTimelike(), edge.isNull(),
-            edge.isMixed(), edge.isDegenerate())
+    return (edge.is_spacelike(), edge.is_timelike(), edge.is_null(),
+            edge.is_mixed(), edge.is_degenerate())
 
 
 class ExactlyOneCaseTest(unittest.TestCase):
@@ -55,12 +55,12 @@ class DefiniteDispositionsTest(unittest.TestCase):
 
     def test_a_real_length_is_spacelike(self):
         edge = _edge(1.0)
-        self.assertAlmostEqual(edge.squaredArgument(), 0.0, places=12)
+        self.assertAlmostEqual(edge.squared_argument(), 0.0, places=12)
         self.assertEqual(_cases(edge), (True, False, False, False, False))
 
     def test_an_imaginary_length_is_timelike(self):
         edge = _edge(1j)
-        self.assertAlmostEqual(abs(edge.squaredArgument()), math.pi, places=12)
+        self.assertAlmostEqual(abs(edge.squared_argument()), math.pi, places=12)
         self.assertEqual(_cases(edge), (False, True, False, False, False))
 
     def test_equal_parts_are_lightlike_and_not_degenerate(self):
@@ -71,15 +71,15 @@ class DefiniteDispositionsTest(unittest.TestCase):
         """
         component = math.sqrt(0.5)
         edge = _edge(complex(component, component))
-        self.assertAlmostEqual(edge.squaredArgument(), math.pi / 2.0, places=12)
-        self.assertAlmostEqual(edge.lorentzianMagnitude(), 0.0, places=15)
-        self.assertGreater(abs(edge.getLength()), 0.5)   # genuine extent
+        self.assertAlmostEqual(edge.squared_argument(), math.pi / 2.0, places=12)
+        self.assertAlmostEqual(edge.lorentzian_magnitude(), 0.0, places=15)
+        self.assertGreater(abs(edge.get_length()), 0.5)   # genuine extent
         self.assertEqual(_cases(edge), (False, False, True, False, False))
 
     def test_the_other_light_cone_branch_is_also_lightlike(self):
         component = math.sqrt(0.5)
         edge = _edge(complex(component, -component))
-        self.assertAlmostEqual(edge.squaredArgument(), -math.pi / 2.0, places=12)
+        self.assertAlmostEqual(edge.squared_argument(), -math.pi / 2.0, places=12)
         self.assertEqual(_cases(edge), (False, False, True, False, False))
 
 
@@ -100,8 +100,8 @@ class MixedTest(unittest.TestCase):
         does not have.
         """
         edge = _edge(cmath.exp(1j * 1e-5))   # arg(l^2) = 2e-5, far above 1e-9
-        self.assertTrue(edge.isMixed())
-        self.assertFalse(edge.isSpacelike())
+        self.assertTrue(edge.is_mixed())
+        self.assertFalse(edge.is_spacelike())
 
     def test_a_uniformly_drawn_argument_is_almost_always_mixed(self):
         """Measured, and the reason a random seed has no causal structure."""
@@ -109,7 +109,7 @@ class MixedTest(unittest.TestCase):
         total = 400
         for step in range(total):
             angle = (step + 0.5) * (2.0 * math.pi / total)
-            if _edge(cmath.exp(1j * angle)).isMixed():
+            if _edge(cmath.exp(1j * angle)).is_mixed():
                 mixed += 1
         self.assertGreater(mixed / total, 0.98)
 
@@ -119,11 +119,11 @@ class DegenerateTest(unittest.TestCase):
 
     def test_zero_length_is_degenerate_not_null(self):
         edge = _edge(0.0)
-        self.assertTrue(edge.isDegenerate())
-        self.assertFalse(edge.isNull())
-        self.assertFalse(edge.isSpacelike())
-        self.assertFalse(edge.isTimelike())
-        self.assertFalse(edge.isMixed())
+        self.assertTrue(edge.is_degenerate())
+        self.assertFalse(edge.is_null())
+        self.assertFalse(edge.is_spacelike())
+        self.assertFalse(edge.is_timelike())
+        self.assertFalse(edge.is_mixed())
 
     def test_a_degenerate_edge_is_not_reported_spacelike(self):
         """arg(0) is 0, which would read as spacelike if extent went unchecked.
@@ -131,8 +131,8 @@ class DegenerateTest(unittest.TestCase):
         The degenerate test therefore has to run BEFORE the argument tests,
         and this pins that ordering.
         """
-        self.assertAlmostEqual(_edge(0.0).squaredArgument(), 0.0, places=12)
-        self.assertFalse(_edge(0.0).isSpacelike())
+        self.assertAlmostEqual(_edge(0.0).squared_argument(), 0.0, places=12)
+        self.assertFalse(_edge(0.0).is_spacelike())
 
 
 class ScaleInvarianceTest(unittest.TestCase):
@@ -142,19 +142,19 @@ class ScaleInvarianceTest(unittest.TestCase):
         component = math.sqrt(0.5)
         for scale in (1e-6, 1e-3, 1.0, 1e3, 1e6):
             with self.subTest(scale=scale):
-                self.assertTrue(_edge(scale).isSpacelike())
-                self.assertTrue(_edge(scale * 1j).isTimelike())
+                self.assertTrue(_edge(scale).is_spacelike())
+                self.assertTrue(_edge(scale * 1j).is_timelike())
                 self.assertTrue(
-                    _edge(complex(scale * component, scale * component)).isNull())
+                    _edge(complex(scale * component, scale * component)).is_null())
 
     def test_the_lorentzian_magnitude_scales_but_the_type_does_not(self):
         """Re(l^2) grows as the square, which is why it cannot carry an
         absolute tolerance -- the disposition must not depend on the scale."""
         small = _edge(1e-3)
         large = _edge(1e3)
-        self.assertLess(small.lorentzianMagnitude(), large.lorentzianMagnitude())
-        self.assertTrue(small.isSpacelike())
-        self.assertTrue(large.isSpacelike())
+        self.assertLess(small.lorentzian_magnitude(), large.lorentzian_magnitude())
+        self.assertTrue(small.is_spacelike())
+        self.assertTrue(large.is_spacelike())
 
 
 if __name__ == "__main__":

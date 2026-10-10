@@ -48,16 +48,16 @@ def _from_simplices(num_vertices, simplices):
     metric = tessera.Metric(True, sig)
     st = tessera.Spacetime(metric, tessera.HERMITIAN_WEIGHTED, 1.0, 1.0,
                            tessera.PREFERRED, tessera.Toroid())
-    verts = [st.createVertex(i) for i in range(num_vertices)]
+    verts = [st.create_vertex(i) for i in range(num_vertices)]
     for simplex in simplices:
-        st.createSimplex([verts[i] for i in simplex])
+        st.create_simplex([verts[i] for i in simplex])
     return st
 
 
 def _set_uniform(st, squared_length=1.0, phase=0.0):
-    for e in st.getEdgeList().toVector():
-        e.setLength(cmath.sqrt(complex(squared_length)))
-        e.setPhase(phase)
+    for e in st.get_edge_list().to_vector():
+        e.set_length(cmath.sqrt(complex(squared_length)))
+        e.set_phase(phase)
 
 
 def _triangle():
@@ -79,23 +79,23 @@ def _cvec(v):
 
 
 def _edge_key(e):
-    a, b = e.getSource().getId(), e.getTarget().getId()
+    a, b = e.get_source().get_id(), e.get_target().get_id()
     return (min(a, b), max(a, b))
 
 
 def _np_L(st):
-    ids = sorted(v.getId() for v in st.getVertexList().toVector())
+    ids = sorted(v.get_id() for v in st.get_vertex_list().to_vector())
     idx = {vid: i for i, vid in enumerate(ids)}
     n = len(ids)
     A = np.zeros((n, n), dtype=complex)
     D = np.zeros(n)
-    for e in st.getEdgeList().toVector():
-        s, t = e.getSource().getId(), e.getTarget().getId()
+    for e in st.get_edge_list().to_vector():
+        s, t = e.get_source().get_id(), e.get_target().get_id()
         if s == t:
             continue
         i, j = idx[s], idx[t]
-        w = (e.getLength()**2).real
-        z = w * np.exp(1j * e.getPhase())
+        w = (e.get_length()**2).real
+        z = w * np.exp(1j * e.get_phase())
         A[i, j] += z
         A[j, i] += np.conj(z)
         D[i] += abs(w)
@@ -155,9 +155,9 @@ class HandCheckableTriangleTest(unittest.TestCase):
         w = 1.3
         st = _triangle()
         _set_uniform(st, w, 0.0)
-        for e in st.getEdgeList().toVector():
+        for e in st.get_edge_list().to_vector():
             if _edge_key(e) == (0, 1):
-                e.setPhase(math.pi)
+                e.set_phase(math.pi)
         es = cob.EigenstateSynthesis(st)
 
         evals, evecs = np.linalg.eigh(_np_L(st))
@@ -210,8 +210,8 @@ class HandCheckablePathTest(unittest.TestCase):
         es = cob.EigenstateSynthesis(st)
         for seed in range(5):
             rng = np.random.default_rng(seed)
-            for e in st.getEdgeList().toVector():
-                e.setPhase(float(rng.uniform(-3.5, 3.5)))
+            for e in st.get_edge_list().to_vector():
+                e.set_phase(float(rng.uniform(-3.5, 3.5)))
             L = _np_L(st)
             evals, evecs = np.linalg.eigh(L)
             np.testing.assert_allclose(sorted(evals), [0.0, w, 3 * w], atol=1e-9)
@@ -240,9 +240,9 @@ class RandomComplexResidualTest(unittest.TestCase):
             if a != b:
                 edges.add((min(a, b), max(a, b)))
         st = _from_simplices(n, sorted(edges))
-        for e in st.getEdgeList().toVector():
-            e.setLength(cmath.sqrt(complex(float(rng.uniform(0.4, 3.0)))))
-            e.setPhase(float(rng.uniform(-math.pi, math.pi)))
+        for e in st.get_edge_list().to_vector():
+            e.set_length(cmath.sqrt(complex(float(rng.uniform(0.4, 3.0)))))
+            e.set_phase(float(rng.uniform(-math.pi, math.pi)))
         return st
 
     def test_eigenvectors_are_harmonic_and_random_vector_is_not(self):
@@ -285,22 +285,22 @@ class ParameterOrderTest(unittest.TestCase):
     def test_weight_phase_order_matches_edgelist_and_operator(self):
         st = _from_simplices(4, [(0, 1), (1, 2), (2, 3), (3, 0), (0, 2)])
         es = cob.EigenstateSynthesis(st)
-        m = es.numEdges()
+        m = es.num_edges()
         self.assertEqual(m, 5)
 
         # Distinct weights and phases including a negative and a > 2*pi value
         # (the phase must round-trip verbatim — no wrapping or clamping).
         w = [0.4 + 0.7 * i for i in range(m)]
         th = [-3.7, 0.0, 7.25, -0.4, 5.9]
-        es.setWeights(w)
-        es.setPhases(th)
+        es.set_weights(w)
+        es.set_phases(th)
         self.assertTrue(np.allclose(es.weights(), w))
         self.assertTrue(np.allclose(es.phases(), th))
 
         # The k-th parameter is the k-th EdgeList edge (the stable order).
-        live = st.getEdgeList().toVector()
-        self.assertTrue(np.allclose([(e.getLength()**2).real for e in live], w))
-        self.assertTrue(np.allclose([e.getPhase() for e in live], th))
+        live = st.get_edge_list().to_vector()
+        self.assertTrue(np.allclose([(e.get_length()**2).real for e in live], w))
+        self.assertTrue(np.allclose([e.get_phase() for e in live], th))
 
         # And the operator (apply) is built in that same edge order: it agrees
         # with the numpy L assembled directly from the live edges.
@@ -329,8 +329,8 @@ class GeneralAmplitudeFloorOracleTest(unittest.TestCase):
         bounds = [(self.W_MIN, self.W_MAX), (-2.0 * math.pi, 2.0 * math.pi)]
 
         def objective(x):
-            es.setWeights([x[0]])
-            es.setPhases([x[1]])
+            es.set_weights([x[0]])
+            es.set_phases([x[1]])
             return es.residual(psi)
 
         best = np.inf
@@ -345,11 +345,11 @@ class GeneralAmplitudeFloorOracleTest(unittest.TestCase):
         # (w, theta), then a local refine from the best grid point — fully
         # independent of the C++ code and of the analytic closed form.
         from scipy.optimize import minimize
-        edge = st.getEdgeList().toVector()[0]
+        edge = st.get_edge_list().to_vector()[0]
 
         def f(x):
-            edge.setLength(cmath.sqrt(complex(x[0])))
-            edge.setPhase(x[1])
+            edge.set_length(cmath.sqrt(complex(x[0])))
+            edge.set_phase(x[1])
             return _np_residual(_np_L(st), psi)
 
         best, bx = np.inf, None

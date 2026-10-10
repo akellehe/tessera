@@ -18,8 +18,8 @@ TWO_TETRAHEDRA = [[0, 1, 2, 3], [1, 2, 3, 4]]
 
 def _instance(cells, seed, complex_data):
     rng = np.random.default_rng(seed)
-    K = cob.ChainComplex.fromTopCells(cells)
-    n1 = K.numSimplices(1)
+    K = cob.ChainComplex.from_top_cells(cells)
+    n1 = K.num_simplices(1)
     if complex_data:
         s = [complex(1.0 + 0.1 * rng.normal(), 0.1 * rng.normal()) for _ in range(n1)]
         links = [complex(rng.normal(), rng.normal()) + 0.5 for _ in range(n1)]
@@ -42,14 +42,14 @@ def test_hessian_is_the_central_difference_of_the_first_derivative(cells, comple
     K, base, links = _instance(cells, 3, complex_data)
     cov = ch.CovariantChainHodge(base, ch.Connection(K, links), 7, False)
     delta = 1e-5
-    n1 = K.numSimplices(1)
+    n1 = K.num_simplices(1)
     for a, b in itertools.product(range(n1), repeat=2):
-        hessian = cov.covariantOperatorPhaseHessian(k, a, b)
-        plus = _shifted(K, base, links, b, +delta).covariantOperatorPhaseDerivative(k, a)
-        minus = _shifted(K, base, links, b, -delta).covariantOperatorPhaseDerivative(k, a)
-        scale = max(1.0, np.abs(cov.covariantOperator(k)).max())
+        hessian = cov.covariant_operator_phase_hessian(k, a, b)
+        plus = _shifted(K, base, links, b, +delta).covariant_operator_phase_derivative(k, a)
+        minus = _shifted(K, base, links, b, -delta).covariant_operator_phase_derivative(k, a)
+        scale = max(1.0, np.abs(cov.covariant_operator(k)).max())
         assert np.abs(hessian - (plus - minus) / (2 * delta)).max() < 1e-6 * scale
-        assert np.abs(hessian - cov.covariantOperatorPhaseHessian(k, b, a)).max() < 1e-10 * scale
+        assert np.abs(hessian - cov.covariant_operator_phase_hessian(k, b, a)).max() < 1e-10 * scale
 
 
 @pytest.mark.parametrize("complex_data", [False, True])
@@ -62,16 +62,16 @@ def test_pure_gauge_directions_are_commutators(complex_data, k):
     K, base, links = _instance(TWO_TETRAHEDRA, 11, complex_data)
     cov = ch.CovariantChainHodge(base, ch.Connection(K, links), 7, False)
     rng = np.random.default_rng(5)
-    chi = {int(v[0]): rng.normal() for v in K.kSimplexVertices(0)}
-    direction = [chi[int(y)] - chi[int(x)] for x, y in K.kSimplexVertices(1)]
-    X = np.diag([chi[int(cell[0])] for cell in K.kSimplexVertices(k)])
-    h = cov.covariantOperator(k)
-    n1 = K.numSimplices(1)
+    chi = {int(v[0]): rng.normal() for v in K.k_simplex_vertices(0)}
+    direction = [chi[int(y)] - chi[int(x)] for x, y in K.k_simplex_vertices(1)]
+    X = np.diag([chi[int(cell[0])] for cell in K.k_simplex_vertices(k)])
+    h = cov.covariant_operator(k)
+    n1 = K.num_simplices(1)
 
-    first = sum(direction[a] * cov.covariantOperatorPhaseDerivative(k, a) for a in range(n1))
+    first = sum(direction[a] * cov.covariant_operator_phase_derivative(k, a) for a in range(n1))
     assert np.abs(first - 1j * (h @ X - X @ h)).max() < 1e-10 * max(1.0, np.abs(h).max())
 
-    second = sum(direction[a] * direction[b] * cov.covariantOperatorPhaseHessian(k, a, b)
+    second = sum(direction[a] * direction[b] * cov.covariant_operator_phase_hessian(k, a, b)
                  for a in range(n1) for b in range(n1))
     inner = X @ h - h @ X
     assert np.abs(second + (X @ inner - inner @ X)).max() < 1e-9 * max(1.0, np.abs(h).max())
@@ -81,6 +81,6 @@ def test_refusals():
     K, base, links = _instance(TETRAHEDRON, 1, False)
     cov = ch.CovariantChainHodge(base, ch.Connection(K, links), 7, False)
     with pytest.raises(ValueError):
-        cov.covariantOperatorPhaseHessian(4, 0, 0)
+        cov.covariant_operator_phase_hessian(4, 0, 0)
     with pytest.raises(ValueError):
-        cov.covariantOperatorPhaseHessian(1, 0, 6)
+        cov.covariant_operator_phase_hessian(1, 0, 6)

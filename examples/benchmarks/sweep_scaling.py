@@ -33,16 +33,16 @@ class SweepScaling:
         self.spacetime = tessera.Spacetime(
             tessera.Metric(True, sig), tessera.CDT, 1.0, 1.0,
             tessera.PREFERRED, tessera.Toroid())
-        self.spacetime.setSeed(seed)
+        self.spacetime.set_seed(seed)
         self.spacetime.build(build)
         self.cdt = tessera.CDTSimulation(self.spacetime, self.K0, self.K4,
                                          self.DELTA, 1.0 / target, target)
-        self.cdt.setSeed(seed)
+        self.cdt.set_seed(seed)
         self.cdt.tune()
 
     @property
     def volume(self):
-        return self.spacetime.getN41() + self.spacetime.getN32()
+        return self.spacetime.get_n41() + self.spacetime.get_n32()
 
     def time_at(self, target_volume):
         """Grow to ``target_volume``, then seconds per sweep there."""

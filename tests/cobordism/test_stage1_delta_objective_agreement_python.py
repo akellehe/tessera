@@ -42,7 +42,7 @@ def _joint_node(seed, precone):
 
 
 def _top_cell_count(st):
-    return sum(1 for s in st.getSimplices() if len(s.getVertices()) == 5)
+    return sum(1 for s in st.get_simplices() if len(s.get_vertices()) == 5)
 
 
 class TestStage1DeltaObjectiveAgreement(unittest.TestCase):

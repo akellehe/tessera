@@ -69,10 +69,10 @@ FLOOR = 1e-24
 
 @pytest.fixture
 def whitney_default():
-    previous = HL.defaultMetricSource()
-    HL.setDefaultMetricSource(cob.HodgeMetricSource.WhitneyPencil)
+    previous = HL.default_metric_source()
+    HL.set_default_metric_source(cob.HodgeMetricSource.WhitneyPencil)
     yield
-    HL.setDefaultMetricSource(previous)
+    HL.set_default_metric_source(previous)
 
 
 def boundary_geometry(node):
@@ -82,7 +82,7 @@ def boundary_geometry(node):
     it was constructed with: stage 1 REPLACES the complex when it commits.
     """
     spacetime = node.spacetime()
-    facets = [tuple(int(v) for v in f) for f in spacetime.getBoundary()]
+    facets = [tuple(int(v) for v in f) for f in spacetime.get_boundary()]
     wanted = set()
     for facet in facets:
         for first in range(len(facet)):
@@ -90,11 +90,11 @@ def boundary_geometry(node):
                 wanted.add((min(facet[first], facet[second]),
                             max(facet[first], facet[second])))
     out = {}
-    for edge in spacetime.getEdgeList().toVector():
-        key = (min(edge.getSource().getId(), edge.getTarget().getId()),
-               max(edge.getSource().getId(), edge.getTarget().getId()))
+    for edge in spacetime.get_edge_list().to_vector():
+        key = (min(edge.get_source().get_id(), edge.get_target().get_id()),
+               max(edge.get_source().get_id(), edge.get_target().get_id()))
         if key in wanted:
-            out[key] = (edge.getLength(), edge.isTimelike())
+            out[key] = (edge.get_length(), edge.is_timelike())
     return out
 
 

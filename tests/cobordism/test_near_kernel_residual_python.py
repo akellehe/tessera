@@ -40,7 +40,7 @@ _SINGLET = [1 + 0j, _OMEGA, _OMEGA * _OMEGA]
 
 
 def _seed():
-    return tessera.Spacetime.fromVertexTuples(4, [[0, 1, 2, 3, 4]], 1.0, 0.0)
+    return tessera.Spacetime.from_vertex_tuples(4, [[0, 1, 2, 3, 4]], 1.0, 0.0)
 
 
 class NearKernelResidualTest(unittest.TestCase):
@@ -50,14 +50,14 @@ class NearKernelResidualTest(unittest.TestCase):
         # exact kernel modes, and the residual is exactly zero — the term stops
         # interfering the moment the topology delivers.
         st, _es, _holes, _periods = _hs.holed_surface(degree=1)
-        self.assertEqual(cob.MultiCobordism.nearKernelResidual(st, 1, 1), 0.0)
-        self.assertEqual(cob.MultiCobordism.nearKernelResidual(st, 1, 2), 0.0)
+        self.assertEqual(cob.MultiCobordism.near_kernel_residual(st, 1, 1), 0.0)
+        self.assertEqual(cob.MultiCobordism.near_kernel_residual(st, 1, 2), 0.0)
 
     def test_asking_for_one_more_register_is_small_but_nonzero(self):
         # A third register does not exist, so the third-smallest mode carries a
         # small positive weight: the "almost-register" signal.
         st, _es, _holes, _periods = _hs.holed_surface(degree=1)
-        r = cob.MultiCobordism.nearKernelResidual(st, 1, 3)
+        r = cob.MultiCobordism.near_kernel_residual(st, 1, 3)
         self.assertGreater(r, 0.0)
         self.assertLess(r, 1.0)
 
@@ -67,25 +67,25 @@ class NearKernelResidualTest(unittest.TestCase):
         # normalized ratio is degree 0: a UNIFORM rescale changes nothing,
         # while genuine shape/causal changes still move the term (by design).
         st, _es, _holes, _periods = _hs.holed_surface(degree=1)
-        r0 = cob.MultiCobordism.nearKernelResidual(st, 1, 3)
-        edges = st.getEdgeList().toVector()
-        base = [e.getLength() for e in edges]
+        r0 = cob.MultiCobordism.near_kernel_residual(st, 1, 3)
+        edges = st.get_edge_list().to_vector()
+        base = [e.get_length() for e in edges]
         for e, l in zip(edges, base):
-            e.setLength(l * cmath.sqrt(2.0))
-        st.materializeFacets()
-        r1 = cob.MultiCobordism.nearKernelResidual(st, 1, 3)
+            e.set_length(l * cmath.sqrt(2.0))
+        st.materialize_facets()
+        r1 = cob.MultiCobordism.near_kernel_residual(st, 1, 3)
         self.assertAlmostEqual(r0, r1, places=9)
 
     def test_zero_expected_registers_is_zero(self):
         st = _seed()
-        self.assertEqual(cob.MultiCobordism.nearKernelResidual(st, 3, 0), 0.0)
+        self.assertEqual(cob.MultiCobordism.near_kernel_residual(st, 3, 0), 0.0)
 
     def test_expected_count_comes_from_the_targets(self):
         node = cob.MultiCobordism(_seed(), [_SINGLET], [], [3], 50.0, 1, 0, True)
-        self.assertEqual(node.expectedRegisterCount(), 3)
+        self.assertEqual(node.expected_register_count(), 3)
         pair = cob.MultiCobordism(_seed(), [[1 + 0j, _OMEGA]], [], [3],
                                   50.0, 1, 0, True)
-        self.assertEqual(pair.expectedRegisterCount(), 2)
+        self.assertEqual(pair.expected_register_count(), 2)
 
     def test_seed_has_register_seeking_descent_directions(self):
         # THE motivating fact: without this term the objective was exactly flat
@@ -99,7 +99,7 @@ class NearKernelResidualTest(unittest.TestCase):
             node.seed_inputs([0])
             f0 = node.objective()
             cone = cob.SurgicalCone(node.st)
-            ok, reason = cone.coneIn([0, 1, 2, 3], timelike=timelike)
+            ok, reason = cone.cone_in([0, 1, 2, 3], timelike=timelike)
             self.assertTrue(ok, reason)
             deltas[timelike] = node.objective() - f0
         self.assertLess(deltas[False], 0.0)
@@ -108,10 +108,10 @@ class NearKernelResidualTest(unittest.TestCase):
     def test_stage1_accepts_moves_at_the_seed_again(self):
         node = cob.MultiCobordism(_seed(), [_SINGLET], [], [3], 50.0, 2, 0, True)
         node.seed_inputs([0])
-        before = len(node.st.getEdgeList().toVector())
+        before = len(node.st.get_edge_list().to_vector())
         trace = node.run_stage1(40, 8, True)
         self.assertGreater(len(trace), 1, "no move was ever accepted")
-        self.assertGreater(len(node.st.getEdgeList().toVector()), before)
+        self.assertGreater(len(node.st.get_edge_list().to_vector()), before)
         self.assertLess(trace[-1], trace[0])
 
 

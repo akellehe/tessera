@@ -89,7 +89,7 @@ class TestInstanceAndSweep:
             cert = hodge.certificate()
             assert cert.epsilon == eps
             assert cert.allowable and cert.margin > 0.0
-            assert not cert.continuationAmbiguous
+            assert not cert.continuation_ambiguous
         zero = LF.instance(K, s, tau, 0.0, ch.Preset.L2, KS)
         assert zero.certificate().epsilon == 0.0
         assert not zero.certificate().allowable
@@ -141,18 +141,18 @@ class TestExtrapolation:
     def test_recovers_polynomial_value_at_zero(self):
         eps = [0.1, 0.2, 0.3, 0.4]
         vals = [1.0 + 2.0 * e - 3.0 * e * e + 0.5j * e for e in eps]
-        ex = LF.extrapolateToZero(eps, vals, 2)
+        ex = LF.extrapolate_to_zero(eps, vals, 2)
         assert ex.extrapolated == pytest.approx(1.0, abs=1e-12)
         assert ex.residual < 1e-12 and ex.order == 2
         assert "extrapolation" in ex.label
 
     def test_rejects_zero_epsilon_and_short_input(self):
         with pytest.raises(ValueError):
-            LF.extrapolateToZero([0.0, 0.1], [1.0, 1.0])
+            LF.extrapolate_to_zero([0.0, 0.1], [1.0, 1.0])
         with pytest.raises(ValueError):
-            LF.extrapolateToZero([0.1], [1.0])
+            LF.extrapolate_to_zero([0.1], [1.0])
         with pytest.raises(ValueError):
-            LF.extrapolateToZero([0.1, 0.2], [1.0])
+            LF.extrapolate_to_zero([0.1, 0.2], [1.0])
 
     def test_extrapolated_eigenvalue_approaches_the_boundary_value(self):
         K, s = torus33()
@@ -166,7 +166,7 @@ class TestExtrapolation:
         # diagonals too and its trace bends faster: through reads at
         # epsilon <= 0.02 the quadratic misses by 3.3e-3.
         traces = [complex(np.sum(r.eigenvalues)) for r in reads]
-        ex = LF.extrapolateToZero(epsilons, traces, 2)
+        ex = LF.extrapolate_to_zero(epsilons, traces, 2)
         zero = LF.sweep(K, s, tau, [0.0] + epsilons, 1, ch.Preset.L2, KS, 10.0, True)[0]
         target = complex(np.sum(zero.eigenvalues))
         assert abs(ex.extrapolated - target) < 1e-3 * abs(target)

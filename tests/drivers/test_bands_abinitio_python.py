@@ -110,8 +110,8 @@ class TestLowRankSolve:
         n = base.shape[0]
         update = tessera.cobordism.LowRankUpdate(list(base.ravel()), n)
         left, right = (mesh.P @ mesh.D).astype(complex), mesh.P.T.astype(complex)
-        update.setUpdate(list(left.ravel()), list(right.ravel()), left.shape[1])
-        assert update.spansAffectedChange(list((base + left @ right).ravel()))
+        update.set_update(list(left.ravel()), list(right.ravel()), left.shape[1])
+        assert update.spans_affected_change(list((base + left @ right).ravel()))
         for b in range(3):
             solved = update.solve(list(((values[b] - sigma) * (mesh.mass @ vectors[:, b])).astype(complex)))
             assert solved.certificate.holds()
@@ -237,7 +237,7 @@ def test_the_crystal_quasiparticle_step_agrees_with_the_full_tensor_route():
 def test_the_converged_crystal_is_a_stationary_covariance_state():
     """The Hartree-Fock state of the crystal as a `CovarianceState` on its own
     modes: pure, with the right particle number, and stationary under
-    `meanFieldEvolve` with the Fock operator rebuilt as the Wick contraction of
+    `mean_field_evolve` with the Fock operator rebuilt as the Wick contraction of
     the Coulomb kernel, which reproduces the levels the pencil was solved with."""
     crystal = abinitio.Crystal(6.0 * np.eye(3), [(soft_atom(), np.full(3, 0.5))])
     mesh = abinitio.MeshCrystal(crystal, 8)

@@ -49,12 +49,12 @@ WEIGHT = 1e4
 
 @pytest.fixture
 def whitney_default():
-    previous = HL.defaultMetricSource()
-    HL.setDefaultMetricSource(cob.HodgeMetricSource.WhitneyPencil)
+    previous = HL.default_metric_source()
+    HL.set_default_metric_source(cob.HodgeMetricSource.WhitneyPencil)
     try:
         yield
     finally:
-        HL.setDefaultMetricSource(previous)
+        HL.set_default_metric_source(previous)
 
 
 def marked(weight=WEIGHT, **kwargs):
@@ -188,7 +188,7 @@ def test_the_gradient_agrees_with_central_differences(whitney_default):
     _qa, _qb, seed, node = marked()
     own.jitter_tori(node, seed, amplitude=0.05)
     node.score_whole_complex_leak(True)
-    edges = node.spacetime().getEdgeList().toVector()
+    edges = node.spacetime().get_edge_list().to_vector()
     analytic = np.zeros(len(edges), dtype=complex)
     for index in range(2):
         lengths, _phases = node.input_state_residual_gradient(index)
@@ -201,7 +201,7 @@ def test_the_gradient_agrees_with_central_differences(whitney_default):
     checked = 0
     for position in (0, len(edges) // 3, len(edges) // 2, len(edges) - 1):
         edge = edges[position]
-        l0 = complex(edge.getLength())
+        l0 = complex(edge.get_length())
         z0 = l0 * l0
         packed = []
         for step in (h, 1j * h):
@@ -209,10 +209,10 @@ def test_the_gradient_agrees_with_central_differences(whitney_default):
             for sign in (+1, -1):
                 root = np.sqrt(z0 + sign * step)
                 root = root if abs(root - l0) <= abs(-root - l0) else -root
-                edge.setLength(complex(root))
+                edge.set_length(complex(root))
                 values.append(leak_total())
             packed.append((values[0] - values[1]) / (2 * h))
-        edge.setLength(l0)
+        edge.set_length(l0)
         numeric = complex(packed[0], packed[1])
         assert abs(numeric - analytic[position]) < 3e-6 * max(1.0, abs(numeric)), position
         checked += 1

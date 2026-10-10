@@ -103,8 +103,8 @@ def _flux(index):
 
 
 def _squared_lengths(spacetime):
-    return [complex(edge.getLength()) ** 2
-            for edge in spacetime.getEdgeList().toVector()]
+    return [complex(edge.get_length()) ** 2
+            for edge in spacetime.get_edge_list().to_vector()]
 
 
 def _matrix(flat):
@@ -264,7 +264,7 @@ class TheSelfConsistentPairTest(unittest.TestCase):
 
     def test_the_solve_reaches_a_fixed_point_of_the_pair(self):
         reference = sphere3()
-        modes = cob.ChainComplex.fromSpacetime(reference).numSimplices(1)
+        modes = cob.ChainComplex.from_spacetime(reference).num_simplices(1)
         weight = self._balanced_weight(reference, modes)
 
         spacetime = sphere3(squared=lambda index: 1.0 + 0.015 * ((index % 3) - 1))
@@ -362,7 +362,7 @@ class TheSection7TetrahedronSplitTest(unittest.TestCase):
     ``-lambda/16`` per edge in both. Each number is asserted here.
 
     A split is an eigenvalue of the band-restricted operator derivative
-    ``PhiTilde^T (dh/dz_e) Phi``, and a band trace is ``tr(Gamma dh/dz_e)`` for
+    ``PhiTilde^T (dh/dz_e) phi``, and a band trace is ``tr(Gamma dh/dz_e)`` for
     that band's projector, so what is measured is the force the backreaction
     acts with and not a proxy for it. One occupied mode lengthens the edges it
     lives on and shortens others, which is what a split of mixed sign says.
@@ -392,9 +392,9 @@ class TheSection7TetrahedronSplitTest(unittest.TestCase):
         hodge = cob.HodgeLaplacian(spacetime,
                                    cob.HodgeWeightConvention.SquaredContent,
                                    cob.HodgeMetricSource.WhitneyPencil)
-        probe = spacetime.getEdgeList().toVector()[0]
-        derivative = _matrix(hodge.laplacianGradient(
-            1, probe.getSource().getId(), probe.getTarget().getId()))
+        probe = spacetime.get_edge_list().to_vector()[0]
+        derivative = _matrix(hodge.laplacian_gradient(
+            1, probe.get_source().get_id(), probe.get_target().get_id()))
         return spacetime, values, frame, dual, derivative
 
     def test_the_bands_are_two_triplets(self):
@@ -440,9 +440,9 @@ class TheKuhnBallCarriesTheSection7SetupTest(unittest.TestCase):
 
     def test_the_kuhn_ball_is_a_ball(self):
         spacetime = kuhn_ball(divisions=2)
-        complex_ = cob.ChainComplex.fromSpacetime(spacetime)
+        complex_ = cob.ChainComplex.from_spacetime(spacetime)
         self.assertEqual(complex_.dimension(), 3)
-        self.assertEqual(complex_.bettiNumbers(), [1, 0, 0, 0])
+        self.assertEqual(complex_.betti_numbers(), [1, 0, 0, 0])
         self.assertEqual(len(kuhn_interior_vertices(2)), 1)
         self.assertEqual(len(kuhn_interior_vertices(3)), 8)
 
@@ -458,7 +458,7 @@ class TheKuhnBallCarriesTheSection7SetupTest(unittest.TestCase):
         declaration.covariance = seed.occupation_projector(1, True)
         action = cob.JointAction(spacetime, declaration)
         occupations = np.array(action.occupation_numbers(), dtype=complex)
-        cells = cob.ChainComplex.fromSpacetime(spacetime).numSimplices(1)
+        cells = cob.ChainComplex.from_spacetime(spacetime).num_simplices(1)
         self.assertEqual(len(occupations), cells)
         self.assertAlmostEqual(abs(occupations.sum() - 1.0), 0.0, places=8)
         self.assertGreater(np.max(np.abs(occupations)), 0.0)

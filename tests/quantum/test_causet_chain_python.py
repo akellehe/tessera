@@ -1,5 +1,5 @@
-"""Python tests — :meth:`Causet.chainFrom` (Spacetime → causet-
-chain extractor) plus the underlying :meth:`Poset.fromSpacetime`
+"""Python tests — :meth:`Causet.chain_from` (Spacetime → causet-
+chain extractor) plus the underlying :meth:`Poset.from_spacetime`
 factory exposed in the same module.
 
 Skips cleanly when tessera was built without TESSERA_QUANTUM=1.
@@ -35,13 +35,13 @@ class TestCausetChainFrom(unittest.TestCase):
 
     def test_default_cdt_self_consistent(self) -> None:
         st = _build_default_cdt(num_simplices=20)
-        chain = Causet.chainFrom(st)
+        chain = Causet.chain_from(st)
 
         # nSites == sum of antichain sizes == len(vertexIds).
         self.assertEqual(
-            sum(len(a) for a in chain.antichains), chain.nSites
+            sum(len(a) for a in chain.antichains), chain.n_sites
         )
-        self.assertEqual(len(chain.vertexIds), chain.nSites)
+        self.assertEqual(len(chain.vertex_ids), chain.n_sites)
 
         # times sorted ascending, no duplicates.
         self.assertEqual(list(chain.times), sorted(set(chain.times)))
@@ -49,7 +49,7 @@ class TestCausetChainFrom(unittest.TestCase):
         # Flat layout: vertexIds is the concatenation of antichains
         # in time order.
         flat = [vid for ac in chain.antichains for vid in ac]
-        self.assertEqual(list(chain.vertexIds), flat)
+        self.assertEqual(list(chain.vertex_ids), flat)
 
         # hoppingPairs invariants.
         layer_of_site: dict[int, int] = {}
@@ -58,7 +58,7 @@ class TestCausetChainFrom(unittest.TestCase):
             for _ in ac:
                 layer_of_site[flat_idx] = layer_idx
                 flat_idx += 1
-        for i, j in chain.hoppingPairs:
+        for i, j in chain.hopping_pairs:
             self.assertLess(i, j, "hopping pair must be canonicalised i<j")
             self.assertIn(i, layer_of_site)
             self.assertIn(j, layer_of_site)
@@ -69,9 +69,9 @@ class TestCausetChainFrom(unittest.TestCase):
 
         # partialOrder Poset has nSites nodes and its covers are a
         # subset of the hopping pairs.
-        self.assertEqual(chain.partialOrder.getNodeCount, chain.nSites)
-        cover_set = set(chain.partialOrder.covers)
-        hop_set = set(chain.hoppingPairs)
+        self.assertEqual(chain.partial_order.get_node_count, chain.n_sites)
+        cover_set = set(chain.partial_order.covers)
+        hop_set = set(chain.hopping_pairs)
         self.assertTrue(
             cover_set <= hop_set,
             f"covers {cover_set} not subset of hops {hop_set}"
@@ -80,25 +80,25 @@ class TestCausetChainFrom(unittest.TestCase):
 
 @unittest.skipUnless(HAVE_QUANTUM, "tessera built without TESSERA_QUANTUM=1")
 class TestPosetFromSpacetimePython(unittest.TestCase):
-    """Direct Python access to tessera.Poset.fromSpacetime."""
+    """Direct Python access to tessera.Poset.from_spacetime."""
 
     def test_from_spacetime_returns_valid_poset(self) -> None:
         st = _build_default_cdt(num_simplices=20)
-        poset = Poset.fromSpacetime(st)
-        self.assertEqual(poset.getNodeCount, st.getVertexList().toVector().__len__())
+        poset = Poset.from_spacetime(st)
+        self.assertEqual(poset.get_node_count, st.get_vertex_list().to_vector().__len__())
         covers = poset.covers
         self.assertEqual(len(set(covers)), len(covers))
         for a, b in covers:
             self.assertNotEqual(a, b)
             self.assertGreaterEqual(a, 0)
-            self.assertLess(a, poset.getNodeCount)
+            self.assertLess(a, poset.get_node_count)
             self.assertGreaterEqual(b, 0)
-            self.assertLess(b, poset.getNodeCount)
+            self.assertLess(b, poset.get_node_count)
 
     def test_to_dot_renders(self) -> None:
         st = _build_default_cdt(num_simplices=20)
-        poset = Poset.fromSpacetime(st)
-        dot = poset.toDot()
+        poset = Poset.from_spacetime(st)
+        dot = poset.to_dot()
         self.assertIn("digraph poset", dot)
         for a, b in poset.covers:
             self.assertIn(f"{a} -> {b}", dot)

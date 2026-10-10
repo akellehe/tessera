@@ -18,7 +18,7 @@ complements the per-feature suites (``test_hodge_laplacian*`` and
     on hand-built graphs with explicit cycle bases and on the CDT-built T²/S²
     where every 2-simplex boundary supplies a cycle.
 
-  * **Discrete Hodge theorem** — ``dim ker L_k == bettiNumbers()[k]`` for every k
+  * **Discrete Hodge theorem** — ``dim ker L_k == betti_numbers()[k]`` for every k
     across the whole fixture zoo: a cycle (S¹), a path/tree, a disconnected
     complex (b₀ > 1), T², S², S²×S¹, T³, RP³, and Kühnel's ℂP². Cross-checked
     two ways (eigenvalue near-kernel count and ``harmonics()`` column count) and
@@ -27,7 +27,7 @@ complements the per-feature suites (``test_hodge_laplacian*`` and
 
   * **Hermiticity / unitarity** — ``L = L†`` and ``e^{-iLt}`` unitary under
     generic complex Hermitian weights, for the U(1) CONNECTION operator
-    ``connectionLaplacian`` (#805). The derived ``L_0 = d_1 W_1^-1 d_1^†`` is
+    ``connection_laplacian`` (#805). The derived ``L_0 = d_1 W_1^-1 d_1^†`` is
     complex symmetric, not Hermitian, once a weight is complex; what IS exact
     there is ``L_0 @ 1 = 0``, checked in ``test_hodge_laplacian_python``.
 
@@ -57,7 +57,7 @@ import cmath
 def _real_spectrum(evals):
     """The U(1) connection operator D - A is Hermitian, so its spectrum is REAL.
 
-    `connectionEigenvalues()` is complex-typed for parity with the L_k family.
+    `connection_eigenvalues()` is complex-typed for parity with the L_k family.
     This ASSERTS the imaginary part vanishes rather than discarding it (#644)."""
     a = np.asarray(evals)
     np.testing.assert_allclose(a.imag, 0.0, atol=1e-12,
@@ -82,7 +82,7 @@ DIAGONAL = cob.HodgeMetricSource.DiagonalWeights
 def _hodge(spacetime, weights=None, source=DIAGONAL):
     """The diagonal-weight Hodge operator this module's anchors are taken of."""
     if weights is None:
-        weights = cob.HodgeLaplacian.defaultWeightConvention()
+        weights = cob.HodgeLaplacian.default_weight_convention()
     return cob.HodgeLaplacian(spacetime, weights, source)
 obs = tessera.observables
 
@@ -110,16 +110,16 @@ def _from_simplices(num_vertices, simplices):
     metric = tessera.Metric(True, sig)
     st = tessera.Spacetime(metric, tessera.HERMITIAN_WEIGHTED, 1.0, 1.0,
                            tessera.PREFERRED, tessera.Toroid())
-    verts = [st.createVertex(i) for i in range(num_vertices)]
+    verts = [st.create_vertex(i) for i in range(num_vertices)]
     for s in simplices:
-        st.createSimplex([verts[i] for i in s])
+        st.create_simplex([verts[i] for i in s])
     return st
 
 
 def _set_uniform(st, sq=1.0, phase=0.0):
-    for e in st.getEdgeList().toVector():
-        e.setLength(cmath.sqrt(complex(sq)))
-        e.setPhase(phase)
+    for e in st.get_edge_list().to_vector():
+        e.set_length(cmath.sqrt(complex(sq)))
+        e.set_phase(phase)
     return st
 
 
@@ -217,7 +217,7 @@ FIXTURES = (
 # numpy / spectral helpers
 # --------------------------------------------------------------------------- #
 def _ordering(st):
-    ids = sorted(v.getId() for v in st.getVertexList().toVector())
+    ids = sorted(v.get_id() for v in st.get_vertex_list().to_vector())
     return ids, {vid: i for i, vid in enumerate(ids)}
 
 
@@ -236,8 +236,8 @@ def _cluster_ranges(evals, tol=1e-6):
 
 
 def _edge(st, a, b):
-    for e in st.getEdgeList().toVector():
-        if {e.getSource().getId(), e.getTarget().getId()} == {a, b}:
+    for e in st.get_edge_list().to_vector():
+        if {e.get_source().get_id(), e.get_target().get_id()} == {a, b}:
             return e
     raise KeyError((a, b))
 
@@ -249,19 +249,19 @@ def _cycle_flux(st, cycle):
     for k in range(n):
         a, b = cycle[k], cycle[(k + 1) % n]
         e = _edge(st, a, b)
-        if e.getSource().getId() == a and e.getTarget().getId() == b:
-            total += e.getPhase()
+        if e.get_source().get_id() == a and e.get_target().get_id() == b:
+            total += e.get_phase()
         else:
-            total -= e.getPhase()
+            total -= e.get_phase()
     return total
 
 
 def _apply_gauge(st, alpha):
     """Rephase every edge θ → θ + α_src − α_tgt, i.e. A → G A G† with
     G = diag(e^{iα})."""
-    for e in st.getEdgeList().toVector():
-        s, t = e.getSource().getId(), e.getTarget().getId()
-        e.setPhase(e.getPhase() + alpha[s] - alpha[t])
+    for e in st.get_edge_list().to_vector():
+        s, t = e.get_source().get_id(), e.get_target().get_id()
+        e.set_phase(e.get_phase() + alpha[s] - alpha[t])
 
 
 def _kernel_dim(hl, k, metric=True, tol=TOL_KER):
@@ -281,19 +281,19 @@ def _harmonic_dim(hl, nk, k, metric=True, tol=TOL_KER):
 # --------------------------------------------------------------------------- #
 class TestHodgeTheoremAllFixtures(unittest.TestCase):
     """dim ker L_k == b_k for every k, on every fixture, for metric and
-    combinatorial weights, cross-checked against ChainComplex.bettiNumbers()."""
+    combinatorial weights, cross-checked against ChainComplex.betti_numbers()."""
 
     def test_kernel_dimension_equals_betti(self):
         for name, build, expected in FIXTURES:
             st = build()
             hl = _hodge(st)
-            cc = cob.ChainComplex.fromSpacetime(st)
-            betti = cc.bettiNumbers()
+            cc = cob.ChainComplex.from_spacetime(st)
+            betti = cc.betti_numbers()
             with self.subTest(fixture=name):
                 # the fixture is what we think it is (guards against regressions)
                 self.assertEqual(betti, expected)
                 for k in range(cc.dimension() + 1):
-                    nk = cc.numSimplices(k)
+                    nk = cc.num_simplices(k)
                     for metric in (True, False):
                         # eigenvalue near-kernel count == b_k ...
                         self.assertEqual(
@@ -310,11 +310,11 @@ class TestHodgeTheoremAllFixtures(unittest.TestCase):
         for name, build, _ in FIXTURES:
             st = build()
             hl = _hodge(st)
-            cc = cob.ChainComplex.fromSpacetime(st)
+            cc = cob.ChainComplex.from_spacetime(st)
             with self.subTest(fixture=name):
                 kernel_chi = sum((-1) ** k * _kernel_dim(hl, k, True)
                                  for k in range(cc.dimension() + 1))
-                self.assertEqual(kernel_chi, cc.eulerCharacteristic())
+                self.assertEqual(kernel_chi, cc.euler_characteristic())
 
     def test_top_dimension_kernel_is_fundamental_class(self):
         # Each closed oriented n-manifold here has b_n = 1: a single harmonic
@@ -323,7 +323,7 @@ class TestHodgeTheoremAllFixtures(unittest.TestCase):
                             ("T^3", _t3), ("RP^3", _rp3), ("CP^2", _cp2)):
             st = build()
             hl = _hodge(st)
-            cc = cob.ChainComplex.fromSpacetime(st)
+            cc = cob.ChainComplex.from_spacetime(st)
             with self.subTest(fixture=name):
                 self.assertEqual(_kernel_dim(hl, cc.dimension(), True), 1)
 
@@ -338,23 +338,23 @@ class TestGaugeInvariance(unittest.TestCase):
         gauge: assert spec(L₀) and all cycle fluxes are unchanged and the
         eigenvectors rephase (projector P → G P G†)."""
         rng = np.random.default_rng(seed)
-        for e in st.getEdgeList().toVector():
-            e.setLength(cmath.sqrt(complex(float(rng.uniform(0.5, 2.0)))))
-            e.setPhase(float(rng.uniform(-PI, PI)))
+        for e in st.get_edge_list().to_vector():
+            e.set_length(cmath.sqrt(complex(float(rng.uniform(0.5, 2.0)))))
+            e.set_phase(float(rng.uniform(-PI, PI)))
 
         ids, _ = _ordering(st)
         n = len(ids)
         hl_old = _hodge(st)
-        evals_old = _real_spectrum(hl_old.connectionEigenvalues())
-        V_old = _matrix(hl_old.connectionEigenvectors(), n)
+        evals_old = _real_spectrum(hl_old.connection_eigenvalues())
+        V_old = _matrix(hl_old.connection_eigenvectors(), n)
         flux_old = [_cycle_flux(st, c) for c in cycles]
 
         alpha = {vid: float(rng.uniform(-PI, PI)) for vid in ids}
         _apply_gauge(st, alpha)
 
         hl_new = _hodge(st)
-        evals_new = _real_spectrum(hl_new.connectionEigenvalues())
-        V_new = _matrix(hl_new.connectionEigenvectors(), n)
+        evals_new = _real_spectrum(hl_new.connection_eigenvalues())
+        V_new = _matrix(hl_new.connection_eigenvectors(), n)
 
         # (i) spectrum unchanged
         np.testing.assert_allclose(evals_new, evals_old, atol=1e-9)
@@ -389,9 +389,9 @@ class TestGaugeInvariance(unittest.TestCase):
         # full spectrum/eigenvector statement on a larger operator.
         for i, (name, build) in enumerate((("T^2", _t2), ("S^2", _s2))):
             st = build()
-            st.getExternalSimplices()  # materialize faces so every edge exists
-            cc = cob.ChainComplex.fromSpacetime(st)
-            cycles = [list(t) for t in cc.kSimplexVertices(2)]
+            st.get_external_simplices()  # materialize faces so every edge exists
+            cc = cob.ChainComplex.from_spacetime(st)
+            cycles = [list(t) for t in cc.k_simplex_vertices(2)]
             with self.subTest(fixture=name):
                 self.assertGreater(len(cycles), 0)
                 self._check(st, cycles, seed=2000 + i, proj_atol=1e-7)
@@ -401,12 +401,12 @@ class TestGaugeInvariance(unittest.TestCase):
         # flux (hence the degeneracy) intact, and the 2-dim eigenspace projector
         # transforms as G P G† — the genuinely degenerate (non-vectorwise) case.
         st = _cycle()
-        _edge(st, 0, 1).setPhase(PI)
+        _edge(st, 0, 1).set_phase(PI)
         ids, _ = _ordering(st)
         n = len(ids)
         hl_old = _hodge(st)
-        evals_old = _real_spectrum(hl_old.connectionEigenvalues())
-        V_old = _matrix(hl_old.connectionEigenvectors(), n)
+        evals_old = _real_spectrum(hl_old.connection_eigenvalues())
+        V_old = _matrix(hl_old.connection_eigenvectors(), n)
         # the degenerate low pair really is present
         self.assertAlmostEqual(evals_old[1] - evals_old[0], 0.0, places=9)
 
@@ -415,9 +415,9 @@ class TestGaugeInvariance(unittest.TestCase):
         _apply_gauge(st, alpha)
         hl_new = _hodge(st)
         np.testing.assert_allclose(
-            _real_spectrum(hl_new.connectionEigenvalues()), evals_old,
+            _real_spectrum(hl_new.connection_eigenvalues()), evals_old,
             atol=1e-12)
-        V_new = _matrix(hl_new.connectionEigenvectors(), n)
+        V_new = _matrix(hl_new.connection_eigenvectors(), n)
         G = np.diag([np.exp(1j * alpha[vid]) for vid in ids])
         p_old = V_old[:, 0:2] @ V_old[:, 0:2].conj().T
         p_new = V_new[:, 0:2] @ V_new[:, 0:2].conj().T
@@ -434,17 +434,17 @@ class TestHermiticityUnitarity(unittest.TestCase):
         for name, build in (("triangle", _cycle), ("testbed", _testbed),
                             ("K4", _complete_k4), ("S^2", _s2)):
             st = build()
-            for e in st.getEdgeList().toVector():
-                e.setLength(cmath.sqrt(complex(float(rng.uniform(0.5, 2.0)))))
-                e.setPhase(float(rng.uniform(-PI, PI)))
+            for e in st.get_edge_list().to_vector():
+                e.set_length(cmath.sqrt(complex(float(rng.uniform(0.5, 2.0)))))
+                e.set_phase(float(rng.uniform(-PI, PI)))
             with self.subTest(fixture=name):
                 hl = _hodge(st)
-                n = st.getVertexCount()
-                L = _matrix(hl.connectionLaplacian(), n)
+                n = st.get_vertex_count()
+                L = _matrix(hl.connection_laplacian(), n)
                 self.assertLess(np.linalg.norm(L - L.conj().T), 1e-12)
-                self.assertTrue(hl.isHermitian(1e-12))
-                self.assertLess(hl.unitarityResidual(1.0), 1e-12)
-                self.assertLess(hl.unitarityResidual(2.5), 1e-12)
+                self.assertTrue(hl.is_hermitian(1e-12))
+                self.assertLess(hl.unitarity_residual(1.0), 1e-12)
+                self.assertLess(hl.unitarity_residual(2.5), 1e-12)
 
 
 class TestMetricVsCombinatorial(unittest.TestCase):
@@ -456,17 +456,17 @@ class TestMetricVsCombinatorial(unittest.TestCase):
         for name, build, betti in FIXTURES:
             st = build()
             hl = _hodge(st)
-            cc = cob.ChainComplex.fromSpacetime(st)
+            cc = cob.ChainComplex.from_spacetime(st)
             with self.subTest(fixture=name):
                 for k in range(1, cc.dimension() + 1):
-                    nk = cc.numSimplices(k)
+                    nk = cc.num_simplices(k)
                     self.assertEqual(_kernel_dim(hl, k, True),
                                      _kernel_dim(hl, k, False))
                     self.assertEqual(_kernel_dim(hl, k, True), betti[k])
                     # With unit edges the (k+1)-cells (k ≥ 1) have non-unit
                     # regular-simplex volume, so the metric reweights the
                     # d_{k+1} term: the two operators must actually differ.
-                    if cc.numSimplices(k + 1) > 0:
+                    if cc.num_simplices(k + 1) > 0:
                         Lm = _matrix(hl.laplacian(k, True), nk)
                         Lc = _matrix(hl.laplacian(k, False), nk)
                         self.assertGreater(np.linalg.norm(Lm - Lc), 1e-6)
@@ -485,12 +485,12 @@ class TestFluxSpectrum(unittest.TestCase):
     @staticmethod
     def _triangle_total_flux(phi, spread=False):
         st = _cycle()
-        edges = st.getEdgeList().toVector()
+        edges = st.get_edge_list().to_vector()
         if spread:  # same total flux, distributed across all three edges
             for e in edges:
-                e.setPhase(phi / 3.0)
+                e.set_phase(phi / 3.0)
         else:       # all of Φ on one edge
-            edges[0].setPhase(phi)
+            edges[0].set_phase(phi)
         return st
 
     def test_ring_formula_dense_sweep(self):
@@ -498,7 +498,7 @@ class TestFluxSpectrum(unittest.TestCase):
             with self.subTest(phi=float(phi)):
                 hl = _hodge(self._triangle_total_flux(phi))
                 np.testing.assert_allclose(
-                    sorted(_real_spectrum(hl.connectionEigenvalues())),
+                    sorted(_real_spectrum(hl.connection_eigenvalues())),
                     self._ring(phi), atol=1e-12)
 
     def test_spectrum_depends_only_on_total_flux(self):
@@ -506,35 +506,35 @@ class TestFluxSpectrum(unittest.TestCase):
         for phi in (PI / 3, PI / 2, 2 * PI / 3, 1.234):
             with self.subTest(phi=phi):
                 concentrated = sorted(_real_spectrum(_hodge(
-                    self._triangle_total_flux(phi)).connectionEigenvalues()))
+                    self._triangle_total_flux(phi)).connection_eigenvalues()))
                 spread = sorted(_real_spectrum(_hodge(
                     self._triangle_total_flux(
-                        phi, spread=True)).connectionEigenvalues()))
+                        phi, spread=True)).connection_eigenvalues()))
                 np.testing.assert_allclose(concentrated, spread, atol=1e-12)
 
     def test_half_quantum_collapses_gap_and_lifts_zero_mode(self):
         hl = _hodge(self._triangle_total_flux(PI))
         np.testing.assert_allclose(
-            sorted(_real_spectrum(hl.connectionEigenvalues())),
+            sorted(_real_spectrum(hl.connection_eigenvalues())),
             [1.0, 1.0, 4.0], atol=1e-12)
-        self.assertEqual(len(hl.connectionHarmonics()), 0)  # zero mode gone
+        self.assertEqual(len(hl.connection_harmonics()), 0)  # zero mode gone
 
     def test_zero_mode_restored_at_full_flux_quantum(self):
         # Φ = 2π is gauge-equivalent to Φ = 0: spectrum {0, 3, 3}, zero mode back.
         hl = _hodge(self._triangle_total_flux(2.0 * PI))
         np.testing.assert_allclose(
-            sorted(_real_spectrum(hl.connectionEigenvalues())),
+            sorted(_real_spectrum(hl.connection_eigenvalues())),
             [0.0, 3.0, 3.0], atol=1e-10)
-        self.assertEqual(len(hl.connectionHarmonics()), 1)
+        self.assertEqual(len(hl.connection_harmonics()), 1)
 
     def test_harmonic_dimension_tracks_flux(self):
         # Zero (or full-quantum) flux: one harmonic; any intermediate flux: none.
         self.assertEqual(len(_hodge(
-            self._triangle_total_flux(0.0)).connectionHarmonics()), 1)
+            self._triangle_total_flux(0.0)).connection_harmonics()), 1)
         for phi in (0.3, 1.0, PI / 2, 2.0):
             with self.subTest(phi=phi):
                 self.assertEqual(len(_hodge(
-                    self._triangle_total_flux(phi)).connectionHarmonics()), 0)
+                    self._triangle_total_flux(phi)).connection_harmonics()), 0)
 
     def test_derived_degree_zero_kernel_is_flux_blind(self):
         # The contrast the connection tests above rest on (#805): L_0 is built
@@ -545,7 +545,7 @@ class TestFluxSpectrum(unittest.TestCase):
                 st = self._triangle_total_flux(phi)
                 hl = _hodge(st)
                 self.assertEqual(len(hl.harmonics(0)), 1)
-                n = cob.ChainComplex.fromSpacetime(st).numSimplices(0)
+                n = cob.ChainComplex.from_spacetime(st).num_simplices(0)
                 L = np.array(hl.laplacian(0), dtype=complex).reshape(n, n)
                 np.testing.assert_allclose(L @ np.ones(n), 0.0, atol=1e-15)
 
@@ -562,7 +562,7 @@ def _triangle_one_timelike(alpha):
     therefore ⟨h,h⟩_W = 2/3 + iα/3: the two spacelike edges contribute the real
     2/3 and the timelike edge the imaginary α/3, exactly 90° apart."""
     st = _cycle()  # all-spacelike unit triangle
-    _edge(st, 1, 2).setLength(cmath.sqrt(complex(-(alpha ** 2))))
+    _edge(st, 1, 2).set_length(cmath.sqrt(complex(-(alpha ** 2))))
     return st
 
 
@@ -572,7 +572,7 @@ class TestLorentzianNullNormCrossing(unittest.TestCase):
         # Explicitly the k-content convention: the default is SquaredContent.
         norms = np.array(_hodge(_triangle_one_timelike(alpha),
                                             cob.HodgeWeightConvention.Content)
-                         .nullNorms(1, 1e-9), dtype=complex)
+                         .null_norms(1, 1e-9), dtype=complex)
         self.assertEqual(len(norms), 1)  # the single 1-cycle harmonic
         return norms[0]
 
@@ -665,7 +665,7 @@ class TestLorentzianNullNormCrossing(unittest.TestCase):
         for alpha in (0.5, 1.0, 1.5, 2.0, 3.0):
             with self.subTest(alpha=alpha):
                 hl = _hodge(_triangle_one_timelike(alpha), sq)
-                norm = np.array(hl.nullNorms(1, 1e-9), dtype=complex)[0]
+                norm = np.array(hl.null_norms(1, 1e-9), dtype=complex)[0]
                 self.assertAlmostEqual(norm.imag, 0.0, places=9)
                 self.assertAlmostEqual(norm.real, (2.0 - alpha ** 2) / 3.0, places=6)
                 ev = np.array(hl.eigenvalues(1), dtype=complex)
@@ -702,7 +702,7 @@ class TestLorentzianNullNormCrossing(unittest.TestCase):
         # has |h_i|² = 1/3 each, so its norm is Σ W_i|h_i|² = 1 > 0 (definite),
         # the spectrum is the Euclidean {0, 3, 3}, and the kernel dim = b₁ = 1.
         st = _cycle()
-        norms = np.array(_hodge(st).nullNorms(1, 1e-9))
+        norms = np.array(_hodge(st).null_norms(1, 1e-9))
         self.assertEqual(len(norms), 1)
         self.assertAlmostEqual(norms[0], 1.0, places=9)
         eigs = np.sort(np.array(_hodge(st)
@@ -724,13 +724,13 @@ class TestEdgeCases(unittest.TestCase):
         st = _single_vertex()
         hl = _hodge(st)
         np.testing.assert_allclose(
-            _real_spectrum(hl.connectionEigenvalues()), [0.0], atol=1e-12)
-        self.assertEqual(len(hl.connectionHarmonics()), 1)
+            _real_spectrum(hl.connection_eigenvalues()), [0.0], atol=1e-12)
+        self.assertEqual(len(hl.connection_harmonics()), 1)
         self.assertEqual(obs.HarmonicDimension().compute(st), 1.0)
         self.assertEqual(obs.SpectralGap().compute(st), 0.0)      # no gap
-        self.assertEqual(cob.ChainComplex.fromSpacetime(st).bettiNumbers(), [])
+        self.assertEqual(cob.ChainComplex.from_spacetime(st).betti_numbers(), [])
         # The derived L_0 has no 0-cells to act on.
-        self.assertEqual(cob.ChainComplex.fromSpacetime(st).numSimplices(0), 0)
+        self.assertEqual(cob.ChainComplex.from_spacetime(st).num_simplices(0), 0)
         self.assertEqual(hl.laplacian(0), [])
         self.assertEqual(hl.eigenvalues(0), [])
         self.assertEqual(hl.harmonics(0), [])
@@ -744,8 +744,8 @@ class TestEdgeCases(unittest.TestCase):
     def test_disconnected_kernel_is_component_count(self):
         st = _disconnected()
         hl = _hodge(st)
-        cc = cob.ChainComplex.fromSpacetime(st)
-        self.assertEqual(cc.bettiNumbers()[0], 2)
+        cc = cob.ChainComplex.from_spacetime(st)
+        self.assertEqual(cc.betti_numbers()[0], 2)
         self.assertEqual(_kernel_dim(hl, 0, True), 2)             # b₀ = 2 components
         self.assertEqual(obs.HarmonicDimension().compute(st), 2.0)
         self.assertAlmostEqual(obs.SpectralGap().compute(st), 0.0, places=12)
@@ -759,7 +759,7 @@ class TestEdgeCases(unittest.TestCase):
         for name, build in (("cycle", _cycle), ("S^2", _s2), ("T^2", _t2)):
             st = build()
             hl = _hodge(st)
-            top = cob.ChainComplex.fromSpacetime(st).dimension()
+            top = cob.ChainComplex.from_spacetime(st).dimension()
             with self.subTest(fixture=name):
                 for k in (top + 1, top + 2):
                     self.assertEqual(hl.laplacian(k), [])
@@ -768,7 +768,7 @@ class TestEdgeCases(unittest.TestCase):
                     self.assertEqual(hl.harmonics(k), [])
                     self.assertEqual(hl.weights(k), [])
                     self.assertEqual(hl.eigenvalues(k), [])
-                    self.assertEqual(hl.nullNorms(k), [])
+                    self.assertEqual(hl.null_norms(k), [])
 
     def test_negative_degree_raises(self):
         hl = _hodge(_cycle())
@@ -779,7 +779,7 @@ class TestEdgeCases(unittest.TestCase):
                      lambda: hl.eigenvalues(-1),
                      lambda: hl.eigenvectors(-1),
                      lambda: hl.harmonics(-1),
-                     lambda: hl.nullNorms(-1)):
+                     lambda: hl.null_norms(-1)):
             with self.subTest(call=call):
                 with self.assertRaises(RuntimeError):
                     call()
@@ -805,7 +805,7 @@ class TestSpectralObservables(unittest.TestCase):
         # dim ker L₀ at zero flux == number of connected components == b₀.
         for name, build, expected in FIXTURES:
             st = build()
-            b0 = cob.ChainComplex.fromSpacetime(st).bettiNumbers()[0]
+            b0 = cob.ChainComplex.from_spacetime(st).betti_numbers()[0]
             with self.subTest(fixture=name):
                 self.assertEqual(b0, expected[0])
                 self.assertEqual(obs.HarmonicDimension().compute(st), float(b0))
@@ -813,22 +813,22 @@ class TestSpectralObservables(unittest.TestCase):
     def test_flux_collapses_gap_and_lifts_harmonic(self):
         st0 = _cycle()
         st_pi = _cycle()
-        _edge(st_pi, 0, 1).setPhase(PI)
+        _edge(st_pi, 0, 1).set_phase(PI)
         self.assertAlmostEqual(obs.SpectralGap().compute(st0), 3.0, places=12)
         self.assertAlmostEqual(obs.SpectralGap().compute(st_pi), 0.0, places=12)
         self.assertEqual(obs.HarmonicDimension().compute(st0), 1.0)
         self.assertEqual(obs.HarmonicDimension().compute(st_pi), 0.0)
         # the topological b₀ is flux-independent
         self.assertEqual(
-            cob.ChainComplex.fromSpacetime(st_pi).bettiNumbers()[0], 1)
+            cob.ChainComplex.from_spacetime(st_pi).betti_numbers()[0], 1)
 
     def test_observables_are_gauge_invariant(self):
         # A random vertex rephasing leaves both scalar observables unchanged.
         rng = np.random.default_rng(515)
         st = _testbed()
-        for e in st.getEdgeList().toVector():
-            e.setLength(cmath.sqrt(complex(float(rng.uniform(0.5, 2.0)))))
-            e.setPhase(float(rng.uniform(-PI, PI)))
+        for e in st.get_edge_list().to_vector():
+            e.set_length(cmath.sqrt(complex(float(rng.uniform(0.5, 2.0)))))
+            e.set_phase(float(rng.uniform(-PI, PI)))
         gap0 = obs.SpectralGap().compute(st)
         dim0 = obs.HarmonicDimension().compute(st)
         ids, _ = _ordering(st)

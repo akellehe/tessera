@@ -57,18 +57,18 @@ DIAGONAL = cob.HodgeMetricSource.DiagonalWeights
 
 def _over_cells(*args, **kwargs):
     kwargs.setdefault("metric_source", DIAGONAL)
-    return cob.RecursiveQuotient.overCells(*args, **kwargs)
+    return cob.RecursiveQuotient.over_cells(*args, **kwargs)
 
 
 def _over_vertex_supports(*args, **kwargs):
     kwargs.setdefault("metric_source", DIAGONAL)
-    return cob.RecursiveQuotient.overVertexSupports(*args, **kwargs)
+    return cob.RecursiveQuotient.over_vertex_supports(*args, **kwargs)
 
 
 def _hodge(st):
     """The diagonal-weight operator the NumPy references of this module are
     built from, the same operator the levels above reduce."""
-    return cob.HodgeLaplacian(st, cob.HodgeLaplacian.defaultWeightConvention(), DIAGONAL)
+    return cob.HodgeLaplacian(st, cob.HodgeLaplacian.default_weight_convention(), DIAGONAL)
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _causal_specimen import load_dump, rebuild_spacetime  # noqa: E402
@@ -130,26 +130,26 @@ def build_graph(edges):
     for src, tgt, _, _ in edges:
         for v in (src, tgt):
             if v not in verts:
-                verts[v] = st.createVertex(v)
+                verts[v] = st.create_vertex(v)
     for src, tgt, _, _ in edges:
-        st.createSimplex([verts[src], verts[tgt]])
-    by_pair = {(e.getSource().getId(), e.getTarget().getId()): e
-               for e in st.getEdgeList().toVector()}
+        st.create_simplex([verts[src], verts[tgt]])
+    by_pair = {(e.get_source().get_id(), e.get_target().get_id()): e
+               for e in st.get_edge_list().to_vector()}
     for src, tgt, squared_length, phase in edges:
         edge = by_pair.get((src, tgt))
         sign = 1.0
         if edge is None:
             edge = by_pair[(tgt, src)]
             sign = -1.0
-        edge.setLength(cmath.sqrt(complex(squared_length)))
-        edge.setPhase(sign * phase)
+        edge.set_length(cmath.sqrt(complex(squared_length)))
+        edge.set_phase(sign * phase)
     return st
 
 
 def reduction_matrix(quotient):
-    read = quotient.staticReduction()
+    read = quotient.static_reduction()
     n = len(read.coordinates)
-    return _mat(read.effectiveOperator, n), read
+    return _mat(read.effective_operator, n), read
 
 
 # --------------------------------------------------------------------------
@@ -165,7 +165,7 @@ class TestHandSolvedPath(unittest.TestCase):
     def _quotient(self):
         # Middle vertex interior: one covering component plus endpoint
         # claims making 0 and 2 interface.
-        return cob.RecursiveQuotient.overMatrix(
+        return cob.RecursiveQuotient.over_matrix(
             _flat(self.L), 3, [], [[0, 1, 2], [0], [2]])
 
     def test_kron_reduction_matches_hand_matrix(self):
@@ -173,7 +173,7 @@ class TestHandSolvedPath(unittest.TestCase):
         # L_eff = [[ 6/5, -6/5],
         #          [-6/5,  6/5]].
         q = self._quotient()
-        self.assertEqual(list(q.interfaceIndices), [0, 2])
+        self.assertEqual(list(q.interface_indices), [0, 2])
         E, read = reduction_matrix(q)
         expected = np.array([[1.2, -1.2], [-1.2, 1.2]], dtype=complex)
         np.testing.assert_allclose(E, expected, rtol=0, atol=MACHINE)
@@ -191,11 +191,11 @@ class TestHandSolvedPath(unittest.TestCase):
 
     def test_minimization_certificate_on_probes(self):
         q = self._quotient()
-        cert = q.verifyStatic()
+        cert = q.verify_static()
         self.assertTrue(cert.holds())
         self.assertLess(cert.residual, 1e-12)
         # And on an explicit probe: min_x [b;x]^dag L [b;x] = b^dag L_eff b.
-        cert = q.staticProbeCertificate([1.0 + 0j, -2.0 + 0j])
+        cert = q.static_probe_certificate([1.0 + 0j, -2.0 + 0j])
         self.assertTrue(cert.holds())
 
     def test_brute_force_interior_minimum_equals_coarse_energy(self):
@@ -230,13 +230,13 @@ class TestHandSolvedStar(unittest.TestCase):
                          [-0.5, -1.0, 1.5]], dtype=complex)
 
     def _quotient(self):
-        return cob.RecursiveQuotient.overMatrix(
+        return cob.RecursiveQuotient.over_matrix(
             _flat(self.L), 4, [], [[0, 1, 2, 3], [1], [2], [3]])
 
     def test_star_reduction_matches_hand_matrix(self):
         q = self._quotient()
-        self.assertEqual(list(q.interfaceIndices), [1, 2, 3])
-        self.assertEqual(list(q.interiorIndices(0)), [0])
+        self.assertEqual(list(q.interface_indices), [1, 2, 3])
+        self.assertEqual(list(q.interior_indices(0)), [0])
         E, read = reduction_matrix(q)
         np.testing.assert_allclose(E, self.EXPECTED, rtol=0, atol=MACHINE)
         self.assertTrue(read.certificate.holds())
@@ -260,7 +260,7 @@ class TestHandSolvedTriangle(unittest.TestCase):
     L = [[2, -1, -1], [-1, 2, -1], [-1, -1, 2]]
 
     def _quotient(self):
-        return cob.RecursiveQuotient.overMatrix(
+        return cob.RecursiveQuotient.over_matrix(
             _flat(self.L), 3, [], [[0, 1, 2], [0], [1]])
 
     def test_triangle_reduction_matches_hand_matrix(self):
@@ -314,10 +314,10 @@ class TestSpacetimeHandFixtures(unittest.TestCase):
     SUPPORT_B = [4, 5, 6, 7]
 
     def _strip(self):
-        st = tessera.Spacetime.fromVertexTuples(2, self.STRIP, 1.0, 0.0)
-        for e in st.getEdgeList().toVector():
-            e.setLength(cmath.sqrt(complex(1.0)))
-        st.materializeFacets()
+        st = tessera.Spacetime.from_vertex_tuples(2, self.STRIP, 1.0, 0.0)
+        for e in st.get_edge_list().to_vector():
+            e.set_length(cmath.sqrt(complex(1.0)))
+        st.materialize_facets()
         return st
 
     def test_degree_one_classification_and_certificate(self):
@@ -325,15 +325,15 @@ class TestSpacetimeHandFixtures(unittest.TestCase):
         q = _over_vertex_supports(
             st, 1, [self.SUPPORT_A, self.SUPPORT_B])
         self.assertEqual(q.dimension, 13)
-        self.assertEqual(q.componentCount, 3)  # two supports + residual
-        self.assertEqual(len(q.interfaceIndices), 11)
+        self.assertEqual(q.component_count, 3)  # two supports + residual
+        self.assertEqual(len(q.interface_indices), 11)
         # Interior edges by PROVENANCE (vertex sets, never index order).
-        interior_a = [q.coordinateProvenance[i] for i in q.interiorIndices(0)]
-        interior_b = [q.coordinateProvenance[i] for i in q.interiorIndices(1)]
+        interior_a = [q.coordinate_provenance[i] for i in q.interior_indices(0)]
+        interior_b = [q.coordinate_provenance[i] for i in q.interior_indices(1)]
         self.assertEqual(interior_a, ["cell(0,1)"])
         self.assertEqual(interior_b, ["cell(6,7)"])
-        self.assertEqual(list(q.interiorIndices(2)), [])  # residual cells
-        cert = q.verifyStatic()
+        self.assertEqual(list(q.interior_indices(2)), [])  # residual cells
+        cert = q.verify_static()
         self.assertTrue(cert.holds(), cert.describe())
 
     def test_degree_one_matches_numpy_schur_on_the_hodge_operator(self):
@@ -342,7 +342,7 @@ class TestSpacetimeHandFixtures(unittest.TestCase):
         L = _mat(hodge.laplacian(1), 13)
         q = _over_vertex_supports(
             st, 1, [self.SUPPORT_A, self.SUPPORT_B])
-        kept = list(q.interfaceIndices)
+        kept = list(q.interface_indices)
         interior = sorted(set(range(13)) - set(kept))
         self.assertEqual(len(interior), 2)
         E, _ = reduction_matrix(q)
@@ -394,7 +394,7 @@ class TestHarmonicRetention(unittest.TestCase):
         E, read = reduction_matrix(q)
         # No interface at all: the reduced space is exactly the two retained
         # harmonic (constant) modes, one per component.
-        self.assertEqual(list(q.interfaceIndices), [])
+        self.assertEqual(list(q.interface_indices), [])
         kinds = [c.kind for c in read.coordinates]
         self.assertEqual(kinds, [cob.RetainedCoordinateKind.Harmonic] * 2)
         self.assertEqual([c.component for c in read.coordinates], [0, 1])
@@ -414,20 +414,20 @@ class TestHarmonicRetention(unittest.TestCase):
         q = _over_cells(
             st, 0, [[[0], [1], [2]], [[10], [11], [12]]])
         for component in range(2):
-            read = q.interiorNullspace(component)
+            read = q.interior_nullspace(component)
             self.assertEqual(read.nullity, 1)
-            self.assertEqual(read.integerNullity, 1)
+            self.assertEqual(read.integer_nullity, 1)
             # The exact integer topological basis is the constant vector.
-            self.assertEqual([abs(x) for x in read.integerBasis[0]], [1, 1, 1])
+            self.assertEqual([abs(x) for x in read.integer_basis[0]], [1, 1, 1])
             self.assertTrue(read.certificate.holds())
 
     def test_labeled_sum_retains_the_harmonic_fiber_coordinate(self):
         st = self._two_triangles()
         q = _over_cells(
             st, 0, [[[0], [1], [2]], [[10], [11], [12]]])
-        sum_read = q.labeledFiberSum()
-        self.assertEqual(list(sum_read.summandComponents), [0, 1])
-        self.assertEqual(list(sum_read.summandRanks), [1, 1])
+        sum_read = q.labeled_fiber_sum()
+        self.assertEqual(list(sum_read.summand_components), [0, 1])
+        self.assertEqual(list(sum_read.summand_ranks), [1, 1])
         # Disjoint supports: the Gram IS the identity here.
         G = _mat(sum_read.gram, 2)
         np.testing.assert_allclose(G, np.eye(2), rtol=0, atol=1e-14)
@@ -439,7 +439,7 @@ class TestHarmonicRetention(unittest.TestCase):
                       [0, 1, 0, -1],
                       [-1, 0, 1, 0],
                       [0, -1, 0, 1]], dtype=float)
-        q = cob.RecursiveQuotient.overMatrix(
+        q = cob.RecursiveQuotient.over_matrix(
             _flat(L), 4, [], [[0, 1, 2, 3], [0], [1]])
         E, read = reduction_matrix(q)
         kept_block = E[:2, :2]
@@ -450,7 +450,7 @@ class TestHarmonicRetention(unittest.TestCase):
                        [-1, 2, -1, 0],
                        [0, -1, 1, 0],
                        [0, 0, 0, 0]], dtype=float)
-        q2 = cob.RecursiveQuotient.overMatrix(
+        q2 = cob.RecursiveQuotient.over_matrix(
             _flat(L2), 4, [], [[0, 1, 2, 3], [0], [2]])
         E2, read2 = reduction_matrix(q2)
         self.assertEqual(len(read2.coordinates), 3)  # 2 kept + 1 harmonic
@@ -473,7 +473,7 @@ class TestBlockPencilNegativeControl(unittest.TestCase):
                   [0.0, 1.0, 0.5, 5.0]])
 
     def _quotient(self):
-        return cob.RecursiveQuotient.overMatrix(
+        return cob.RecursiveQuotient.over_matrix(
             _flat(self.L), 4, [], [[0, 1, 2, 3], [0], [1]])
 
     def test_static_schur_fails_to_preserve_nonzero_eigenvalues(self):
@@ -501,14 +501,14 @@ class TestBlockPencilNegativeControl(unittest.TestCase):
             self.assertTrue(read.certificate.holds(), read.certificate.describe())
             self.assertEqual(read.certificate.domain,
                              cob.CertificateDomain.BandWindow)
-            self.assertEqual(read.windowLower, 1.0)
-            self.assertEqual(read.windowUpper, 2.6)
+            self.assertEqual(read.window_lower, 1.0)
+            self.assertEqual(read.window_upper, 2.6)
 
     def test_determinant_factorization_is_exact(self):
         q = self._quotient()
         for lam in (0.7, 1.9 + 0.3j, 2.5):
             read = q.feshbach(complex(lam), 0.0, 3.0)
-            self.assertLess(read.determinantResidual, 1e-12)
+            self.assertLess(read.determinant_residual, 1e-12)
 
     def test_true_eigenvalues_are_zeros_of_the_pencil(self):
         # lam in spec(L) <=> 0 in spec(F_B(lam)), away from spec(L_II).
@@ -533,16 +533,16 @@ class TestMultiplicity(unittest.TestCase):
         # eigenvalues of L and none of L_II. The isolation gap is the distance
         # from the circle to the eigenvalue 1 at its centre, 1/2.
         L = np.diag([1.0, 1.0, 3.0])
-        q = cob.RecursiveQuotient.overMatrix(
+        q = cob.RecursiveQuotient.over_matrix(
             _flat(L), 3, [], [[0, 1, 2], [0], [1]])
         read = q.multiplicity(1.0 + 0j, 0.5)
         self.assertEqual(read.algebraic, 2)
         self.assertEqual(read.geometric, 2)
         self.assertTrue(read.semisimple)
-        self.assertEqual(read.interiorWinding, 0)
-        self.assertEqual(read.responseWinding, 2)
-        self.assertEqual(read.isolationGap, 0.5)
-        self.assertEqual(read.contourRadius, 0.5)
+        self.assertEqual(read.interior_winding, 0)
+        self.assertEqual(read.response_winding, 2)
+        self.assertEqual(read.isolation_gap, 0.5)
+        self.assertEqual(read.contour_radius, 0.5)
         self.assertTrue(read.certificate.holds(), read.certificate.describe())
 
     def test_defective_pencil_reports_distinct_multiplicities(self):
@@ -552,12 +552,12 @@ class TestMultiplicity(unittest.TestCase):
         L = np.array([[1.0, 1.0, 0.0],
                       [0.0, 1.0, 1.0],
                       [0.0, 0.0, 2.0]])
-        q = cob.RecursiveQuotient.overMatrix(
+        q = cob.RecursiveQuotient.over_matrix(
             _flat(L), 3, [], [[0, 1, 2], [0], [1]])
         self.assertEqual(q.regime, cob.CertificateRegime.NonNormal)
         read = q.multiplicity(1.0 + 0j, 0.5)
-        self.assertEqual(read.responseWinding, 2)
-        self.assertEqual(read.interiorWinding, 0)
+        self.assertEqual(read.response_winding, 2)
+        self.assertEqual(read.interior_winding, 0)
         self.assertEqual(read.algebraic, 2)
         self.assertEqual(read.geometric, 1)
         self.assertFalse(read.semisimple)
@@ -570,17 +570,17 @@ class TestMultiplicity(unittest.TestCase):
         L = np.array([[1.0, 1.0, 0.5],
                       [0.0, 1.0, 1.0],
                       [0.0, 0.0, 2.0]])
-        q = cob.RecursiveQuotient.overMatrix(
+        q = cob.RecursiveQuotient.over_matrix(
             _flat(L), 3, [], [[0, 1, 2], [0], [1]])
         read = q.multiplicity(2.0 + 0j, 0.3)
-        self.assertEqual(read.interiorWinding, 1)
-        self.assertEqual(read.responseWinding, 0)
+        self.assertEqual(read.interior_winding, 1)
+        self.assertEqual(read.response_winding, 0)
         self.assertEqual(read.algebraic, 1)
-        self.assertEqual(read.isolationGap, 0.3)
+        self.assertEqual(read.isolation_gap, 0.3)
 
     def test_contour_through_spectrum_is_refused(self):
         L = np.diag([1.0, 1.0, 3.0])
-        q = cob.RecursiveQuotient.overMatrix(
+        q = cob.RecursiveQuotient.over_matrix(
             _flat(L), 3, [], [[0, 1, 2], [0], [1]])
         # radius 2.0 puts the eigenvalue 3 exactly on the circle about 1, so
         # whether it is inside is not decided: refused by name.
@@ -588,7 +588,7 @@ class TestMultiplicity(unittest.TestCase):
             q.multiplicity(1.0 + 0j, 2.0)
 
     def test_a_non_positive_radius_is_refused(self):
-        q = cob.RecursiveQuotient.overMatrix(
+        q = cob.RecursiveQuotient.over_matrix(
             _flat(np.diag([1.0, 3.0])), 2, [], [[0, 1], [0]])
         with self.assertRaisesRegex(ValueError, "must be positive"):
             q.multiplicity(1.0 + 0j, 0.0)
@@ -599,7 +599,7 @@ class TestMultiplicity(unittest.TestCase):
         # which this read does not form.
         a = np.diag([1.0, 3.0])
         m = np.diag([1.0, 2.0])
-        q = cob.RecursiveQuotient.overPencil(_flat(a), _flat(m), 2, [[0, 1]])
+        q = cob.RecursiveQuotient.over_pencil(_flat(a), _flat(m), 2, [[0, 1]])
         with self.assertRaisesRegex(ValueError, "pencil"):
             q.multiplicity(1.0 + 0j, 0.5)
 
@@ -611,7 +611,7 @@ class TestResonanceAndCompatibility(unittest.TestCase):
         # P3 with weights 2,3: L_II = [5]; at lam = 5 the shifted interior
         # block is singular -> the resonant mode is retained explicitly.
         L = [[2, -2, 0], [-2, 5, -3], [0, -3, 3]]
-        q = cob.RecursiveQuotient.overMatrix(
+        q = cob.RecursiveQuotient.over_matrix(
             _flat(L), 3, [], [[0, 1, 2], [0], [2]])
         read = q.feshbach(5.0 + 0j, 4.0, 6.0)
         self.assertTrue(read.resonant)
@@ -623,7 +623,7 @@ class TestResonanceAndCompatibility(unittest.TestCase):
         # Compatibility: the load (-2, -3) is NOT orthogonal to the
         # resonant kernel (the whole 1-dim space) -> the violation is
         # reported honestly and the certificate does not hold.
-        self.assertGreater(read.compatibilityResidual, 0.5)
+        self.assertGreater(read.compatibility_residual, 0.5)
         self.assertFalse(read.certificate.holds())
 
     def test_nonnormal_left_kernel_compatibility(self):
@@ -634,18 +634,18 @@ class TestResonanceAndCompatibility(unittest.TestCase):
             L = np.array([[1.0, 0.3, -0.2],
                           [p, 0.0, 1.0],
                           [q, 0.0, 2.0]])
-            return cob.RecursiveQuotient.overMatrix(
+            return cob.RecursiveQuotient.over_matrix(
                 _flat(L), 3, [], [[0, 1, 2], [0]])
 
         compatible = build(1.0, 2.0)
         self.assertEqual(compatible.regime, cob.CertificateRegime.NonNormal)
-        read = compatible.staticReduction()
-        self.assertLess(read.compatibilityResidual, 1e-12)
+        read = compatible.static_reduction()
+        self.assertLess(read.compatibility_residual, 1e-12)
         self.assertTrue(read.certificate.holds(), read.certificate.describe())
 
         incompatible = build(1.0, 0.0)
-        read = incompatible.staticReduction()
-        self.assertGreater(read.compatibilityResidual, 0.1)
+        read = incompatible.static_reduction()
+        self.assertGreater(read.compatibility_residual, 0.1)
         self.assertFalse(read.certificate.holds())
 
     def test_defective_interior_is_refused_not_regularized(self):
@@ -655,9 +655,9 @@ class TestResonanceAndCompatibility(unittest.TestCase):
         L = np.array([[1.0, 0.5, 0.5],
                       [0.4, 0.0, 1.0],
                       [0.6, 0.0, 0.0]])
-        q = cob.RecursiveQuotient.overMatrix(
+        q = cob.RecursiveQuotient.over_matrix(
             _flat(L), 3, [], [[0, 1, 2], [0]])
-        read = q.staticReduction()
+        read = q.static_reduction()
         self.assertFalse(read.certificate.holds())
 
     def test_incompatible_probe_certificate_refuses(self):
@@ -666,9 +666,9 @@ class TestResonanceAndCompatibility(unittest.TestCase):
         L = np.array([[1.0, 0.3, -0.2],
                       [1.0, 0.0, 1.0],
                       [0.0, 0.0, 2.0]])
-        q = cob.RecursiveQuotient.overMatrix(
+        q = cob.RecursiveQuotient.over_matrix(
             _flat(L), 3, [], [[0, 1, 2], [0]])
-        cert = q.staticProbeCertificate([1.0 + 0j])
+        cert = q.static_probe_certificate([1.0 + 0j])
         self.assertFalse(cert.holds())
         self.assertGreater(cert.residual, 0.1)
 
@@ -681,11 +681,11 @@ class TestResonanceAndCompatibility(unittest.TestCase):
                       [0.0, -1.0, 2.0]])
         W = np.diag([1.0, -1.0, 1.0])
         L = W @ H
-        q = cob.RecursiveQuotient.overMatrix(
+        q = cob.RecursiveQuotient.over_matrix(
             _flat(L), 3, [1.0 + 0j, -1.0 + 0j, 1.0 + 0j],
             [[0, 1, 2], [0], [2]])
         self.assertEqual(q.regime, cob.CertificateRegime.HermitianIndefinite)
-        cert = q.verifyStatic()
+        cert = q.verify_static()
         self.assertTrue(cert.holds(), cert.describe())
         E, _ = reduction_matrix(q)
         np.testing.assert_allclose(E, numpy_schur(L, [0, 2], [1]),
@@ -705,51 +705,51 @@ class TestOverlappingInterfaceLabeledSum(unittest.TestCase):
 
     def _quotient(self, policy):
         options = cob.RecursiveQuotient.Options()
-        options.embeddingPolicy = policy
-        return cob.RecursiveQuotient.overMatrix(
+        options.embedding_policy = policy
+        return cob.RecursiveQuotient.over_matrix(
             _flat(self.L), 5, [], [[0, 1, 2], [2, 3, 4]], options)
 
     def test_shared_cell_is_interface_and_both_fibers_carry_it(self):
         q = self._quotient(cob.FiberEmbeddingPolicy.CarryGramExactly)
-        self.assertEqual(list(q.interfaceIndices), [2])
-        self.assertEqual(list(q.interiorIndices(0)), [0, 1])
-        self.assertEqual(list(q.interiorIndices(1)), [3, 4])
-        read = q.labeledFiberSum()
-        self.assertEqual(list(read.summandComponents), [0, 1])
-        self.assertEqual(list(read.summandRanks), [1, 1])
+        self.assertEqual(list(q.interface_indices), [2])
+        self.assertEqual(list(q.interior_indices(0)), [0, 1])
+        self.assertEqual(list(q.interior_indices(1)), [3, 4])
+        read = q.labeled_fiber_sum()
+        self.assertEqual(list(read.summand_components), [0, 1])
+        self.assertEqual(list(read.summand_ranks), [1, 1])
         # Both summand columns embed to the SAME chain-space cell.
         J = _mat(read.embedding, 5, 2)
         np.testing.assert_allclose(J[:, 0], J[:, 1], rtol=0, atol=1e-15)
 
     def test_naive_direct_sum_miscounts_while_the_gram_is_exact(self):
         q = self._quotient(cob.FiberEmbeddingPolicy.CarryGramExactly)
-        read = q.labeledFiberSum()
+        read = q.labeled_fiber_sum()
         G = _mat(read.gram, 2)
         # G = [[1, 1], [1, 1]] EXACTLY: the images coincide.
         np.testing.assert_allclose(G, np.ones((2, 2)), rtol=0, atol=1e-15)
         # Naive internal direct sum would claim rank 2; the Gram says 1.
-        self.assertEqual(read.nominalRank, 2)
-        self.assertEqual(read.quotientNullity, 1)
+        self.assertEqual(read.nominal_rank, 2)
+        self.assertEqual(read.quotient_nullity, 1)
         # Independent recomputation of G = J^dag W J (W = I).
         J = _mat(read.embedding, 5, 2)
         np.testing.assert_allclose(G, J.conj().T @ J, rtol=0, atol=1e-15)
         # Declared option CarryGramExactly is exact by construction.
         self.assertTrue(read.certificate.holds())
-        self.assertEqual(read.effectiveRank, 2)
+        self.assertEqual(read.effective_rank, 2)
 
     def test_near_isometry_policy_refuses_the_overlap(self):
         q = self._quotient(cob.FiberEmbeddingPolicy.CertifiedNearIsometry)
-        read = q.labeledFiberSum()
-        self.assertAlmostEqual(read.gramDefect, 1.0, places=12)
+        read = q.labeled_fiber_sum()
+        self.assertAlmostEqual(read.gram_defect, 1.0, places=12)
         self.assertFalse(read.certificate.holds())
 
     def test_quotient_kernel_policy_restates_the_rank(self):
         q = self._quotient(cob.FiberEmbeddingPolicy.QuotientKernel)
-        read = q.labeledFiberSum()
+        read = q.labeled_fiber_sum()
         self.assertEqual(read.policy, cob.FiberEmbeddingPolicy.QuotientKernel)
-        self.assertEqual(read.effectiveRank, 1)
-        self.assertEqual(read.quotientNullity, 1)
-        basis = _mat(read.quotientBasis, 2, 1)
+        self.assertEqual(read.effective_rank, 1)
+        self.assertEqual(read.quotient_nullity, 1)
+        basis = _mat(read.quotient_basis, 2, 1)
         # The kept direction is the symmetric combination (the kernel of G
         # is the antisymmetric one).
         np.testing.assert_allclose(np.abs(basis), np.full((2, 1), 1 / np.sqrt(2)),
@@ -757,23 +757,23 @@ class TestOverlappingInterfaceLabeledSum(unittest.TestCase):
 
     def test_near_isometry_epsilon_bounds_the_amplitude_error(self):
         # The whitepaper inequality |a^dag G b - a^dag b| <= eps ||a|| ||b||
-        # with eps = the reported gramDefect (a 2-norm statement), checked
+        # with eps = the reported gram_defect (a 2-norm statement), checked
         # on random vectors against the read's own numbers.
         q = self._quotient(cob.FiberEmbeddingPolicy.CertifiedNearIsometry)
-        read = q.labeledFiberSum()
-        G = _mat(read.gram, int(read.nominalRank))
+        read = q.labeled_fiber_sum()
+        G = _mat(read.gram, int(read.nominal_rank))
         rng = np.random.default_rng(5)
         for _ in range(25):
             a = rng.normal(size=2) + 1j * rng.normal(size=2)
             b = rng.normal(size=2) + 1j * rng.normal(size=2)
             error = abs(np.conj(a) @ G @ b - np.conj(a) @ b)
-            bound = read.gramDefect * np.linalg.norm(a) * np.linalg.norm(b)
+            bound = read.gram_defect * np.linalg.norm(a) * np.linalg.norm(b)
             self.assertLessEqual(error, bound + 1e-12)
 
     def test_amplitude_budget_composes(self):
         # eps_AB <= eps_A + eps_B + eps_A eps_B, and the tensor Gram of two
         # near-isometries actually obeys the composed budget.
-        compose = cob.RecursiveQuotient.composeNearIsometryBudget
+        compose = cob.RecursiveQuotient.compose_near_isometry_budget
         self.assertAlmostEqual(compose(0.1, 0.2), 0.32, places=15)
         self.assertEqual(compose(0.0, 0.0), 0.0)
         rng = np.random.default_rng(9)
@@ -794,15 +794,15 @@ class TestOverlappingInterfaceLabeledSum(unittest.TestCase):
         # Negative control for the overlap: partition WITHOUT overlap keeps
         # the labeled sum an honest (external) direct sum, G = I.
         options = cob.RecursiveQuotient.Options()
-        options.embeddingPolicy = cob.FiberEmbeddingPolicy.CertifiedNearIsometry
-        q = cob.RecursiveQuotient.overMatrix(
+        options.embedding_policy = cob.FiberEmbeddingPolicy.CertifiedNearIsometry
+        q = cob.RecursiveQuotient.over_matrix(
             _flat(self.L), 5, [], [[0, 1], [2], [3, 4]], options)
-        read = q.labeledFiberSum()
-        G = _mat(read.gram, int(read.nominalRank))
-        np.testing.assert_allclose(G, np.eye(int(read.nominalRank)),
+        read = q.labeled_fiber_sum()
+        G = _mat(read.gram, int(read.nominal_rank))
+        np.testing.assert_allclose(G, np.eye(int(read.nominal_rank)),
                                    rtol=0, atol=1e-14)
         self.assertTrue(read.certificate.holds())
-        self.assertEqual(read.quotientNullity, 0)
+        self.assertEqual(read.quotient_nullity, 0)
 
 
 # --------------------------------------------------------------------------
@@ -817,31 +817,31 @@ class TestResponseNetworkAndSheaf(unittest.TestCase):
                   [0.0, 0.0, -1.0, 1.0]])
 
     def _quotient(self):
-        return cob.RecursiveQuotient.overMatrix(
+        return cob.RecursiveQuotient.over_matrix(
             _flat(self.L), 4, [], [[0, 1], [2, 3]])
 
     def test_network_blocks_tile_the_reduced_operator(self):
         q = self._quotient()
         E, _ = reduction_matrix(q)
         np.testing.assert_allclose(E, [[1, -1], [-1, 1]], rtol=0, atol=MACHINE)
-        network = q.responseNetwork()
-        self.assertEqual(list(network.stalkDimensions), [1, 1])
+        network = q.response_network()
+        self.assertEqual(list(network.stalk_dimensions), [1, 1])
         self.assertEqual(len(network.edges), 2)  # both directions
         block = np.array(network.edges[0].block)
         np.testing.assert_allclose(block, [-1.0], rtol=0, atol=MACHINE)
-        self.assertEqual(network.coverageResidual, 0.0)
+        self.assertEqual(network.coverage_residual, 0.0)
         self.assertTrue(network.certificate.holds())
 
     def test_sheaf_realization_is_emitted_and_reproduces_blocks(self):
         q = self._quotient()
-        sheaf = q.sheafRealization()
+        sheaf = q.sheaf_realization()
         self.assertTrue(sheaf.emitted)
         self.assertTrue(sheaf.simplicial)
-        self.assertEqual(list(sheaf.edgeStalkDimensions), [1])
-        self.assertLess(sheaf.reconstructionResidual, 1e-12)
+        self.assertEqual(list(sheaf.edge_stalk_dimensions), [1])
+        self.assertLess(sheaf.reconstruction_residual, 1e-12)
         # rho_u^dag rho_v == -L_uv == 1 for the unit effective edge.
-        rho_u = np.array(sheaf.restrictionMaps[0])
-        rho_v = np.array(sheaf.restrictionMaps[1])
+        rho_u = np.array(sheaf.restriction_maps[0])
+        rho_v = np.array(sheaf.restriction_maps[1])
         np.testing.assert_allclose(rho_u.conj() * rho_v, [1.0],
                                    rtol=0, atol=1e-12)
 
@@ -849,23 +849,23 @@ class TestResponseNetworkAndSheaf(unittest.TestCase):
         # Ground the ends (diagonal excess): the reduced operator is no
         # longer a sheaf Laplacian; the realization is NOT invented.
         L = self.L + np.diag([2.0, 0.0, 0.0, 2.0])
-        q = cob.RecursiveQuotient.overMatrix(
+        q = cob.RecursiveQuotient.over_matrix(
             _flat(L), 4, [], [[0, 1], [2, 3]])
-        sheaf = q.sheafRealization()
+        sheaf = q.sheaf_realization()
         self.assertFalse(sheaf.emitted)
         self.assertFalse(sheaf.certificate.holds())
-        self.assertGreater(sheaf.reconstructionResidual, 0.1)
-        self.assertEqual(len(sheaf.restrictionMaps), 0)
+        self.assertGreater(sheaf.reconstruction_residual, 0.1)
+        self.assertEqual(len(sheaf.restriction_maps), 0)
 
     def test_sheaf_is_refused_in_the_non_normal_regime(self):
         L = np.array([[1.0, 0.7, 0.0, 0.0],
                       [-0.2, 2.0, -1.0, 0.0],
                       [0.0, -1.0, 2.0, -1.0],
                       [0.0, 0.0, -1.0, 1.0]])
-        q = cob.RecursiveQuotient.overMatrix(
+        q = cob.RecursiveQuotient.over_matrix(
             _flat(L), 4, [], [[0, 1], [2, 3]])
         self.assertEqual(q.regime, cob.CertificateRegime.NonNormal)
-        sheaf = q.sheafRealization()
+        sheaf = q.sheaf_realization()
         self.assertFalse(sheaf.emitted)
         self.assertFalse(sheaf.certificate.holds())
 
@@ -877,17 +877,17 @@ class TestNestedQuotients(unittest.TestCase):
     L = TestResponseNetworkAndSheaf.L  # P4
 
     def test_nested_reduction_equals_one_shot(self):
-        one_shot = cob.RecursiveQuotient.overMatrix(
+        one_shot = cob.RecursiveQuotient.over_matrix(
             _flat(self.L), 4, [], [[0, 1], [2, 3]])
         E_one, _ = reduction_matrix(one_shot)
 
         # Stage 1: eliminate only {0} (cells 1,2,3 kept as singletons).
-        stage1 = cob.RecursiveQuotient.overMatrix(
+        stage1 = cob.RecursiveQuotient.over_matrix(
             _flat(self.L), 4, [], [[0, 1], [2], [3]])
         E1, _ = reduction_matrix(stage1)
-        self.assertEqual(list(stage1.interfaceIndices), [1, 2, 3])
+        self.assertEqual(list(stage1.interface_indices), [1, 2, 3])
         # Stage 2 on the REDUCED operator: eliminate local cell 2 (= fine 3).
-        stage2 = stage1.nextLevel([[0], [1, 2]])
+        stage2 = stage1.next_level([[0], [1, 2]])
         E2, read2 = reduction_matrix(stage2)
         np.testing.assert_allclose(E2, E_one, rtol=0, atol=MACHINE)
         self.assertEqual(stage2.level, 1)
@@ -895,22 +895,22 @@ class TestNestedQuotients(unittest.TestCase):
 
     def test_elimination_order_independence(self):
         # {0} then {3} vs {3} then {0}: identical final response.
-        first = cob.RecursiveQuotient.overMatrix(
+        first = cob.RecursiveQuotient.over_matrix(
             _flat(self.L), 4, [], [[0, 1], [2], [3]])
-        a = first.nextLevel([[0], [1, 2]])
+        a = first.next_level([[0], [1, 2]])
         E_a, _ = reduction_matrix(a)
 
-        second = cob.RecursiveQuotient.overMatrix(
+        second = cob.RecursiveQuotient.over_matrix(
             _flat(self.L), 4, [], [[0], [1], [2, 3]])
-        b = second.nextLevel([[0, 1], [2]])
+        b = second.next_level([[0, 1], [2]])
         E_b, _ = reduction_matrix(b)
         np.testing.assert_allclose(E_a, E_b, rtol=0, atol=MACHINE)
 
     def test_lineage_provenance_is_carried(self):
-        stage1 = cob.RecursiveQuotient.overMatrix(
+        stage1 = cob.RecursiveQuotient.over_matrix(
             _flat(self.L), 4, [], [[0, 1], [2], [3]])
-        stage2 = stage1.nextLevel([[0], [1, 2]])
-        self.assertEqual(list(stage2.coordinateProvenance),
+        stage2 = stage1.next_level([[0], [1, 2]])
+        self.assertEqual(list(stage2.coordinate_provenance),
                          ["L0:coord(1)", "L0:coord(2)", "L0:coord(3)"])
         _, read = reduction_matrix(stage2)
         self.assertEqual([c.provenance for c in read.coordinates],
@@ -924,11 +924,11 @@ class TestSelectedRetention(unittest.TestCase):
     def test_selected_interior_cell_is_never_eliminated(self):
         L = [[2, -2, 0], [-2, 5, -3], [0, -3, 3]]
         options = cob.RecursiveQuotient.Options()
-        options.selectedInteriorIndices = [1]
-        q = cob.RecursiveQuotient.overMatrix(
+        options.selected_interior_indices = [1]
+        q = cob.RecursiveQuotient.over_matrix(
             _flat(L), 3, [], [[0, 1, 2], [0], [2]], options)
         # Nothing left to eliminate: the reduced operator IS the fine one.
-        self.assertEqual(list(q.interfaceIndices), [0, 1, 2])
+        self.assertEqual(list(q.interface_indices), [0, 1, 2])
         E, read = reduction_matrix(q)
         np.testing.assert_allclose(E, np.array(L, dtype=complex),
                                    rtol=0, atol=1e-15)
@@ -940,10 +940,10 @@ class TestSelectedRetention(unittest.TestCase):
     def test_selected_cell_by_vertex_tuple_on_the_spacetime_path(self):
         st = build_graph([(0, 1, 2.0, 0.0), (1, 2, 3.0, 0.0)])
         options = cob.RecursiveQuotient.Options()
-        options.selectedInteriorCells = [[1]]
+        options.selected_interior_cells = [[1]]
         q = _over_cells(
             st, 0, [[[0], [1], [2]], [[0]], [[2]]], options)
-        self.assertEqual(list(q.interfaceIndices), [0, 1, 2])
+        self.assertEqual(list(q.interface_indices), [0, 1, 2])
         _, read = reduction_matrix(q)
         self.assertEqual(read.coordinates[1].kind,
                          cob.RetainedCoordinateKind.Selected)
@@ -965,25 +965,25 @@ class TestCraigBampton(unittest.TestCase):
             L[i + 1, i + 1] += 1.0
             L[i, i + 1] -= 1.0
             L[i + 1, i] -= 1.0
-        q = cob.RecursiveQuotient.overMatrix(
+        q = cob.RecursiveQuotient.over_matrix(
             _flat(L), self.N, [], [[0, 1, 2, 3, 4, 5], [0], [5]])
         return L, q
 
     def test_retained_modes_window_and_gap(self):
         _, q = self._fixture()
-        read = q.craigBampton(-1e-6, 0.5, 1.0)
-        self.assertEqual(read.windowLower, -1e-6)
-        self.assertEqual(read.windowUpper, 0.5)
-        self.assertEqual(list(read.retainedModes), [1])
+        read = q.craig_bampton(-1e-6, 0.5, 1.0)
+        self.assertEqual(read.window_lower, -1e-6)
+        self.assertEqual(read.window_upper, 0.5)
+        self.assertEqual(list(read.retained_modes), [1])
         # Discarded-mode gap: 1.38196601 - 0.5 (literal).
-        self.assertAlmostEqual(read.discardedModeGap,
+        self.assertAlmostEqual(read.discarded_mode_gap,
                                2 - 2 * np.cos(2 * np.pi / 5) - 0.5, places=10)
 
     def test_reduced_pencil_structure(self):
         L, q = self._fixture()
-        read = q.craigBampton(-1e-6, 0.5, 1.0)
-        K = _mat(read.reducedStiffness, 3)
-        M = _mat(read.reducedMass, 3)
+        read = q.craig_bampton(-1e-6, 0.5, 1.0)
+        K = _mat(read.reduced_stiffness, 3)
+        M = _mat(read.reduced_mass, 3)
         # K_BB block == the exact static Schur complement (the constraint
         # modes ARE the static condensation shapes).
         E, _ = reduction_matrix(q)
@@ -1001,45 +1001,45 @@ class TestCraigBampton(unittest.TestCase):
 
     def test_window_eigenvalues_match_the_fine_operator(self):
         L, q = self._fixture()
-        read = q.craigBampton(self.WINDOW[0], self.WINDOW[1], 1.0,
+        read = q.craig_bampton(self.WINDOW[0], self.WINDOW[1], 1.0,
                               residual_tolerance=5e-2)
         fine = np.linalg.eigvalsh(L)
         fine_in_window = fine[(fine >= self.WINDOW[0]) & (fine <= self.WINDOW[1])]
-        self.assertEqual(len(read.windowEigenvalues), len(fine_in_window))
+        self.assertEqual(len(read.window_eigenvalues), len(fine_in_window))
         # CERTIFIED APPROXIMATION, not an exact identity: the error is
         # bounded by the reported residual (self-adjoint Bauer-Fike with the
         # residual's own norm scale), and Rayleigh-Ritz bounds each reduced
         # eigenvalue from above by construction.
         scale = np.linalg.norm(L)  # Frobenius, the residual's scale
-        for value, residual in zip(read.windowEigenvalues,
-                                   read.eigenResiduals):
+        for value, residual in zip(read.window_eigenvalues,
+                                   read.eigen_residuals):
             self.assertLess(np.min(np.abs(fine - value)),
                             1.05 * residual * scale + 1e-12)
-        for value, exact in zip(read.windowEigenvalues, fine_in_window):
+        for value, exact in zip(read.window_eigenvalues, fine_in_window):
             self.assertGreaterEqual(value, exact - 1e-12)
         self.assertEqual(read.certificate.domain,
                          cob.CertificateDomain.BandWindow)
         # Holds against the CALLER-DECLARED surrogate tolerance...
         self.assertTrue(read.certificate.holds())
         # ...and honestly refuses under the strict default tolerance.
-        strict = q.craigBampton(self.WINDOW[0], self.WINDOW[1], 1.0)
+        strict = q.craig_bampton(self.WINDOW[0], self.WINDOW[1], 1.0)
         self.assertFalse(strict.certificate.holds())
-        self.assertEqual(strict.discardedModeGap, read.discardedModeGap)
+        self.assertEqual(strict.discarded_mode_gap, read.discarded_mode_gap)
 
     def test_larger_cutoff_tightens_the_surrogate(self):
         # More retained fixed-interface modes -> smaller residuals and a
         # closer window eigenvalue (monotone improvement of the surrogate).
         L, q = self._fixture()
         fine = np.linalg.eigvalsh(L)
-        coarse = q.craigBampton(self.WINDOW[0], self.WINDOW[1], 1.0)
-        finer = q.craigBampton(self.WINDOW[0], self.WINDOW[1], 3.0)
-        self.assertEqual(list(finer.retainedModes), [3])
-        self.assertEqual(len(coarse.windowEigenvalues), 2)
-        self.assertEqual(len(finer.windowEigenvalues), 2)
-        err_coarse = abs(coarse.windowEigenvalues[1] - fine[1])
-        err_finer = abs(finer.windowEigenvalues[1] - fine[1])
+        coarse = q.craig_bampton(self.WINDOW[0], self.WINDOW[1], 1.0)
+        finer = q.craig_bampton(self.WINDOW[0], self.WINDOW[1], 3.0)
+        self.assertEqual(list(finer.retained_modes), [3])
+        self.assertEqual(len(coarse.window_eigenvalues), 2)
+        self.assertEqual(len(finer.window_eigenvalues), 2)
+        err_coarse = abs(coarse.window_eigenvalues[1] - fine[1])
+        err_finer = abs(finer.window_eigenvalues[1] - fine[1])
         self.assertLess(err_finer, err_coarse)
-        self.assertLess(max(finer.eigenResiduals), max(coarse.eigenResiduals))
+        self.assertLess(max(finer.eigen_residuals), max(coarse.eigen_residuals))
 
     def test_non_normal_regime_takes_the_transpose_pairing(self):
         """The regime decides the pairing, not whether the surrogate exists. A
@@ -1050,13 +1050,13 @@ class TestCraigBampton(unittest.TestCase):
         L = np.array([[1.0, 0.5, 0.0],
                       [-0.2, 2.0, -1.0],
                       [0.0, -1.0, 1.0]])
-        q = cob.RecursiveQuotient.overMatrix(
+        q = cob.RecursiveQuotient.over_matrix(
             _flat(L), 3, [], [[0, 1, 2], [0], [2]])
         self.assertEqual(q.regime, cob.CertificateRegime.NonNormal)
-        read = q.craigBampton(-10.0, 10.0, 1e6, 1e-6)
-        self.assertTrue(read.windowEigenvalues)
-        self.assertLess(max(read.eigenResiduals), 1e-6)
-        for value in read.windowEigenvalues:
+        read = q.craig_bampton(-10.0, 10.0, 1e6, 1e-6)
+        self.assertTrue(read.window_eigenvalues)
+        self.assertLess(max(read.eigen_residuals), 1e-6)
+        for value in read.window_eigenvalues:
             self.assertLess(
                 float(np.min(np.abs(np.linalg.eigvals(L).real - value))), 1e-6)
 
@@ -1065,22 +1065,22 @@ class TestCraigBampton(unittest.TestCase):
                       [-1.0, 3.0, -1.0],
                       [0.0, -1.0, 2.0]])
         L = np.diag([1.0, -1.0, 1.0]) @ H
-        q = cob.RecursiveQuotient.overMatrix(
+        q = cob.RecursiveQuotient.over_matrix(
             _flat(L), 3, [1.0 + 0j, -1.0 + 0j, 1.0 + 0j],
             [[0, 1, 2], [0], [2]])
         with self.assertRaises(ValueError):
-            q.craigBampton(0.0, 0.5, 1.0)
+            q.craig_bampton(0.0, 0.5, 1.0)
 
     def test_bad_window_and_cutoff_are_refused(self):
         _, q = self._fixture()
         with self.assertRaises(ValueError):
-            q.craigBampton(1.0, 0.5, 2.0)
+            q.craig_bampton(1.0, 0.5, 2.0)
         with self.assertRaises(ValueError):
-            q.craigBampton(0.0, 1.5, 1.0)  # cutoff below the window edge
+            q.craig_bampton(0.0, 1.5, 1.0)  # cutoff below the window edge
         with self.assertRaises(ValueError):
-            q.craigBampton(complex(0.5, 0.0), 0.5, 0.25)  # retention inside the window
+            q.craig_bampton(complex(0.5, 0.0), 0.5, 0.25)  # retention inside the window
         with self.assertRaises(ValueError):
-            q.craigBampton(complex(0.5, 0.0), -0.5, 1.0)
+            q.craig_bampton(complex(0.5, 0.0), -0.5, 1.0)
 
     def test_the_real_window_is_the_disc_whose_diameter_it_is(self):
         """The two-real-number declaration maps the interval [a, b] to the disc
@@ -1090,20 +1090,20 @@ class TestCraigBampton(unittest.TestCase):
         the two declarations, and every real-window caller is unchanged."""
         _, q = self._fixture()
         for (a, b, cutoff) in [(-1e-6, 0.5, 1.0), (-1e-6, 0.5, 3.0), (0.0, 1.0, 4.0)]:
-            real = q.craigBampton(a, b, cutoff)
+            real = q.craig_bampton(a, b, cutoff)
             centre = 0.5 * (a + b)
-            disc = q.craigBampton(complex(centre, 0.0), 0.5 * (b - a), cutoff - centre)
-            self.assertEqual(list(real.retainedModes), list(disc.retainedModes))
-            np.testing.assert_allclose(real.windowEigenvalues, disc.windowEigenvalues, rtol=0, atol=1e-12)
+            disc = q.craig_bampton(complex(centre, 0.0), 0.5 * (b - a), cutoff - centre)
+            self.assertEqual(list(real.retained_modes), list(disc.retained_modes))
+            np.testing.assert_allclose(real.window_eigenvalues, disc.window_eigenvalues, rtol=0, atol=1e-12)
             np.testing.assert_allclose(np.array(real.basis), np.array(disc.basis), rtol=0, atol=1e-12)
-            self.assertAlmostEqual(real.discardedModeGap, disc.discardedModeGap, places=12)
-            self.assertEqual(real.windowCentre, complex(centre, 0.0))
-            self.assertAlmostEqual(real.windowRadius, 0.5 * (b - a), places=15)
-            self.assertAlmostEqual(real.retentionRadius, cutoff - centre, places=15)
-            self.assertAlmostEqual(real.windowLower, a, places=15)
-            self.assertAlmostEqual(real.windowUpper, b, places=15)
-            self.assertAlmostEqual(real.modeCutoff, cutoff, places=15)
-            for value, z in zip(real.windowEigenvalues, real.windowSpectrum):
+            self.assertAlmostEqual(real.discarded_mode_gap, disc.discarded_mode_gap, places=12)
+            self.assertEqual(real.window_centre, complex(centre, 0.0))
+            self.assertAlmostEqual(real.window_radius, 0.5 * (b - a), places=15)
+            self.assertAlmostEqual(real.retention_radius, cutoff - centre, places=15)
+            self.assertAlmostEqual(real.window_lower, a, places=15)
+            self.assertAlmostEqual(real.window_upper, b, places=15)
+            self.assertAlmostEqual(real.mode_cutoff, cutoff, places=15)
+            for value, z in zip(real.window_eigenvalues, real.window_spectrum):
                 self.assertEqual(z, complex(value, 0.0))
 
     def test_the_disc_retains_by_complex_distance_on_a_non_normal_level(self):
@@ -1125,24 +1125,24 @@ class TestCraigBampton(unittest.TestCase):
         # Cells 0 and 1 are claimed twice, so they are the interface; the rest
         # are claimed once and couple only to cells of their own component,
         # so they are its interior.
-        q = cob.RecursiveQuotient.overMatrix(_flat(L), n, [], [list(range(n)), [0], [1]])
+        q = cob.RecursiveQuotient.over_matrix(_flat(L), n, [], [list(range(n)), [0], [1]])
         self.assertEqual(q.regime, cob.CertificateRegime.NonNormal)
-        read = q.craigBampton(centre, radius, radius, 1e-6)
+        read = q.craig_bampton(centre, radius, radius, 1e-6)
         # The retained fixed-interface eigenvalues, read off the basis columns
         # (the basis is flat row-major, fine dimension by reduced dimension).
         basis = np.array(read.basis).reshape(n, -1)
         kept = []
-        for column in basis[:, len(q.interfaceIndices):].T:
+        for column in basis[:, len(q.interface_indices):].T:
             support = np.flatnonzero(np.abs(column) > 1e-8)
             self.assertEqual(len(support), 1)
             kept.append(L[support[0], support[0]])
-        self.assertEqual(sum(read.retainedModes), 2)
+        self.assertEqual(sum(read.retained_modes), 2)
         self.assertTrue(any(abs(z - lightly) < 1e-12 for z in kept))
         self.assertTrue(any(abs(z - 1.2) < 1e-12 for z in kept))
         self.assertTrue(all(abs(z - strongly) > 1e-6 for z in kept))
-        self.assertGreater(read.discardedModeGap, 0.0)
-        same = q.craigBampton(centre.real - radius, centre.real + radius, centre.real + radius)
-        self.assertEqual(list(same.retainedModes), list(read.retainedModes))
+        self.assertGreater(read.discarded_mode_gap, 0.0)
+        same = q.craig_bampton(centre.real - radius, centre.real + radius, centre.real + radius)
+        self.assertEqual(list(same.retained_modes), list(read.retained_modes))
 
 
 # --------------------------------------------------------------------------
@@ -1156,16 +1156,16 @@ class TestRelabeling(unittest.TestCase):
         perm = rng.permutation(n)
         P = np.eye(n)[perm]
         L_perm = P @ L @ P.T
-        base = cob.RecursiveQuotient.overMatrix(
+        base = cob.RecursiveQuotient.over_matrix(
             _flat(L), n, [], [[0, 1, 2, 3], [1], [2], [3]])
         mapped_components = [[int(np.where(perm == i)[0][0]) for i in comp]
                              for comp in [[0, 1, 2, 3], [1], [2], [3]]]
-        relabeled = cob.RecursiveQuotient.overMatrix(
+        relabeled = cob.RecursiveQuotient.over_matrix(
             _flat(L_perm), n, [], mapped_components)
         E_base, _ = reduction_matrix(base)
         E_rel, _ = reduction_matrix(relabeled)
-        kept_base = list(base.interfaceIndices)
-        kept_rel = list(relabeled.interfaceIndices)
+        kept_base = list(base.interface_indices)
+        kept_rel = list(relabeled.interface_indices)
         # Match kept coordinates through the permutation, order-agnostically.
         positions = {int(np.where(perm == i)[0][0]): k
                      for k, i in enumerate(kept_base)}
@@ -1195,17 +1195,17 @@ class TestRelabeling(unittest.TestCase):
         reorder = [prov_b.index(p) for p in mapped]
         np.testing.assert_allclose(E_b[np.ix_(reorder, reorder)], E_a,
                                    rtol=0, atol=MACHINE)
-        net_a = q_a.responseNetwork()
-        net_b = q_b.responseNetwork()
-        self.assertEqual(sorted(net_a.stalkDimensions),
-                         sorted(net_b.stalkDimensions))
+        net_a = q_a.response_network()
+        net_b = q_b.response_network()
+        self.assertEqual(sorted(net_a.stalk_dimensions),
+                         sorted(net_b.stalk_dimensions))
         self.assertEqual(len(net_a.edges), len(net_b.edges))
 
     def test_within_cell_vertex_order_is_never_a_convention(self):
         # Cells are matched by vertex SET: reversing every tuple (and
         # shuffling the support lists) yields the identical reduction.
-        st = tessera.Spacetime.fromVertexTuples(2, [[0, 1, 2], [1, 2, 3]], 1.0, 0.0)
-        st.materializeFacets()
+        st = tessera.Spacetime.from_vertex_tuples(2, [[0, 1, 2], [1, 2, 3]], 1.0, 0.0)
+        st.materialize_facets()
         forward = _over_cells(
             st, 1, [[[0, 1], [0, 2], [1, 2]], [[1, 3], [2, 3]]])
         reversed_cells = _over_cells(
@@ -1213,8 +1213,8 @@ class TestRelabeling(unittest.TestCase):
         E_f, _ = reduction_matrix(forward)
         E_r, _ = reduction_matrix(reversed_cells)
         np.testing.assert_allclose(E_f, E_r, rtol=0, atol=0)
-        self.assertEqual(list(forward.interfaceIndices),
-                         list(reversed_cells.interfaceIndices))
+        self.assertEqual(list(forward.interface_indices),
+                         list(reversed_cells.interface_indices))
 
     def test_relabeled_sheaf_fixture_reproduces_its_realization(self):
         L = TestResponseNetworkAndSheaf.L
@@ -1223,11 +1223,11 @@ class TestRelabeling(unittest.TestCase):
         L_perm = P @ L @ P.T
         mapped = [[int(np.where(np.array(perm) == i)[0][0]) for i in comp]
                   for comp in [[0, 1], [2, 3]]]
-        q = cob.RecursiveQuotient.overMatrix(_flat(L_perm), 4, [], mapped)
-        sheaf = q.sheafRealization()
+        q = cob.RecursiveQuotient.over_matrix(_flat(L_perm), 4, [], mapped)
+        sheaf = q.sheaf_realization()
         self.assertTrue(sheaf.emitted)
         self.assertTrue(sheaf.simplicial)
-        self.assertEqual(list(sheaf.edgeStalkDimensions), [1])
+        self.assertEqual(list(sheaf.edge_stalk_dimensions), [1])
 
 
 class TestComponentOrderIndependence(unittest.TestCase):
@@ -1240,14 +1240,14 @@ class TestComponentOrderIndependence(unittest.TestCase):
                       [-1.0, 2.0, -1.0, 0.0],
                       [0.0, -1.0, 2.0, -1.0],
                       [0.0, 0.0, -1.0, 1.0]])
-        a = cob.RecursiveQuotient.overMatrix(
+        a = cob.RecursiveQuotient.over_matrix(
             _flat(L), 4, [], [[0, 1], [2, 3]])
-        b = cob.RecursiveQuotient.overMatrix(
+        b = cob.RecursiveQuotient.over_matrix(
             _flat(L), 4, [], [[2, 3], [0, 1]])
         E_a, read_a = reduction_matrix(a)
         E_b, read_b = reduction_matrix(b)
         np.testing.assert_allclose(E_a, E_b, rtol=0, atol=0)
-        self.assertEqual(list(a.interfaceIndices), list(b.interfaceIndices))
+        self.assertEqual(list(a.interface_indices), list(b.interface_indices))
         # Ownership swaps with the component positions, honestly.
         self.assertEqual([c.component for c in read_a.coordinates],
                          [1 - c.component for c in read_b.coordinates])
@@ -1272,17 +1272,17 @@ class TestCacheIncremental(unittest.TestCase):
         q = _over_cells(
             st, 0, [self.A_CELLS[0], self.B_CELLS[0]],
             cob.RecursiveQuotient.Options(), cache)
-        q.staticReduction()
+        q.static_reduction()
         self.assertEqual(cache.size, 2)  # both components stored
         misses_before = cache.misses
 
         # Accepted metric move INSIDE component A.
-        for e in st.getEdgeList().toVector():
-            if e.getSource().getId() in (0, 1) and \
-               e.getTarget().getId() in (0, 1):
-                e.setLength(cmath.sqrt(complex(1.7)))
+        for e in st.get_edge_list().to_vector():
+            if e.get_source().get_id() in (0, 1) and \
+               e.get_target().get_id() in (0, 1):
+                e.set_length(cmath.sqrt(complex(1.7)))
         star = cob.TouchedStar()
-        star.addChangedEdge(0, 1)
+        star.add_changed_edge(0, 1)
         cache.publish(star)
         self.assertEqual(cache.size, 1)  # A dropped, sibling B SURVIVES
 
@@ -1314,16 +1314,16 @@ class TestCacheIncremental(unittest.TestCase):
         cells = [[[0], [1]], [[2], [3]]]
         q = _over_cells(
             st, 0, cells, cob.RecursiveQuotient.Options(), cache)
-        child = q.nextLevel([[0, 1]])
+        child = q.next_level([[0, 1]])
         E_child_before, _ = reduction_matrix(child)
         self.assertEqual(E_child_before.shape, (1, 1))  # one harmonic fiber
 
         # Accepted metric move on edge (0, 1), inside component A only.
-        for e in st.getEdgeList().toVector():
-            if {e.getSource().getId(), e.getTarget().getId()} == {0, 1}:
-                e.setLength(cmath.sqrt(complex(2.5)))
+        for e in st.get_edge_list().to_vector():
+            if {e.get_source().get_id(), e.get_target().get_id()} == {0, 1}:
+                e.set_length(cmath.sqrt(complex(2.5)))
         star = cob.TouchedStar()
-        star.addChangedEdge(0, 1)
+        star.add_changed_edge(0, 1)
         cache.publish(star)
         self.assertEqual(cache.size, 1)  # sibling B's entry survives
 
@@ -1331,12 +1331,12 @@ class TestCacheIncremental(unittest.TestCase):
         hits_before = cache.hits
         E_parent_after, _ = reduction_matrix(q)
         self.assertEqual(cache.hits - hits_before, 1)  # B served from cache
-        child_after = q.nextLevel([[0, 1]])
+        child_after = q.next_level([[0, 1]])
         E_child_after, _ = reduction_matrix(child_after)
 
         cold = _over_cells(st, 0, cells)
         E_parent_cold, _ = reduction_matrix(cold)
-        cold_child = cold.nextLevel([[0, 1]])
+        cold_child = cold.next_level([[0, 1]])
         E_cold, _ = reduction_matrix(cold_child)
         # Cached == cold at BOTH levels, bit-for-bit.
         np.testing.assert_allclose(E_parent_after, E_parent_cold,
@@ -1360,7 +1360,7 @@ class TestCachePartitionSafety(unittest.TestCase):
         E_plain, _ = reduction_matrix(plain)
 
         options = cob.RecursiveQuotient.Options()
-        options.selectedInteriorCells = [[1]]
+        options.selected_interior_cells = [[1]]
         selected = _over_cells(st, 0, cells, options,
                                                    cache)
         E_selected, _ = reduction_matrix(selected)
@@ -1395,15 +1395,15 @@ class TestDenseSparseCrossover(unittest.TestCase):
         components = [list(range(n)), [0], [n - 1]]
 
         dense_options = cob.RecursiveQuotient.Options()
-        dense_options.denseCrossover = 512
+        dense_options.dense_crossover = 512
         sparse_options = cob.RecursiveQuotient.Options()
-        sparse_options.denseCrossover = 1  # force the SparseLU path
+        sparse_options.dense_crossover = 1  # force the SparseLU path
 
         E_dense, read_dense = reduction_matrix(
-            cob.RecursiveQuotient.overMatrix(_flat(L), n, [], components,
+            cob.RecursiveQuotient.over_matrix(_flat(L), n, [], components,
                                              dense_options))
         E_sparse, read_sparse = reduction_matrix(
-            cob.RecursiveQuotient.overMatrix(_flat(L), n, [], components,
+            cob.RecursiveQuotient.over_matrix(_flat(L), n, [], components,
                                              sparse_options))
         np.testing.assert_allclose(E_dense, E_sparse, rtol=0, atol=1e-11)
         np.testing.assert_allclose(E_dense, numpy_schur(L, [0, n - 1],
@@ -1415,10 +1415,10 @@ class TestDenseSparseCrossover(unittest.TestCase):
     def test_feshbach_agrees_across_the_crossover(self):
         L = TestBlockPencilNegativeControl.L
         sparse_options = cob.RecursiveQuotient.Options()
-        sparse_options.denseCrossover = 1
-        q_dense = cob.RecursiveQuotient.overMatrix(
+        sparse_options.dense_crossover = 1
+        q_dense = cob.RecursiveQuotient.over_matrix(
             _flat(L), 4, [], [[0, 1, 2, 3], [0], [1]])
-        q_sparse = cob.RecursiveQuotient.overMatrix(
+        q_sparse = cob.RecursiveQuotient.over_matrix(
             _flat(L), 4, [], [[0, 1, 2, 3], [0], [1]], sparse_options)
         for lam in (0.5, 1.5 + 0.2j):
             F_dense = _mat(q_dense.feshbach(complex(lam), 0.0, 2.0).response, 2)
@@ -1443,7 +1443,7 @@ class TestDiscoveredPartitions(unittest.TestCase):
         st = build_graph(edges)
 
         PM = tessera.PersistentModularity
-        graph = PM.fromSpacetime(st, PM.WeightMap.Unit)
+        graph = PM.from_spacetime(st, PM.WeightMap.Unit)
         cfg = tessera.PersistentModularityConfig()
         cfg.resolutions = [1.0]
         slice_read = graph.discover(1.0, cfg)
@@ -1453,16 +1453,16 @@ class TestDiscoveredPartitions(unittest.TestCase):
         q = _over_vertex_supports(
             st, 0, [list(s) for s in supports])
         # Interface = the two bridge endpoints; interiors = the clique bulks.
-        self.assertEqual(len(q.interfaceIndices), 2)
-        self.assertEqual(len(q.interiorIndices(0)), 3)
-        self.assertEqual(len(q.interiorIndices(1)), 3)
-        cert = q.verifyStatic()
+        self.assertEqual(len(q.interface_indices), 2)
+        self.assertEqual(len(q.interior_indices(0)), 3)
+        self.assertEqual(len(q.interior_indices(1)), 3)
+        cert = q.verify_static()
         self.assertTrue(cert.holds(), cert.describe())
         # Independent NumPy reference on the whole-graph Laplacian.
         hodge = _hodge(st)
-        ids = sorted(v.getId() for v in st.getVertexList().toVector())
+        ids = sorted(v.get_id() for v in st.get_vertex_list().to_vector())
         L = _mat(hodge.laplacian(0), len(ids))
-        kept = list(q.interfaceIndices)
+        kept = list(q.interface_indices)
         interior = sorted(set(range(len(ids))) - set(kept))
         E, _ = reduction_matrix(q)
         np.testing.assert_allclose(E[:2, :2], numpy_schur(L, kept, interior),
@@ -1471,8 +1471,8 @@ class TestDiscoveredPartitions(unittest.TestCase):
     def test_unclaimed_cells_form_a_residual_component(self):
         st = build_graph([(0, 1, 1.0, 0.0), (1, 2, 1.0, 0.0)])
         q = _over_vertex_supports(st, 0, [[0, 1]])
-        self.assertEqual(q.componentCount, 2)  # the given one + residual
-        cert = q.verifyStatic()
+        self.assertEqual(q.component_count, 2)  # the given one + residual
+        cert = q.verify_static()
         self.assertTrue(cert.holds())
 
 
@@ -1488,7 +1488,7 @@ class TestCausalSpecimen(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.st = rebuild_spacetime(load_dump(14001000))
-        ids = sorted(v.getId() for v in cls.st.getVertexList().toVector())
+        ids = sorted(v.get_id() for v in cls.st.get_vertex_list().to_vector())
         half = len(ids) // 2
         cls.supports = [ids[:half + 1], ids[half:]]  # overlapping halves
 
@@ -1502,22 +1502,22 @@ class TestCausalSpecimen(unittest.TestCase):
 
     def test_stationarity_certificate_holds_on_geometry(self):
         q = self._quotient()
-        read = q.staticReduction()
+        read = q.static_reduction()
         self.assertTrue(read.certificate.holds(), read.certificate.describe())
         self.assertEqual(read.certificate.regime,
                          cob.CertificateRegime.HermitianIndefinite)
         # One deterministic probe through the stationarity check.
-        kept = len(q.interfaceIndices)
+        kept = len(q.interface_indices)
         probe = [0j] * kept
         probe[0] = 1.0 + 0j
-        cert = q.staticProbeCertificate(probe)
+        cert = q.static_probe_certificate(probe)
         self.assertTrue(cert.holds(), cert.describe())
 
     def test_feshbach_determinant_identity_on_geometry(self):
         q = self._quotient()
         read = q.feshbach(0.37 + 0.11j, 0.0, 1.0)
         self.assertFalse(read.resonant)
-        self.assertLess(read.determinantResidual, 1e-9)
+        self.assertLess(read.determinant_residual, 1e-9)
         self.assertTrue(read.certificate.holds(), read.certificate.describe())
 
     def test_complex_length_flips_the_regime_to_non_normal(self):
@@ -1525,11 +1525,11 @@ class TestCausalSpecimen(unittest.TestCase):
         # signed weights complex: WL loses Hermiticity and the certificate
         # regime honestly degrades to certified block elimination.
         st = rebuild_spacetime(load_dump(14001000))
-        edge = st.getEdgeList().toVector()[0]
-        edge.setLength(cmath.sqrt(complex(1.3, 0.4)))
+        edge = st.get_edge_list().to_vector()[0]
+        edge.set_length(cmath.sqrt(complex(1.3, 0.4)))
         q = _over_vertex_supports(st, 1, self.supports)
         self.assertEqual(q.regime, cob.CertificateRegime.NonNormal)
-        read = q.staticReduction()
+        read = q.static_reduction()
         self.assertTrue(read.certificate.holds(), read.certificate.describe())
 
 
@@ -1539,12 +1539,12 @@ class TestCausalSpecimen(unittest.TestCase):
 class TestValidation(unittest.TestCase):
     def test_uncovered_cells_are_refused(self):
         with self.assertRaises(ValueError):
-            cob.RecursiveQuotient.overMatrix(
+            cob.RecursiveQuotient.over_matrix(
                 _flat(np.eye(3)), 3, [], [[0, 1]])
 
     def test_out_of_range_component_index_is_refused(self):
         with self.assertRaises(ValueError):
-            cob.RecursiveQuotient.overMatrix(
+            cob.RecursiveQuotient.over_matrix(
                 _flat(np.eye(2)), 2, [], [[0, 5]])
 
     def test_unknown_cell_is_refused(self):
@@ -1554,21 +1554,21 @@ class TestValidation(unittest.TestCase):
 
     def test_weight_length_mismatch_is_refused(self):
         with self.assertRaises(ValueError):
-            cob.RecursiveQuotient.overMatrix(
+            cob.RecursiveQuotient.over_matrix(
                 _flat(np.eye(3)), 3, [1.0 + 0j], [[0, 1, 2]])
 
     def test_bad_feshbach_window_is_refused(self):
-        q = cob.RecursiveQuotient.overMatrix(
+        q = cob.RecursiveQuotient.over_matrix(
             _flat(np.eye(2)), 2, [], [[0, 1]])
         with self.assertRaises(ValueError):
             q.feshbach(0.5 + 0j, 2.0, 1.0)
 
     def test_probe_size_mismatch_is_refused(self):
         L = [[2, -2, 0], [-2, 5, -3], [0, -3, 3]]
-        q = cob.RecursiveQuotient.overMatrix(
+        q = cob.RecursiveQuotient.over_matrix(
             _flat(L), 3, [], [[0, 1, 2], [0], [2]])
         with self.assertRaises(ValueError):
-            q.staticProbeCertificate([1.0 + 0j])
+            q.static_probe_certificate([1.0 + 0j])
 
 
 
@@ -1579,9 +1579,9 @@ class TestValidation(unittest.TestCase):
 def _derived_zero_laplacian(st):
     """Independent L_0 = d_1 W_1^-1 d_1^dagger W_0 (W_0 = I) from the boundary
     map and the weights, computed test-side."""
-    cc = cob.ChainComplex.fromSpacetime(st)
-    n0, n1 = cc.numSimplices(0), cc.numSimplices(1)
-    d1 = np.array(cc.boundaryMatrix(1), dtype=float).reshape(n0, n1).astype(complex)
+    cc = cob.ChainComplex.from_spacetime(st)
+    n0, n1 = cc.num_simplices(0), cc.num_simplices(1)
+    d1 = np.array(cc.boundary_matrix(1), dtype=float).reshape(n0, n1).astype(complex)
     w1 = np.array(_hodge(st).weights(1), dtype=complex)
     return d1 @ np.diag(1.0 / w1) @ d1.conj().T
 
@@ -1643,7 +1643,7 @@ class TestDegreeZeroDerivedOperator(unittest.TestCase):
         self.assertEqual(E.shape, (3, 3))               # 2 kept + 1 harmonic
         self.assertEqual(read.coordinates[2].kind,
                          cob.RetainedCoordinateKind.Harmonic)
-        self.assertGreater(read.compatibilityResidual, 0.1)
+        self.assertGreater(read.compatibility_residual, 0.1)
         self.assertFalse(read.certificate.holds())
 
     def test_regime_is_measured_not_asserted(self):
@@ -1673,7 +1673,7 @@ class TestDegreeZeroDerivedOperator(unittest.TestCase):
     def test_timelike_reduction_certificate_reports_the_measured_regime(self):
         q = _over_cells(
             _timelike_triangle(1.2), 0, [[[0], [1], [2]], [[0]], [[1]]])
-        read = q.staticReduction()
+        read = q.static_reduction()
         self.assertEqual(read.certificate.regime,
                          cob.CertificateRegime.HermitianIndefinite)
         self.assertTrue(read.certificate.holds(), read.certificate.describe())
@@ -1708,26 +1708,26 @@ class TestDegreeZeroNullityDiscrepancy(unittest.TestCase):
 
     @staticmethod
     def _fully_interior(st):
-        ids = sorted(v.getId() for v in st.getVertexList().toVector())
+        ids = sorted(v.get_id() for v in st.get_vertex_list().to_vector())
         return _over_cells(st, 0, [[[i] for i in ids]])
 
     def test_agreement_is_recorded_as_zero(self):
         q = self._fully_interior(_spacelike_triangle())
-        read = q.interiorNullspace(0)
-        self.assertTrue(read.integerNullityMeasured)
+        read = q.interior_nullspace(0)
+        self.assertTrue(read.integer_nullity_measured)
         self.assertEqual(read.nullity, 1)          # the constant
-        self.assertEqual(read.integerNullity, 1)
-        self.assertEqual(read.nullityDiscrepancy, 0.0)
+        self.assertEqual(read.integer_nullity, 1)
+        self.assertEqual(read.nullity_discrepancy, 0.0)
 
     def test_timelike_off_the_crossing_still_agrees(self):
         for alpha in (0.5, 1.0, 2.0):
             with self.subTest(alpha=alpha):
                 read = self._fully_interior(
-                    _timelike_triangle(alpha)).interiorNullspace(0)
-                self.assertTrue(read.integerNullityMeasured)
+                    _timelike_triangle(alpha)).interior_nullspace(0)
+                self.assertTrue(read.integer_nullity_measured)
                 self.assertEqual(read.nullity, 1)
-                self.assertEqual(read.integerNullity, 1)
-                self.assertEqual(read.nullityDiscrepancy, 0.0)
+                self.assertEqual(read.integer_nullity, 1)
+                self.assertEqual(read.nullity_discrepancy, 0.0)
 
     def test_lightlike_crossing_records_a_real_disagreement(self):
         # At alpha = sqrt(2) the eigenvalue 1 - 2/alpha^2 hits zero, so the
@@ -1735,21 +1735,21 @@ class TestDegreeZeroNullityDiscrepancy(unittest.TestCase):
         # topology still has exactly one zero mode. The extra kernel direction
         # is geometry, not topology, and the read now says so out loud.
         q = self._fully_interior(_timelike_triangle(math.sqrt(2.0)))
-        read = q.interiorNullspace(0)
-        self.assertTrue(read.integerNullityMeasured)
-        self.assertEqual(read.integerNullity, 1)
+        read = q.interior_nullspace(0)
+        self.assertTrue(read.integer_nullity_measured)
+        self.assertEqual(read.integer_nullity, 1)
         self.assertEqual(read.nullity, 2)
-        self.assertEqual(read.nullityDiscrepancy, 1.0)
+        self.assertEqual(read.nullity_discrepancy, 1.0)
 
     def test_matrix_path_reports_not_measured_as_nan(self):
         # No boundary maps on the matrix path: integerNullity 0 must NOT be
         # read as "measured zero".
         L = np.array([[1.0, -1.0, 0.0], [-1.0, 2.0, -1.0], [0.0, -1.0, 1.0]])
-        q = cob.RecursiveQuotient.overMatrix(_flat(L), 3, [], [[0, 1, 2]])
-        read = q.interiorNullspace(0)
-        self.assertFalse(read.integerNullityMeasured)
-        self.assertEqual(read.integerNullity, 0)
-        self.assertTrue(math.isnan(read.nullityDiscrepancy))
+        q = cob.RecursiveQuotient.over_matrix(_flat(L), 3, [], [[0, 1, 2]])
+        read = q.interior_nullspace(0)
+        self.assertFalse(read.integer_nullity_measured)
+        self.assertEqual(read.integer_nullity, 0)
+        self.assertTrue(math.isnan(read.nullity_discrepancy))
 
     def test_two_components_each_agree(self):
         st = build_graph([(0, 1, 1.0, 0.0), (1, 2, 1.0, 0.0), (0, 2, 1.0, 0.0),
@@ -1759,11 +1759,11 @@ class TestDegreeZeroNullityDiscrepancy(unittest.TestCase):
             st, 0, [[[0], [1], [2]], [[10], [11], [12]]])
         for component in range(2):
             with self.subTest(component=component):
-                read = q.interiorNullspace(component)
-                self.assertTrue(read.integerNullityMeasured)
+                read = q.interior_nullspace(component)
+                self.assertTrue(read.integer_nullity_measured)
                 self.assertEqual(read.nullity, 1)
-                self.assertEqual(read.integerNullity, 1)
-                self.assertEqual(read.nullityDiscrepancy, 0.0)
+                self.assertEqual(read.integer_nullity, 1)
+                self.assertEqual(read.nullity_discrepancy, 0.0)
 
 
 # --------------------------------------------------------------------------
@@ -1788,8 +1788,8 @@ def singleton_partition(dim):
 def child_operator(child):
     """A child level's own operator, read back through a singleton
     partition of its coordinates."""
-    read = child.staticReduction()
-    return _mat(read.effectiveOperator, len(read.coordinates))
+    read = child.static_reduction()
+    return _mat(read.effective_operator, len(read.coordinates))
 
 
 class TestPencilValuedRecursion(unittest.TestCase):
@@ -1805,7 +1805,7 @@ class TestPencilValuedRecursion(unittest.TestCase):
     ], dtype=complex)
 
     def _parent(self):
-        return cob.RecursiveQuotient.overMatrix(
+        return cob.RecursiveQuotient.over_matrix(
             _flat(self.L), 4, [], [[0, 1], [2, 3]])
 
     def test_pencil_child_operator_is_the_exact_feshbach_response(self):
@@ -1813,7 +1813,7 @@ class TestPencilValuedRecursion(unittest.TestCase):
         parent = self._parent()
         response = parent.feshbach(lam, 0.0, 1.0)
         kept = len(response.coordinates)
-        child = parent.nextLevelAtLambda(
+        child = parent.next_level_at_lambda(
             singleton_partition(kept), lam, 0.0, 1.0)
         np.testing.assert_allclose(
             child_operator(child), _mat(response.response, kept),
@@ -1822,10 +1822,10 @@ class TestPencilValuedRecursion(unittest.TestCase):
     def test_pencil_child_matches_independent_numpy_feshbach(self):
         lam = 0.42 + 0.0j
         parent = self._parent()
-        kept = list(parent.interfaceIndices)
+        kept = list(parent.interface_indices)
         interior = [i for i in range(4) if i not in kept]
         expected = numpy_feshbach(self.L, kept, interior, lam)
-        child = parent.nextLevelAtLambda(
+        child = parent.next_level_at_lambda(
             singleton_partition(len(kept)), lam, 0.0, 1.0)
         np.testing.assert_allclose(child_operator(child), expected,
                                    rtol=0, atol=1e-10)
@@ -1835,9 +1835,9 @@ class TestPencilValuedRecursion(unittest.TestCase):
         # the static Schur complement, which does not preserve the nonzero
         # spectrum.
         parent = self._parent()
-        kept = len(parent.interfaceIndices)
-        static_child = parent.nextLevel(singleton_partition(kept))
-        pencil_child = parent.nextLevelAtLambda(
+        kept = len(parent.interface_indices)
+        static_child = parent.next_level(singleton_partition(kept))
+        pencil_child = parent.next_level_at_lambda(
             singleton_partition(kept), 0.42 + 0.0j, 0.0, 1.0)
         difference = np.abs(
             child_operator(static_child) - child_operator(pencil_child)).max()
@@ -1849,14 +1849,14 @@ class TestPencilValuedRecursion(unittest.TestCase):
         eigenvalues = np.linalg.eigvalsh(self.L)
         target = complex(eigenvalues[2])
         parent = self._parent()
-        kept = len(parent.interfaceIndices)
-        at_eigenvalue = parent.nextLevelAtLambda(
+        kept = len(parent.interface_indices)
+        at_eigenvalue = parent.next_level_at_lambda(
             singleton_partition(kept), target, 0.0, 10.0)
         smallest = np.abs(
             np.linalg.eigvals(child_operator(at_eigenvalue))).min()
         self.assertLess(smallest, 1e-8)
 
-        off_eigenvalue = parent.nextLevelAtLambda(
+        off_eigenvalue = parent.next_level_at_lambda(
             singleton_partition(kept), target + 0.5, 0.0, 10.0)
         smallest_off = np.abs(
             np.linalg.eigvals(child_operator(off_eigenvalue))).min()
@@ -1864,16 +1864,16 @@ class TestPencilValuedRecursion(unittest.TestCase):
 
     def test_pencil_child_carries_window_lambda_and_certificate(self):
         parent = self._parent()
-        kept = len(parent.interfaceIndices)
-        child = parent.nextLevelAtLambda(
+        kept = len(parent.interface_indices)
+        child = parent.next_level_at_lambda(
             singleton_partition(kept), 0.42 + 0.17j, 0.25, 0.75)
-        provenance = child.levelProvenance
+        provenance = child.level_provenance
         self.assertEqual(provenance.origin, cob.LevelOrigin.BandPencil)
         self.assertAlmostEqual(provenance.lambda_.real, 0.42)
         self.assertAlmostEqual(provenance.lambda_.imag, 0.17)
-        self.assertEqual(provenance.windowLower, 0.25)
-        self.assertEqual(provenance.windowUpper, 0.75)
-        self.assertFalse(math.isnan(provenance.solveResidual))
+        self.assertEqual(provenance.window_lower, 0.25)
+        self.assertEqual(provenance.window_upper, 0.75)
+        self.assertFalse(math.isnan(provenance.solve_residual))
         self.assertTrue(provenance.certificate.holds(),
                         provenance.certificate.describe())
         self.assertEqual(child.level, 1)
@@ -1882,35 +1882,35 @@ class TestPencilValuedRecursion(unittest.TestCase):
         # lambda = 0 is a point, not a band: a static level must not claim a
         # window it does not speak for. Unmeasured is NaN, never zero.
         parent = self._parent()
-        child = parent.nextLevel(
-            singleton_partition(len(parent.interfaceIndices)))
-        provenance = child.levelProvenance
+        child = parent.next_level(
+            singleton_partition(len(parent.interface_indices)))
+        provenance = child.level_provenance
         self.assertEqual(provenance.origin, cob.LevelOrigin.StaticResponse)
-        self.assertTrue(math.isnan(provenance.windowLower))
-        self.assertTrue(math.isnan(provenance.windowUpper))
+        self.assertTrue(math.isnan(provenance.window_lower))
+        self.assertTrue(math.isnan(provenance.window_upper))
         self.assertTrue(math.isnan(provenance.lambda_.real))
-        self.assertFalse(math.isnan(provenance.solveResidual))
+        self.assertFalse(math.isnan(provenance.solve_residual))
 
     def test_base_level_reports_base_origin_with_nothing_measured(self):
-        provenance = self._parent().levelProvenance
+        provenance = self._parent().level_provenance
         self.assertEqual(provenance.origin, cob.LevelOrigin.Base)
-        self.assertTrue(math.isnan(provenance.windowLower))
-        self.assertTrue(math.isnan(provenance.solveResidual))
-        self.assertTrue(math.isnan(provenance.surrogateResidual))
+        self.assertTrue(math.isnan(provenance.window_lower))
+        self.assertTrue(math.isnan(provenance.solve_residual))
+        self.assertTrue(math.isnan(provenance.surrogate_residual))
 
     def test_pencil_lineage_provenance_is_carried(self):
         parent = self._parent()
-        child = parent.nextLevelAtLambda(
-            singleton_partition(len(parent.interfaceIndices)),
+        child = parent.next_level_at_lambda(
+            singleton_partition(len(parent.interface_indices)),
             0.42 + 0.0j, 0.0, 1.0)
         self.assertTrue(
-            all(p.startswith("L0:") for p in child.coordinateProvenance))
+            all(p.startswith("L0:") for p in child.coordinate_provenance))
 
     def test_bad_window_is_refused(self):
         parent = self._parent()
         with self.assertRaises(ValueError):
-            parent.nextLevelAtLambda(
-                singleton_partition(len(parent.interfaceIndices)),
+            parent.next_level_at_lambda(
+                singleton_partition(len(parent.interface_indices)),
                 0.1 + 0.0j, 1.0, 0.0)
 
 
@@ -1927,12 +1927,12 @@ class TestSurrogateValuedRecursion(unittest.TestCase):
     ], dtype=complex)
 
     def _parent(self):
-        return cob.RecursiveQuotient.overMatrix(
+        return cob.RecursiveQuotient.over_matrix(
             _flat(self.L), 5, [], [[0, 1, 2], [2, 3, 4]])
 
     @staticmethod
     def _surrogate_dim(surrogate):
-        return int(round(math.sqrt(len(surrogate.reducedStiffness))))
+        return int(round(math.sqrt(len(surrogate.reduced_stiffness))))
 
     def test_surrogate_child_spectrum_equals_the_generalized_pencil(self):
         # The M^{-1/2} congruence preserves the generalized eigenvalues of
@@ -1940,14 +1940,14 @@ class TestSurrogateValuedRecursion(unittest.TestCase):
         # metric. NumPy computes the same spectrum by the independent
         # M^{-1} K route.
         parent = self._parent()
-        surrogate = parent.craigBampton(0.0, 1.0, 4.0)
+        surrogate = parent.craig_bampton(0.0, 1.0, 4.0)
         dim = self._surrogate_dim(surrogate)
-        stiffness = _mat(surrogate.reducedStiffness, dim)
-        mass = _mat(surrogate.reducedMass, dim)
+        stiffness = _mat(surrogate.reduced_stiffness, dim)
+        mass = _mat(surrogate.reduced_mass, dim)
         expected = np.sort_complex(
             np.linalg.eigvals(np.linalg.solve(mass, stiffness)))
 
-        child = parent.nextLevelFromSurrogate(
+        child = parent.next_level_from_surrogate(
             singleton_partition(dim), 0.0, 1.0, 4.0, -1.0)
         actual = np.sort_complex(np.linalg.eigvals(child_operator(child)))
         np.testing.assert_allclose(actual, expected, rtol=0, atol=1e-9)
@@ -1956,35 +1956,35 @@ class TestSurrogateValuedRecursion(unittest.TestCase):
         # The M-orthonormalization is what makes the diagonal child metric
         # exact rather than an assumption.
         parent = self._parent()
-        dim = self._surrogate_dim(parent.craigBampton(0.0, 1.0, 4.0))
-        child = parent.nextLevelFromSurrogate(
+        dim = self._surrogate_dim(parent.craig_bampton(0.0, 1.0, 4.0))
+        child = parent.next_level_from_surrogate(
             singleton_partition(dim), 0.0, 1.0, 4.0, -1.0)
-        self.assertLess(child.labeledFiberSum().gramDefect, 1e-9)
+        self.assertLess(child.labeled_fiber_sum().gram_defect, 1e-9)
 
     def test_surrogate_child_carries_window_gap_and_certificate(self):
         parent = self._parent()
-        surrogate = parent.craigBampton(0.0, 1.0, 4.0, 1e-6)
+        surrogate = parent.craig_bampton(0.0, 1.0, 4.0, 1e-6)
         dim = self._surrogate_dim(surrogate)
-        child = parent.nextLevelFromSurrogate(
+        child = parent.next_level_from_surrogate(
             singleton_partition(dim), 0.0, 1.0, 4.0, 1e-6)
-        provenance = child.levelProvenance
+        provenance = child.level_provenance
         self.assertEqual(provenance.origin, cob.LevelOrigin.Surrogate)
-        self.assertEqual(provenance.windowLower, 0.0)
-        self.assertEqual(provenance.windowUpper, 1.0)
-        self.assertEqual(provenance.discardedModeGap,
-                         surrogate.discardedModeGap)
+        self.assertEqual(provenance.window_lower, 0.0)
+        self.assertEqual(provenance.window_upper, 1.0)
+        self.assertEqual(provenance.discarded_mode_gap,
+                         surrogate.discarded_mode_gap)
         self.assertEqual(provenance.certificate.describe(),
                          surrogate.certificate.describe())
 
     def test_surrogate_child_is_not_mistakable_for_an_exact_reduction(self):
         parent = self._parent()
-        surrogate = parent.craigBampton(0.0, 1.0, 4.0)
+        surrogate = parent.craig_bampton(0.0, 1.0, 4.0)
         dim = self._surrogate_dim(surrogate)
-        child = parent.nextLevelFromSurrogate(
+        child = parent.next_level_from_surrogate(
             singleton_partition(dim), 0.0, 1.0, 4.0)
-        self.assertNotEqual(child.levelProvenance.origin,
+        self.assertNotEqual(child.level_provenance.origin,
                             cob.LevelOrigin.StaticResponse)
-        self.assertEqual(child.levelProvenance.certificate.domain,
+        self.assertEqual(child.level_provenance.certificate.domain,
                          surrogate.certificate.domain)
 
 
@@ -1997,8 +1997,8 @@ class TestCertifiedFiberSum(unittest.TestCase):
     def _quotient(self, policy=None):
         options = cob.RecursiveQuotient.Options()
         if policy is not None:
-            options.embeddingPolicy = policy
-        return cob.RecursiveQuotient.overMatrix(
+            options.embedding_policy = policy
+        return cob.RecursiveQuotient.over_matrix(
             _flat(self.L), 4, [], [[0, 1], [2, 3]], options)
 
     @staticmethod
@@ -2010,83 +2010,83 @@ class TestCertifiedFiberSum(unittest.TestCase):
             frame[index, position] = 1.0
         band.frame = _flat(frame)
         band.rank = len(columns)
-        band.lowerGap = kwargs.get("lowerGap", 1.0)
-        band.upperGap = kwargs.get("upperGap", 3.0)
-        band.frequencyLower = kwargs.get("frequencyLower", 1.0)
-        band.frequencyUpper = kwargs.get("frequencyUpper", 2.0)
+        band.lower_gap = kwargs.get("lowerGap", 1.0)
+        band.upper_gap = kwargs.get("upperGap", 3.0)
+        band.frequency_lower = kwargs.get("frequencyLower", 1.0)
+        band.frequency_upper = kwargs.get("frequencyUpper", 2.0)
         band.accepted = kwargs.get("accepted", True)
         return band
 
     def test_summands_carry_gaps_and_stay_aligned_with_the_input(self):
-        read = self._quotient().certifiedFiberSum(
+        read = self._quotient().certified_fiber_sum(
             [self._band(0, [0], lowerGap=0.7, upperGap=2.5),
              self._band(1, [2, 3], lowerGap=4.0, upperGap=6.0)])
-        self.assertTrue(read.fromCertifiedBands)
-        self.assertEqual(len(read.summandCertificates), 2)
-        self.assertEqual(list(read.summandComponents), [0, 1])
-        self.assertEqual(list(read.summandRanks), [1, 2])
-        self.assertEqual(read.summandCertificates[0].lowerGap, 0.7)
-        self.assertEqual(read.summandCertificates[1].upperGap, 6.0)
-        self.assertEqual(read.nominalRank, 3)
+        self.assertTrue(read.from_certified_bands)
+        self.assertEqual(len(read.summand_certificates), 2)
+        self.assertEqual(list(read.summand_components), [0, 1])
+        self.assertEqual(list(read.summand_ranks), [1, 2])
+        self.assertEqual(read.summand_certificates[0].lower_gap, 0.7)
+        self.assertEqual(read.summand_certificates[1].upper_gap, 6.0)
+        self.assertEqual(read.nominal_rank, 3)
         # The weakest link of the "certified ISOLATED subspace" claim.
-        self.assertEqual(read.worstIsolationGap, 0.7)
-        self.assertTrue(read.allBandsAccepted)
+        self.assertEqual(read.worst_isolation_gap, 0.7)
+        self.assertTrue(read.all_bands_accepted)
         self.assertTrue(read.certificate.holds())
 
     def test_orthonormal_bands_give_an_exact_identity_gram(self):
-        read = self._quotient().certifiedFiberSum(
+        read = self._quotient().certified_fiber_sum(
             [self._band(0, [0, 1]), self._band(1, [2, 3])])
         np.testing.assert_allclose(_mat(read.gram, 4), np.eye(4),
                                    rtol=0, atol=MACHINE)
-        self.assertLess(read.gramDefect, MACHINE)
-        self.assertEqual(read.quotientNullity, 0)
+        self.assertLess(read.gram_defect, MACHINE)
+        self.assertEqual(read.quotient_nullity, 0)
 
     def test_uncertified_band_is_summed_and_reported_never_dropped(self):
-        read = self._quotient().certifiedFiberSum(
+        read = self._quotient().certified_fiber_sum(
             [self._band(0, [0]), self._band(1, [2], accepted=False)])
         # Its columns are still in the sum ...
-        self.assertEqual(read.nominalRank, 2)
-        self.assertEqual(len(read.summandCertificates), 2)
-        self.assertFalse(read.summandCertificates[1].accepted)
+        self.assertEqual(read.nominal_rank, 2)
+        self.assertEqual(len(read.summand_certificates), 2)
+        self.assertFalse(read.summand_certificates[1].accepted)
         # ... but the sum cannot claim to be certified.
-        self.assertFalse(read.allBandsAccepted)
+        self.assertFalse(read.all_bands_accepted)
         self.assertFalse(read.certificate.holds())
 
     def test_unknown_gap_is_not_counted_as_zero(self):
-        read = self._quotient().certifiedFiberSum(
+        read = self._quotient().certified_fiber_sum(
             [self._band(0, [0], lowerGap=float("nan"),
                         upperGap=float("nan"))])
-        self.assertTrue(math.isnan(read.worstIsolationGap))
+        self.assertTrue(math.isnan(read.worst_isolation_gap))
 
     def test_infinite_gap_means_perfect_isolation_not_unknown(self):
-        read = self._quotient().certifiedFiberSum(
+        read = self._quotient().certified_fiber_sum(
             [self._band(0, [0], lowerGap=float("inf"),
                         upperGap=float("inf"))])
-        self.assertEqual(read.worstIsolationGap, float("inf"))
+        self.assertEqual(read.worst_isolation_gap, float("inf"))
 
     def test_overlapping_bands_never_assert_a_direct_sum(self):
-        read = self._quotient().certifiedFiberSum(
+        read = self._quotient().certified_fiber_sum(
             [self._band(0, [0, 1]), self._band(1, [1, 2])])
-        self.assertEqual(read.nominalRank, 4)
-        self.assertEqual(read.quotientNullity, 1)
-        self.assertGreater(read.gramDefect, 0.1)
+        self.assertEqual(read.nominal_rank, 4)
+        self.assertEqual(read.quotient_nullity, 1)
+        self.assertGreater(read.gram_defect, 0.1)
 
     def test_retained_coordinate_sum_is_not_marked_certified(self):
-        # `labeledFiberSum` carries no band certificate, and none is invented.
-        read = self._quotient().labeledFiberSum()
-        self.assertFalse(read.fromCertifiedBands)
-        self.assertEqual(len(read.summandCertificates), 0)
-        self.assertTrue(math.isnan(read.worstIsolationGap))
+        # `labeled_fiber_sum` carries no band certificate, and none is invented.
+        read = self._quotient().labeled_fiber_sum()
+        self.assertFalse(read.from_certified_bands)
+        self.assertEqual(len(read.summand_certificates), 0)
+        self.assertTrue(math.isnan(read.worst_isolation_gap))
 
     def test_malformed_band_is_refused(self):
         band = self._band(0, [0])
         band.rank = 3  # frame no longer matches dim x rank
         with self.assertRaises(ValueError):
-            self._quotient().certifiedFiberSum([band])
+            self._quotient().certified_fiber_sum([band])
 
     def test_unknown_component_is_refused(self):
         with self.assertRaises(ValueError):
-            self._quotient().certifiedFiberSum([self._band(7, [0])])
+            self._quotient().certified_fiber_sum([self._band(7, [0])])
 
 
 class TestFockStage(unittest.TestCase):
@@ -2098,8 +2098,8 @@ class TestFockStage(unittest.TestCase):
     def _quotient(self, policy=None):
         options = cob.RecursiveQuotient.Options()
         if policy is not None:
-            options.embeddingPolicy = policy
-        return cob.RecursiveQuotient.overMatrix(
+            options.embedding_policy = policy
+        return cob.RecursiveQuotient.over_matrix(
             _flat(self.L), 4, [], [[0, 1], [2, 3]], options)
 
     @staticmethod
@@ -2115,84 +2115,84 @@ class TestFockStage(unittest.TestCase):
         return band
 
     def _disjoint_sum(self, quotient):
-        return quotient.certifiedFiberSum(
+        return quotient.certified_fiber_sum(
             [self._band(0, [0, 1]), self._band(1, [2, 3])])
 
     def test_one_particle_operator_is_the_w_compression(self):
         quotient = self._quotient()
         summary = self._disjoint_sum(quotient)
-        stage = quotient.fockStage(summary)
+        stage = quotient.fock_stage(summary)
         embedding = _mat(summary.embedding, 4, 4)
         expected = embedding.conj().T @ (self.L @ embedding)
-        np.testing.assert_allclose(_mat(stage.oneParticle, 4), expected,
+        np.testing.assert_allclose(_mat(stage.one_particle, 4), expected,
                                    rtol=0, atol=MACHINE)
 
     def test_free_many_body_spectrum_is_the_occupation_subset_sums(self):
         quotient = self._quotient()
-        stage = quotient.fockStage(self._disjoint_sum(quotient))
-        self.assertTrue(stage.spectrumMaterialized)
+        stage = quotient.fock_stage(self._disjoint_sum(quotient))
+        self.assertTrue(stage.spectrum_materialized)
         expected = numpy_subset_sums(
-            [complex(z) for z in stage.oneParticleSpectrum])
-        actual = [complex(z) for z in stage.fockSpectrum]
+            [complex(z) for z in stage.one_particle_spectrum])
+        actual = [complex(z) for z in stage.fock_spectrum]
         self.assertEqual(len(actual), 2 ** stage.modes)
         np.testing.assert_allclose(actual, expected, rtol=0, atol=1e-10)
 
     def test_one_particle_spectrum_recovers_the_diagonal(self):
         quotient = self._quotient()
-        stage = quotient.fockStage(self._disjoint_sum(quotient))
+        stage = quotient.fock_stage(self._disjoint_sum(quotient))
         np.testing.assert_allclose(
-            sorted(complex(z).real for z in stage.oneParticleSpectrum),
+            sorted(complex(z).real for z in stage.one_particle_spectrum),
             [1.0, 2.0, 5.0, 9.0], rtol=0, atol=1e-10)
 
     def test_fock_dimension_is_two_to_the_modes(self):
         quotient = self._quotient()
-        stage = quotient.fockStage(self._disjoint_sum(quotient))
+        stage = quotient.fock_stage(self._disjoint_sum(quotient))
         self.assertEqual(stage.modes, 4)
-        self.assertEqual(stage.fockDimension, 16.0)
+        self.assertEqual(stage.fock_dimension, 16.0)
 
     def test_spectrum_refuses_past_the_declared_budget(self):
         # Nothing allocates 2^M: the enumeration refuses instead.
         quotient = self._quotient()
-        stage = quotient.fockStage(self._disjoint_sum(quotient), 4)
-        self.assertFalse(stage.spectrumMaterialized)
-        self.assertEqual(len(stage.fockSpectrum), 0)
+        stage = quotient.fock_stage(self._disjoint_sum(quotient), 4)
+        self.assertFalse(stage.spectrum_materialized)
+        self.assertEqual(len(stage.fock_spectrum), 0)
         # The one-particle layer is still fully reported.
         self.assertEqual(stage.modes, 4)
-        self.assertEqual(len(stage.oneParticleSpectrum), 4)
+        self.assertEqual(len(stage.one_particle_spectrum), 4)
 
     def test_empty_sum_is_the_vacuum_line(self):
         quotient = self._quotient()
-        stage = quotient.fockStage(quotient.certifiedFiberSum([]))
+        stage = quotient.fock_stage(quotient.certified_fiber_sum([]))
         self.assertEqual(stage.modes, 0)
-        self.assertEqual(stage.fockDimension, 1.0)
-        self.assertTrue(stage.spectrumMaterialized)
-        self.assertEqual([complex(z) for z in stage.fockSpectrum], [0j])
+        self.assertEqual(stage.fock_dimension, 1.0)
+        self.assertTrue(stage.spectrum_materialized)
+        self.assertEqual([complex(z) for z in stage.fock_spectrum], [0j])
 
     def test_overcomplete_sum_refuses_a_spectrum_without_a_quotient(self):
         # A singular Gram means the labeled sum overcounts. Reading the
         # eigenvalues of h anyway would silently assume G = I.
         quotient = self._quotient()
-        summary = quotient.certifiedFiberSum(
+        summary = quotient.certified_fiber_sum(
             [self._band(0, [0, 1]), self._band(1, [1, 2])])
-        self.assertGreater(summary.quotientNullity, 0)
-        stage = quotient.fockStage(summary)
-        self.assertFalse(stage.spectrumMaterialized)
-        self.assertEqual(len(stage.oneParticleSpectrum), 0)
+        self.assertGreater(summary.quotient_nullity, 0)
+        stage = quotient.fock_stage(summary)
+        self.assertFalse(stage.spectrum_materialized)
+        self.assertEqual(len(stage.one_particle_spectrum), 0)
         self.assertFalse(stage.certificate.holds())
 
     def test_declared_quotient_removes_the_overcount(self):
         quotient = self._quotient(cob.FiberEmbeddingPolicy.QuotientKernel)
-        summary = quotient.certifiedFiberSum(
+        summary = quotient.certified_fiber_sum(
             [self._band(0, [0, 1]), self._band(1, [1, 2])])
-        self.assertEqual(summary.effectiveRank, 3)
-        stage = quotient.fockStage(summary)
+        self.assertEqual(summary.effective_rank, 3)
+        stage = quotient.fock_stage(summary)
         self.assertEqual(stage.modes, 3)
-        self.assertTrue(stage.spectrumMaterialized)
-        self.assertEqual(len(stage.fockSpectrum), 8)
+        self.assertTrue(stage.spectrum_materialized)
+        self.assertEqual(len(stage.fock_spectrum), 8)
 
     def test_operator_level_pairs_by_the_metric_adjoint(self):
         quotient = self._quotient()
-        stage = quotient.fockStage(self._disjoint_sum(quotient))
+        stage = quotient.fock_stage(self._disjoint_sum(quotient))
         self.assertEqual(stage.pairing, "metric-hermitian")
 
 
@@ -2214,7 +2214,7 @@ def _unit_band(dim, component, columns, left=None):
         frame[index, position] = 1.0
     band.frame = _flat(frame)
     if left is not None:
-        band.leftFrame = _flat(left)
+        band.left_frame = _flat(left)
     band.rank = len(columns)
     band.accepted = True
     return band
@@ -2225,7 +2225,7 @@ def _frame_band(component, right, left=None):
     band.component = component
     band.frame = _flat(right)
     if left is not None:
-        band.leftFrame = _flat(left)
+        band.left_frame = _flat(left)
     band.rank = right.shape[1]
     band.accepted = True
     return band
@@ -2241,7 +2241,7 @@ class TestFockStageOnePairing(unittest.TestCase):
     def _pencil(self):
         a = _complex_symmetric(self.N, seed=71)
         m = np.eye(self.N) + _complex_symmetric(self.N, seed=72, scale=0.2)
-        quotient = cob.RecursiveQuotient.overPencil(
+        quotient = cob.RecursiveQuotient.over_pencil(
             _flat(a), _flat(m), self.N, [[0, 1], [2, 3]])
         self.assertEqual(quotient.regime,
                          cob.CertificateRegime.ComplexSymmetricPencil)
@@ -2257,24 +2257,24 @@ class TestFockStageOnePairing(unittest.TestCase):
 
     def test_pencil_level_compresses_by_the_transpose(self):
         quotient, a, m = self._pencil()
-        summary = quotient.certifiedFiberSum(self._complex_bands())
+        summary = quotient.certified_fiber_sum(self._complex_bands())
         j = _mat(summary.embedding, self.N, self.N)
         self.assertGreater(np.abs(j.imag).max(), 0.1)
         np.testing.assert_allclose(_mat(summary.gram, self.N), j.T @ m @ j,
                                    rtol=0, atol=MACHINE)
-        stage = quotient.fockStage(summary)
+        stage = quotient.fock_stage(summary)
         self.assertEqual(stage.pairing, "metric-transpose")
-        np.testing.assert_allclose(_mat(stage.oneParticle, self.N),
+        np.testing.assert_allclose(_mat(stage.one_particle, self.N),
                                    j.T @ a @ j, rtol=0, atol=MACHINE)
 
     def test_pencil_spectrum_is_the_generalized_spectrum(self):
         # J spans the whole level, so the compressed pencil (J^T A~ J,
         # J^T M J) has exactly the generalized eigenvalues of (A~, M).
         quotient, a, m = self._pencil()
-        summary = quotient.certifiedFiberSum(self._complex_bands())
-        stage = quotient.fockStage(summary)
+        summary = quotient.certified_fiber_sum(self._complex_bands())
+        stage = quotient.fock_stage(summary)
         expected = _sorted_complex(np.linalg.eigvals(np.linalg.solve(m, a)))
-        np.testing.assert_allclose(_sorted_complex(stage.oneParticleSpectrum),
+        np.testing.assert_allclose(_sorted_complex(stage.one_particle_spectrum),
                                    expected, rtol=0, atol=1e-10)
         # The mixed pairing it replaces gives a different spectrum: the fix is
         # not cosmetic on a complex pencil.
@@ -2286,23 +2286,23 @@ class TestFockStageOnePairing(unittest.TestCase):
 
     def test_pencil_quotient_uses_the_left_partner(self):
         options = cob.RecursiveQuotient.Options()
-        options.embeddingPolicy = cob.FiberEmbeddingPolicy.QuotientKernel
+        options.embedding_policy = cob.FiberEmbeddingPolicy.QuotientKernel
         a = _complex_symmetric(self.N, seed=73)
         m = np.eye(self.N) + _complex_symmetric(self.N, seed=74, scale=0.2)
-        quotient = cob.RecursiveQuotient.overPencil(
+        quotient = cob.RecursiveQuotient.over_pencil(
             _flat(a), _flat(m), self.N, [[0, 1], [2, 3]], options)
-        summary = quotient.certifiedFiberSum(
+        summary = quotient.certified_fiber_sum(
             [_unit_band(self.N, 0, [0, 1]), _unit_band(self.N, 1, [1, 2, 3])])
-        self.assertEqual(summary.effectiveRank, 4)
-        stage = quotient.fockStage(summary)
+        self.assertEqual(summary.effective_rank, 4)
+        stage = quotient.fock_stage(summary)
         self.assertEqual(stage.modes, 4)
         # The overcounted direction leaves the basis and the quotient pencil
         # keeps the generalized spectrum of (A~, M).
         expected = _sorted_complex(np.linalg.eigvals(np.linalg.solve(m, a)))
-        np.testing.assert_allclose(_sorted_complex(stage.oneParticleSpectrum),
+        np.testing.assert_allclose(_sorted_complex(stage.one_particle_spectrum),
                                    expected, rtol=0, atol=1e-9)
-        left = _mat(summary.leftQuotientBasis, 5, 4)
-        right = _mat(summary.quotientBasis, 5, 4)
+        left = _mat(summary.left_quotient_basis, 5, 4)
+        right = _mat(summary.quotient_basis, 5, 4)
         gram = _mat(summary.gram, 5)
         np.testing.assert_allclose(_mat(stage.gram, 4), left.T @ gram @ right,
                                    rtol=0, atol=MACHINE)
@@ -2326,29 +2326,29 @@ class TestOverlapCertificateLeftEmbedding(unittest.TestCase):
     def _quotient(self, op, policy=None):
         options = cob.RecursiveQuotient.Options()
         if policy is not None:
-            options.embeddingPolicy = policy
-        return cob.RecursiveQuotient.overMatrix(
+            options.embedding_policy = policy
+        return cob.RecursiveQuotient.over_matrix(
             _flat(op), self.N, [], [[0, 1], [2, 3]], options)
 
     def test_exact_left_riesz_frames_certify_g_equals_identity(self):
         op, v, lam = self._operator()
         v_left = np.linalg.inv(v).T          # V~^T V = I: the left Riesz frames
         quotient = self._quotient(op)
-        summary = quotient.certifiedFiberSum(
+        summary = quotient.certified_fiber_sum(
             [_frame_band(0, v[:, :2], v_left[:, :2]),
              _frame_band(1, v[:, 2:], v_left[:, 2:])])
         np.testing.assert_array_equal(_mat(summary.embedding, self.N), v)
-        np.testing.assert_array_equal(_mat(summary.leftEmbedding, self.N),
+        np.testing.assert_array_equal(_mat(summary.left_embedding, self.N),
                                       v_left)
         np.testing.assert_allclose(_mat(summary.gram, self.N), np.eye(self.N),
                                    rtol=0, atol=1e-12)
-        self.assertLess(summary.gramDefect, 1e-12)
-        stage = quotient.fockStage(summary)
+        self.assertLess(summary.gram_defect, 1e-12)
+        stage = quotient.fock_stage(summary)
         self.assertEqual(stage.pairing, "left-embedding")
         # h = Y~^T L Y is the diagonal of the band eigenvalues.
-        np.testing.assert_allclose(_mat(stage.oneParticle, self.N),
+        np.testing.assert_allclose(_mat(stage.one_particle, self.N),
                                    np.diag(lam), rtol=0, atol=1e-11)
-        np.testing.assert_allclose(_sorted_complex(stage.oneParticleSpectrum),
+        np.testing.assert_allclose(_sorted_complex(stage.one_particle_spectrum),
                                    _sorted_complex(lam), rtol=0, atol=1e-11)
 
     def test_local_left_frames_report_the_overlap_defect(self):
@@ -2366,7 +2366,7 @@ class TestOverlapCertificateLeftEmbedding(unittest.TestCase):
         left_b = raw_b @ np.linalg.inv(y_b.T @ raw_b)
         op, _, _ = self._operator()
         quotient = self._quotient(op)
-        summary = quotient.certifiedFiberSum(
+        summary = quotient.certified_fiber_sum(
             [_frame_band(0, y_a, left_a), _frame_band(1, y_b, left_b)])
         y = np.hstack([y_a, y_b])
         y_left = np.hstack([left_a, left_b])
@@ -2377,8 +2377,8 @@ class TestOverlapCertificateLeftEmbedding(unittest.TestCase):
         np.testing.assert_allclose(gram[2:, 2:], np.eye(2), atol=1e-12)
         # ... and the cross overlap is the certificate.
         delta = gram - np.eye(self.N)
-        self.assertGreater(summary.gramDefect, 0.1)
-        self.assertAlmostEqual(summary.gramDefect,
+        self.assertGreater(summary.gram_defect, 0.1)
+        self.assertAlmostEqual(summary.gram_defect,
                                np.linalg.norm(delta, 2), places=10)
         # The exact complex amplitude error and its numerical bound.
         a_t = rng.normal(size=self.N) + 1j * rng.normal(size=self.N)
@@ -2386,10 +2386,10 @@ class TestOverlapCertificateLeftEmbedding(unittest.TestCase):
         error = a_t @ gram @ b - a_t @ b
         self.assertLess(abs(error - a_t @ delta @ b), 1e-12)
         self.assertLessEqual(
-            abs(error), np.linalg.norm(a_t) * summary.gramDefect *
+            abs(error), np.linalg.norm(a_t) * summary.gram_defect *
             np.linalg.norm(b) * (1 + 1e-12))
-        stage = quotient.fockStage(summary)
-        np.testing.assert_allclose(_mat(stage.oneParticle, self.N),
+        stage = quotient.fock_stage(summary)
+        np.testing.assert_allclose(_mat(stage.one_particle, self.N),
                                    y_left.T @ op @ y, rtol=0, atol=1e-11)
 
     def test_pencil_level_left_frames_pair_against_m_inverse_a(self):
@@ -2399,16 +2399,16 @@ class TestOverlapCertificateLeftEmbedding(unittest.TestCase):
         m = np.eye(self.N) + _complex_symmetric(self.N, seed=84, scale=0.2)
         lam, z = np.linalg.eig(np.linalg.solve(m, a))
         z_left = np.linalg.inv(z).T
-        quotient = cob.RecursiveQuotient.overPencil(
+        quotient = cob.RecursiveQuotient.over_pencil(
             _flat(a), _flat(m), self.N, [[0, 1], [2, 3]])
-        summary = quotient.certifiedFiberSum(
+        summary = quotient.certified_fiber_sum(
             [_frame_band(0, z[:, :2], z_left[:, :2]),
              _frame_band(1, z[:, 2:], z_left[:, 2:])])
         np.testing.assert_allclose(_mat(summary.gram, self.N), np.eye(self.N),
                                    atol=1e-11)
-        stage = quotient.fockStage(summary)
+        stage = quotient.fock_stage(summary)
         self.assertEqual(stage.pairing, "left-embedding")
-        np.testing.assert_allclose(_mat(stage.oneParticle, self.N),
+        np.testing.assert_allclose(_mat(stage.one_particle, self.N),
                                    np.diag(lam), rtol=0, atol=1e-10)
 
     def test_left_embedding_is_all_or_none(self):
@@ -2416,18 +2416,18 @@ class TestOverlapCertificateLeftEmbedding(unittest.TestCase):
         v_left = np.linalg.inv(v).T
         quotient = self._quotient(op)
         with self.assertRaises(ValueError):
-            quotient.certifiedFiberSum(
+            quotient.certified_fiber_sum(
                 [_frame_band(0, v[:, :2], v_left[:, :2]),
                  _frame_band(1, v[:, 2:])])
         band = _frame_band(0, v[:, :2], v_left[:, :1])   # wrong left shape
         with self.assertRaises(ValueError):
-            quotient.certifiedFiberSum([band])
+            quotient.certified_fiber_sum([band])
 
     def test_without_left_frames_the_metric_dual_stands_in(self):
         op, v, _ = self._operator()
-        summary = self._quotient(op).certifiedFiberSum(
+        summary = self._quotient(op).certified_fiber_sum(
             [_frame_band(0, v[:, :2]), _frame_band(1, v[:, 2:])])
-        self.assertEqual(len(summary.leftEmbedding), 0)
+        self.assertEqual(len(summary.left_embedding), 0)
         j = _mat(summary.embedding, self.N)
         np.testing.assert_allclose(_mat(summary.gram, self.N), j.conj().T @ j,
                                    rtol=0, atol=MACHINE)
@@ -2438,14 +2438,14 @@ class TestOverlapCertificateLeftEmbedding(unittest.TestCase):
         op, v, lam = self._operator()
         v_left = np.linalg.inv(v).T
         quotient = self._quotient(op, cob.FiberEmbeddingPolicy.QuotientKernel)
-        summary = quotient.certifiedFiberSum(
+        summary = quotient.certified_fiber_sum(
             [_frame_band(0, v[:, :3], v_left[:, :3]),
              _frame_band(1, v[:, 2:], v_left[:, 2:])])
-        self.assertEqual(summary.nominalRank, 5)
-        self.assertEqual(summary.effectiveRank, 4)
-        stage = quotient.fockStage(summary)
+        self.assertEqual(summary.nominal_rank, 5)
+        self.assertEqual(summary.effective_rank, 4)
+        stage = quotient.fock_stage(summary)
         self.assertEqual(stage.modes, 4)
-        np.testing.assert_allclose(_sorted_complex(stage.oneParticleSpectrum),
+        np.testing.assert_allclose(_sorted_complex(stage.one_particle_spectrum),
                                    _sorted_complex(lam), rtol=0, atol=1e-10)
 
 
@@ -2464,13 +2464,13 @@ class TestPersistentPartitionAtEveryScale(unittest.TestCase):
         return operator
 
     def test_partition_covers_every_coordinate_exactly_once(self):
-        partition = cob.RecursiveQuotient.persistentPartition(
+        partition = cob.RecursiveQuotient.persistent_partition(
             _flat(self._two_blocks()), 6)
         self.assertEqual(sorted(i for part in partition for i in part),
                          list(range(6)))
 
     def test_uncoupled_blocks_are_separated(self):
-        partition = cob.RecursiveQuotient.persistentPartition(
+        partition = cob.RecursiveQuotient.persistent_partition(
             _flat(self._two_blocks()), 6)
         self.assertEqual(sorted(sorted(part) for part in partition),
                          [[0, 1, 2], [3, 4, 5]])
@@ -2478,7 +2478,7 @@ class TestPersistentPartitionAtEveryScale(unittest.TestCase):
     def test_isolated_coordinate_becomes_its_own_component(self):
         operator = np.pad(self._two_blocks(), ((0, 1), (0, 1)))
         operator[6, 6] = 4.0  # diagonal only: coupled to nothing
-        partition = cob.RecursiveQuotient.persistentPartition(
+        partition = cob.RecursiveQuotient.persistent_partition(
             _flat(operator), 7)
         self.assertIn([6], [sorted(part) for part in partition])
         self.assertEqual(sorted(i for part in partition for i in part),
@@ -2486,28 +2486,28 @@ class TestPersistentPartitionAtEveryScale(unittest.TestCase):
 
     def test_partition_is_deterministic(self):
         flat = _flat(self._two_blocks())
-        first = cob.RecursiveQuotient.persistentPartition(flat, 6, 1.0, 4, 7)
-        second = cob.RecursiveQuotient.persistentPartition(flat, 6, 1.0, 4, 7)
+        first = cob.RecursiveQuotient.persistent_partition(flat, 6, 1.0, 4, 7)
+        second = cob.RecursiveQuotient.persistent_partition(flat, 6, 1.0, 4, 7)
         self.assertEqual([sorted(p) for p in first],
                          [sorted(p) for p in second])
 
     def test_diagonal_never_enters_the_similarity_graph(self):
         # A coordinate is not similar to itself: a purely diagonal operator
         # has no couplings, so every coordinate is its own component.
-        partition = cob.RecursiveQuotient.persistentPartition(
+        partition = cob.RecursiveQuotient.persistent_partition(
             _flat(np.diag([1.0, 2.0, 3.0, 4.0]).astype(complex)), 4)
         self.assertEqual(sorted(sorted(p) for p in partition),
                          [[0], [1], [2], [3]])
 
     def test_child_partition_feeds_next_level_directly(self):
-        parent = cob.RecursiveQuotient.overMatrix(
+        parent = cob.RecursiveQuotient.over_matrix(
             _flat(self._two_blocks()), 6, [], [[0, 1, 2], [3, 4, 5]])
-        partition = parent.childPersistentPartition()
-        child = parent.nextLevel(partition)
+        partition = parent.child_persistent_partition()
+        child = parent.next_level(partition)
         self.assertEqual(child.level, 1)
         self.assertEqual(
             sorted(i for part in partition for i in part),
-            list(range(len(parent.staticReduction().coordinates))))
+            list(range(len(parent.static_reduction().coordinates))))
 
     def test_a_window_of_resolutions_keeps_what_persists_across_it(self):
         """The resolution parameter is a free knob of the proposer, so the
@@ -2516,7 +2516,7 @@ class TestPersistentPartitionAtEveryScale(unittest.TestCase):
         each at any resolution, so the window and the single resolution agree
         on them."""
         flat = _flat(self._two_blocks())
-        window = cob.RecursiveQuotient.persistentPartition(
+        window = cob.RecursiveQuotient.persistent_partition(
             flat, 6, [0.5, 1.0, 2.0])
         self.assertEqual(sorted(sorted(part) for part in window),
                          [[0, 1, 2], [3, 4, 5]])
@@ -2525,8 +2525,8 @@ class TestPersistentPartitionAtEveryScale(unittest.TestCase):
 
     def test_a_window_of_one_resolution_is_the_single_resolution_form(self):
         flat = _flat(self._two_blocks())
-        one = cob.RecursiveQuotient.persistentPartition(flat, 6, [1.0], 4, 7)
-        single = cob.RecursiveQuotient.persistentPartition(flat, 6, 1.0, 4, 7)
+        one = cob.RecursiveQuotient.persistent_partition(flat, 6, [1.0], 4, 7)
+        single = cob.RecursiveQuotient.persistent_partition(flat, 6, 1.0, 4, 7)
         self.assertEqual([sorted(p) for p in one], [sorted(p) for p in single])
 
     def test_the_window_read_reports_its_persistence(self):
@@ -2535,48 +2535,48 @@ class TestPersistentPartitionAtEveryScale(unittest.TestCase):
         weakest adjacent overlap is one; a window of one resolution has no
         adjacent slice, so the overlap is not a number."""
         flat = _flat(self._two_blocks())
-        read = cob.RecursiveQuotient.persistentPartitionOverResolutions(
+        read = cob.RecursiveQuotient.persistent_partition_over_resolutions(
             flat, 6, [0.5, 1.0, 2.0])
         self.assertEqual(sorted(sorted(part) for part in read.components),
                          [[0, 1, 2], [3, 4, 5]])
         self.assertEqual(list(read.resolutions), [0.5, 1.0, 2.0])
-        self.assertIn(read.selectedResolution, [0.5, 1.0, 2.0])
-        self.assertEqual(list(read.componentPersistence), [3.0, 3.0])
-        self.assertAlmostEqual(read.worstOverlap, 1.0, places=12)
-        single = cob.RecursiveQuotient.persistentPartitionOverResolutions(
+        self.assertIn(read.selected_resolution, [0.5, 1.0, 2.0])
+        self.assertEqual(list(read.component_persistence), [3.0, 3.0])
+        self.assertAlmostEqual(read.worst_overlap, 1.0, places=12)
+        single = cob.RecursiveQuotient.persistent_partition_over_resolutions(
             flat, 6, [1.0])
-        self.assertTrue(np.isnan(single.worstOverlap))
+        self.assertTrue(np.isnan(single.worst_overlap))
 
     def test_a_coordinate_no_persistent_component_claims_is_its_own(self):
         """Every coordinate is covered whatever persists: the partition handed
         to nextLevel must be a partition."""
         operator = np.pad(self._two_blocks(), ((0, 1), (0, 1)))
         operator[6, 6] = 4.0  # diagonal only: coupled to nothing
-        window = cob.RecursiveQuotient.persistentPartition(
+        window = cob.RecursiveQuotient.persistent_partition(
             _flat(operator), 7, [0.5, 1.0, 2.0])
         self.assertIn([6], [sorted(part) for part in window])
         self.assertEqual(sorted(i for part in window for i in part),
                          list(range(7)))
 
     def test_the_child_partition_takes_a_window_too(self):
-        parent = cob.RecursiveQuotient.overMatrix(
+        parent = cob.RecursiveQuotient.over_matrix(
             _flat(self._two_blocks()), 6, [], [[0, 1, 2], [3, 4, 5]])
-        partition = parent.childPersistentPartition([0.5, 1.0, 2.0])
+        partition = parent.child_persistent_partition([0.5, 1.0, 2.0])
         self.assertEqual(
             sorted(i for part in partition for i in part),
-            list(range(len(parent.staticReduction().coordinates))))
-        self.assertEqual(parent.nextLevel(partition).level, 1)
+            list(range(len(parent.static_reduction().coordinates))))
+        self.assertEqual(parent.next_level(partition).level, 1)
 
     def test_an_empty_resolution_window_is_refused(self):
         with self.assertRaises(ValueError):
-            cob.RecursiveQuotient.persistentPartition(
+            cob.RecursiveQuotient.persistent_partition(
                 _flat(self._two_blocks()), 6, [])
 
     def test_malformed_arguments_are_refused(self):
         with self.assertRaises(ValueError):
-            cob.RecursiveQuotient.persistentPartition([1 + 0j], 3)
+            cob.RecursiveQuotient.persistent_partition([1 + 0j], 3)
         with self.assertRaises(ValueError):
-            cob.RecursiveQuotient.persistentPartition(
+            cob.RecursiveQuotient.persistent_partition(
                 _flat(np.eye(2).astype(complex)), 2, 1.0, 0)
 
 
@@ -2588,7 +2588,7 @@ class TestRecursionOnRealGeometry(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.st = rebuild_spacetime(load_dump(14001000))
-        ids = sorted(v.getId() for v in cls.st.getVertexList().toVector())
+        ids = sorted(v.get_id() for v in cls.st.get_vertex_list().to_vector())
         half = len(ids) // 2
         cls.supports = [ids[:half + 1], ids[half:]]
 
@@ -2598,42 +2598,42 @@ class TestRecursionOnRealGeometry(unittest.TestCase):
 
     def test_two_static_levels_with_discovered_partitions(self):
         level0 = self._level_zero()
-        level1 = level0.nextLevel(level0.childPersistentPartition())
-        level2 = level1.nextLevel(level1.childPersistentPartition())
+        level1 = level0.next_level(level0.child_persistent_partition())
+        level2 = level1.next_level(level1.child_persistent_partition())
 
         self.assertEqual([level0.level, level1.level, level2.level], [0, 1, 2])
         for level in (level1, level2):
             with self.subTest(level=level.level):
-                read = level.staticReduction()
+                read = level.static_reduction()
                 self.assertTrue(read.certificate.holds(),
                                 read.certificate.describe())
-                self.assertEqual(level.levelProvenance.origin,
+                self.assertEqual(level.level_provenance.origin,
                                  cob.LevelOrigin.StaticResponse)
         # Lineage is carried the whole way down.
         self.assertTrue(
-            all(p.startswith("L1:L0:") for p in level2.coordinateProvenance))
+            all(p.startswith("L1:L0:") for p in level2.coordinate_provenance))
 
     def test_two_pencil_levels_on_real_geometry(self):
         level0 = self._level_zero()
         lam = 0.37 + 0.11j
         response0 = level0.feshbach(lam, 0.0, 1.0)
-        level1 = level0.nextLevelAtLambda(
-            cob.RecursiveQuotient.persistentPartition(
+        level1 = level0.next_level_at_lambda(
+            cob.RecursiveQuotient.persistent_partition(
                 response0.response, len(response0.coordinates)),
             lam, 0.0, 1.0)
         response1 = level1.feshbach(lam, 0.0, 1.0)
-        level2 = level1.nextLevelAtLambda(
-            cob.RecursiveQuotient.persistentPartition(
+        level2 = level1.next_level_at_lambda(
+            cob.RecursiveQuotient.persistent_partition(
                 response1.response, len(response1.coordinates)),
             lam, 0.0, 1.0)
 
         self.assertEqual(level2.level, 2)
         for level in (level1, level2):
             with self.subTest(level=level.level):
-                provenance = level.levelProvenance
+                provenance = level.level_provenance
                 self.assertEqual(provenance.origin, cob.LevelOrigin.BandPencil)
-                self.assertEqual(provenance.windowLower, 0.0)
-                self.assertEqual(provenance.windowUpper, 1.0)
+                self.assertEqual(provenance.window_lower, 0.0)
+                self.assertEqual(provenance.window_upper, 1.0)
                 self.assertAlmostEqual(provenance.lambda_.real, lam.real)
                 self.assertTrue(provenance.certificate.holds(),
                                 provenance.certificate.describe())
@@ -2653,19 +2653,19 @@ class TestRecursionOnRealGeometry(unittest.TestCase):
             frame[position, position] = 1.0
         band.frame = _flat(frame)
         band.rank = rank
-        band.lowerGap = 0.5
-        band.upperGap = 0.5
+        band.lower_gap = 0.5
+        band.upper_gap = 0.5
         band.accepted = True
 
-        summary = level0.certifiedFiberSum([band])
-        self.assertTrue(summary.fromCertifiedBands)
-        self.assertEqual(summary.worstIsolationGap, 0.5)
+        summary = level0.certified_fiber_sum([band])
+        self.assertTrue(summary.from_certified_bands)
+        self.assertEqual(summary.worst_isolation_gap, 0.5)
 
-        stage = level0.fockStage(summary)
+        stage = level0.fock_stage(summary)
         self.assertEqual(stage.modes, rank)
-        self.assertEqual(stage.fockDimension, float(2 ** rank))
-        self.assertTrue(stage.spectrumMaterialized)
-        self.assertEqual(len(stage.fockSpectrum), 2 ** rank)
+        self.assertEqual(stage.fock_dimension, float(2 ** rank))
+        self.assertTrue(stage.spectrum_materialized)
+        self.assertEqual(len(stage.fock_spectrum), 2 ** rank)
 
 
 if __name__ == "__main__":

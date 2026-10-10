@@ -17,7 +17,7 @@ term establishes a series, so this driver measures the defect at every adjacent
 pair of a declared sequence, on one and the same carried subspace, and reports
 whether it falls and by what worst ratio.
 
-`quantum.LazyFockEngine.inductiveLimit` does the measuring; this module builds
+`quantum.LazyFockEngine.inductive_limit` does the measuring; this module builds
 the stages and states the fixture.
 
 The fixture, stated in full
@@ -28,14 +28,14 @@ every other, and the coupling of a mode is set by its own index:
     h_ij = t * r ** max(i, j)   (i != j),      h_ii = e + i * d
 
 with ``0 < r < 1``. Stage M carries the first M modes and the map
-``V_M = dGamma(h_M)``, the second quantization of that stage's one-particle
-operator (`quantum.ExteriorAlgebra.dGamma`). Because ``h_ij`` does not depend
+``V_M = d_gamma(h_M)``, the second quantization of that stage's one-particle
+operator (`quantum.ExteriorAlgebra.d_gamma`). Because ``h_ij`` does not depend
 on M, ``h_M`` is the leading principal submatrix of ``h_{M+1}`` and the stages
 are nested exactly as the vacuum embedding requires.
 
 The defect a step measures is then the coupling of the NEWLY ADDED mode into
-the carried subspace: ``dGamma(h_{M+1})`` sends a carried state to the states
-``dGamma(h_M)`` sends it to, plus a component on the new mode of size
+the carried subspace: ``d_gamma(h_{M+1})`` sends a carried state to the states
+``d_gamma(h_M)`` sends it to, plus a component on the new mode of size
 ``t * r ** M``. The defect therefore falls by the factor ``r`` at every step,
 which is the whitepaper's "at any finite stage only finitely many modes have
 interacted" made measurable. A refinement whose added modes did NOT decouple
@@ -142,9 +142,9 @@ def one_particle_stages(config):
 
 def fock_stages(operators):
     """The refinement stages of a nested sequence of one-particle operators:
-    stage M carries modes 0..M-1 and the map dGamma(h_M), dense over the
+    stage M carries modes 0..M-1 and the map d_gamma(h_M), dense over the
     2 ** M support Fock basis in the ascending mode order both
-    `ExteriorAlgebra` and `LazyFockEngine.applyLocalMapDense` use.
+    `ExteriorAlgebra` and `LazyFockEngine.apply_local_map_dense` use.
 
     Raises ValueError when the operators are not square, or not nested (each
     the leading principal submatrix of the next), since the vacuum embedding
@@ -172,7 +172,7 @@ def fock_stages(operators):
                     % (kept, h.shape[0]))
         modes = list(range(h.shape[0]))
         rows, columns, values, size = qu.ExteriorAlgebra(
-            h.shape[0]).dGammaCOO(h)
+            h.shape[0]).d_gamma_coo(h)
         dense = np.zeros((size, size), dtype=complex)
         dense[np.asarray(rows, dtype=int), np.asarray(columns, dtype=int)] = \
             np.asarray(values, dtype=complex)
@@ -206,14 +206,14 @@ def measure(config=None, operators=None):
             "active modes do not fit in the first stage's %d"
             % (config["active_modes"], modes[0]))
     engine = qu.LazyFockEngine(modes[-1])
-    read = engine.inductiveLimit(stages, active_basis(config["active_modes"]))
+    read = engine.inductive_limit(stages, active_basis(config["active_modes"]))
     record = {
         "stageModes": modes,
         "activeModes": config["active_modes"],
-        "activeDimension": int(read.activeDimension),
+        "activeDimension": int(read.active_dimension),
         "defects": [float(d) for d in read.defects],
-        "lastDefect": float(read.lastDefect),
-        "largestRatio": float(read.largestRatio),
+        "lastDefect": float(read.last_defect),
+        "largestRatio": float(read.largest_ratio),
         "falls": bool(read.falls),
         "certified": bool(read.certificate.holds()),
         "residual": float(read.certificate.residual),

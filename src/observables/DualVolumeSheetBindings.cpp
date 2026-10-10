@@ -124,32 +124,32 @@ the free sheeted operator h (x) I_k, lifts a base Riesz band to the
 colour-spin fibre E-bar (x) C^k, and builds the two commuting actions
 I (x) g (sheet relabeling) and D (x) I_k (a base symmetry).  A sheeted mode
 is stored at the flat index base * k + sheet.)doc")
-      .def(py::init<std::size_t, std::size_t>(), py::arg("sheetCount"),
-           py::arg("baseCellCount"))
+      .def(py::init<std::size_t, std::size_t>(), py::arg("sheet_count"),
+           py::arg("base_cell_count"))
       .def_property_readonly("sheet_count", &SheetedSupport::sheetCount)
       .def_property_readonly("base_cell_count",
                              &SheetedSupport::baseCellCount)
       .def_property_readonly("cell_count", &SheetedSupport::cellCount)
-      .def("modeIndex", &SheetedSupport::modeIndex, py::arg("baseCell"),
+      .def("mode_index", &SheetedSupport::modeIndex, py::arg("base_cell"),
            py::arg("sheet"),
            "The flat index base * k + sheet of one sheeted cell.")
-      .def("certifyIsomorphism", &SheetedSupport::certifyIsomorphism,
-           py::arg("sheetSquaredLengths"), py::arg("sheetConnections"),
+      .def("certify_isomorphism", &SheetedSupport::certifyIsomorphism,
+           py::arg("sheet_squared_lengths"), py::arg("sheet_connections"),
            py::arg("tolerance") = 1e-12,
            "Certify that the per-sheet squared lengths and connection values "
            "agree across the sheets.  Empty connection vectors declare a "
            "support with no connection values to compare.")
-      .def("freeOperator", &SheetedSupport::freeOperator,
-           py::arg("baseOperator"),
+      .def("free_operator", &SheetedSupport::freeOperator,
+           py::arg("base_operator"),
            "The free sheeted operator h (x) I_k.")
-      .def("liftBand", &SheetedSupport::liftBand, py::arg("baseBand"),
+      .def("lift_band", &SheetedSupport::liftBand, py::arg("base_band"),
            "The colour-spin fibre E-bar (x) C^k of a base Riesz band.")
-      .def("sheetFrameOperator", &SheetedSupport::sheetFrameOperator,
+      .def("sheet_frame_operator", &SheetedSupport::sheetFrameOperator,
            py::arg("g"), "The sheet relabeling I (x) g.")
-      .def("baseSymmetryOperator", &SheetedSupport::baseSymmetryOperator,
-           py::arg("baseAction"), "A base symmetry action D (x) I_k.")
-      .def("sheetCommutatorResidual",
-           &SheetedSupport::sheetCommutatorResidual, py::arg("baseOperator"),
+      .def("base_symmetry_operator", &SheetedSupport::baseSymmetryOperator,
+           py::arg("base_action"), "A base symmetry action D (x) I_k.")
+      .def("sheet_commutator_residual",
+           &SheetedSupport::sheetCommutatorResidual, py::arg("base_operator"),
            py::arg("g"),
            "||[A (x) I_k, I (x) g]||_max -- zero up to rounding for every "
            "base operator and every frame.");
@@ -162,21 +162,21 @@ determinant line, with fermion parities even, odd, even, odd.  The sector
 projectors and canonical anticommutation-relation matrices are delegated to
 tessera.quantum.ExteriorAlgebra, and at three sheets they agree with
 ColorFiber's exactly.)doc")
-      .def(py::init<std::size_t>(), py::arg("sheetCount"))
+      .def(py::init<std::size_t>(), py::arg("sheet_count"))
       .def_property_readonly("sheet_count", &SheetFock::sheetCount)
       .def_property_readonly("dimension", &SheetFock::dimension)
       .def("sectors", &SheetFock::sectors,
            "The k + 1 occupation sectors in ascending occupation order.")
-      .def("sectorProjector", &SheetFock::sectorProjector,
+      .def("sector_projector", &SheetFock::sectorProjector,
            py::arg("occupation"))
-      .def("exteriorCreation", &SheetFock::exteriorCreation, py::arg("sheet"))
+      .def("exterior_creation", &SheetFock::exteriorCreation, py::arg("sheet"))
       .def("contraction", &SheetFock::contraction, py::arg("sheet"))
-      .def("sheetBilinear", &SheetFock::sheetBilinear, py::arg("i"),
+      .def("sheet_bilinear", &SheetFock::sheetBilinear, py::arg("i"),
            py::arg("j"),
            "The gl(E) bilinear E^i_j = epsilon_i iota^j.")
-      .def("commutatorResidual", &SheetFock::commutatorResidual,
+      .def("commutator_residual", &SheetFock::commutatorResidual,
            "The worst deviation over the whole gl(k, C) commutator table.")
-      .def("sectorAgreementResidual", &SheetFock::sectorAgreementResidual,
+      .def("sector_agreement_residual", &SheetFock::sectorAgreementResidual,
            "The worst deviation from ColorFiber's sector projectors "
            "(three sheets only).");
 
@@ -191,7 +191,7 @@ transport.)doc")
                        std::complex<double> weight) {
              return ConnectingSimplex{sheetA, sheetB, weight};
            }),
-           py::arg("sheetA"), py::arg("sheetB"),
+           py::arg("sheet_a"), py::arg("sheet_b"),
            py::arg("weight") = std::complex<double>(1.0, 0.0))
       .def_readwrite("sheet_a", &ConnectingSimplex::sheetA)
       .def_readwrite("sheet_b", &ConnectingSimplex::sheetB)
@@ -232,17 +232,17 @@ S_AB -> g_A^-1 S_AB g_B, the factorized coupling block C-bar_AB (x) S_AB, the
 composition of transport along a declared path and the closed holonomy.  The
 retained datum is the GL(k, C) element with its determinant line: no polar
 factor is taken and no cube root of the determinant is chosen.)doc")
-      .def_static("attachmentMatrix", &SheetAttachment::attachmentMatrix,
-                  py::arg("sheetCount"), py::arg("simplices"),
-                  py::arg("fullRankTolerance") = 1e-12)
-      .def_static("frameChanged", &SheetAttachment::frameChanged,
-                  py::arg("attachment"), py::arg("frameA"), py::arg("frameB"),
+      .def_static("attachment_matrix", &SheetAttachment::attachmentMatrix,
+                  py::arg("sheet_count"), py::arg("simplices"),
+                  py::arg("full_rank_tolerance") = 1e-12)
+      .def_static("frame_changed", &SheetAttachment::frameChanged,
+                  py::arg("attachment"), py::arg("frame_a"), py::arg("frame_b"),
                   "S_AB -> g_A^-1 S_AB g_B.")
-      .def_static("couplingBlock", &SheetAttachment::couplingBlock,
-                  py::arg("baseCoupling"), py::arg("attachment"),
+      .def_static("coupling_block", &SheetAttachment::couplingBlock,
+                  py::arg("base_coupling"), py::arg("attachment"),
                   "C_AB = C-bar_AB (x) S_AB.")
       .def_static("compose", &SheetAttachment::compose, py::arg("path"),
-                  py::arg("sheetCount") = std::size_t{0},
+                  py::arg("sheet_count") = std::size_t{0},
                   "The path transport, first factor applied first.")
       .def_static("holonomy", &SheetAttachment::holonomy, py::arg("links"));
 
@@ -274,9 +274,9 @@ measures rather than asserts.)doc")
       .def_static("amplitude", &ColorSinglet::amplitude,
                   py::arg("trivialization"), py::arg("transports"),
                   py::arg("colors"), py::arg("tolerance") = 1e-12)
-      .def_static("frameCovarianceResidual",
+      .def_static("frame_covariance_residual",
                   &ColorSinglet::frameCovarianceResidual,
                   py::arg("trivialization"), py::arg("transports"),
-                  py::arg("colors"), py::arg("baseFrame"), py::arg("frames"),
+                  py::arg("colors"), py::arg("base_frame"), py::arg("frames"),
                   "|S_ABC(frame-changed) - S_ABC(original)|.");
 }

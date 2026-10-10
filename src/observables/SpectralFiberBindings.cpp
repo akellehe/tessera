@@ -19,68 +19,68 @@ void register_observables_spectral_fiber(py::module_ &m) {
       .def(py::init<>())
       .def_readwrite("degrees", &SpectralFiberConfig::degrees,
                      "Form degrees enumerated by enumerateOnComponents.")
-      .def_readwrite("groupingTolerance",
+      .def_readwrite("grouping_tolerance",
                      &SpectralFiberConfig::groupingTolerance,
                      "Relative band-grouping width (fraction of the "
                      "spectral scale).")
-      .def_readwrite("minRelativeGap", &SpectralFiberConfig::minRelativeGap,
+      .def_readwrite("min_relative_gap", &SpectralFiberConfig::minRelativeGap,
                      "Isolation floor: certified bands need both gaps >= "
                      "minRelativeGap * scale (a closing gap returns an "
                      "uncertified band).")
-      .def_readwrite("gapDominance", &SpectralFiberConfig::gapDominance,
+      .def_readwrite("gap_dominance", &SpectralFiberConfig::gapDominance,
                      "Certified gaps must exceed this multiple of the "
                      "in-band spread.")
-      .def_readwrite("residualTolerance",
+      .def_readwrite("residual_tolerance",
                      &SpectralFiberConfig::residualTolerance,
                      "Cap on the relative eigen/left/projector residuals.")
-      .def_readwrite("gramDefectTolerance",
+      .def_readwrite("gram_defect_tolerance",
                      &SpectralFiberConfig::gramDefectTolerance,
                      "Cap on ||Phi^dagger W Phi - J||.")
-      .def_readwrite("projectorNormCap",
+      .def_readwrite("projector_norm_cap",
                      &SpectralFiberConfig::projectorNormCap,
                      "Cap on the band projector norm ||P||_2.")
-      .def_readwrite("maxLocalizationExcess",
+      .def_readwrite("max_localization_excess",
                      &SpectralFiberConfig::maxLocalizationExcess,
                      "Cap on the band's rank-normalized localization excess "
                      "-- the localization acceptance conjunct.  1.0 accepts "
                      "any measured localization.")
-      .def_readwrite("denseCrossover", &SpectralFiberConfig::denseCrossover,
+      .def_readwrite("dense_crossover", &SpectralFiberConfig::denseCrossover,
                      "Dimension at/above which the self-adjoint path goes "
                      "sparse.")
-      .def_readwrite("requestedEigenpairs",
+      .def_readwrite("requested_eigenpairs",
                      &SpectralFiberConfig::requestedEigenpairs,
                      "Lowest eigenpairs the sparse block path computes.")
       .def_readwrite("oversample", &SpectralFiberConfig::oversample,
                      "Extra Ritz vectors beyond requestedEigenpairs.")
-      .def_readwrite("maxSolverIterations",
+      .def_readwrite("max_solver_iterations",
                      &SpectralFiberConfig::maxSolverIterations)
-      .def_readwrite("solverTolerance", &SpectralFiberConfig::solverTolerance)
-      .def_readwrite("solverSeed", &SpectralFiberConfig::solverSeed,
+      .def_readwrite("solver_tolerance", &SpectralFiberConfig::solverTolerance)
+      .def_readwrite("solver_seed", &SpectralFiberConfig::solverSeed,
                      "Seed of the deterministic sparse start block.")
-      .def_readwrite("trackOverlapThreshold",
+      .def_readwrite("track_overlap_threshold",
                      &SpectralFiberConfig::trackOverlapThreshold,
                      "Minimum subspace overlap for a certified track "
                      "continuation.")
-      .def_readwrite("contourNodes", &SpectralFiberConfig::contourNodes,
+      .def_readwrite("contour_nodes", &SpectralFiberConfig::contourNodes,
                      "Whitney pencil path: trapezoidal node count of each band's Riesz contour.")
-      .def_readwrite("isotropyTolerance", &SpectralFiberConfig::isotropyTolerance,
+      .def_readwrite("isotropy_tolerance", &SpectralFiberConfig::isotropyTolerance,
                      "Whitney pencil path: relative tolerance declaring a band's pairing isotropic.")
-      .def_readwrite("resolventBoundCap", &SpectralFiberConfig::resolventBoundCap,
+      .def_readwrite("resolvent_bound_cap", &SpectralFiberConfig::resolventBoundCap,
                      "Cap on the contour resolvent bound r * max_j "
                      "||(zeta_j I - h)^-1||_2 -- the 'controlled resolvent' "
                      "acceptance conjunct, enforced wherever a contour is drawn.")
-      .def_readwrite("minAllowabilityMargin",
+      .def_readwrite("min_allowability_margin",
                      &SpectralFiberConfig::minAllowabilityMargin,
                      "Floor on the Kontsevich-Segal allowability margin of the "
                      "instance the band was read on; the default 0 asks for a "
                      "strictly positive margin.")
-      .def_readwrite("lorentzianEpsilon", &SpectralFiberConfig::lorentzianEpsilon,
+      .def_readwrite("lorentzian_epsilon", &SpectralFiberConfig::lorentzianEpsilon,
                      "The DECLARED Lorentzian-protocol rotation epsilon_L the "
                      "complex was rotated by (chainhodge.LorentzianFamily.rotate) "
                      "before it was handed to the tracker; NaN means the complex "
                      "was not declared Lorentzian. Never inferred from a squared "
                      "length. Acceptance requires epsilon_L > 0 where it is declared.")
-      .def_readwrite("crossValidateDense",
+      .def_readwrite("cross_validate_dense",
                      &SpectralFiberConfig::crossValidateDense,
                      "Cross-check solves below the crossover against the "
                      "independent DenseReference kernel and record the "
@@ -101,80 +101,80 @@ certificate, never an automatic antiparticle identification.  Unmeasured
 quantities are NaN, never zero.)doc")
       .def_readonly("degree", &SpectralBandCertificate::degree)
       .def_readonly("rank", &SpectralBandCertificate::rank)
-      .def_readonly("lowerGap", &SpectralBandCertificate::lowerGap)
-      .def_readonly("upperGap", &SpectralBandCertificate::upperGap)
-      .def_readonly("nearestDiscardedSeparation",
+      .def_readonly("lower_gap", &SpectralBandCertificate::lowerGap)
+      .def_readonly("upper_gap", &SpectralBandCertificate::upperGap)
+      .def_readonly("nearest_discarded_separation",
                     &SpectralBandCertificate::nearestDiscardedSeparation,
                     "Distance in the complex plane to the nearest discarded "
                     "eigenvalue -- the isolation acceptance conjunct.")
       .def_readonly("localization", &SpectralBandCertificate::localization)
-      .def_readonly("localizationSupportFraction",
+      .def_readonly("localization_support_fraction",
                     &SpectralBandCertificate::localizationSupportFraction,
                     "Effective support fraction n_eff/n in [rank/n, 1]; 1 "
                     "exactly for a perfectly delocalized band.")
-      .def_readonly("localizationExcess",
+      .def_readonly("localization_excess",
                     &SpectralBandCertificate::localizationExcess,
                     "(n_eff - rank)/(n - rank) in [0, 1] -- the gated "
                     "localization datum; 0 = as concentrated as the rank "
                     "permits, 1 = perfectly delocalized.")
-      .def_readonly("projectorResidual",
+      .def_readonly("projector_residual",
                     &SpectralBandCertificate::projectorResidual)
-      .def_readonly("eigenResidual", &SpectralBandCertificate::eigenResidual)
-      .def_readonly("leftResidual", &SpectralBandCertificate::leftResidual)
-      .def_readonly("gramDefect", &SpectralBandCertificate::gramDefect)
-      .def_readonly("projectorNorm", &SpectralBandCertificate::projectorNorm,
+      .def_readonly("eigen_residual", &SpectralBandCertificate::eigenResidual)
+      .def_readonly("left_residual", &SpectralBandCertificate::leftResidual)
+      .def_readonly("gram_defect", &SpectralBandCertificate::gramDefect)
+      .def_readonly("projector_norm", &SpectralBandCertificate::projectorNorm,
                     "||P||_2, Kato's condition number of the spectral "
                     "projector (gauge-invariant).")
-      .def_readonly("frameConditionNumber",
+      .def_readonly("frame_condition_number",
                     &SpectralBandCertificate::frameConditionNumber,
                     "The frame condition number: max Riesz conditioning of "
                     "the reported matched frames in the |W| metric.")
-      .def_readonly("positiveSignature",
+      .def_readonly("positive_signature",
                     &SpectralBandCertificate::positiveSignature)
-      .def_readonly("negativeSignature",
+      .def_readonly("negative_signature",
                     &SpectralBandCertificate::negativeSignature)
-      .def_readonly("pairingDeterminant", &SpectralBandCertificate::pairingDeterminant,
+      .def_readonly("pairing_determinant", &SpectralBandCertificate::pairingDeterminant,
                     "det B_C of the bilinear pairing (complex-symmetric pencil regime only).")
-      .def_readonly("pairingCondition", &SpectralBandCertificate::pairingCondition)
-      .def_readonly("pairingScale", &SpectralBandCertificate::pairingScale)
+      .def_readonly("pairing_condition", &SpectralBandCertificate::pairingCondition)
+      .def_readonly("pairing_scale", &SpectralBandCertificate::pairingScale)
       .def_readonly("isotropic", &SpectralBandCertificate::isotropic,
                     "det B_C = 0: the exceptional-point indicator; no left frame.")
-      .def_readonly("leftFrameRefusal", &SpectralBandCertificate::leftFrameRefusal)
-      .def_readonly("metricSymmetryDefect", &SpectralBandCertificate::metricSymmetryDefect,
+      .def_readonly("left_frame_refusal", &SpectralBandCertificate::leftFrameRefusal)
+      .def_readonly("metric_symmetry_defect", &SpectralBandCertificate::metricSymmetryDefect,
                     "The regime's verification residual, M L = (M L)^T.")
       .def_readonly("contour", &SpectralBandCertificate::contour,
                     "Description of the closed contour gamma_C the band's Riesz "
                     "projector was computed on; empty when no contour was drawn.")
-      .def_readonly("contourNodeCount",
+      .def_readonly("contour_node_count",
                     &SpectralBandCertificate::contourNodeCount,
                     "Quadrature node count of gamma_C (0 = no contour).")
-      .def_readonly("contourCenter", &SpectralBandCertificate::contourCenter)
-      .def_readonly("contourRadius", &SpectralBandCertificate::contourRadius)
-      .def_readonly("resolventMax", &SpectralBandCertificate::resolventMax,
+      .def_readonly("contour_center", &SpectralBandCertificate::contourCenter)
+      .def_readonly("contour_radius", &SpectralBandCertificate::contourRadius)
+      .def_readonly("resolvent_max", &SpectralBandCertificate::resolventMax,
                     "max_j ||(zeta_j I - h_C)^-1||_2 over the contour nodes.")
-      .def_readonly("resolventBound", &SpectralBandCertificate::resolventBound,
+      .def_readonly("resolvent_bound", &SpectralBandCertificate::resolventBound,
                     "The Riesz bound ||P_C|| <= (|gamma_C|/2 pi) max ||R||, i.e. "
                     "radius * resolventMax -- the gated contour quantity.")
       .def_readonly("allowable", &SpectralBandCertificate::allowable,
                     "Kontsevich-Segal allowability of the instance the band was "
                     "read on (every top simplex of strictly positive margin).")
-      .def_readonly("allowabilityMargin",
+      .def_readonly("allowability_margin",
                     &SpectralBandCertificate::allowabilityMargin,
                     "min_T (pi - sum_i |arg lambda_i(g_T)|): pi for a Euclidean "
                     "instance, 0 for a real Lorentzian one.")
-      .def_readonly("lorentzianEpsilon",
+      .def_readonly("lorentzian_epsilon",
                     &SpectralBandCertificate::lorentzianEpsilon,
                     "The declared rotation epsilon_L the band was read at; NaN "
                     "when the complex was not declared Lorentzian.")
-      .def_readonly("bilinearLeftFrame", &SpectralBandCertificate::bilinearLeftFrame,
+      .def_readonly("bilinear_left_frame", &SpectralBandCertificate::bilinearLeftFrame,
                     "Whether the stored left frame is the transpose dual Phi~ "
                     "itself (the chain-level pencil path) rather than Psi with "
                     "Psi^dagger W Phi = I.")
-      .def_readonly("frequencyLower",
+      .def_readonly("frequency_lower",
                     &SpectralBandCertificate::frequencyLower)
-      .def_readonly("frequencyUpper",
+      .def_readonly("frequency_upper",
                     &SpectralBandCertificate::frequencyUpper)
-      .def_readonly("selfAdjoint", &SpectralBandCertificate::selfAdjoint)
+      .def_readonly("self_adjoint", &SpectralBandCertificate::selfAdjoint)
       .def_readonly("accepted", &SpectralBandCertificate::accepted)
       .def_readonly("certificate", &SpectralBandCertificate::certificate)
       .def("describe", &SpectralBandCertificate::describe)
@@ -183,10 +183,10 @@ quantities are NaN, never zero.)doc")
   py::class_<FiberOverlapRead>(m, "FiberOverlapRead",
       "Principal-angle / support comparison of two fibers: cells matched "
       "by sorted vertex-id tuple (gauge- and relabeling-invariant).")
-      .def_readonly("supportOverlap", &FiberOverlapRead::supportOverlap)
-      .def_readonly("sharedCells", &FiberOverlapRead::sharedCells)
-      .def_readonly("principalAngles", &FiberOverlapRead::principalAngles)
-      .def_readonly("subspaceOverlap", &FiberOverlapRead::subspaceOverlap);
+      .def_readonly("support_overlap", &FiberOverlapRead::supportOverlap)
+      .def_readonly("shared_cells", &FiberOverlapRead::sharedCells)
+      .def_readonly("principal_angles", &FiberOverlapRead::principalAngles)
+      .def_readonly("subspace_overlap", &FiberOverlapRead::subspaceOverlap);
 
   py::class_<SpectralFiber>(m, "SpectralFiber",
       R"doc(One whole isolated spectral band of a component-restricted Hodge
@@ -199,25 +199,25 @@ or a downstream observable.)doc")
       .def("degree", &SpectralFiber::degree)
       .def("rank", &SpectralFiber::rank)
       .def("accepted", &SpectralFiber::accepted)
-      .def("rightFrame", &SpectralFiber::rightFrame,
-           "Right frame Phi (cells x rank).")
-      .def("leftFrame", &SpectralFiber::leftFrame,
+      .def("right_frame", &SpectralFiber::rightFrame,
+           "Right frame phi (cells x rank).")
+      .def("left_frame", &SpectralFiber::leftFrame,
            "Left frame as the regime's solver produced it: Psi with "
            "Psi^dagger W Phi = I, or Phi~ itself on the pencil path.")
-      .def("dualFrame", &SpectralFiber::dualFrame,
+      .def("dual_frame", &SpectralFiber::dualFrame,
            R"doc(The algebraic (transpose) dual Phi~ of the right frame,
 Phi~^T Phi = I, in every regime: the stored left frame on the pencil path and
-W conj(Psi) elsewhere. CovarianceState.fromBiorthogonalFrames(rightFrame(),
-dualFrame()) is the band's biorthogonal Slater covariance.)doc")
+W conj(Psi) elsewhere. CovarianceState.from_biorthogonal_frames(right_frame(),
+dual_frame()) is the band's biorthogonal Slater covariance.)doc")
       .def("projector", &SpectralFiber::projector,
            "The band projector P = Phi Phi~^T (cells x cells).")
-      .def("weightDiagonal", &SpectralFiber::weightDiagonal,
+      .def("weight_diagonal", &SpectralFiber::weightDiagonal,
            "Diagonal inner-product weights W restricted to the band's "
            "cells.")
       .def("eigenvalues", &SpectralFiber::eigenvalues,
            "Band eigenvalues (with multiplicity), sorted by (Re, Im).")
-      .def("bandCenter", &SpectralFiber::bandCenter)
-      .def("cellVertices", &SpectralFiber::cellVertices,
+      .def("band_center", &SpectralFiber::bandCenter)
+      .def("cell_vertices", &SpectralFiber::cellVertices,
            "The k-cells carrying the band, as sorted vertex-id tuples in "
            "frame row order.")
       .def("certificate", &SpectralFiber::certificate,
@@ -226,18 +226,18 @@ dualFrame()) is the band's biorthogonal Slater covariance.)doc")
                   py::arg("b"),
                   "Principal-angle / support comparison (cells matched by "
                   "vertex-id tuple).")
-      .def("toRecord",
+      .def("to_record",
            [](const SpectralFiber &self) {
              return recordToPython(self.toRecord());
            },
            "Checkpoint serialization: the JSON-able record of the fiber "
            "(schema-versioned; complex leaves split _re/_im).")
-      .def_static("fromRecord",
+      .def_static("from_record",
                   [](const py::handle &record) {
                     return SpectralFiber::fromRecord(pythonToRecord(record));
                   },
                   py::arg("record"),
-                  "Rehydrate from toRecord() output; rejects an unknown "
+                  "Rehydrate from to_record() output; rejects an unknown "
                   "schema_version (ValueError).");
 
   py::class_<SpectralBandWindow>(m, "SpectralBandWindow",
@@ -246,8 +246,8 @@ dualFrame()) is the band's biorthogonal Slater covariance.)doc")
       "Carries no operator, frame, or quotient reference.")
       .def_readonly("degree", &SpectralBandWindow::degree)
       .def_readonly("rank", &SpectralBandWindow::rank)
-      .def_readonly("frequencyLower", &SpectralBandWindow::frequencyLower)
-      .def_readonly("frequencyUpper", &SpectralBandWindow::frequencyUpper)
+      .def_readonly("frequency_lower", &SpectralBandWindow::frequencyLower)
+      .def_readonly("frequency_upper", &SpectralBandWindow::frequencyUpper)
       .def_readonly("certificate", &SpectralBandWindow::certificate);
 
   py::class_<FiberMatchRead>(m, "FiberMatchRead",
@@ -255,12 +255,12 @@ dualFrame()) is the band's biorthogonal Slater covariance.)doc")
       "continuation needs both endpoint bands accepted, equal ranks, and "
       "subspace overlap above the threshold — an endpoint whose gap closed "
       "is reported but never certified (no discontinuous identity flip).")
-      .def_readonly("fromIndex", &FiberMatchRead::fromIndex)
-      .def_readonly("toIndex", &FiberMatchRead::toIndex)
+      .def_readonly("from_index", &FiberMatchRead::fromIndex)
+      .def_readonly("to_index", &FiberMatchRead::toIndex)
       .def_readonly("degree", &FiberMatchRead::degree)
       .def_readonly("overlap", &FiberMatchRead::overlap)
-      .def_readonly("ranksEqual", &FiberMatchRead::ranksEqual)
-      .def_readonly("certifiedContinuation",
+      .def_readonly("ranks_equal", &FiberMatchRead::ranksEqual)
+      .def_readonly("certified_continuation",
                     &FiberMatchRead::certifiedContinuation);
 
   py::class_<ComponentBandRead>(m, "ComponentBandRead",
@@ -270,20 +270,20 @@ dualFrame()) is the band's biorthogonal Slater covariance.)doc")
       .def_readonly("support", &ComponentBandRead::support)
       .def_readonly("degree", &ComponentBandRead::degree)
       .def_readonly("dimension", &ComponentBandRead::dimension)
-      .def_readonly("cellVertices", &ComponentBandRead::cellVertices)
+      .def_readonly("cell_vertices", &ComponentBandRead::cellVertices)
       .def_readonly("regime", &ComponentBandRead::regime)
-      .def_readonly("solverPath", &ComponentBandRead::solverPath)
+      .def_readonly("solver_path", &ComponentBandRead::solverPath)
       .def_readonly("truncated", &ComponentBandRead::truncated)
-      .def_readonly("coveredEigenvalues",
+      .def_readonly("covered_eigenvalues",
                     &ComponentBandRead::coveredEigenvalues)
       .def_readonly("fibers", &ComponentBandRead::fibers)
-      .def_readonly("solveCertificate", &ComponentBandRead::solveCertificate)
-      .def("toRecord",
+      .def_readonly("solve_certificate", &ComponentBandRead::solveCertificate)
+      .def("to_record",
            [](const ComponentBandRead &self) {
              return recordToPython(self.toRecord());
            },
            "Checkpoint serialization of the whole read (fibers included).")
-      .def_static("fromRecord",
+      .def_static("from_record",
                   [](const py::handle &record) {
                     return ComponentBandRead::fromRecord(
                         pythonToRecord(record));
@@ -298,7 +298,7 @@ on persistent components.
 
 For a component support S the tracker assembles the Hodge operator of the full
 induced subcomplex on S under its metric source (the process-wide
-HodgeLaplacian.defaultMetricSource() unless named).  Under the default
+HodgeLaplacian.default_metric_source() unless named).  Under the default
 WhitneyPencil every degree k >= 1 is the covariant operator h_k(s, U) of the
 subcomplex's own chain-level Whitney pencil, read in the complex-symmetric
 pencil regime with Riesz bands and bilinear pairing certificates.  Under
@@ -346,17 +346,17 @@ nothing here enters any emergence objective.)doc")
            py::arg("weights") = py::none(),
            py::arg("metric_source") = py::none(),
            "Bind to the spacetime to read; weights=None follows the "
-           "process-wide HodgeLaplacian.defaultWeightConvention() and "
+           "process-wide HodgeLaplacian.default_weight_convention() and "
            "metric_source=None the process-wide "
-           "HodgeLaplacian.defaultMetricSource() (the Whitney pencil unless "
+           "HodgeLaplacian.default_metric_source() (the Whitney pencil unless "
            "changed), both at call time. The weight convention is read only "
            "under DiagonalWeights.")
-      .def("metricSource", &SpectralFiberTracker::metricSource,
+      .def("metric_source", &SpectralFiberTracker::metricSource,
            "Where this tracker's operators take their metric from.")
       .def("config", &SpectralFiberTracker::config,
            py::return_value_policy::copy)
-      .def("weightConvention", &SpectralFiberTracker::weightConvention)
-      .def("enumerateBands",
+      .def("weight_convention", &SpectralFiberTracker::weightConvention)
+      .def("enumerate_bands",
            [](const SpectralFiberTracker &self,
               const std::vector<std::uint64_t> &support, int degree) {
              py::gil_scoped_release release;
@@ -365,7 +365,7 @@ nothing here enters any emergence objective.)doc")
            py::arg("support"), py::arg("degree"),
            "Enumerate the bands of one component (vertex-id support) at "
            "one form degree.")
-      .def("enumerateOnComponents",
+      .def("enumerate_on_components",
            [](const SpectralFiberTracker &self,
               const std::vector<ComponentRead> &components) {
              py::gil_scoped_release release;
@@ -373,7 +373,7 @@ nothing here enters any emergence objective.)doc")
            },
            py::arg("components"),
            "Enumerate every configured degree on every component.")
-      .def("enumerateBandsCached",
+      .def("enumerate_bands_cached",
            [](const SpectralFiberTracker &self,
               tessera::cobordism::AnalyticCache &cache,
               const std::vector<std::uint64_t> &support, int degree) {
@@ -384,13 +384,13 @@ nothing here enters any emergence objective.)doc")
            "enumerateBands through the AnalyticCache contract "
            "(touched-star invalidation; served while the component is "
            "untouched).")
-      .def_static("acceptedWindows", &SpectralFiberTracker::acceptedWindows,
+      .def_static("accepted_windows", &SpectralFiberTracker::acceptedWindows,
                   py::arg("reads"),
                   "The accepted bands' frequency windows as plain data for "
                   "the response consumer.")
-      .def_static("matchFibers", &SpectralFiberTracker::matchFibers,
-                  py::arg("fromFibers"), py::arg("toFibers"),
-                  py::arg("overlapThreshold") = 0.5,
+      .def_static("match_fibers", &SpectralFiberTracker::matchFibers,
+                  py::arg("from_fibers"), py::arg("to_fibers"),
+                  py::arg("overlap_threshold") = 0.5,
                   "Track fibers across frames/resolutions by principal "
                   "angles and component overlap.")
       .def_readonly_static("CACHE_KIND", &SpectralFiberTracker::kCacheKind);

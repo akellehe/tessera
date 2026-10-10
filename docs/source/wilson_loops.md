@@ -51,10 +51,10 @@ every simplex of the loop).
 ```python
 from tessera import WilsonLoop, WilsonMode
 wl = WilsonLoop(spacetime)
-loop = wl.geodesicLoop(some_simplex)
+loop = wl.geodesic_loop(some_simplex)
 r = wl.evaluate(loop, WilsonMode.COMBINATORIAL)
 print(r.value)            # = loop size (number of simplices)
-print(r.enclosedHinges)   # number of hinges enclosed
+print(r.enclosed_hinges)   # number of hinges enclosed
 print(r.contractible)     # True iff enclosedHinges == 0
 ```
 
@@ -96,7 +96,7 @@ deficit angles.
 ```python
 r = wl.evaluate(loop, WilsonMode.DEFICIT_ANGLE)
 print(r.value)            # in [-1, 1] for U(1) approx; near 1 = flat
-print(r.enclosedHinges)
+print(r.enclosed_hinges)
 ```
 
 ### `CAUSAL`
@@ -110,13 +110,13 @@ $$
 
 where $t_f^{(i)}$ is the final-time stamp of simplex $i$ in the CDT
 foliation and the indicator gates near-zero crossings. The result
-`causalWindingNumber` is the cumulative signed count; a non-zero value
+`causal_winding_number` is the cumulative signed count; a non-zero value
 indicates a loop that crosses a causal-boundary structure, such as a
 horizon bifurcation surface or a foliation jump.
 
 ```python
 r = wl.evaluate(loop, WilsonMode.CAUSAL)
-print(r.causalWindingNumber)   # signed integer
+print(r.causal_winding_number)   # signed integer
 print(r.value)                 # = causalWindingNumber as a double
 ```
 
@@ -125,7 +125,7 @@ print(r.value)                 # = causalWindingNumber as a double
 `tessera.LoopType` enumerates three loop families. `WilsonLoop` exposes
 one factory method per family.
 
-### `HINGE` — `hingeLoop(h)`
+### `HINGE` — `hinge_loop(h)`
 
 The elementary loop of top-simplices around a given hinge $h$, ordered
 cyclically. In 2D this is the plaquette loop around a vertex; in 3D the
@@ -134,32 +134,32 @@ exactly one hinge, which makes the `DEFICIT_ANGLE` formula above exact.
 
 ```python
 for h in spacetime.getHinges():
-    loop = wl.hingeLoop(h)
+    loop = wl.hinge_loop(h)
     r = wl.evaluate(loop, WilsonMode.DEFICIT_ANGLE)
     # r.value is the U(1) Wilson value for the curvature at h
 ```
 
-### `DUAL_LATTICE` — `dualLatticeLoop(start, targetLength)`
+### `DUAL_LATTICE` — `dual_lattice_loop(start, targetLength)`
 
-Discovers a loop of approximately `targetLength` simplices by
+Discovers a loop of approximately `target_length` simplices by
 breadth-first search from `start` on the dual graph. Use it for a
 population of loops at a fixed scale.
 
 ```python
-loop = wl.dualLatticeLoop(some_simplex, targetLength=20)
+loop = wl.dual_lattice_loop(some_simplex, target_length=20)
 # Not guaranteed to be exactly length 20 — BFS may overshoot or
 # return a shorter loop if the local connectivity doesn't permit
 # closing at the target size.
 ```
 
-### `GEODESIC` — `geodesicLoop(start)`
+### `GEODESIC` — `geodesic_loop(start)`
 
 Shortest cycle through `start` on the dual graph (Dijkstra over a
 suitably defined edge metric). Gives the local girth of the dual graph
 around `start`.
 
 ```python
-loop = wl.geodesicLoop(some_simplex)
+loop = wl.geodesic_loop(some_simplex)
 print(len(loop))   # girth at this simplex
 ```
 
@@ -187,10 +187,10 @@ A `WilsonResult` carries the scalar value plus per-mode diagnostics:
 | Field                   | Type   | Populated in     | Meaning                          |
 |-------------------------|--------|-------------------|----------------------------------|
 | `value`                 | double | all modes         | primary scalar (mode-specific)   |
-| `loopSize`              | int    | all modes         | number of simplices in the loop  |
-| `enclosedHinges`        | int    | COMBIN, DEFICIT   | hinges shared by every simplex   |
+| `loop_size`              | int    | all modes         | number of simplices in the loop  |
+| `enclosed_hinges`        | int    | COMBIN, DEFICIT   | hinges shared by every simplex   |
 | `contractible`          | bool   | COMBIN            | `True` iff no hinge is enclosed  |
-| `causalWindingNumber`   | int    | CAUSAL            | net time-orientation winding     |
+| `causal_winding_number`   | int    | CAUSAL            | net time-orientation winding     |
 
 Fields not populated by a given mode hold their zero or default value.
 
@@ -206,8 +206,8 @@ import statistics
 from tessera import WilsonLoop, WilsonMode
 
 wl = WilsonLoop(spacetime)
-wl.measureAllHinges(WilsonMode.DEFICIT_ANGLE)
-values = [m.value for m in wl.getMeasurements()]
+wl.measure_all_hinges(WilsonMode.DEFICIT_ANGLE)
+values = [m.value for m in wl.get_measurements()]
 
 print(f"n hinges: {len(values)}")
 print(f"mean    : {statistics.mean(values):.4f}")
@@ -225,8 +225,8 @@ wl = WilsonLoop(spacetime)
 target = 8
 n_contractible = 0
 n_total = 0
-for sigma in spacetime.getTopSimplices():
-    loop = wl.dualLatticeLoop(sigma, targetLength=target)
+for sigma in spacetime.get_top_simplices():
+    loop = wl.dual_lattice_loop(sigma, target_length=target)
     if len(loop) >= 2:
         r = wl.evaluate(loop, WilsonMode.COMBINATORIAL)
         n_total += 1
@@ -238,16 +238,16 @@ print(f"contractible fraction at L={target}: "
 
 ### Example 3: ensemble averages by loop size
 
-`getAverageBySize()` aggregates accumulated measurements into a `{size:
+`get_average_by_size()` aggregates accumulated measurements into a `{size:
 mean_value}` map, the standard form for Creutz-ratio analyses.
 
 ```python
 wl = WilsonLoop(spacetime)
-for sigma in spacetime.getTopSimplices()[:1000]:
-    loop = wl.geodesicLoop(sigma)
+for sigma in spacetime.get_top_simplices()[:1000]:
+    loop = wl.geodesic_loop(sigma)
     wl.measure(loop, WilsonMode.DEFICIT_ANGLE)
 
-avg_by_size = wl.getAverageBySize()
+avg_by_size = wl.get_average_by_size()
 for size in sorted(avg_by_size):
     print(f"L = {size}: <W> = {avg_by_size[size]:.4f}")
 ```
@@ -258,8 +258,8 @@ for size in sorted(avg_by_size):
 from tessera import WilsonLoop, WilsonMode
 
 wl = WilsonLoop(cdt_spacetime)
-wl.measureAllHinges(WilsonMode.CAUSAL)
-windings = [m.causalWindingNumber for m in wl.getMeasurements()]
+wl.measure_all_hinges(WilsonMode.CAUSAL)
+windings = [m.causal_winding_number for m in wl.get_measurements()]
 nonzero  = sum(1 for w in windings if w != 0)
 print(f"non-contractible-in-time loops: {nonzero} / {len(windings)}")
 ```
@@ -271,20 +271,20 @@ such as a CDT slice boundary or a topologically non-trivial foliation.
 ## Measurement bookkeeping
 
 `WilsonLoop` accumulates a `List[WilsonResult]` internally as you call
-`measure(loop, mode)` or `measureAllHinges(mode)`:
+`measure(loop, mode)` or `measure_all_hinges(mode)`:
 
 ```python
 wl.measure(loop, WilsonMode.DEFICIT_ANGLE)
 wl.measure(other_loop, WilsonMode.DEFICIT_ANGLE)
 
-print(len(wl.getMeasurements()))      # 2
-print(wl.getAverageBySize())          # {size: mean value}
+print(len(wl.get_measurements()))      # 2
+print(wl.get_average_by_size())          # {size: mean value}
 
 wl.reset()                            # clear accumulated measurements
-print(len(wl.getMeasurements()))      # 0
+print(len(wl.get_measurements()))      # 0
 ```
 
-`measureAllHinges(mode)` is the bulk shortcut for a curvature scan: it
+`measure_all_hinges(mode)` is the bulk shortcut for a curvature scan: it
 walks every $(d-2)$-simplex, generates its hinge loop, and records the
 evaluation. It skips loops of size < 2, where the hinge is not
 surrounded by at least 2 distinct top-simplices (typically on boundary
@@ -292,18 +292,18 @@ triangulations).
 
 ## Performance notes
 
-* `hingeLoop` is $O(\#\sigma)$ for the ordering scan, where $\#\sigma$
+* `hinge_loop` is $O(\#\sigma)$ for the ordering scan, where $\#\sigma$
   is the number of top-simplices sharing the hinge — typically small.
-* `dualLatticeLoop` is a bounded-depth BFS, $O(\#\text{visited} \cdot
+* `dual_lattice_loop` is a bounded-depth BFS, $O(\#\text{visited} \cdot
   \#\text{dual neighbours})$. Worst case $O(\#\sigma)$ if the loop
   wraps far.
-* `geodesicLoop` is $O(\#\sigma \log \#\sigma)$ in the worst case
+* `geodesic_loop` is $O(\#\sigma \log \#\sigma)$ in the worst case
   (Dijkstra on the dual graph).
-* `evaluateDeficitAngle` is $O(\#\text{loop simplices} \cdot
+* `evaluate_deficit_angle` is $O(\#\text{loop simplices} \cdot
   \#\text{hinges})$ because it scans hinges for membership in every
   loop simplex; for small loops this is cheap.
 
-For `measureAllHinges` across a large triangulation the dominant cost is
+For `measure_all_hinges` across a large triangulation the dominant cost is
 the per-hinge `evaluate` call. At $N_{\rm hinge} = 10^4$ and small loops
 the full sweep takes seconds.
 
@@ -334,8 +334,8 @@ the U(1) approximation for multi-hinge loops. It does not return the full
 rotation-matrix holonomy — the SO($d{-}1{,}1$) element from
 parallel-transporting a tangent frame around the loop — nor a
 parallel-transport routine for arbitrary vectors. The per-hinge deficit
-angle is available on each ``Simplex`` via ``Simplex.deficitAngle()`` and
-via ``ReggeSolver.deficitAngle(hinge)``; in the Regge formalism the
+angle is available on each ``Simplex`` via ``Simplex.deficit_angle()`` and
+via ``ReggeSolver.deficit_angle(hinge)``; in the Regge formalism the
 deficit angle is the holonomy angle in the plane normal to the hinge, so
 for hinge loops this is the full holonomy up to the choice of normal
 frame. Higher-rank Wilson loops (SU($N$), spinor representations) are not

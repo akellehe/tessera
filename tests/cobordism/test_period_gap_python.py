@@ -1,11 +1,11 @@
 # Copyright (c) 2026 Twin Vector Labs LLC.
 # All rights reserved.
 
-"""The hard period-pin r_psi (#377): ``EigenstateSynthesis.periodGapForPeriods``
-and its exact analytic gradient ``periodGapForPeriodsGradient``.
+"""The hard period-pin r_psi (#377): ``EigenstateSynthesis.period_gap_for_periods``
+and its exact analytic gradient ``period_gap_for_periods_gradient``.
 
 r_psi is the realizability term r_U's selectable alternative for the merge's
-state objective. Where r_U (``residualForPeriods``) holds the target periods
+state objective. Where r_U (``residual_for_periods``) holds the target periods
 EXACTLY (a minimal leak) and scores the resulting state's non-harmonicity, r_psi
 keeps the carried object a PURE harmonic and scores the period GAP it cannot
 match, ``r_psi = ||P^T c - target||^2`` with ``c`` the least-squares fit. Both
@@ -52,14 +52,14 @@ def _substrate(source=DIAGONAL):
     under every perturbation of the geometry and r_psi cannot see the
     lengths at all (see TestWhitneyPeriodGapIsTopological)."""
     st, es, holes, P = holed_surface(degree=1, metric_source=source)
-    cells1 = [tuple(int(v) for v in c) for c in es.cellSimplices()]
+    cells1 = [tuple(int(v) for v in c) for c in es.cell_simplices()]
     return st, es, holes, P, cells1
 
 
 def _emap(st):
     out = {}
-    for e in st.getEdgeList().toVector():
-        a, b = e.getSource().getId(), e.getTarget().getId()
+    for e in st.get_edge_list().to_vector():
+        a, b = e.get_source().get_id(), e.get_target().get_id()
         out[(min(a, b), max(a, b))] = e
     return out
 
@@ -68,8 +68,8 @@ def _perturb(st, cells1, every, factor):
     em = _emap(st)
     for i in range(0, len(cells1), every):
         ek = (min(cells1[i]), max(cells1[i]))
-        em[ek].setLength(cmath.sqrt(complex((em[ek].getLength() ** 2).real * factor)))
-    st.materializeFacets()
+        em[ek].set_length(cmath.sqrt(complex((em[ek].get_length() ** 2).real * factor)))
+    st.materialize_facets()
 
 
 class PeriodGapValueTest(unittest.TestCase):
@@ -80,20 +80,20 @@ class PeriodGapValueTest(unittest.TestCase):
         # construction, so the pure-harmonic fit matches it exactly (gap ~ 0).
         _st, es, holes, P, _c = _substrate()
         target = [complex(z) for z in P[0]]
-        self.assertLess(es.periodGapForPeriods(holes, target), 1e-12)
+        self.assertLess(es.period_gap_for_periods(holes, target), 1e-12)
 
     def test_perturbed_geometry_floors_above_zero(self):
         st, es, holes, P, cells1 = _substrate()
         target = [complex(z) for z in P[0]]
         _perturb(st, cells1, every=7, factor=1.3)
-        self.assertGreater(es.periodGapForPeriods(holes, target), 1e-6)
+        self.assertGreater(es.period_gap_for_periods(holes, target), 1e-6)
 
     def test_shares_r_u_zero_set_at_base(self):
         # At a realizable target both r_psi and r_U vanish.
         _st, es, holes, P, _c = _substrate()
         target = [complex(z) for z in P[0]]
-        self.assertLess(es.periodGapForPeriods(holes, target), 1e-12)
-        self.assertLess(es.residualForPeriods(holes, target), 1e-12)
+        self.assertLess(es.period_gap_for_periods(holes, target), 1e-12)
+        self.assertLess(es.residual_for_periods(holes, target), 1e-12)
 
 
 class TestWhitneyPeriodGapIsTopological(unittest.TestCase):
@@ -108,15 +108,15 @@ class TestWhitneyPeriodGapIsTopological(unittest.TestCase):
     def test_the_gap_and_its_gradient_stay_at_zero_off_the_carrier(self):
         st, es, holes, P, cells1 = _substrate(cob.HodgeMetricSource.WhitneyPencil)
         target = [complex(z) for z in P[0]]
-        self.assertLess(es.periodGapForPeriods(holes, target), 1e-12)
+        self.assertLess(es.period_gap_for_periods(holes, target), 1e-12)
         _perturb(st, cells1, every=7, factor=1.3)
-        self.assertLess(es.periodGapForPeriods(holes, target), 1e-12)
-        g = np.asarray(es.periodGapForPeriodsGradient(holes, target), complex)
+        self.assertLess(es.period_gap_for_periods(holes, target), 1e-12)
+        g = np.asarray(es.period_gap_for_periods_gradient(holes, target), complex)
         self.assertLess(float(np.linalg.norm(g)), 1e-9)
         # the diagonal path floors on the same perturbation
         st_d, es_d, holes_d, P_d, cells1_d = _substrate()
         _perturb(st_d, cells1_d, every=7, factor=1.3)
-        self.assertGreater(es_d.periodGapForPeriods(holes_d, [complex(z) for z in P_d[0]]), 1e-6)
+        self.assertGreater(es_d.period_gap_for_periods(holes_d, [complex(z) for z in P_d[0]]), 1e-6)
 
 
 class PeriodGapGradientTest(unittest.TestCase):
@@ -130,7 +130,7 @@ class PeriodGapGradientTest(unittest.TestCase):
         # The gradient is COMPLEX now (#746); Re is exactly the real-locus
         # derivative this test certified before, and these fixtures sit on
         # the real-l^2 locus, so the assertions below are unchanged.
-        g = np.asarray(es.periodGapForPeriodsGradient(holes, target),
+        g = np.asarray(es.period_gap_for_periods_gradient(holes, target),
                        complex).real
         self.assertEqual(len(g), len(cells1))
         self.assertTrue(np.all(np.isfinite(g)))
@@ -144,12 +144,12 @@ class PeriodGapGradientTest(unittest.TestCase):
         for idx in probe:
             ek = (min(cells1[idx]), max(cells1[idx]))
             e = em[ek]
-            l0 = (e.getLength() * e.getLength()).real
-            e.setLength(cmath.sqrt(complex(l0 + h))); st.materializeFacets()
-            rp = es.periodGapForPeriods(holes, target)
-            e.setLength(cmath.sqrt(complex(l0 - h))); st.materializeFacets()
-            rm = es.periodGapForPeriods(holes, target)
-            e.setLength(cmath.sqrt(complex(l0))); st.materializeFacets()
+            l0 = (e.get_length() * e.get_length()).real
+            e.set_length(cmath.sqrt(complex(l0 + h))); st.materialize_facets()
+            rp = es.period_gap_for_periods(holes, target)
+            e.set_length(cmath.sqrt(complex(l0 - h))); st.materialize_facets()
+            rm = es.period_gap_for_periods(holes, target)
+            e.set_length(cmath.sqrt(complex(l0))); st.materialize_facets()
             fd = (rp - rm) / (2 * h)
             worst = max(worst, abs(g[idx] - fd))
         self.assertLess(worst, 1e-4, f"worst |analytic - FD| = {worst:.2e}")
@@ -164,7 +164,7 @@ class PeriodGapGradientTest(unittest.TestCase):
         # The gradient is COMPLEX now (#746); Re is exactly the real-locus
         # derivative this test certified before, and these fixtures sit on
         # the real-l^2 locus, so the assertions below are unchanged.
-        g = np.asarray(es.periodGapForPeriodsGradient(holes, target),
+        g = np.asarray(es.period_gap_for_periods_gradient(holes, target),
                        complex).real
         self.assertLess(float(np.max(np.abs(g))), 1e-5)
 

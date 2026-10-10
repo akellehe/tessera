@@ -49,16 +49,16 @@ def _perturbed(index, squared):
 def _central_difference(spacetime, value, step=1e-6):
     """d value / d z_e by a real-axis central difference in each squared
     length, restoring every edge afterwards."""
-    edges = spacetime.getEdgeList().toVector()
+    edges = spacetime.get_edge_list().to_vector()
     gradient = []
     for edge in edges:
-        length = complex(edge.getLength())
+        length = complex(edge.get_length())
         z = length * length
-        edge.setLength(cmath.sqrt(z + step))
+        edge.set_length(cmath.sqrt(z + step))
         up = value()
-        edge.setLength(cmath.sqrt(z - step))
+        edge.set_length(cmath.sqrt(z - step))
         down = value()
-        edge.setLength(length)
+        edge.set_length(length)
         gradient.append((up - down) / (2 * step))
     return np.array(gradient)
 
@@ -77,10 +77,10 @@ class TestDefaults(unittest.TestCase):
 class TestPrimalRegge(unittest.TestCase):
     def test_closed_complex_primal_equals_regge_solver(self):
         """On a closed complex every hinge is interior, so both hinge rules
-        give ReggeSolver.reggeAction."""
+        give ReggeSolver.regge_action."""
         spacetime = sphere3(squared=lambda i: 1.0 + 0.05 * (i % 3))
         reference = T.ReggeSolver(spacetime,
-                                  T.MatterConfiguration()).reggeAction()
+                                  T.MatterConfiguration()).regge_action()
         for rule in (cob.ReggeHinges.Interior, cob.ReggeHinges.All):
             action = cob.JointAction(spacetime, _declaration(
                 gravitational_weight=1.0, regge_hinges=rule))
@@ -99,7 +99,7 @@ class TestPrimalRegge(unittest.TestCase):
             gravitational_weight=1.0, regge_hinges=cob.ReggeHinges.All))
         self.assertEqual(every.regge_hinge_count(), 6)
         reference = T.ReggeSolver(spacetime,
-                                  T.MatterConfiguration()).reggeAction()
+                                  T.MatterConfiguration()).regge_action()
         self.assertLess(abs(every.regge_term() - reference), 1e-12)
 
     def test_the_weight_scales_the_term(self):
@@ -115,7 +115,7 @@ class TestPrimalRegge(unittest.TestCase):
         action = cob.JointAction(spacetime, _declaration(
             gravitational_weight=1.0, regge_form=cob.ReggeForm.Dual))
         reference = T.ReggeSolver(spacetime,
-                                  T.MatterConfiguration()).dualReggeAction()
+                                  T.MatterConfiguration()).dual_regge_action()
         self.assertLess(abs(action.regge_term() - reference), 1e-12)
 
     def _check_gradient(self, spacetime, rule):

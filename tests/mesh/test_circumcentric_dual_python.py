@@ -45,65 +45,65 @@ def _solid_triangle():
 
 def _edge_map(st):
     out = {}
-    for e in st.getEdgeList().toVector():
-        a, b = e.getSource().getId(), e.getTarget().getId()
+    for e in st.get_edge_list().to_vector():
+        a, b = e.get_source().get_id(), e.get_target().get_id()
         out[(min(a, b), max(a, b))] = e
     return out
 
 
 def _triangle(st):
-    for s in st.getSimplices():
-        if len(s.getEdges()) == 3:
+    for s in st.get_simplices():
+        if len(s.get_edges()) == 3:
             return s
     raise AssertionError("no triangle simplex in spacetime")
 
 
 def _set_equilateral(st, a2=1.0):
     for e in _edge_map(st).values():
-        e.setLength(cmath.sqrt(complex(a2)))
-        e.setPhase(0.0)
+        e.set_length(cmath.sqrt(complex(a2)))
+        e.set_phase(0.0)
 
 
 class TestCircumcenter(unittest.TestCase):
     def test_equilateral_circumradius_squared(self):
         st = _solid_triangle(); _set_equilateral(st, 1.0)
-        self.assertAlmostEqual(_triangle(st).circumradiusSquared(),
+        self.assertAlmostEqual(_triangle(st).circumradius_squared(),
                                1.0 / 3.0, places=10)
 
     def test_equilateral_circumcenter_is_centroid(self):
         st = _solid_triangle(); _set_equilateral(st, 1.0)
-        for b in _triangle(st).circumcenterBarycentric():
+        for b in _triangle(st).circumcenter_barycentric():
             self.assertAlmostEqual(b, 1.0 / 3.0, places=10)
 
     def test_edge_circumradius_squared(self):
         st = _solid_triangle(); _set_equilateral(st, 1.0)
-        edge_simplex = _triangle(st).getFacets()[0]  # a 1-simplex
-        self.assertAlmostEqual(edge_simplex.circumradiusSquared(), 0.25, places=10)
+        edge_simplex = _triangle(st).get_facets()[0]  # a 1-simplex
+        self.assertAlmostEqual(edge_simplex.circumradius_squared(), 0.25, places=10)
 
     def test_timelike_edge_carries_signed_content(self):
         # A timelike edge (squaredLength < 0) yields a signed circumradius² —
         # no crash, no Euclidean |.|.
         st = _solid_triangle(); _set_equilateral(st, 1.0)
         em = _edge_map(st)
-        em[(1, 2)].setLength(cmath.sqrt(complex(-1.0)))
+        em[(1, 2)].set_length(cmath.sqrt(complex(-1.0)))
         edge_simplex = None
-        for e in _triangle(st).getFacets():
-            ids = sorted(v.getId() for v in e.getVertices())
+        for e in _triangle(st).get_facets():
+            ids = sorted(v.get_id() for v in e.get_vertices())
             if ids == [1, 2]:
                 edge_simplex = e
         self.assertIsNotNone(edge_simplex)
-        self.assertAlmostEqual(edge_simplex.circumradiusSquared(), -0.25, places=10)
+        self.assertAlmostEqual(edge_simplex.circumradius_squared(), -0.25, places=10)
 
 
 class TestDualVolume(unittest.TestCase):
     def test_top_cell_dual_is_a_point(self):
         st = _solid_triangle(); _set_equilateral(st, 1.0)
-        self.assertAlmostEqual(_triangle(st).dualVolume(), 1.0, places=10)
+        self.assertAlmostEqual(_triangle(st).dual_volume(), 1.0, places=10)
 
     def test_hodge_star_top_cell(self):
         st = _solid_triangle(); _set_equilateral(st, 1.0)
         tri = _triangle(st)
-        self.assertAlmostEqual(tri.hodgeStar(), 1.0 / tri.volume(), places=10)
+        self.assertAlmostEqual(tri.hodge_star(), 1.0 / tri.volume(), places=10)
 
     def test_vertex_dual_partitions_the_area(self):
         st = _solid_triangle(); _set_equilateral(st, 1.0)
@@ -111,12 +111,12 @@ class TestDualVolume(unittest.TestCase):
         area = tri.volume()  # sqrt(3)/4 for a = 1
         # Materialize the facet/coface skeleton: triangle -> edges -> vertices.
         verts = {}
-        for e in tri.getFacets():
-            for v in e.getFacets():
-                key = tuple(x.getId() for x in v.getVertices())
+        for e in tri.get_facets():
+            for v in e.get_facets():
+                key = tuple(x.get_id() for x in v.get_vertices())
                 verts[key] = v
         self.assertEqual(len(verts), 3)
-        duals = [v.dualVolume() for v in verts.values()]
+        duals = [v.dual_volume() for v in verts.values()]
         for d in duals:
             self.assertAlmostEqual(d, area / 3.0, places=8)
         self.assertAlmostEqual(sum(duals), area, places=8)
@@ -128,14 +128,14 @@ class TestDualVolume(unittest.TestCase):
 def _all_vertex_simplices(st):
     """0-simplices of every top triangle, keyed by vertex id (materializes the
     facet/coface skeleton via getFacets). Snapshot the top simplices first:
-    getFacets() registers new simplices, which would invalidate a live
-    iteration over getSimplices()."""
-    tops = [s for s in st.getSimplices() if len(s.getEdges()) == 3]
+    get_facets() registers new simplices, which would invalidate a live
+    iteration over get_simplices()."""
+    tops = [s for s in st.get_simplices() if len(s.get_edges()) == 3]
     verts = {}
     for s in tops:
-        for e in s.getFacets():
-            for v in e.getFacets():
-                verts[v.getVertices()[0].getId()] = v
+        for e in s.get_facets():
+            for v in e.get_facets():
+                verts[v.get_vertices()[0].get_id()] = v
     return verts
 
 
@@ -147,19 +147,19 @@ class TestRightTriangleHandCalc(unittest.TestCase):
     def _right_triangle(self):
         st = _solid_triangle()
         em = _edge_map(st)
-        em[(0, 1)].setLength(cmath.sqrt(complex(1.0)))   # leg
-        em[(0, 2)].setLength(cmath.sqrt(complex(1.0)))   # leg
-        em[(1, 2)].setLength(cmath.sqrt(complex(2.0)))   # hypotenuse (√2)
+        em[(0, 1)].set_length(cmath.sqrt(complex(1.0)))   # leg
+        em[(0, 2)].set_length(cmath.sqrt(complex(1.0)))   # leg
+        em[(1, 2)].set_length(cmath.sqrt(complex(2.0)))   # hypotenuse (√2)
         for e in em.values():
-            e.setPhase(0.0)
+            e.set_phase(0.0)
         return st
 
     def test_circumcenter_is_hypotenuse_midpoint(self):
         st = self._right_triangle()  # keep the spacetime alive (owns the simplices)
         tri = _triangle(st)
-        self.assertAlmostEqual(tri.circumradiusSquared(), 0.5, places=10)
-        order = [v.getId() for v in tri.getVertices()]
-        bmap = dict(zip(order, tri.circumcenterBarycentric()))
+        self.assertAlmostEqual(tri.circumradius_squared(), 0.5, places=10)
+        order = [v.get_id() for v in tri.get_vertices()]
+        bmap = dict(zip(order, tri.circumcenter_barycentric()))
         self.assertAlmostEqual(bmap[0], 0.0, places=10)   # on the hypotenuse
         self.assertAlmostEqual(bmap[1], 0.5, places=10)
         self.assertAlmostEqual(bmap[2], 0.5, places=10)
@@ -167,7 +167,7 @@ class TestRightTriangleHandCalc(unittest.TestCase):
     def test_per_vertex_dual_areas(self):
         st = self._right_triangle()  # keep the spacetime alive (owns the simplices)
         verts = _all_vertex_simplices(st)
-        dv = {vid: v.dualVolume() for vid, v in verts.items()}
+        dv = {vid: v.dual_volume() for vid, v in verts.items()}
         self.assertAlmostEqual(dv[0], 0.25, places=8)    # right-angle vertex
         self.assertAlmostEqual(dv[1], 0.125, places=8)
         self.assertAlmostEqual(dv[2], 0.125, places=8)
@@ -181,33 +181,33 @@ class TestRightTriangleHandCalc(unittest.TestCase):
 # --------------------------------------------------------------------------- #
 def _unit_square_diag(diag):
     st = _solid_triangle()  # triangle 0-1-2
-    vmap = {x.getId(): x for x in st.getVertexList().toVector()}
-    v3 = st.createVertex(3)
+    vmap = {x.get_id(): x for x in st.get_vertex_list().to_vector()}
+    v3 = st.create_vertex(3)
     if diag == (0, 2):
-        st.createSimplex([vmap[0], vmap[2], v3])     # triangle 0-2-3
+        st.create_simplex([vmap[0], vmap[2], v3])     # triangle 0-2-3
         sides = [(0, 1), (1, 2), (2, 3), (0, 3)]
     elif diag == (0, 1):
-        st.createSimplex([vmap[0], vmap[1], v3])     # triangle 0-1-3
+        st.create_simplex([vmap[0], vmap[1], v3])     # triangle 0-1-3
         sides = [(0, 2), (1, 2), (1, 3), (0, 3)]
     else:
         raise ValueError(diag)
     em = _edge_map(st)
     for key in sides:
-        em[key].setLength(cmath.sqrt(complex(1.0)))
-        em[key].setPhase(0.0)
-    em[diag].setLength(cmath.sqrt(complex(2.0)))   # diagonal = √2
-    em[diag].setPhase(0.0)
+        em[key].set_length(cmath.sqrt(complex(1.0)))
+        em[key].set_phase(0.0)
+    em[diag].set_length(cmath.sqrt(complex(2.0)))   # diagonal = √2
+    em[diag].set_phase(0.0)
     return st
 
 
 class TestUnitSquareTriangulations(unittest.TestCase):
     def _check_square(self, st):
-        tops = [s for s in st.getSimplices() if len(s.getEdges()) == 3]
+        tops = [s for s in st.get_simplices() if len(s.get_edges()) == 3]
         self.assertEqual(len(tops), 2)
         self.assertAlmostEqual(sum(t.volume() for t in tops), 1.0, places=8)
         verts = _all_vertex_simplices(st)
         self.assertEqual(len(verts), 4)
-        duals = [v.dualVolume() for v in verts.values()]
+        duals = [v.dual_volume() for v in verts.values()]
         for d in duals:
             self.assertAlmostEqual(d, 0.25, places=8)        # hand calc
         self.assertAlmostEqual(sum(duals), 1.0, places=8)    # = total area

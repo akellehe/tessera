@@ -32,23 +32,23 @@ Spacetime's declared metric dimension.)doc")
 Boundary maps ∂_k over ℤ plus the homology invariants derived from them — Betti
 numbers (over ℚ and GF(2)), torsion coefficients, Euler characteristic, and the
 ∂²=0 sanity check. Purely combinatorial (built from vertex sets; no geometry).)doc")
-      .def("orientationSigns", &ChainComplex::orientationSigns,
+      .def("orientation_signs", &ChainComplex::orientationSigns,
            "Per-degree +/-1 signs relating stored cell orientations to the reference (ascending id) orientation.")
-      .def_static("fromTopCells", &ChainComplex::fromTopCells, py::arg("top_cells"),
+      .def_static("from_top_cells", &ChainComplex::fromTopCells, py::arg("top_cells"),
            "Build from top cells (vertex-id tuples) alone, oriented by ascending vertex id; no geometry.")
-      .def_static("fromCells", &ChainComplex::fromCells, py::arg("cells"),
+      .def_static("from_cells", &ChainComplex::fromCells, py::arg("cells"),
            "Build from declared cells (vertex-id tuples) of any dimensions, oriented by ascending "
            "vertex id; the complex need not be pure.")
-      .def_static("fromSpacetime", &ChainComplex::fromSpacetime, py::arg("spacetime"),
+      .def_static("from_spacetime", &ChainComplex::fromSpacetime, py::arg("spacetime"),
                   "Build the chain complex from a triangulation (a Spacetime).")
       .def("dimension", &ChainComplex::dimension)
-      .def("numSimplices", &ChainComplex::numSimplices, py::arg("k"))
-      .def("fVector", &ChainComplex::fVector)
-      .def("eulerCharacteristic", &ChainComplex::eulerCharacteristic)
-      .def("boundaryMatrix", &ChainComplex::boundaryMatrix, py::arg("k"),
+      .def("num_simplices", &ChainComplex::numSimplices, py::arg("k"))
+      .def("f_vector", &ChainComplex::fVector)
+      .def("euler_characteristic", &ChainComplex::eulerCharacteristic)
+      .def("boundary_matrix", &ChainComplex::boundaryMatrix, py::arg("k"),
            "Flat row-major ∂_k (rows=|C_{k-1}|, cols=|C_k|), entries in {-1,0,1}. "
            "Dense: materialized from boundaryEntries on the first request and cached.")
-      .def("boundaryEntries",
+      .def("boundary_entries",
            [](const ChainComplex &K, int k) {
              std::vector<std::tuple<int, int, int>> out;
              const auto &entries = K.boundaryEntries(k);
@@ -60,10 +60,10 @@ numbers (over ℚ and GF(2)), torsion coefficients, Euler characteristic, and th
            "The nonzero entries of ∂_k as (row, column, value) with value in {-1, +1}, "
            "grouped by ascending column. This is the stored form, available at any "
            "complex size.")
-      .def("boundaryComposesToZero", &ChainComplex::boundaryComposesToZero,
+      .def("boundary_composes_to_zero", &ChainComplex::boundaryComposesToZero,
            "True iff ∂_{k-1}∘∂_k = 0 for all k.")
       .def_static(
-          "dualComplexIsValid", &ChainComplex::dualComplexIsValid,
+          "dual_complex_is_valid", &ChainComplex::dualComplexIsValid,
           py::arg("top_cells"), py::arg("dim"),
           py::arg("facet_cells") = std::vector<std::vector<std::uint64_t>>{},
           "(ok, reason): is the dual block decomposition of this pure "
@@ -75,27 +75,27 @@ numbers (over ℚ and GF(2)), torsion coefficients, Euler characteristic, and th
           "tuples; rigorous for n <= 3. Accept topology moves only while "
           "this holds: validity in the DUAL space, not merely scoreability "
           "on the primal lattice.")
-      .def("bettiNumbers", &ChainComplex::bettiNumbers, "Betti numbers b_0..b_n over Q.")
-      .def("bettiNumbersGF2", &ChainComplex::bettiNumbersGF2, "Betti numbers over GF(2).")
+      .def("betti_numbers", &ChainComplex::bettiNumbers, "Betti numbers b_0..b_n over Q.")
+      .def("betti_numbers_gf2", &ChainComplex::bettiNumbersGF2, "Betti numbers over GF(2).")
       .def("torsion", &ChainComplex::torsion, py::arg("k"),
            "Torsion coefficients of H_k (invariant factors > 1 of d_{k+1}).")
-      .def("kSimplexVertices", &ChainComplex::kSimplexVertices, py::arg("k"),
+      .def("k_simplex_vertices", &ChainComplex::kSimplexVertices, py::arg("k"),
            "k-simplices as sorted vertex-id tuples in C_k order (the column "
            "order of d_{k+1} / row order of d_k). k=1 gives the edge ordering "
-           "the rows of boundaryMatrix(2) refer to; k=dimension() equals "
-           "orientedTopSimplices(). Empty when k is out of range.")
-      .def("orientedTopSimplices", &ChainComplex::orientedTopSimplices,
+           "the rows of boundary_matrix(2) refer to; k=dimension() equals "
+           "oriented_top_simplices(). Empty when k is out of range.")
+      .def("oriented_top_simplices", &ChainComplex::orientedTopSimplices,
            "Top simplices as sorted vertex-id tuples, in the canonical column "
            "order of the top boundary matrix d_d (d = dimension()); the order "
-           "the fundamentalClass() signs refer to. Empty for the empty complex.")
-      .def("fundamentalClass", &ChainComplex::fundamentalClass,
+           "the fundamental_class() signs refer to. Empty for the empty complex.")
+      .def("fundamental_class", &ChainComplex::fundamentalClass,
            "Fundamental class [W] in H_d: the per top-simplex orientation signs "
            "eps_t = +/-1 (the +/-1 generator of ker d_d) making the top chain a "
            "cycle (d_d applied to the signed top chain is 0). Sign-normalized so "
            "the first nonzero entry is +1. Raises if the complex is not a closed "
            "connected oriented manifold (dim ker d_d != 1) or dimension < 1.")
       .def_static(
-          "endSignCovector", &ChainComplex::endSignCovector,
+          "end_sign_covector", &ChainComplex::endSignCovector,
           py::arg("surface_cells"), py::arg("holes"),
           "The end sign covector sigma in {+/-1}^len(holes): the induced-"
           "orientation charge pattern of an end surface, from its fundamental "
@@ -110,25 +110,25 @@ numbers (over ℚ and GF(2)), torsion coefficients, Euler characteristic, and th
           "on mixed-dimension cells, a facet with > 2 cofaces, or a "
           "non-orientable surface.")
       .def_static(
-          "orientationCovector", &ChainComplex::orientationCovector,
+          "orientation_covector", &ChainComplex::orientationCovector,
           py::arg("top_cells"),
           "The induced-orientation covector eps in {+/-1}^len(top_cells): the "
           "per-cell sign from orienting a whole top-cell complex by facet-"
           "sharing propagation (component roots = lex-smallest cells, +1; "
           "across an interior facet the two induced signs cancel). The result "
           "aligns to the sorted-unique (canonical C_d) order of the cells. "
-          "Unlike fundamentalClass() it does NOT require closedness (boundary "
+          "Unlike fundamental_class() it does NOT require closedness (boundary "
           "facets impose nothing), so it reads the orientation of an open "
           "refinement region (a stellar cone star, a CDT slab). Determined "
           "combinatorially, independent of geometry, vertex labels, and input "
           "order. Raises on mixed-dimension cells, a facet with > 2 cofaces, "
           "or a non-orientable propagation contradiction.")
-      .def("intersectionForm", &ChainComplex::intersectionForm,
+      .def("intersection_form", &ChainComplex::intersectionForm,
            "Symmetric intersection form on free H^2 (flat b2 x b2), for a closed "
            "oriented 4-manifold; empty if n != 4 or b2 == 0.")
       .def("signature", &ChainComplex::signature,
            "Signature b+ - b- of the intersection form (0 if n != 4 or b2 == 0).")
-      .def("stiefelWhitneyNumbers", &ChainComplex::stiefelWhitneyNumbers,
+      .def("stiefel_whitney_numbers", &ChainComplex::stiefelWhitneyNumbers,
            "Mod-2 Stiefel-Whitney numbers <w_{i1}..w_{ir}, [K]> keyed by "
            "monomial (e.g. 'w4', 'w2^2'); empty for the empty complex. Raises "
            "if a class needs a deferred higher Steenrod cup-i product.");
@@ -161,10 +161,10 @@ Hermitian, np.vdot convention: <a, b> = sum conj(a_i) b_i.)doc")
       .def("amplitude", &Cochain::amplitude, py::arg("index"),
            "Amplitude on the index-th k-cell. Raises IndexError if out of range.")
       .def("__getitem__", &Cochain::amplitude)
-      .def("amplitudeFor", &Cochain::amplitudeFor, py::arg("simplex"),
+      .def("amplitude_for", &Cochain::amplitudeFor, py::arg("simplex"),
            "Amplitude on the k-cell identified by its sorted vertex-id tuple "
            "(e.g. (vertexId,) at k=0). Raises IndexError if absent.")
-      .def("innerProduct", &Cochain::innerProduct, py::arg("other"),
+      .def("inner_product", &Cochain::innerProduct, py::arg("other"),
            "The Hermitian inner product <self, other> = sum conj(self_i) other_i "
            "(= np.vdot). Raises if the degrees or orderings differ.")
       .def("norm", &Cochain::norm, "The Euclidean norm sqrt(sum |c_i|^2).")
@@ -177,7 +177,7 @@ Hermitian, np.vdot convention: <a, b> = sum conj(a_i) b_i.)doc")
 Eigenvalues paired with their eigenvectors-as-Cochains, in matching order
 (eigenvalues()[i] is the eigenvalue of eigenvectors()[i]). Eigenvalues are stored
 complex to cover both regimes uniformly: in the Hermitian/metric case
-(isHermitian() == True) they are real (imag 0) and ascending; in the Lorentzian
+(is_hermitian() == True) they are real (imag 0) and ascending; in the Lorentzian
 (signed-weight d'Alembertian) case they may be negative or complex-conjugate
 pairs, sorted by (Re, Im). harmonics(tol) is the kernel subset |lambda| < tol =
 ker L_k as Cochains. Supports len() and indexing (spectrum[i] is the i-th
@@ -193,7 +193,7 @@ eigenvector Cochain).)doc")
            "ker L_k), as a list of Cochains.")
       .def("size", &Spectrum::size, "The number of modes.")
       .def("__len__", &Spectrum::size)
-      .def("isHermitian", &Spectrum::isHermitian,
+      .def("is_hermitian", &Spectrum::isHermitian,
            "Whether the eigenvalues are guaranteed real and ascending (the "
            "metric/self-adjoint regime) vs. the indefinite Lorentzian one.")
       .def("eigenvalue", &Spectrum::eigenvalue, py::arg("i"),

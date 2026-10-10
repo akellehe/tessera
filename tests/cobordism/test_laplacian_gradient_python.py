@@ -2,8 +2,8 @@
 # All rights reserved.
 """Exact analytic gradient of the metric Hodge Laplacian (#461, degree zero #805).
 
-`HodgeLaplacian.laplacianGradient(k, a, b)` is `∂L_k/∂ℓ²_e` at arbitrary degree
-— the keystone (with `Simplex.volumeGradient`) for the arbitrary-k `r_U` analytic
+`HodgeLaplacian.laplacian_gradient(k, a, b)` is `∂L_k/∂ℓ²_e` at arbitrary degree
+— the keystone (with `Simplex.volume_gradient`) for the arbitrary-k `r_U` analytic
 gradient. The rigorous check is the **exact Euler homogeneity identity**: under
 the `V²` weights `L_k` is homogeneous of degree `−1` in `ℓ²` at every degree, so
 
@@ -37,20 +37,20 @@ def _holed_s3(n_refine=12):
     st = T.Spacetime(T.Metric(True, sig), T.CDT, 1.0, 1.0, T.PREFERRED,
                      T.SimplexBoundarySphere(3))
     st.build()
-    for e in st.getEdgeList().toVector():
-        e.setLength(cmath.sqrt(complex(1.0)))
+    for e in st.get_edge_list().to_vector():
+        e.set_length(cmath.sqrt(complex(1.0)))
     for seed in range(n_refine):
         mv = T.AddMove(st, seed, False, T.PachnerMode.PreGeometric, False)
         if mv.propose():
             mv.apply()
-    tops = [tuple(sorted(v.getId() for v in c.getVertices()))
-            for c in st.getTopSimplices()]
+    tops = [tuple(sorted(v.get_id() for v in c.get_vertices()))
+            for c in st.get_top_simplices()]
     sc = cob.SurgicalCone(st)
     for t in tops:                      # open one hole (b_3 -> 0, exposes a 2-cycle)
-        if sc.coneOut(list(t))[0]:
+        if sc.cone_out(list(t))[0]:
             break
-    for i, e in enumerate(st.getEdgeList().toVector()):
-        e.setLength(cmath.sqrt(complex(1.0 + 0.013 * (i % 6))))
+    for i, e in enumerate(st.get_edge_list().to_vector()):
+        e.set_length(cmath.sqrt(complex(1.0 + 0.013 * (i % 6))))
     return st
 
 
@@ -63,12 +63,12 @@ def _mixed_signature_graph():
                      T.PREFERRED, T.Toroid())
     squared = {(0, 1): complex(1.3), (1, 2): complex(-0.7),
                (0, 2): complex(0.9, 0.4), (2, 3): complex(2.1)}
-    verts = {i: st.createVertex(i) for i in range(4)}
+    verts = {i: st.create_vertex(i) for i in range(4)}
     for (a, b) in squared:
-        st.createSimplex([verts[a], verts[b]])
-    for e in st.getEdgeList().toVector():
-        key = tuple(sorted((e.getSource().getId(), e.getTarget().getId())))
-        e.setLength(cmath.sqrt(squared[key]))
+        st.create_simplex([verts[a], verts[b]])
+    for e in st.get_edge_list().to_vector():
+        key = tuple(sorted((e.get_source().get_id(), e.get_target().get_id())))
+        e.set_length(cmath.sqrt(squared[key]))
     return st
 
 
@@ -98,11 +98,11 @@ class LaplacianGradientHandCalcTest(unittest.TestCase):
             n = L.shape[0]
             self.assertGreater(n, 0)
             acc = np.zeros((n, n))
-            for e in st.getEdgeList().toVector():
-                a, b = e.getSource().getId(), e.getTarget().getId()
-                g = np.asarray(hl.laplacianGradient(k, a, b), complex).reshape(n, n)
+            for e in st.get_edge_list().to_vector():
+                a, b = e.get_source().get_id(), e.get_target().get_id()
+                g = np.asarray(hl.laplacian_gradient(k, a, b), complex).reshape(n, n)
                 np.testing.assert_allclose(g.imag, 0.0, atol=1e-12)
-                acc += (e.getLength() * e.getLength()).real * g.real
+                acc += (e.get_length() * e.get_length()).real * g.real
             self.assertLess(np.max(np.abs(acc + L)), 1e-10,
                             f"Euler identity Σℓ²∂L = −L failed at k={k}")
 
@@ -113,17 +113,17 @@ class LaplacianGradientHandCalcTest(unittest.TestCase):
         # other degree, so Σ_e z_e ∂L_0/∂z_e = −L_0, in complex arithmetic.
         st = _mixed_signature_graph()
         hl = cob.HodgeLaplacian(st)
-        cc = cob.ChainComplex.fromSpacetime(st)
-        n = cc.numSimplices(0)
+        cc = cob.ChainComplex.from_spacetime(st)
+        n = cc.num_simplices(0)
         L = np.asarray(hl.laplacian(0, True), complex).reshape(n, n)
-        by_pair = {tuple(sorted((e.getSource().getId(), e.getTarget().getId()))): e
-                   for e in st.getEdgeList().toVector()}
+        by_pair = {tuple(sorted((e.get_source().get_id(), e.get_target().get_id()))): e
+                   for e in st.get_edge_list().to_vector()}
         acc = np.zeros((n, n), dtype=complex)
-        for cell in cc.kSimplexVertices(1):
-            g = np.asarray(hl.laplacianGradient(0, cell[0], cell[1]),
+        for cell in cc.k_simplex_vertices(1):
+            g = np.asarray(hl.laplacian_gradient(0, cell[0], cell[1]),
                            complex).reshape(n, n)
             edge = by_pair[tuple(sorted(cell))]
-            z = complex(edge.getLength()) ** 2
+            z = complex(edge.get_length()) ** 2
             acc += z * g
         self.assertLess(np.max(np.abs(acc + L)), 1e-13,
                         "Euler identity Σz ∂L_0 = −L_0 failed")
@@ -136,36 +136,36 @@ class LaplacianGradientHandCalcTest(unittest.TestCase):
         st = _holed_s3()
         hl = cob.HodgeLaplacian(st)
         n = _Lmat(hl, 2).shape[0]
-        e = st.getEdgeList().toVector()[0]
-        g = np.asarray(hl.laplacianGradient(2, e.getSource().getId(),
-                                            e.getTarget().getId()), complex).reshape(n, n)
+        e = st.get_edge_list().to_vector()[0]
+        g = np.asarray(hl.laplacian_gradient(2, e.get_source().get_id(),
+                                            e.get_target().get_id()), complex).reshape(n, n)
         h = 1e-6
-        l = e.getLength()
-        e.setLength(cmath.sqrt(l * l + h)); st.materializeFacets()
+        l = e.get_length()
+        e.set_length(cmath.sqrt(l * l + h)); st.materialize_facets()
         Lp = np.asarray(cob.HodgeLaplacian(st).laplacian(2, True), complex).reshape(n, n)
-        e.setLength(cmath.sqrt(l * l - h)); st.materializeFacets()
+        e.set_length(cmath.sqrt(l * l - h)); st.materialize_facets()
         Lm = np.asarray(cob.HodgeLaplacian(st).laplacian(2, True), complex).reshape(n, n)
-        e.setLength(l); st.materializeFacets()
+        e.set_length(l); st.materialize_facets()
         fd = (Lp - Lm) / (2.0 * h)
         self.assertLess(np.max(np.abs(g - fd)), 1e-5)
         # Degree zero is now the derived L_0 = d_1 W_1^-1 d_1^dagger, which has
         # an exact gradient too (#805): the same central-difference check.
         n0 = _Lmat(hl, 0).shape[0]
-        g0 = np.asarray(hl.laplacianGradient(0, e.getSource().getId(),
-                                             e.getTarget().getId()),
+        g0 = np.asarray(hl.laplacian_gradient(0, e.get_source().get_id(),
+                                             e.get_target().get_id()),
                         complex).reshape(n0, n0)
-        e.setLength(cmath.sqrt(l * l + h)); st.materializeFacets()
+        e.set_length(cmath.sqrt(l * l + h)); st.materialize_facets()
         L0p = np.asarray(cob.HodgeLaplacian(st).laplacian(0, True),
                          complex).reshape(n0, n0)
-        e.setLength(cmath.sqrt(l * l - h)); st.materializeFacets()
+        e.set_length(cmath.sqrt(l * l - h)); st.materialize_facets()
         L0m = np.asarray(cob.HodgeLaplacian(st).laplacian(0, True),
                          complex).reshape(n0, n0)
-        e.setLength(l); st.materializeFacets()
+        e.set_length(l); st.materialize_facets()
         self.assertLess(np.max(np.abs(g0 - (L0p - L0m) / (2.0 * h))), 1e-5)
         self.assertGreater(np.max(np.abs(g0)), 0.0)
         # k < 0 still has no chain to differentiate.
-        self.assertEqual(hl.laplacianGradient(-1, e.getSource().getId(),
-                                              e.getTarget().getId()), [])
+        self.assertEqual(hl.laplacian_gradient(-1, e.get_source().get_id(),
+                                              e.get_target().get_id()), [])
 
 
 if __name__ == "__main__":

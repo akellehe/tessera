@@ -49,16 +49,16 @@ def _empty_spacetime():
 def _two_disjoint_rp2():
     """RP^2 ⊔ RP^2, built by hand on two disjoint 6-vertex blocks."""
     spacetime = _empty_spacetime()
-    vertices = [spacetime.createVertex(i) for i in range(12)]
+    vertices = [spacetime.create_vertex(i) for i in range(12)]
     for triangle in _RP2_TRIANGLES:
-        spacetime.createSimplex([vertices[i] for i in triangle])
-        spacetime.createSimplex([vertices[i + 6] for i in triangle])
+        spacetime.create_simplex([vertices[i] for i in triangle])
+        spacetime.create_simplex([vertices[i + 6] for i in triangle])
     return spacetime
 
 
 def _stiefel_whitney(spacetime):
-    return dict(cobordism.ChainComplex.fromSpacetime(
-        spacetime).stiefelWhitneyNumbers())
+    return dict(cobordism.ChainComplex.from_spacetime(
+        spacetime).stiefel_whitney_numbers())
 
 
 def _sphere(n):
@@ -118,8 +118,8 @@ class TestEulerCharacteristic(unittest.TestCase):
                          tessera.RealProjectivePlane(), _torus(), _s2_cross_s2()):
             with self.subTest(manifold=type(topology).__name__):
                 spacetime = _build(topology)
-                chain = cobordism.ChainComplex.fromSpacetime(spacetime)
-                betti = chain.bettiNumbers()
+                chain = cobordism.ChainComplex.from_spacetime(spacetime)
+                betti = chain.betti_numbers()
                 from_betti = sum((-1) ** k * b for k, b in enumerate(betti))
                 self.assertEqual(euler.compute(spacetime), float(from_betti))
 
@@ -132,19 +132,19 @@ class TestSignature(unittest.TestCase):
 
     def test_four_sphere_has_empty_form(self):
         spacetime = _build(_sphere(4))
-        chain = cobordism.ChainComplex.fromSpacetime(spacetime)
-        self.assertEqual(chain.bettiNumbers()[2], 0)
-        self.assertEqual(list(chain.intersectionForm()), [])
+        chain = cobordism.ChainComplex.from_spacetime(spacetime)
+        self.assertEqual(chain.betti_numbers()[2], 0)
+        self.assertEqual(list(chain.intersection_form()), [])
         self.assertEqual(cobordism.Signature().compute(spacetime), 0.0)
 
     def test_s2_cross_s2_is_hyperbolic(self):
         # The intersection form of S^2 x S^2 is the hyperbolic form [[0,1],[1,0]]:
         # signature 0 but rank 2 (nondegenerate, indefinite).
         spacetime = _build(_s2_cross_s2())
-        chain = cobordism.ChainComplex.fromSpacetime(spacetime)
-        self.assertEqual(chain.bettiNumbers()[2], 2)
+        chain = cobordism.ChainComplex.from_spacetime(spacetime)
+        self.assertEqual(chain.betti_numbers()[2], 2)
         self.assertEqual(cobordism.Signature().compute(spacetime), 0.0)
-        form = list(chain.intersectionForm())
+        form = list(chain.intersection_form())
         self.assertEqual(len(form), 4)
         diag0, off01, off10, diag1 = form
         self.assertAlmostEqual(diag0, 0.0, places=6)
@@ -157,9 +157,9 @@ class TestSignature(unittest.TestCase):
         # CP^2 has b2 = 1 and a unimodular definite intersection form [±1], so
         # |signature| = 1. (The sign is a convention; see the module docstring.)
         spacetime = _build(tessera.ComplexProjectivePlane())
-        chain = cobordism.ChainComplex.fromSpacetime(spacetime)
-        self.assertEqual(chain.bettiNumbers()[2], 1)
-        form = list(chain.intersectionForm())
+        chain = cobordism.ChainComplex.from_spacetime(spacetime)
+        self.assertEqual(chain.betti_numbers()[2], 1)
+        form = list(chain.intersection_form())
         self.assertEqual(len(form), 1)
         self.assertAlmostEqual(abs(form[0]), 1.0, places=6)
         self.assertEqual(abs(chain.signature()), 1)
@@ -167,9 +167,9 @@ class TestSignature(unittest.TestCase):
 
     def test_intersection_form_is_symmetric_and_sized_by_b2(self):
         spacetime = _build(_s2_cross_s2())
-        chain = cobordism.ChainComplex.fromSpacetime(spacetime)
-        b2 = chain.bettiNumbers()[2]
-        form = list(chain.intersectionForm())
+        chain = cobordism.ChainComplex.from_spacetime(spacetime)
+        b2 = chain.betti_numbers()[2]
+        form = list(chain.intersection_form())
         self.assertEqual(len(form), b2 * b2)
         for i in range(b2):
             for j in range(b2):
@@ -308,8 +308,8 @@ class TestStiefelWhitneyNumbers(unittest.TestCase):
             with self.subTest(manifold=label):
                 spacetime = _build(topology)
                 with self.assertRaises(Exception):
-                    cobordism.ChainComplex.fromSpacetime(
-                        spacetime).stiefelWhitneyNumbers()
+                    cobordism.ChainComplex.from_spacetime(
+                        spacetime).stiefel_whitney_numbers()
                 numbers = cobordism.CharacteristicNumbers.of(spacetime)
                 self.assertEqual(dict(numbers.stiefel_whitney_numbers), {})
 
@@ -340,11 +340,11 @@ class TestKnownManifoldHomology(unittest.TestCase):
     def test_betti_numbers_and_euler(self):
         for label, make, betti in _KNOWN_MANIFOLDS:
             with self.subTest(manifold=label):
-                chain = cobordism.ChainComplex.fromSpacetime(_build(make()))
-                self.assertTrue(chain.boundaryComposesToZero())
-                self.assertEqual(chain.bettiNumbers(), betti)
+                chain = cobordism.ChainComplex.from_spacetime(_build(make()))
+                self.assertTrue(chain.boundary_composes_to_zero())
+                self.assertEqual(chain.betti_numbers(), betti)
                 expected_euler = sum((-1) ** k * b for k, b in enumerate(betti))
-                self.assertEqual(chain.eulerCharacteristic(), expected_euler)
+                self.assertEqual(chain.euler_characteristic(), expected_euler)
 
 
 class TestKnownFourManifoldSignatures(unittest.TestCase):
@@ -362,8 +362,8 @@ class TestKnownFourManifoldSignatures(unittest.TestCase):
         ]
         for label, make, abs_signature, b2 in cases:
             with self.subTest(manifold=label):
-                chain = cobordism.ChainComplex.fromSpacetime(_build(make()))
-                self.assertEqual(chain.bettiNumbers()[2], b2)
+                chain = cobordism.ChainComplex.from_spacetime(_build(make()))
+                self.assertEqual(chain.betti_numbers()[2], b2)
                 self.assertEqual(abs(chain.signature()), abs_signature)
 
 

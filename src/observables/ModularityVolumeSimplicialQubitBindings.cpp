@@ -17,28 +17,28 @@ void register_observables_modularity_volume_simplicial_qubit(py::module_ &m) {
 
 Mirrors examples/modularity.py:Measurement.)doc")
       .def_readonly("Q", &ModularityMeasurement::Q)
-      .def_readonly("dsSmall", &ModularityMeasurement::dsSmall)
-      .def_readonly("dsLarge", &ModularityMeasurement::dsLarge)
-      .def_readonly("nVertices", &ModularityMeasurement::nVertices)
-      .def_readonly("nEdges", &ModularityMeasurement::nEdges)
-      .def_readonly("nSimplices", &ModularityMeasurement::nSimplices)
+      .def_readonly("ds_small", &ModularityMeasurement::dsSmall)
+      .def_readonly("ds_large", &ModularityMeasurement::dsLarge)
+      .def_readonly("n_vertices", &ModularityMeasurement::nVertices)
+      .def_readonly("n_edges", &ModularityMeasurement::nEdges)
+      .def_readonly("n_simplices", &ModularityMeasurement::nSimplices)
       .def_readonly("iter", &ModularityMeasurement::iter)
       .def_readonly("direction", &ModularityMeasurement::direction);
 
   py::class_<ModularityOptimizerConfig>(m, "ModularityOptimizerConfig")
       .def(py::init<>())
-      .def_readwrite("targetDq", &ModularityOptimizerConfig::targetDq)
-      .def_readwrite("maxIterations",
+      .def_readwrite("target_dq", &ModularityOptimizerConfig::targetDq)
+      .def_readwrite("max_iterations",
                      &ModularityOptimizerConfig::maxIterations)
-      .def_readwrite("nDiffusionWalks",
+      .def_readwrite("n_diffusion_walks",
                      &ModularityOptimizerConfig::nDiffusionWalks)
-      .def_readwrite("maxSigma", &ModularityOptimizerConfig::maxSigma)
-      .def_readwrite("negativeRetryMax",
+      .def_readwrite("max_sigma", &ModularityOptimizerConfig::maxSigma)
+      .def_readwrite("negative_retry_max",
                      &ModularityOptimizerConfig::negativeRetryMax)
-      .def_readwrite("epsilonQMax",
+      .def_readwrite("epsilon_q_max",
                      &ModularityOptimizerConfig::epsilonQMax)
-      .def_readwrite("krylovDim", &ModularityOptimizerConfig::krylovDim)
-      .def_readwrite("targetNModules",
+      .def_readwrite("krylov_dim", &ModularityOptimizerConfig::krylovDim)
+      .def_readwrite("target_n_modules",
                      &ModularityOptimizerConfig::targetNModules);
 
   py::class_<ModularityOptimizer>(m, "ModularityOptimizer",
@@ -75,15 +75,15 @@ Each iteration:
            py::arg("progress") = py::none(),
            "Drive `cdt` to walk Q in direction ('up' or 'down'). "
            "Returns list of ModularityMeasurement.")
-      .def("getNAccepted", &ModularityOptimizer::getNAccepted,
+      .def("get_n_accepted", &ModularityOptimizer::getNAccepted,
            "Number of moves applied + kept (since the last sweep).")
-      .def("getNRolledBack", &ModularityOptimizer::getNRolledBack,
+      .def("get_n_rolled_back", &ModularityOptimizer::getNRolledBack,
            "Number of moves applied then rolled back.")
-      .def("getNNoMove", &ModularityOptimizer::getNNoMove,
+      .def("get_n_no_move", &ModularityOptimizer::getNNoMove,
            "Number of iterations with no eligible move.")
-      .def("getNMeasurements", &ModularityOptimizer::getNMeasurements,
+      .def("get_n_measurements", &ModularityOptimizer::getNMeasurements,
            "Number of D_S measurements taken.")
-      .def("discoverComponents",
+      .def("discover_components",
            [](const ModularityOptimizer &self,
               const std::shared_ptr<Spacetime> &st,
               const PersistentModularityConfig &cfg,
@@ -96,7 +96,7 @@ Each iteration:
            R"doc(Label-free discovery of persistent modular components on the
 current spacetime one-skeleton.  Read-only: never mutates the spacetime and
 never proposes moves.  Builds the nonnegative similarity graph under
-``map`` and runs PersistentModularity.scanResolutions(config).  A proposal
+``map`` and runs PersistentModularity.scan_resolutions(config).  A proposal
 generator: blind to signed and complex Hodge weights, never part of the
 emergence objective, and never a veto over a certified fiber.)doc");
   // ========================================
@@ -110,19 +110,19 @@ multiple configurations for averaging.)doc")
       .def(py::init<>())
       .def("compute", &VolumeProfile::compute, py::arg("spacetime"),
            "Compute the volume profile for the current configuration.")
-      .def("getProfile", &VolumeProfile::getProfile,
+      .def("get_profile", &VolumeProfile::getProfile,
            "Return the most recent volume profile as a list.")
-      .def("getAverageProfile", &VolumeProfile::getAverageProfile,
+      .def("get_average_profile", &VolumeProfile::getAverageProfile,
            "Return the time-averaged volume profile (over all measure() calls).")
-      .def("getCenteredAverageProfile",
+      .def("get_centered_average_profile",
            &VolumeProfile::getCenteredAverageProfile,
-           py::arg("subtractStalk") = false,
-           py::arg("normalizePeak") = false,
+           py::arg("subtract_stalk") = false,
+           py::arg("normalize_peak") = false,
            "Peak-centered average of all measure() calls (see centeredAverage).")
-      .def_static("centeredAverage", &VolumeProfile::centeredAverage,
+      .def_static("centered_average", &VolumeProfile::centeredAverage,
            py::arg("profiles"),
-           py::arg("subtractStalk") = false,
-           py::arg("normalizePeak") = false,
+           py::arg("subtract_stalk") = false,
+           py::arg("normalize_peak") = false,
            R"doc(Peak-centered average of a set of volume profiles.
 
 Each profile is zero-padded to the longest length and circularly rolled so
@@ -190,7 +190,7 @@ Args:
         "Complex geometry: off the real locus (real lengths, no phases) every formula runs over "
         "C. The real reference is the same complex with every squared length 1 (the unit equilateral "
         "reference simplex of chainhodge.WhitneyMass); angles are the principal acos, Heron areas "
-        "the continuation branch of sqrt(det G)/2 (WhitneyMass.volumeOnBranch) along the straight "
+        "the continuation branch of sqrt(det G)/2 (WhitneyMass.volume_on_branch) along the straight "
         "segment in the squared lengths from the reference, pairings are the transpose (bilinear) "
         "pairing, the harmonic space a complex null space, and the eigenline is chosen by continuity "
         "from the reference (the Im tau > 0 rule holds on the real locus only). Link phases must "
@@ -212,7 +212,7 @@ Args:
                return q;
              }),
              py::arg("vertices"), py::arg("edges"), py::arg("faces"), py::arg("lengths"),
-             py::arg("cycle_A"), py::arg("cycle_B"), py::arg("degeneracy_threshold") = 1e8,
+             py::arg("cycle_a"), py::arg("cycle_b"), py::arg("degeneracy_threshold") = 1e8,
              "The explicit constructor; lengths real positive or complex, the trivial "
              "connection. Raises ValueError when an input validation or a complex "
              "continuation fails, and RuntimeError when dim H != 2.")
@@ -224,7 +224,7 @@ Args:
                emitWarnings(q);
                return q;
              }),
-             py::arg("spacetime"), py::arg("cycle_A"), py::arg("cycle_B"), py::arg("reversed") = false,
+             py::arg("spacetime"), py::arg("cycle_a"), py::arg("cycle_b"), py::arg("reversed") = false,
              py::arg("degeneracy_threshold") = 1e8,
              "Read a Spacetime of dimension 2: vertices by ascending id, edges in ascending (i, j) "
              "order (the order the cycles index), faces oriented by the fundamental class "
@@ -295,15 +295,15 @@ Args:
              "The links U_ij of the connection in edge order (all 1 on the trivial connection).")
         .def("canonical_edge_index", &SimplicialQubit::canonicalEdgeIndex, py::arg("e"),
              "The canonical (ChainComplex, lexicographic) index of edge e of edges(), the order "
-             "connection().links() and Connection.transportedPeriod use.")
+             "connection().links() and Connection.transported_period use.")
         .def("connection", &SimplicialQubit::connection, py::return_value_policy::reference_internal,
              "The chainhodge.Connection over the torus's chain complex (canonical edge order).")
-        .def("cycle_A", &SimplicialQubit::cycleA)
-        .def("cycle_B", &SimplicialQubit::cycleB)
-        .def("walk_A", &SimplicialQubit::walkA,
+        .def("cycle_a", &SimplicialQubit::cycleA)
+        .def("cycle_b", &SimplicialQubit::cycleB)
+        .def("walk_a", &SimplicialQubit::walkA,
              "Cycle A as a closed walk of directed vertex steps; starts at base_vertex() "
              "under a nontrivial connection.")
-        .def("walk_B", &SimplicialQubit::walkB, "Cycle B as a closed walk.")
+        .def("walk_b", &SimplicialQubit::walkB, "Cycle B as a closed walk.")
         .def("base_vertex", &SimplicialQubit::baseVertex,
              "The common base point of the transported periods: the first vertex of A's walk on B's.")
         .def("degeneracy_threshold", &SimplicialQubit::degeneracyThreshold)

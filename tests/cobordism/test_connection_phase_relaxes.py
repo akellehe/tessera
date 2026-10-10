@@ -67,9 +67,9 @@ def _host(jitter=True):
     spacetime = T.Spacetime(T.Metric(True, T.Signature(4, T.Lorentzian)), T.CDT,
                             1.0, 1.0, T.PREFERRED, T.SimplexBoundarySphere(4))
     spacetime.build()
-    for index, edge in enumerate(spacetime.getEdgeList().toVector()):
+    for index, edge in enumerate(spacetime.get_edge_list().to_vector()):
         squared = 1.0 + (0.01 * (index % 6) if jitter else 0.0)
-        edge.setLength(cmath.sqrt(complex(squared)))
+        edge.set_length(cmath.sqrt(complex(squared)))
     return spacetime
 
 
@@ -79,14 +79,14 @@ def _set_flux(spacetime, scale=1.0):
     Not a gauge transform of the flat one: the values do not come from any
     vertex function, so a holonomy around some cycle is necessarily nontrivial.
     """
-    for index, edge in enumerate(spacetime.getEdgeList().toVector()):
-        edge.setPhase(complex(scale * 0.37 * ((index % 5) - 2),
+    for index, edge in enumerate(spacetime.get_edge_list().to_vector()):
+        edge.set_phase(complex(scale * 0.37 * ((index % 5) - 2),
                               scale * 0.11 * ((index % 3) - 1)))
 
 
 def _flatten(spacetime):
-    for edge in spacetime.getEdgeList().toVector():
-        edge.setPhase(complex(0.0, 0.0))
+    for edge in spacetime.get_edge_list().to_vector():
+        edge.set_phase(complex(0.0, 0.0))
 
 
 def _gauge(spacetime, chi):
@@ -95,25 +95,25 @@ def _gauge(spacetime, chi):
     On the stored phase that is `phi -> phi + chi_t - chi_s`, since the stored
     orientation carries `e^{i phi}` and the reverse its inverse.
     """
-    for edge in spacetime.getEdgeList().toVector():
-        source = int(edge.getSource().getId())
-        target = int(edge.getTarget().getId())
-        edge.setPhase(edge.getPhase() + chi[target] - chi[source])
+    for edge in spacetime.get_edge_list().to_vector():
+        source = int(edge.get_source().get_id())
+        target = int(edge.get_target().get_id())
+        edge.set_phase(edge.get_phase() + chi[target] - chi[source])
 
 
 def _chi(spacetime, seed=0):
     """A complex vertex function — the full C* gauge group, not just U(1)."""
     values = {}
-    for index, vertex in enumerate(spacetime.getVertexList().toVector()):
+    for index, vertex in enumerate(spacetime.get_vertex_list().to_vector()):
         step = index + seed
-        values[int(vertex.getId())] = complex(0.29 * ((step % 7) - 3),
+        values[int(vertex.get_id())] = complex(0.29 * ((step % 7) - 3),
                                               0.13 * ((step % 4) - 1.5))
     return values
 
 
 def _phases(spacetime):
-    return [complex(edge.getPhase())
-            for edge in spacetime.getEdgeList().toVector()]
+    return [complex(edge.get_phase())
+            for edge in spacetime.get_edge_list().to_vector()]
 
 
 class ConnectionEntropySeesThePhaseTest(unittest.TestCase):
@@ -122,9 +122,9 @@ class ConnectionEntropySeesThePhaseTest(unittest.TestCase):
     def test_the_connection_entropy_moves_when_the_phase_does(self):
         spacetime = _host()
         _flatten(spacetime)
-        flat = cob.HodgeLaplacian(spacetime).connectionSpectralEntropy()
+        flat = cob.HodgeLaplacian(spacetime).connection_spectral_entropy()
         _set_flux(spacetime)
-        fluxed = cob.HodgeLaplacian(spacetime).connectionSpectralEntropy()
+        fluxed = cob.HodgeLaplacian(spacetime).connection_spectral_entropy()
         self.assertNotAlmostEqual(
             flat, fluxed, places=9,
             msg="the connection entropy must SEE the connection")
@@ -135,7 +135,7 @@ class ConnectionEntropySeesThePhaseTest(unittest.TestCase):
         # Assert equality, not closeness.
         def diagonal(spacetime):
             return cob.HodgeLaplacian(
-                spacetime, cob.HodgeLaplacian.defaultWeightConvention(), DIAGONAL)
+                spacetime, cob.HodgeLaplacian.default_weight_convention(), DIAGONAL)
 
         spacetime = _host()
         _flatten(spacetime)
@@ -176,9 +176,9 @@ class ConnectionEntropySeesThePhaseTest(unittest.TestCase):
         spacetime = _host()
         _set_flux(spacetime)
         gradient = (cob.HodgeLaplacian(spacetime)
-                    .connectionSpectralEntropyPhaseGradient())
+                    .connection_spectral_entropy_phase_gradient())
         self.assertEqual(len(gradient),
-                         len(spacetime.getEdgeList().toVector()))
+                         len(spacetime.get_edge_list().to_vector()))
         self.assertGreater(sum(abs(component) ** 2 for component in gradient),
                            0.0,
                            "a fluxed connection must have a phi gradient")
@@ -189,7 +189,7 @@ class ConnectionEntropySeesThePhaseTest(unittest.TestCase):
         spacetime = _host()
         _set_flux(spacetime)
         gradient = (cob.HodgeLaplacian(spacetime)
-                    .connectionSpectralEntropyPhaseGradient())
+                    .connection_spectral_entropy_phase_gradient())
         self.assertGreater(max(abs(component.real) for component in gradient),
                            1e-12, "the compact part must be differentiated")
         self.assertGreater(max(abs(component.imag) for component in gradient),
@@ -205,9 +205,9 @@ class GaugeInvarianceIsStructuralTest(unittest.TestCase):
         # slack tolerance here would stop distinguishing the two.
         spacetime = _host()
         _set_flux(spacetime)
-        before = cob.HodgeLaplacian(spacetime).connectionSpectralEntropy()
+        before = cob.HodgeLaplacian(spacetime).connection_spectral_entropy()
         _gauge(spacetime, _chi(spacetime))
-        after = cob.HodgeLaplacian(spacetime).connectionSpectralEntropy()
+        after = cob.HodgeLaplacian(spacetime).connection_spectral_entropy()
         self.assertAlmostEqual(before, after, delta=1e-13)
 
     def test_the_phase_gradient_is_orthogonal_to_every_gauge_direction(self):
@@ -222,8 +222,8 @@ class GaugeInvarianceIsStructuralTest(unittest.TestCase):
         spacetime = _host()
         _set_flux(spacetime)
         gradient = (cob.HodgeLaplacian(spacetime)
-                    .connectionSpectralEntropyPhaseGradient())
-        edges = spacetime.getEdgeList().toVector()
+                    .connection_spectral_entropy_phase_gradient())
+        edges = spacetime.get_edge_list().to_vector()
         scale = math.sqrt(sum(abs(component) ** 2 for component in gradient))
         self.assertGreater(scale, 0.0, "a zero gradient would pass vacuously")
         for seed in range(4):
@@ -231,8 +231,8 @@ class GaugeInvarianceIsStructuralTest(unittest.TestCase):
             with self.subTest(seed=seed):
                 directional = 0.0
                 for index, edge in enumerate(edges):
-                    displacement = (chi[int(edge.getTarget().getId())] -
-                                    chi[int(edge.getSource().getId())])
+                    displacement = (chi[int(edge.get_target().get_id())] -
+                                    chi[int(edge.get_source().get_id())])
                     directional += (gradient[index] * displacement).real
                 self.assertLess(
                     abs(directional) / scale, 1e-12,
@@ -244,7 +244,7 @@ class GaugeInvarianceIsStructuralTest(unittest.TestCase):
         spacetime = _host()
         _flatten(spacetime)
         gradient = (cob.HodgeLaplacian(spacetime)
-                    .connectionSpectralEntropyPhaseGradient())
+                    .connection_spectral_entropy_phase_gradient())
         for index, component in enumerate(gradient):
             with self.subTest(edge=index):
                 self.assertLess(abs(component), 1e-9)
@@ -258,10 +258,10 @@ def _hermitian_host():
     lives in.
     """
     spacetime = _host(jitter=False)
-    for edge in spacetime.getEdgeList().toVector():
-        edge.setLength(complex(1.0, 0.0))
-    for index, edge in enumerate(spacetime.getEdgeList().toVector()):
-        edge.setPhase(complex(0.37 * ((index % 5) - 2), 0.0))
+    for edge in spacetime.get_edge_list().to_vector():
+        edge.set_length(complex(1.0, 0.0))
+    for index, edge in enumerate(spacetime.get_edge_list().to_vector()):
+        edge.set_phase(complex(0.37 * ((index % 5) - 2), 0.0))
     return spacetime
 
 
@@ -272,7 +272,7 @@ def _von_neumann_of_positive_operator(spacetime):
     shipped term against the OTHER construction. Reading it off the same C*
     operator keeps the comparison honest.
     """
-    flat = np.array(cob.HodgeLaplacian(spacetime).connectionLaplacian())
+    flat = np.array(cob.HodgeLaplacian(spacetime).connection_laplacian())
     order = int(round(math.sqrt(flat.size)))
     laplacian = flat.reshape(order, order)
     eigenvalues = np.linalg.eigvalsh(laplacian.conj().T @ laplacian)
@@ -294,7 +294,7 @@ class TheHermitianLimitReducesToTheHodgeFunctionalTest(unittest.TestCase):
 
     def test_the_term_is_the_hodge_functional_on_a_hermitian_operator(self):
         spacetime = _hermitian_host()
-        flat = np.array(cob.HodgeLaplacian(spacetime).connectionLaplacian())
+        flat = np.array(cob.HodgeLaplacian(spacetime).connection_laplacian())
         order = int(round(math.sqrt(flat.size)))
         laplacian = flat.reshape(order, order)
         self.assertAlmostEqual(
@@ -302,7 +302,7 @@ class TheHermitianLimitReducesToTheHodgeFunctionalTest(unittest.TestCase):
             delta=1e-12, msg="this limit must actually be Hermitian")
 
         self.assertAlmostEqual(
-            cob.HodgeLaplacian(spacetime).connectionSpectralEntropy(),
+            cob.HodgeLaplacian(spacetime).connection_spectral_entropy(),
             _von_neumann_of_positive_operator(spacetime),
             delta=1e-13,
             msg="the square must reduce to the M^dag M von Neumann entropy")
@@ -312,7 +312,7 @@ class TheHermitianLimitReducesToTheHodgeFunctionalTest(unittest.TestCase):
         # the M^dag M form, which is the construction that is not C*-invariant.
         spacetime = _host()
         _set_flux(spacetime)
-        flat = np.array(cob.HodgeLaplacian(spacetime).connectionLaplacian())
+        flat = np.array(cob.HodgeLaplacian(spacetime).connection_laplacian())
         order = int(round(math.sqrt(flat.size)))
         laplacian = flat.reshape(order, order)
         self.assertGreater(
@@ -320,7 +320,7 @@ class TheHermitianLimitReducesToTheHodgeFunctionalTest(unittest.TestCase):
             "a complex phase must make the operator non-normal")
 
         self.assertNotAlmostEqual(
-            cob.HodgeLaplacian(spacetime).connectionSpectralEntropy(),
+            cob.HodgeLaplacian(spacetime).connection_spectral_entropy(),
             _von_neumann_of_positive_operator(spacetime),
             places=6,
             msg="away from the Hermitian limit the two must NOT agree")
@@ -343,21 +343,21 @@ class TheGradientIsCertifiedInEveryDirectionTest(unittest.TestCase):
     def test_the_gradient_is_odd_under_reversing_the_connection(self):
         spacetime = _host()
         _set_flux(spacetime)
-        edges = spacetime.getEdgeList().toVector()
-        forward = [complex(edge.getPhase()) for edge in edges]
+        edges = spacetime.get_edge_list().to_vector()
+        forward = [complex(edge.get_phase()) for edge in edges]
 
         hodge = cob.HodgeLaplacian(spacetime)
-        entropy = hodge.connectionSpectralEntropy()
-        gradient = hodge.connectionSpectralEntropyPhaseGradient()
+        entropy = hodge.connection_spectral_entropy()
+        gradient = hodge.connection_spectral_entropy_phase_gradient()
         scale = math.sqrt(sum(abs(component) ** 2 for component in gradient))
         self.assertGreater(scale, 0.0, "a zero gradient would pass vacuously")
 
         for edge, phase in zip(edges, forward):
-            edge.setPhase(-phase)
+            edge.set_phase(-phase)
         reversed_hodge = cob.HodgeLaplacian(spacetime)
-        reversed_entropy = reversed_hodge.connectionSpectralEntropy()
+        reversed_entropy = reversed_hodge.connection_spectral_entropy()
         reversed_gradient = (
-            reversed_hodge.connectionSpectralEntropyPhaseGradient())
+            reversed_hodge.connection_spectral_entropy_phase_gradient())
 
         self.assertAlmostEqual(entropy, reversed_entropy, delta=1e-13,
                                msg="S must be even in phi at real weights")

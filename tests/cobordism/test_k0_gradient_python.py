@@ -42,44 +42,44 @@ def _two_component_host(phases=True, signed=True):
     gauge-flat phases (zero triangle holonomy — the kernel survives, twisted);
     component B optionally carries two timelike edges (balanced signed
     triangle — the kernel survives, alternating sign)."""
-    st = tessera.Spacetime.fromVertexTuples(2, [[0, 1, 2], [3, 4, 5]], 1.0, 0.0)
-    st.materializeFacets()
-    edges = st.getEdgeList().toVector()
+    st = tessera.Spacetime.from_vertex_tuples(2, [[0, 1, 2], [3, 4, 5]], 1.0, 0.0)
+    st.materialize_facets()
+    edges = st.get_edge_list().to_vector()
     by_pair = {}
     for e in edges:
-        a, b = e.getSource().getId(), e.getTarget().getId()
+        a, b = e.get_source().get_id(), e.get_target().get_id()
         by_pair[(min(a, b), max(a, b))] = e
     for i, e in enumerate(edges):
-        e.setLength(cmath.sqrt(complex(1.0 + 0.17 * (i % 4))))
+        e.set_length(cmath.sqrt(complex(1.0 + 0.17 * (i % 4))))
     if signed:
-        by_pair[(3, 4)].setLength(cmath.sqrt(complex(-1.3)))
-        by_pair[(3, 5)].setLength(cmath.sqrt(complex(-1.1)))
-        by_pair[(4, 5)].setLength(cmath.sqrt(complex(1.2)))
+        by_pair[(3, 4)].set_length(cmath.sqrt(complex(-1.3)))
+        by_pair[(3, 5)].set_length(cmath.sqrt(complex(-1.1)))
+        by_pair[(4, 5)].set_length(cmath.sqrt(complex(1.2)))
     if phases:
         # holonomy 0.7 + 0.3 - 1.0 = 0 around (0,1,2): gauge-flat, kernel kept
         ph = {(0, 1): 0.7, (1, 2): 0.3, (0, 2): 1.0}
         for (a, b), val in ph.items():
             e = by_pair[(a, b)]
-            sign = 1.0 if e.getSource().getId() < e.getTarget().getId() else -1.0
-            e.setPhase(sign * val)
+            sign = 1.0 if e.get_source().get_id() < e.get_target().get_id() else -1.0
+            e.set_phase(sign * val)
     return st, by_pair
 
 
 def _cc_edges(st):
     return [tuple(sorted(t))
-            for t in cob.ChainComplex.fromSpacetime(st).kSimplexVertices(1)]
+            for t in cob.ChainComplex.from_spacetime(st).k_simplex_vertices(1)]
 
 
 def _fd_gradient(st, holes, target, by_pair, h=1e-6):
     fd = []
     for pair in _cc_edges(st):
         e = by_pair[pair]
-        w0 = e.getLength()**2
-        e.setLength(cmath.sqrt(complex(complex(w0.real + h, 0.0))))
-        rp = cob.EigenstateSynthesis(st, 0).residualForPeriods(holes, target)
-        e.setLength(cmath.sqrt(complex(complex(w0.real - h, 0.0))))
-        rm = cob.EigenstateSynthesis(st, 0).residualForPeriods(holes, target)
-        e.setLength(cmath.sqrt(complex(w0)))
+        w0 = e.get_length()**2
+        e.set_length(cmath.sqrt(complex(complex(w0.real + h, 0.0))))
+        rp = cob.EigenstateSynthesis(st, 0).residual_for_periods(holes, target)
+        e.set_length(cmath.sqrt(complex(complex(w0.real - h, 0.0))))
+        rm = cob.EigenstateSynthesis(st, 0).residual_for_periods(holes, target)
+        e.set_length(cmath.sqrt(complex(w0)))
         fd.append((rp - rm) / (2 * h))
     return np.asarray(fd)
 
@@ -96,9 +96,9 @@ class TestK0Gradient:
         # B (two timelike edges — d|w|/dw = -1 genuinely exercised).
         st, by_pair = _two_component_host(phases=True, signed=True)
         es = cob.EigenstateSynthesis(st, 0)
-        r0 = es.residualForPeriods(_HOLES, _TARGET)
+        r0 = es.residual_for_periods(_HOLES, _TARGET)
         assert r0 > 1e-3, "fixture must be non-realizable (overdetermined)"
-        g = np.asarray(es.residualForPeriodsGradient(_HOLES, _TARGET))
+        g = np.asarray(es.residual_for_periods_gradient(_HOLES, _TARGET))
         fd = _fd_gradient(st, _HOLES, _TARGET, by_pair)
         assert np.max(np.abs(g - fd)) < 1e-6
 
@@ -109,9 +109,9 @@ class TestK0Gradient:
         # pseudo-inverse (and its constant-rank derivative) is load-bearing.
         st, by_pair = _two_component_host(phases=False, signed=False)
         es = cob.EigenstateSynthesis(st, 0)
-        r0 = es.residualForPeriods(_HOLES, _TARGET)
+        r0 = es.residual_for_periods(_HOLES, _TARGET)
         assert r0 > 1e-3
-        g = np.asarray(es.residualForPeriodsGradient(_HOLES, _TARGET))
+        g = np.asarray(es.residual_for_periods_gradient(_HOLES, _TARGET))
         fd = _fd_gradient(st, _HOLES, _TARGET, by_pair)
         assert np.max(np.abs(g - fd)) < 1e-6
 
@@ -123,9 +123,9 @@ class TestK0Gradient:
         # precision; k >= 1's metric L_k is degree -1, giving -r_U there).
         st, by_pair = _two_component_host(phases=phases, signed=signed)
         es = cob.EigenstateSynthesis(st, 0)
-        r0 = es.residualForPeriods(_HOLES, _TARGET)
-        g = np.asarray(es.residualForPeriodsGradient(_HOLES, _TARGET))
-        l2 = np.asarray([(by_pair[p].getLength()**2).real
+        r0 = es.residual_for_periods(_HOLES, _TARGET)
+        g = np.asarray(es.residual_for_periods_gradient(_HOLES, _TARGET))
+        l2 = np.asarray([(by_pair[p].get_length()**2).real
                          for p in _cc_edges(st)])
         assert math.isclose(float(np.dot(l2, g)), 2.0 * r0,
                             rel_tol=1e-10, abs_tol=1e-12)
@@ -137,8 +137,8 @@ class TestK0Gradient:
         es = cob.EigenstateSynthesis(st, 0)
         holes = [[0, 3], [1, 4]]
         target = [complex(1.0, 0.0), complex(-0.5, 0.3)]
-        assert es.residualForPeriods(holes, target) < 1e-20
-        g = np.asarray(es.residualForPeriodsGradient(holes, target))
+        assert es.residual_for_periods(holes, target) < 1e-20
+        g = np.asarray(es.residual_for_periods_gradient(holes, target))
         assert np.max(np.abs(g)) < 1e-10
 
 
@@ -150,9 +150,9 @@ class TestOtherDegreesUnchanged:
         from _holed_surface import holed_surface
         st, es, holes, P = holed_surface(degree=1)
         target = [complex(z) for z in P[0]]
-        g = np.asarray(es.residualForPeriodsGradient(holes, target))
+        g = np.asarray(es.residual_for_periods_gradient(holes, target))
         assert g.shape[0] > 0 and np.all(np.isfinite(g))
-        g2 = np.asarray(es.periodGapForPeriodsGradient(holes, target))
+        g2 = np.asarray(es.period_gap_for_periods_gradient(holes, target))
         assert g2.shape[0] > 0 and np.all(np.isfinite(g2))
 
     def test_loop_cores_state_their_degree_1_contract(self):
@@ -170,4 +170,4 @@ class TestOtherDegreesUnchanged:
         es0 = cob.EigenstateSynthesis(st)  # default degree k = 0
         target = [complex(z) for z in P[0]]
         with pytest.raises(RuntimeError, match="degree"):
-            es0.periodGapForPeriodsGradient(holes, target)
+            es0.period_gap_for_periods_gradient(holes, target)

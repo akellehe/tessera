@@ -22,11 +22,11 @@ TWO_COMPLEX = [[0, 1, 2], [0, 1, 3], [0, 2, 3], [1, 2, 3], [2, 3, 4]]
 
 
 def _random_links(K, rng):
-    return [complex(rng.normal(), rng.normal()) for _ in range(K.numSimplices(1))]
+    return [complex(rng.normal(), rng.normal()) for _ in range(K.num_simplices(1))]
 
 
 def _random_gauge(K, rng):
-    return {int(v[0]): complex(rng.normal(), rng.normal()) + 0.3 for v in K.kSimplexVertices(0)}
+    return {int(v[0]): complex(rng.normal(), rng.normal()) + 0.3 for v in K.k_simplex_vertices(0)}
 
 
 def _isolated_eigenvalue(cov, k):
@@ -43,8 +43,8 @@ def _isolated_eigenvalue(cov, k):
 
 def _instance(cells, seed, with_links=True):
     rng = np.random.default_rng(seed)
-    K = cob.ChainComplex.fromTopCells(cells)
-    s = [complex(rng.normal(), rng.normal()) for _ in range(K.numSimplices(1))]
+    K = cob.ChainComplex.from_top_cells(cells)
+    s = [complex(rng.normal(), rng.normal()) for _ in range(K.num_simplices(1))]
     base = ch.ChainHodge(K, s, ch.Preset.L2, KS)
     U = ch.Connection(K, _random_links(K, rng)) if with_links else ch.Connection.trivial(K)
     return K, rng, base, ch.CovariantChainHodge(base, U)
@@ -55,7 +55,7 @@ class TestResolvent:
         K, rng, base, cov = _instance(TWO_COMPLEX, 3)
         for k in range(3):
             n = base.size(k)
-            h = cov.covariantOperator(k)
+            h = cov.covariant_operator(k)
             zeta = 0.37 + 0.81j
             c = rng.normal(size=(n, 2)) + 1j * rng.normal(size=(n, 2))
             R = cov.resolvent(k, zeta, c)
@@ -73,24 +73,24 @@ class TestFramesT8:
         cert = band.certificate
         assert cert.rank == 1 and band.rank() == 1
         assert cert.idempotency < 1e-8
-        assert cert.nodeCount == 64 and "circle" in cert.contour
-        assert math.isfinite(cert.resolventMax) and cert.resolventMax > 0
-        assert cert.leftFrameAvailable, cert.leftFrameRefusal
+        assert cert.node_count == 64 and "circle" in cert.contour
+        assert math.isfinite(cert.resolvent_max) and cert.resolvent_max > 0
+        assert cert.left_frame_available, cert.left_frame_refusal
         # RSF normalization Phi~^T Phi = I to round-off
-        np.testing.assert_allclose(band.leftFrame.T @ band.frame, np.eye(1), atol=1e-12)
+        np.testing.assert_allclose(band.left_frame.T @ band.frame, np.eye(1), atol=1e-12)
         # the reduced operator is the enclosed eigenvalue; left/right residuals small
         assert abs(band.reduced[0, 0] - z) < 1e-8 * abs(z)
-        assert cert.rightResidual < 1e-8 and cert.leftResidual < 1e-8
+        assert cert.right_residual < 1e-8 and cert.left_residual < 1e-8
         # Gamma = Phi Phi~^T equals the projector
         np.testing.assert_allclose(band.covariance, band.projector, atol=1e-8 * np.abs(band.projector).max())
         assert len(band.occupations()) == base.size(k)
         # images are G^U Phi
-        np.testing.assert_allclose(band.images, cov.applyG(k, band.frame), atol=1e-13)
+        np.testing.assert_allclose(band.images, cov.apply_g(k, band.frame), atol=1e-13)
         # pairing B_C = (Phi^vee)^T G^U Phi
-        np.testing.assert_allclose(band.pairing, band.dualFrame.T @ band.images, atol=1e-13)
-        assert abs(cert.detB - np.linalg.det(band.pairing)) < 1e-12 * abs(cert.detB)
+        np.testing.assert_allclose(band.pairing, band.dual_frame.T @ band.images, atol=1e-13)
+        assert abs(cert.det_b - np.linalg.det(band.pairing)) < 1e-12 * abs(cert.det_b)
         # static leftFrame agrees
-        np.testing.assert_allclose(ch.CovariantChainHodge.leftFrame(band, cov.dual()), band.leftFrame, atol=1e-12)
+        np.testing.assert_allclose(ch.CovariantChainHodge.left_frame(band, cov.dual()), band.left_frame, atol=1e-12)
 
     def test_transpose_identity_of_the_projector(self):
         """P_C(U)^T = G^{U^-1} P_C(U^-1) (G^{U^-1})^{-1} on the same contour."""
@@ -101,8 +101,8 @@ class TestFramesT8:
         P = cov.band(k, contour).projector
         dual = cov.dual()
         Pd = dual.band(k, contour).projector
-        Md = dual.Minv(k).toarray()                       # (G^{U^-1})^{-1} = M^{U^-1}
-        rhs = dual.applyG(k, Pd @ Md)                     # G^{U^-1} P(U^-1) M^{U^-1}
+        Md = dual.m_inv(k).toarray()                       # (G^{U^-1})^{-1} = M^{U^-1}
+        rhs = dual.apply_g(k, Pd @ Md)                     # G^{U^-1} P(U^-1) M^{U^-1}
         np.testing.assert_allclose(P.T, rhs, atol=1e-9 * np.abs(P).max())
 
     def test_gauge_covariance_of_the_band(self):
@@ -118,21 +118,21 @@ class TestFramesT8:
         rho = np.asarray(cov.rho(k, g)).ravel()
         expected = np.diag(rho) @ band.projector @ np.diag(1.0 / rho)
         np.testing.assert_allclose(bandg.projector, expected, atol=1e-9 * np.abs(expected).max())
-        assert abs(bandg.certificate.detB - band.certificate.detB) < 1e-8 * abs(band.certificate.detB) or bandg.rank() == 1
+        assert abs(bandg.certificate.det_b - band.certificate.det_b) < 1e-8 * abs(band.certificate.det_b) or bandg.rank() == 1
 
     def test_trivial_connection_left_frame_is_the_geometric_image(self):
-        """At U = 1: Phi~ B^T = G_1 Phi (Phi~ = G_1 Phi once Phi^T G_1 Phi = I) and
+        """At U = 1: Phi~ B^T = G_1 phi (Phi~ = G_1 Phi once Phi^T G_1 Phi = I) and
         the projector is symmetric for the chain metric, P M_1 = M_1 P^T."""
         K, rng, base, cov = _instance(TWO_COMPLEX, 9, with_links=False)
         k = 1
         z, sep = _isolated_eigenvalue(cov, k)
         band = cov.band(k, ch.Contour.circle(z, 0.45 * sep, 48))
-        np.testing.assert_allclose(band.leftFrame @ band.pairing.T, band.images, atol=1e-10 * np.abs(band.images).max())
-        M = cov.Minv(k).toarray()
+        np.testing.assert_allclose(band.left_frame @ band.pairing.T, band.images, atol=1e-10 * np.abs(band.images).max())
+        M = cov.m_inv(k).toarray()
         P = band.projector
         np.testing.assert_allclose(P @ M, M @ P.T, atol=1e-9 * np.abs(P @ M).max())
         # the dual band coincides with the band itself at U = 1
-        np.testing.assert_allclose(np.abs(band.dualFrame.T @ band.frame), np.abs(band.frame.T @ band.frame), atol=1e-9)
+        np.testing.assert_allclose(np.abs(band.dual_frame.T @ band.frame), np.abs(band.frame.T @ band.frame), atol=1e-9)
 
 
 class TestHarmonicBandOnTheTorus:
@@ -148,9 +148,9 @@ class TestHarmonicBandOnTheTorus:
         # (recorded on #907: the specification's 0.211555 is not reproduced under
         # any stated normalization); the band is non-isotropic.
         Q, _ = np.linalg.qr(band.images)
-        M1 = cov.Minv(1).toarray()
+        M1 = cov.m_inv(1).toarray()
         assert abs(np.linalg.det(Q.T @ M1 @ Q)) == pytest.approx(1.0 / 3.0, abs=1e-10)
-        assert band.certificate.leftFrameAvailable and math.isfinite(band.certificate.condB)
+        assert band.certificate.left_frame_available and math.isfinite(band.certificate.cond_b)
 
 
 class TestIsotropicBand:
@@ -162,10 +162,10 @@ class TestIsotropicBand:
         approached; at a declared tolerance the left frame is refused by name.
         The band enclosing both (the generalized eigenspace) is not isotropic:
         the Jordan chain pairs non-trivially with the eigenvector."""
-        K = cob.ChainComplex.fromTopCells(TWO_COMPLEX)
+        K = cob.ChainComplex.from_top_cells(TWO_COMPLEX)
         rng = np.random.default_rng(21)
-        s0 = np.array([complex(rng.normal(), rng.normal()) for _ in range(K.numSimplices(1))])
-        d = np.array([complex(rng.normal(), rng.normal()) for _ in range(K.numSimplices(1))])
+        s0 = np.array([complex(rng.normal(), rng.normal()) for _ in range(K.num_simplices(1))])
+        d = np.array([complex(rng.normal(), rng.normal()) for _ in range(K.num_simplices(1))])
         U = ch.Connection.trivial(K)
 
         def instance(t):
@@ -208,23 +208,23 @@ class TestIsotropicBand:
         near, gap_near = rank_one_band(best.x + 3e-3 * step)
         assert far.rank() == 1 and near.rank() == 1
         assert gap_near < gap_far
-        assert near.certificate.pairingScale < far.certificate.pairingScale
-        assert near.certificate.pairingScale < 1e-2
+        assert near.certificate.pairing_scale < far.certificate.pairing_scale
+        assert near.certificate.pairing_scale < 1e-2
         # At a declared tolerance above the measured normalized pairing the
         # left frame is refused by name; below it, it exists.
-        tol = 2.0 * near.certificate.pairingScale
+        tol = 2.0 * near.certificate.pairing_scale
         cov_near = instance(best.x + 3e-3 * step)
         ev = spectrum(best.x + 3e-3 * step)
         dmat = np.abs(ev[:, None] - ev[None, :]) + np.eye(len(ev)) * 1e9
         i, j = np.unravel_index(np.argmin(dmat), dmat.shape)
         radius = 0.4 * np.min(np.abs(np.delete(ev, [i]) - ev[i]))
         refused = cov_near.band(1, ch.Contour.circle(ev[i], radius, 96), 10.0, tol)
-        assert not refused.certificate.leftFrameAvailable
-        assert "isotropic" in refused.certificate.leftFrameRefusal
-        assert refused.leftFrame.size == 0
+        assert not refused.certificate.left_frame_available
+        assert "isotropic" in refused.certificate.left_frame_refusal
+        assert refused.left_frame.size == 0
         with pytest.raises(RuntimeError):
-            ch.CovariantChainHodge.leftFrame(refused, cov_near.dual(), tol)
-        assert near.certificate.leftFrameAvailable  # default tolerance 1e-10
+            ch.CovariantChainHodge.left_frame(refused, cov_near.dual(), tol)
+        assert near.certificate.left_frame_available  # default tolerance 1e-10
         # The band enclosing both coalescing eigenvalues is NOT isotropic.
         center = 0.5 * (ev_star[np.argsort(np.abs(ev_star - ev_star[0]))[:1]][0] + ev_star[0])
         dm = np.abs(ev_star[:, None] - ev_star[None, :]) + np.eye(len(ev_star)) * 1e9
@@ -233,8 +233,8 @@ class TestIsotropicBand:
         rad = 0.4 * np.min(np.abs(np.delete(ev_star, [a, b]) - center))
         both = instance(best.x).band(1, ch.Contour.circle(center, rad, 96))
         assert both.rank() == 2
-        assert both.certificate.pairingScale > 1e-3
-        assert both.certificate.leftFrameAvailable
+        assert both.certificate.pairing_scale > 1e-3
+        assert both.certificate.left_frame_available
 
 
 class TestLorentzianAtPositiveEpsilon:
@@ -247,9 +247,9 @@ class TestLorentzianAtPositiveEpsilon:
         band = cov.band(1, ch.Contour.circle(0.0, 2.0, 64))
         assert band.rank() == 2
         cert = band.certificate
-        assert cert.leftFrameAvailable
-        assert math.isfinite(cert.condB) and abs(cert.detB) > 0
-        assert cert.rightResidual < 1e-8 and cert.leftResidual < 1e-8
+        assert cert.left_frame_available
+        assert math.isfinite(cert.cond_b) and abs(cert.det_b) > 0
+        assert cert.right_residual < 1e-8 and cert.left_residual < 1e-8
 
     def test_grassmann_preset_is_refused_by_name(self):
         K, s = torus33()
@@ -282,7 +282,7 @@ class TestNodeConvergenceE8:
         K, rng, base, cov = _instance(cells, 104)
         k = 1
         z, sep = _isolated_eigenvalue(cov, k)
-        w, V = np.linalg.eig(cov.covariantOperator(k))
+        w, V = np.linalg.eig(cov.covariant_operator(k))
         j = int(np.argmin(np.abs(w - z)))
         exact = np.outer(V[:, j], np.linalg.inv(V)[j, :])
         scale = np.abs(exact).max()
@@ -308,5 +308,5 @@ class TestNodeConvergenceE8:
         dual = cov.dual()
         P = self._quadrature(cov, k, contour)
         Pd = self._quadrature(dual, k, contour)
-        rhs = dual.applyG(k, Pd @ dual.Minv(k).toarray())
+        rhs = dual.apply_g(k, Pd @ dual.m_inv(k).toarray())
         np.testing.assert_allclose(P.T, rhs, atol=1e-10 * np.abs(P).max())

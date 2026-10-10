@@ -79,7 +79,7 @@ class ProtonSynthesisModeTest(unittest.TestCase):
             with self.subTest(submode=submode):
                 node = self.synthesis.formation_node(1)
                 node.set_simulation_mode(MC.SimulationMode.EMERGENCE, submode)
-                edges_before = len(node.spacetime().getEdgeList().toVector())
+                edges_before = len(node.spacetime().get_edge_list().to_vector())
                 with self.assertRaises(ValueError) as refusal:
                     tessera.cobordism.ProtonSynthesis.drive_node(node, **self.TINY)
                 message = str(refusal.exception)
@@ -87,7 +87,7 @@ class ProtonSynthesisModeTest(unittest.TestCase):
                 self.assertIn("SimulationMode::Synthesis", message)
                 # Refused before anything ran: the seed pentatope is untouched.
                 self.assertEqual(
-                    len(node.spacetime().getEdgeList().toVector()), edges_before)
+                    len(node.spacetime().get_edge_list().to_vector()), edges_before)
                 self.assertEqual(node.simulation_mode,
                                  MC.SimulationMode.EMERGENCE)
 
@@ -168,7 +168,7 @@ class ProtonBuildTest(unittest.TestCase):
         # objective is finite, and the singlet residual never exceeds its 3.0
         # empty-register floor.
         st = self.p.spacetime()
-        self.assertGreater(len(st.getEdgeList().toVector()), 10)
+        self.assertGreater(len(st.get_edge_list().to_vector()), 10)
         self.assertTrue(math.isfinite(self.p.color_residual()))
         self.assertLessEqual(self.p.color_residual(), 3.0 + 1e-9)
 
@@ -207,7 +207,7 @@ class ProtonBuildTest(unittest.TestCase):
         # edge length must differ from the unit 1.0+0j.
         block = self.p.block()
         self.assertIsNotNone(block)
-        squared = [(e.getLength() * e.getLength()) for e in block.getEdgeList().toVector()]
+        squared = [(e.get_length() * e.get_length()) for e in block.get_edge_list().to_vector()]
         self.assertTrue(squared, "proton has no edges")
         self.assertTrue(any(abs(l - complex(1.0, 0.0)) > 1e-9 for l in squared),
                         "proton metric is unit — the relaxed geometry was lost")

@@ -66,7 +66,7 @@ def _phase_worker(phase_id, label, k0, delta, n_simplices, n_therm, n_meas,
                          tessera.Toroid())
     max_build = 80 * 20  # cap at ~80 time slices (20 simplices/slab in 4D)
     st.build(min(n_simplices, max_build))
-    target = st.getN41() if n_simplices <= max_build else n_simplices // 2
+    target = st.get_n41() if n_simplices <= max_build else n_simplices // 2
     cdt = tessera.CDTSimulation(st, k0, 0.5, delta, 1.0 / target, target)
 
     _ph("tuning")
@@ -81,10 +81,10 @@ def _phase_worker(phase_id, label, k0, delta, n_simplices, n_therm, n_meas,
     profiles = []
     for i in range(n_meas):
         cdt.sweep(meas_interval, progress=sweep_cb)
-        profiles.append(cdt.getVolumeProfile())
+        profiles.append(cdt.get_volume_profile())
         _ph("measuring", i + 1, n_meas)
 
-    return label, profiles, cdt.getAcceptanceRates(), cdt.getK4()
+    return label, profiles, cdt.get_acceptance_rates(), cdt.get_k4()
 
 
 def average_profile(profiles):
@@ -96,7 +96,7 @@ def average_profile(profiles):
     rolled to align its peak at T//2 before averaging — the technique
     described in the CDT literature (Ambjorn et al., 2005).
     """
-    return np.asarray(tessera.VolumeProfile.centeredAverage(profiles))
+    return np.asarray(tessera.VolumeProfile.centered_average(profiles))
 
 
 def plot_universe_surface(profile, title, ax, color_map=cm.coolwarm):

@@ -3,7 +3,7 @@
 
 """The register residual's gradient (#748).
 
-`nearKernelResidual` is `n · Σ(m smallest σ²) / Σ(all σ²)` of the metric `L_k`
+`near_kernel_residual` is `n · Σ(m smallest σ²) / Σ(all σ²)` of the metric `L_k`
 — the register residual, and the only part of `r_U` that is smooth and
 non-zero BEFORE a register exists. The other parts are period gaps, which sit
 at their constant full leak until holes open, and a constant cannot move the
@@ -44,12 +44,12 @@ _REGISTERS = 3
 
 
 def _edges(spacetime):
-    chain = cobordism.ChainComplex.fromSpacetime(spacetime)
+    chain = cobordism.ChainComplex.from_spacetime(spacetime)
     byPair = {}
-    for edge in spacetime.getEdgeList().toVector():
-        a, b = edge.getSource().getId(), edge.getTarget().getId()
+    for edge in spacetime.get_edge_list().to_vector():
+        a, b = edge.get_source().get_id(), edge.get_target().get_id()
         byPair[(min(a, b), max(a, b))] = edge
-    return [tuple(sorted(v)) for v in chain.kSimplexVertices(1)], byPair
+    return [tuple(sorted(v)) for v in chain.k_simplex_vertices(1)], byPair
 
 
 def _spectrumGapAtTheCut(spacetime):
@@ -65,14 +65,14 @@ def _fixture(twist=0.0):
     pairs, byPair = _edges(spacetime)
     for index, pair in enumerate(pairs):          # lift spectral degeneracy
         edge = byPair[pair]
-        edge.setLength(edge.getLength() * (1.0 + 0.11 * ((index * 37) % 13) / 13))
+        edge.set_length(edge.get_length() * (1.0 + 0.11 * ((index * 37) % 13) / 13))
     if twist:
         for index, pair in enumerate(pairs):      # push l^2 off the real locus
             edge = byPair[pair]
-            squared = edge.getLength() ** 2
-            edge.setLength(cmath.sqrt(
+            squared = edge.get_length() ** 2
+            edge.set_length(cmath.sqrt(
                 squared * complex(1.0, twist * (1 + index % 3) / 3)))
-    spacetime.materializeFacets()
+    spacetime.materialize_facets()
     return spacetime, pairs, byPair
 
 
@@ -80,15 +80,15 @@ class NearKernelGradientTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cobordism.HodgeLaplacian.setDefaultWeightConvention(
+        cobordism.HodgeLaplacian.set_default_weight_convention(
             cobordism.HodgeWeightConvention.SquaredContent)
 
     def _gradient(self, spacetime):
-        return np.array(cobordism.MultiCobordism.nearKernelResidualGradient(
+        return np.array(cobordism.MultiCobordism.near_kernel_residual_gradient(
             spacetime, _DEGREE, _REGISTERS), complex)
 
     def _value(self, spacetime):
-        return cobordism.MultiCobordism.nearKernelResidual(
+        return cobordism.MultiCobordism.near_kernel_residual(
             spacetime, _DEGREE, _REGISTERS)
 
     def test_the_cut_is_not_degenerate(self):
@@ -100,7 +100,7 @@ class NearKernelGradientTest(unittest.TestCase):
     def test_scale_invariance_euler_identity_on_the_locus(self):
         spacetime, pairs, byPair = _fixture()
         gradient = self._gradient(spacetime)
-        squared = np.array([byPair[p].getLength() ** 2 for p in pairs], complex)
+        squared = np.array([byPair[p].get_length() ** 2 for p in pairs], complex)
         self.assertLess(abs(complex(np.dot(squared, gradient))), 1e-9)
 
     def test_scale_invariance_euler_identity_off_the_locus(self):
@@ -108,7 +108,7 @@ class NearKernelGradientTest(unittest.TestCase):
         # is a ratio rather than a raw spectral sum.
         spacetime, pairs, byPair = _fixture(twist=0.35)
         gradient = self._gradient(spacetime)
-        squared = np.array([byPair[p].getLength() ** 2 for p in pairs], complex)
+        squared = np.array([byPair[p].get_length() ** 2 for p in pairs], complex)
         euler = complex(np.dot(squared, gradient))
         self.assertLess(abs(euler.real), 1e-9)
         self.assertLess(abs(euler.imag), 1e-9)
@@ -127,18 +127,18 @@ class NearKernelGradientTest(unittest.TestCase):
         self.assertTrue(moving, "gradient is everywhere zero; fixture is flat")
         for index in moving:
             edge = byPair[pairs[index]]
-            base = edge.getLength() ** 2
+            base = edge.get_length() ** 2
             step = 1e-7
             for shift, expected in ((step, gradient[index].real),
                                     (1j * step, -gradient[index].imag)):
-                edge.setLength(cmath.sqrt(base + shift))
-                spacetime.materializeFacets()
+                edge.set_length(cmath.sqrt(base + shift))
+                spacetime.materialize_facets()
                 up = self._value(spacetime)
-                edge.setLength(cmath.sqrt(base - shift))
-                spacetime.materializeFacets()
+                edge.set_length(cmath.sqrt(base - shift))
+                spacetime.materialize_facets()
                 down = self._value(spacetime)
-                edge.setLength(cmath.sqrt(base))
-                spacetime.materializeFacets()
+                edge.set_length(cmath.sqrt(base))
+                spacetime.materialize_facets()
                 finiteDifference = (up - down) / (2 * step)
                 self.assertAlmostEqual(
                     finiteDifference, expected,
@@ -148,11 +148,11 @@ class NearKernelGradientTest(unittest.TestCase):
     def test_constant_cases_have_a_zero_gradient(self):
         spacetime, _pairs, _byPair = _fixture()
         # No registers expected: the value is the constant 0.
-        zero = np.array(cobordism.MultiCobordism.nearKernelResidualGradient(
+        zero = np.array(cobordism.MultiCobordism.near_kernel_residual_gradient(
             spacetime, _DEGREE, 0), complex)
         self.assertTrue(np.all(np.abs(zero) == 0.0))
         # Above the top dimension there are no k-cells: the value is constant.
-        above = np.array(cobordism.MultiCobordism.nearKernelResidualGradient(
+        above = np.array(cobordism.MultiCobordism.near_kernel_residual_gradient(
             spacetime, 9, _REGISTERS), complex)
         self.assertTrue(np.all(np.abs(above) == 0.0))
 

@@ -73,7 +73,7 @@ def _collapsing_history():
 
 def _triangle_index(W, vertices):
     """The canonical ``C_2(W)`` index of the triangle on the given vertices."""
-    triangles = W.complex.kSimplexVertices(2)
+    triangles = W.complex.k_simplex_vertices(2)
     key = sorted(vertices)
     for index, triangle in enumerate(triangles):
         if list(triangle) == key:
@@ -89,31 +89,31 @@ def _coefficients(lineage):
 # The impure builder the cobordism needs
 # --------------------------------------------------------------------------- #
 class TestImpureChainComplex(unittest.TestCase):
-    """``ChainComplex.fromCells`` accepts cells of mixed dimensions, which is
+    """``ChainComplex.from_cells`` accepts cells of mixed dimensions, which is
     what a cobordism with cells attached on one end requires: the prisms over
     the incoming level's cells sit beside the outgoing level's own cells, and
     the latter are one dimension lower."""
 
     def test_mixed_dimensions_are_accepted(self):
-        K = cob.ChainComplex.fromCells([[0, 1, 2], [2, 3]])
+        K = cob.ChainComplex.from_cells([[0, 1, 2], [2, 3]])
         self.assertEqual(K.dimension(), 2)
-        self.assertEqual(K.numSimplices(0), 4)
-        self.assertEqual(K.numSimplices(1), 4)  # 01, 02, 12, 23
-        self.assertEqual(K.numSimplices(2), 1)
-        self.assertTrue(K.boundaryComposesToZero())
+        self.assertEqual(K.num_simplices(0), 4)
+        self.assertEqual(K.num_simplices(1), 4)  # 01, 02, 12, 23
+        self.assertEqual(K.num_simplices(2), 1)
+        self.assertTrue(K.boundary_composes_to_zero())
 
     def test_a_declared_face_of_a_declared_cell_adds_nothing(self):
-        both = cob.ChainComplex.fromCells([[0, 1, 2], [0, 1]])
-        alone = cob.ChainComplex.fromCells([[0, 1, 2]])
-        self.assertEqual(list(both.fVector()), list(alone.fVector()))
+        both = cob.ChainComplex.from_cells([[0, 1, 2], [0, 1]])
+        alone = cob.ChainComplex.from_cells([[0, 1, 2]])
+        self.assertEqual(list(both.f_vector()), list(alone.f_vector()))
 
     def test_the_pure_builder_still_refuses_an_impure_list(self):
         with self.assertRaises(ValueError):
-            cob.ChainComplex.fromTopCells([[0, 1, 2], [2, 3]])
+            cob.ChainComplex.from_top_cells([[0, 1, 2], [2, 3]])
 
     def test_a_repeated_vertex_is_refused(self):
         with self.assertRaises(ValueError):
-            cob.ChainComplex.fromCells([[0, 1, 1]])
+            cob.ChainComplex.from_cells([[0, 1, 1]])
 
 
 # --------------------------------------------------------------------------- #
@@ -126,26 +126,26 @@ class TestMappingCylinder(unittest.TestCase):
     def test_the_product_cobordism_has_the_expected_shape(self):
         W = _product_history(3)
         self.assertEqual(W.levels, 3)
-        self.assertEqual(W.complex.numSimplices(0), 12)
+        self.assertEqual(W.complex.num_simplices(0), 12)
         # The prism over a 3-simplex is a 4-simplex: time is the fourth
         # simplex dimension of W and of no level.
         self.assertEqual(W.complex.dimension(), 4)
-        self.assertTrue(W.complex.boundaryComposesToZero())
+        self.assertTrue(W.complex.boundary_composes_to_zero())
 
     def test_the_levels_are_laid_out_in_order(self):
         W = _product_history(3)
-        self.assertEqual(list(W.vertexOffsets), [0, 4, 8, 12])
-        self.assertEqual(list(W.levelOf), [0] * 4 + [1] * 4 + [2] * 4)
-        self.assertEqual(list(W.incomingVertices()), [0, 1, 2, 3])
-        self.assertEqual(list(W.outgoingVertices()), [8, 9, 10, 11])
+        self.assertEqual(list(W.vertex_offsets), [0, 4, 8, 12])
+        self.assertEqual(list(W.level_of), [0] * 4 + [1] * 4 + [2] * 4)
+        self.assertEqual(list(W.incoming_vertices()), [0, 1, 2, 3])
+        self.assertEqual(list(W.outgoing_vertices()), [8, 9, 10, 11])
 
     def test_every_vertex_carries_a_fiber_edge_to_its_response_vertex(self):
         W = _product_history(3)
-        self.assertEqual(list(W.responseOf), [4, 5, 6, 7, 8, 9, 10, 11, 8, 9, 10, 11])
-        fiber = W.fiberEdges()
+        self.assertEqual(list(W.response_of), [4, 5, 6, 7, 8, 9, 10, 11, 8, 9, 10, 11])
+        fiber = W.fiber_edges()
         self.assertEqual(len(fiber), 8)  # four per interaction step
         for w in range(8):
-            self.assertIn(W.edgeIndex(w, W.responseOf[w]), fiber)
+            self.assertIn(W.edge_index(w, W.response_of[w]), fiber)
 
     def test_each_level_is_a_subcomplex_of_the_cobordism(self):
         W = _product_history(3)
@@ -153,30 +153,30 @@ class TestMappingCylinder(unittest.TestCase):
             base = 4 * level
             self.assertIn(
                 sorted([base, base + 1, base + 2, base + 3]),
-                [list(c) for c in W.complex.kSimplexVertices(3)],
+                [list(c) for c in W.complex.k_simplex_vertices(3)],
             )
 
     def test_the_image_of_a_cell_is_a_cell_of_the_outgoing_end(self):
         W = _collapsing_history()
         # The tetrahedron's image under the reduction [0,0,1,1] is the edge
         # (4, 5), which level 1 declares in its own right.
-        self.assertGreaterEqual(W.edgeIndex(4, 5), 0)
+        self.assertGreaterEqual(W.edge_index(4, 5), 0)
 
     def test_a_reduction_that_identifies_vertices_collapses_the_prism(self):
         W = _collapsing_history()
-        self.assertEqual(W.complex.numSimplices(0), 7)
-        self.assertTrue(W.complex.boundaryComposesToZero())
+        self.assertEqual(W.complex.num_simplices(0), 7)
+        self.assertTrue(W.complex.boundary_composes_to_zero())
         # Both vertices that reduce onto response vertex 4 keep their own fiber
         # edge; the collapse is in the prism's dimension, never in a lost edge.
         for w, response in ((0, 4), (1, 4), (2, 5), (3, 5), (4, 6), (5, 6)):
-            self.assertGreaterEqual(W.edgeIndex(w, response), 0)
+            self.assertGreaterEqual(W.edge_index(w, response), 0)
 
     def test_one_step_is_the_two_level_history(self):
-        step = obs.ClusterLineage.mappingCylinder(
+        step = obs.ClusterLineage.mapping_cylinder(
             _level(TETRAHEDRON, 4), [0, 1, 2, 3], _level(TETRAHEDRON, 4)
         )
         pair = _product_history(2)
-        self.assertEqual(list(step.complex.fVector()), list(pair.complex.fVector()))
+        self.assertEqual(list(step.complex.f_vector()), list(pair.complex.f_vector()))
 
     def test_a_malformed_history_is_refused_by_name(self):
         with self.assertRaises(ValueError):
@@ -203,53 +203,53 @@ class TestCoorientedCut(unittest.TestCase):
 
     def test_a_level_cut_separates_and_is_cooriented_outward(self):
         W = _product_history(3)
-        cut = obs.ClusterLineage.levelCut(W, 0)
+        cut = obs.ClusterLineage.level_cut(W, 0)
         self.assertTrue(cut.separates)
         self.assertEqual(list(cut.side), [0] * 4 + [1] * 8)
         # Every incoming vertex id is below every outgoing one, so the
         # canonical orientation of a crossing edge already runs from the
         # incoming side to the outgoing side.
-        self.assertTrue(all(sign == +1 for sign in cut.crossingSigns))
-        self.assertEqual(len(cut.crossingEdges), len(set(cut.crossingEdges)))
+        self.assertTrue(all(sign == +1 for sign in cut.crossing_signs))
+        self.assertEqual(len(cut.crossing_edges), len(set(cut.crossing_edges)))
 
     def test_every_level_boundary_supplies_a_cut(self):
         W = _product_history(3)
         for after in (0, 1):
-            self.assertTrue(obs.ClusterLineage.levelCut(W, after).separates)
+            self.assertTrue(obs.ClusterLineage.level_cut(W, after).separates)
         with self.assertRaises(ValueError):
-            obs.ClusterLineage.levelCut(W, 2)
+            obs.ClusterLineage.level_cut(W, 2)
 
     def test_a_cut_may_be_moved_past_an_interior_vertex(self):
         W = _product_history(3)
-        side = list(obs.ClusterLineage.levelCut(W, 0).side)
+        side = list(obs.ClusterLineage.level_cut(W, 0).side)
         side[4] = 0  # vertex 4 is interior: it lies on level 1
-        moved = obs.ClusterLineage.cutFromSides(W, side)
+        moved = obs.ClusterLineage.cut_from_sides(W, side)
         self.assertTrue(moved.separates)
 
     def test_a_cut_that_leaves_a_boundary_on_the_wrong_side_refuses_by_name(self):
         W = _product_history(3)
-        allIncoming = obs.ClusterLineage.cutFromSides(W, [0] * 12)
+        allIncoming = obs.ClusterLineage.cut_from_sides(W, [0] * 12)
         self.assertFalse(allIncoming.separates)
         self.assertIn(
-            "outgoing-boundary-not-on-the-outgoing-side", list(allIncoming.failedCertificates)
+            "outgoing-boundary-not-on-the-outgoing-side", list(allIncoming.failed_certificates)
         )
-        allOutgoing = obs.ClusterLineage.cutFromSides(W, [1] * 12)
+        allOutgoing = obs.ClusterLineage.cut_from_sides(W, [1] * 12)
         self.assertFalse(allOutgoing.separates)
         self.assertIn(
-            "incoming-boundary-not-on-the-incoming-side", list(allOutgoing.failedCertificates)
+            "incoming-boundary-not-on-the-incoming-side", list(allOutgoing.failed_certificates)
         )
 
     def test_a_side_that_is_not_binary_refuses_by_name(self):
         W = _product_history(3)
         side = [0] * 4 + [2] * 4 + [1] * 4
-        cut = obs.ClusterLineage.cutFromSides(W, side)
+        cut = obs.ClusterLineage.cut_from_sides(W, side)
         self.assertFalse(cut.separates)
-        self.assertIn("cut-side-not-binary", list(cut.failedCertificates))
+        self.assertIn("cut-side-not-binary", list(cut.failed_certificates))
 
     def test_a_side_of_the_wrong_length_is_refused(self):
         W = _product_history(3)
         with self.assertRaises(ValueError):
-            obs.ClusterLineage.cutFromSides(W, [0] * 11)
+            obs.ClusterLineage.cut_from_sides(W, [0] * 11)
 
 
 # --------------------------------------------------------------------------- #
@@ -261,20 +261,20 @@ class TestLineageNumber(unittest.TestCase):
 
     def test_a_cluster_crossing_the_cobordism_has_lineage_number_one(self):
         W = _product_history(3)
-        cut = obs.ClusterLineage.levelCut(W, 0)
-        lineage = obs.ClusterLineage.fromFiberPath(W, 0, 1, "Q")
+        cut = obs.ClusterLineage.level_cut(W, 0)
+        lineage = obs.ClusterLineage.from_fiber_path(W, 0, 1, "Q")
         read = obs.ClusterLineage.read(W, cut, lineage)
         self.assertEqual(read.number, +1)
-        self.assertEqual(read.clusterId, "Q")
-        self.assertTrue(read.relativeCycle)
-        self.assertTrue(read.cutSeparates)
-        self.assertEqual(list(read.interiorSources), [])
-        self.assertEqual(list(read.failedCertificates), [])
+        self.assertEqual(read.cluster_id, "Q")
+        self.assertTrue(read.relative_cycle)
+        self.assertTrue(read.cut_separates)
+        self.assertEqual(list(read.interior_sources), [])
+        self.assertEqual(list(read.failed_certificates), [])
 
     def test_the_oppositely_oriented_lineage_has_lineage_number_minus_one(self):
         W = _product_history(3)
-        cut = obs.ClusterLineage.levelCut(W, 0)
-        lineage = obs.ClusterLineage.fromFiberPath(W, 0)
+        cut = obs.ClusterLineage.level_cut(W, 0)
+        lineage = obs.ClusterLineage.from_fiber_path(W, 0)
         antiLineage = obs.ClusterLineage.reversed(lineage)
         self.assertEqual(obs.ClusterLineage.read(W, cut, antiLineage).number, -1)
         np.testing.assert_array_equal(
@@ -283,51 +283,51 @@ class TestLineageNumber(unittest.TestCase):
 
     def test_the_lineage_number_does_not_depend_on_the_cut(self):
         W = _product_history(3)
-        lineage = obs.ClusterLineage.fromFiberPath(W, 1)
+        lineage = obs.ClusterLineage.from_fiber_path(W, 1)
         numbers = []
         for after in (0, 1):
             numbers.append(
-                obs.ClusterLineage.intersectionNumber(
-                    W, obs.ClusterLineage.levelCut(W, after), lineage
+                obs.ClusterLineage.intersection_number(
+                    W, obs.ClusterLineage.level_cut(W, after), lineage
                 )
             )
         # and a cut that is not a level cut: one interior vertex moved across
-        side = list(obs.ClusterLineage.levelCut(W, 0).side)
+        side = list(obs.ClusterLineage.level_cut(W, 0).side)
         side[5] = 0
         numbers.append(
-            obs.ClusterLineage.intersectionNumber(
-                W, obs.ClusterLineage.cutFromSides(W, side), lineage
+            obs.ClusterLineage.intersection_number(
+                W, obs.ClusterLineage.cut_from_sides(W, side), lineage
             )
         )
         self.assertEqual(numbers, [+1, +1, +1])
 
     def test_the_pairing_is_the_sum_over_the_crossing_edges(self):
         W = _product_history(3)
-        cut = obs.ClusterLineage.levelCut(W, 1)
-        lineage = obs.ClusterLineage.fromFiberPath(W, 2)
+        cut = obs.ClusterLineage.level_cut(W, 1)
+        lineage = obs.ClusterLineage.from_fiber_path(W, 2)
         coefficients = _coefficients(lineage)
         byCrossing = sum(
             int(coefficients[edge]) * sign
-            for edge, sign in zip(cut.crossingEdges, cut.crossingSigns)
+            for edge, sign in zip(cut.crossing_edges, cut.crossing_signs)
         )
-        self.assertEqual(byCrossing, obs.ClusterLineage.intersectionNumber(W, cut, lineage))
+        self.assertEqual(byCrossing, obs.ClusterLineage.intersection_number(W, cut, lineage))
 
     def test_a_lineage_with_a_source_in_the_slab_makes_two_cuts_disagree(self):
         W = _product_history(3)
-        stopped = obs.ClusterLineage.fromVertexPath(W, [0, 4], 1, "stopped")
-        below = obs.ClusterLineage.read(W, obs.ClusterLineage.levelCut(W, 0), stopped)
-        above = obs.ClusterLineage.read(W, obs.ClusterLineage.levelCut(W, 1), stopped)
+        stopped = obs.ClusterLineage.from_vertex_path(W, [0, 4], 1, "stopped")
+        below = obs.ClusterLineage.read(W, obs.ClusterLineage.level_cut(W, 0), stopped)
+        above = obs.ClusterLineage.read(W, obs.ClusterLineage.level_cut(W, 1), stopped)
         self.assertEqual(below.number, +1)
         self.assertEqual(above.number, 0)
         for read in (below, above):
-            self.assertFalse(read.relativeCycle)
-            self.assertEqual(list(read.interiorSources), [4])
-            self.assertIn("lineage-not-a-relative-cycle", list(read.failedCertificates))
+            self.assertFalse(read.relative_cycle)
+            self.assertEqual(list(read.interior_sources), [4])
+            self.assertIn("lineage-not-a-relative-cycle", list(read.failed_certificates))
 
     def test_the_boundary_of_a_lineage_is_its_two_endpoints(self):
         W = _product_history(3)
-        lineage = obs.ClusterLineage.fromFiberPath(W, 3)
-        boundary = np.asarray(obs.ClusterLineage.relativeBoundary(W, lineage), dtype=np.int64)
+        lineage = obs.ClusterLineage.from_fiber_path(W, 3)
+        boundary = np.asarray(obs.ClusterLineage.relative_boundary(W, lineage), dtype=np.int64)
         expected = np.zeros(12, dtype=np.int64)
         expected[3] = -1
         expected[11] = +1
@@ -335,18 +335,18 @@ class TestLineageNumber(unittest.TestCase):
 
     def test_a_reading_against_a_cut_that_does_not_separate_refuses_by_name(self):
         W = _product_history(3)
-        cut = obs.ClusterLineage.cutFromSides(W, [0] * 12)
-        read = obs.ClusterLineage.read(W, cut, obs.ClusterLineage.fromFiberPath(W, 0))
-        self.assertFalse(read.cutSeparates)
-        self.assertIn("cut-does-not-separate", list(read.failedCertificates))
+        cut = obs.ClusterLineage.cut_from_sides(W, [0] * 12)
+        read = obs.ClusterLineage.read(W, cut, obs.ClusterLineage.from_fiber_path(W, 0))
+        self.assertFalse(read.cut_separates)
+        self.assertIn("cut-does-not-separate", list(read.failed_certificates))
 
     def test_the_lineage_number_is_one_through_a_collapsing_reduction(self):
         W = _collapsing_history()
         for start in (0, 1, 2, 3):
-            lineage = obs.ClusterLineage.fromFiberPath(W, start)
+            lineage = obs.ClusterLineage.from_fiber_path(W, start)
             for after in (0, 1):
-                cut = obs.ClusterLineage.levelCut(W, after)
-                self.assertEqual(obs.ClusterLineage.intersectionNumber(W, cut, lineage), +1)
+                cut = obs.ClusterLineage.level_cut(W, after)
+                self.assertEqual(obs.ClusterLineage.intersection_number(W, cut, lineage), +1)
 
 
 # --------------------------------------------------------------------------- #
@@ -357,31 +357,31 @@ class TestTrackedLineage(unittest.TestCase):
 
     def test_a_tracked_support_gives_the_fiber_path_of_its_representative(self):
         W = _collapsing_history()
-        tracked = obs.ClusterLineage.fromTrackedSupports(W, 0, [[0, 1], [0], [0]], 1, "Q")
+        tracked = obs.ClusterLineage.from_tracked_supports(W, 0, [[0, 1], [0], [0]], 1, "Q")
         np.testing.assert_array_equal(
-            _coefficients(tracked), _coefficients(obs.ClusterLineage.fromFiberPath(W, 0))
+            _coefficients(tracked), _coefficients(obs.ClusterLineage.from_fiber_path(W, 0))
         )
 
     def test_which_representative_is_chosen_does_not_change_the_number(self):
         W = _collapsing_history()
-        cut = obs.ClusterLineage.levelCut(W, 0)
-        first = obs.ClusterLineage.fromTrackedSupports(W, 0, [[0, 1], [0], [0]])
-        second = obs.ClusterLineage.fromTrackedSupports(W, 0, [[2, 3], [1], [0]])
+        cut = obs.ClusterLineage.level_cut(W, 0)
+        first = obs.ClusterLineage.from_tracked_supports(W, 0, [[0, 1], [0], [0]])
+        second = obs.ClusterLineage.from_tracked_supports(W, 0, [[2, 3], [1], [0]])
         self.assertNotEqual(list(first.coefficients), list(second.coefficients))
         self.assertEqual(
-            obs.ClusterLineage.intersectionNumber(W, cut, first),
-            obs.ClusterLineage.intersectionNumber(W, cut, second),
+            obs.ClusterLineage.intersection_number(W, cut, first),
+            obs.ClusterLineage.intersection_number(W, cut, second),
         )
 
     def test_a_support_the_representative_does_not_reduce_into_is_refused(self):
         W = _collapsing_history()
         with self.assertRaises(ValueError):
-            obs.ClusterLineage.fromTrackedSupports(W, 0, [[0, 1], [1], [0]])
+            obs.ClusterLineage.from_tracked_supports(W, 0, [[0, 1], [1], [0]])
 
     def test_supports_running_past_the_last_level_are_refused(self):
         W = _collapsing_history()
         with self.assertRaises(ValueError):
-            obs.ClusterLineage.fromTrackedSupports(W, 1, [[0], [0], [0]])
+            obs.ClusterLineage.from_tracked_supports(W, 1, [[0], [0], [0]])
 
 
 # --------------------------------------------------------------------------- #
@@ -394,35 +394,35 @@ class TestPairCreation(unittest.TestCase):
     def test_the_boundary_of_any_pair_surface_pairs_to_zero(self):
         W = _product_history(3)
         rng = np.random.default_rng(17)
-        surface = [int(value) for value in rng.integers(-3, 4, W.complex.numSimplices(2))]
-        boundary = obs.ClusterLineage.pairSurfaceBoundary(W, surface)
+        surface = [int(value) for value in rng.integers(-3, 4, W.complex.num_simplices(2))]
+        boundary = obs.ClusterLineage.pair_surface_boundary(W, surface)
         for after in (0, 1):
-            cut = obs.ClusterLineage.levelCut(W, after)
-            self.assertEqual(obs.ClusterLineage.intersectionNumber(W, cut, boundary), 0)
+            cut = obs.ClusterLineage.level_cut(W, after)
+            self.assertEqual(obs.ClusterLineage.intersection_number(W, cut, boundary), 0)
 
     def test_an_explicit_pair_surface_creates_plus_one_and_minus_one(self):
         W = _product_history(3)
-        cut = obs.ClusterLineage.levelCut(W, 0)
+        cut = obs.ClusterLineage.level_cut(W, 0)
         # The prism over level 0's edge (0, 1) is the square with corners 0, 1
         # below and 4, 5 above, triangulated as (0,1,5) and (0,4,5). Its
         # boundary is the loop 0 -> 1 -> 5 -> 4 -> 0.
-        surface = [0] * W.complex.numSimplices(2)
+        surface = [0] * W.complex.num_simplices(2)
         surface[_triangle_index(W, [0, 1, 5])] = +1
         surface[_triangle_index(W, [0, 4, 5])] = -1
-        boundary = obs.ClusterLineage.pairSurfaceBoundary(W, surface, 1, "pair")
-        self.assertEqual(obs.ClusterLineage.intersectionNumber(W, cut, boundary), 0)
+        boundary = obs.ClusterLineage.pair_surface_boundary(W, surface, 1, "pair")
+        self.assertEqual(obs.ClusterLineage.intersection_number(W, cut, boundary), 0)
 
         # The loop is the sum of the four declared edges, and its two crossing
         # pieces are a cluster and an anti-cluster.
         pieces = [
-            obs.ClusterLineage.fromVertexPath(W, [1, 5]),
-            obs.ClusterLineage.fromVertexPath(W, [0, 1]),
-            obs.ClusterLineage.reversed(obs.ClusterLineage.fromVertexPath(W, [4, 5])),
-            obs.ClusterLineage.reversed(obs.ClusterLineage.fromVertexPath(W, [0, 4])),
+            obs.ClusterLineage.from_vertex_path(W, [1, 5]),
+            obs.ClusterLineage.from_vertex_path(W, [0, 1]),
+            obs.ClusterLineage.reversed(obs.ClusterLineage.from_vertex_path(W, [4, 5])),
+            obs.ClusterLineage.reversed(obs.ClusterLineage.from_vertex_path(W, [0, 4])),
         ]
         total = sum(_coefficients(piece) for piece in pieces)
         np.testing.assert_array_equal(total, _coefficients(boundary))
-        numbers = [obs.ClusterLineage.intersectionNumber(W, cut, piece) for piece in pieces]
+        numbers = [obs.ClusterLineage.intersection_number(W, cut, piece) for piece in pieces]
         self.assertEqual(numbers, [+1, 0, 0, -1])
 
 
@@ -434,38 +434,38 @@ class TestTotals(unittest.TestCase):
 
     def test_three_one_sheeted_clusters_give_baryon_number_one(self):
         W = _product_history(3)
-        cut = obs.ClusterLineage.levelCut(W, 0)
-        lineages = [obs.ClusterLineage.fromFiberPath(W, v, 1, f"q{v}") for v in (0, 1, 2)]
+        cut = obs.ClusterLineage.level_cut(W, 0)
+        lineages = [obs.ClusterLineage.from_fiber_path(W, v, 1, f"q{v}") for v in (0, 1, 2)]
         total = obs.ClusterLineage.totals(W, cut, lineages)
-        self.assertEqual(total.fermionNumber, 3)
-        self.assertEqual(total.baryonNumber, 1.0)
-        self.assertEqual([read.number for read in total.perLineage], [1, 1, 1])
-        self.assertEqual(list(total.failedCertificates), [])
+        self.assertEqual(total.fermion_number, 3)
+        self.assertEqual(total.baryon_number, 1.0)
+        self.assertEqual([read.number for read in total.per_lineage], [1, 1, 1])
+        self.assertEqual(list(total.failed_certificates), [])
 
     def test_one_three_sheeted_cluster_gives_the_same_baryon_number(self):
         W = _product_history(3)
-        cut = obs.ClusterLineage.levelCut(W, 0)
-        sheeted = obs.ClusterLineage.fromFiberPath(W, 0, 3, "Q")
+        cut = obs.ClusterLineage.level_cut(W, 0)
+        sheeted = obs.ClusterLineage.from_fiber_path(W, 0, 3, "Q")
         total = obs.ClusterLineage.totals(W, cut, [sheeted])
-        self.assertEqual(total.fermionNumber, 3)
-        self.assertEqual(total.baryonNumber, 1.0)
+        self.assertEqual(total.fermion_number, 3)
+        self.assertEqual(total.baryon_number, 1.0)
 
     def test_a_cluster_and_an_anti_cluster_cancel(self):
         W = _product_history(3)
-        cut = obs.ClusterLineage.levelCut(W, 0)
-        lineage = obs.ClusterLineage.fromFiberPath(W, 0, 1, "Q")
+        cut = obs.ClusterLineage.level_cut(W, 0)
+        lineage = obs.ClusterLineage.from_fiber_path(W, 0, 1, "Q")
         total = obs.ClusterLineage.totals(
             W, cut, [lineage, obs.ClusterLineage.reversed(lineage)]
         )
-        self.assertEqual(total.fermionNumber, 0)
-        self.assertEqual(total.baryonNumber, 0.0)
+        self.assertEqual(total.fermion_number, 0)
+        self.assertEqual(total.baryon_number, 0.0)
 
     def test_a_failed_per_lineage_certificate_reaches_the_total(self):
         W = _product_history(3)
-        cut = obs.ClusterLineage.levelCut(W, 0)
-        stopped = obs.ClusterLineage.fromVertexPath(W, [0, 4])
+        cut = obs.ClusterLineage.level_cut(W, 0)
+        stopped = obs.ClusterLineage.from_vertex_path(W, [0, 4])
         total = obs.ClusterLineage.totals(W, cut, [stopped])
-        self.assertIn("lineage-not-a-relative-cycle", list(total.failedCertificates))
+        self.assertIn("lineage-not-a-relative-cycle", list(total.failed_certificates))
 
 
 # --------------------------------------------------------------------------- #
@@ -476,20 +476,20 @@ class TestRecords(unittest.TestCase):
 
     def test_the_cobordism_and_the_reads_produce_records(self):
         W = _product_history(3)
-        cut = obs.ClusterLineage.levelCut(W, 0)
-        lineage = obs.ClusterLineage.fromFiberPath(W, 0, 2, "Q")
-        record = W.toRecord()
+        cut = obs.ClusterLineage.level_cut(W, 0)
+        lineage = obs.ClusterLineage.from_fiber_path(W, 0, 2, "Q")
+        record = W.to_record()
         self.assertEqual(record["levels"], 3)
         self.assertEqual(record["dimension"], 4)
         self.assertEqual(record["fiber_edges"], 8)
-        self.assertTrue(cut.toRecord()["separates"])
-        self.assertEqual(lineage.toRecord()["fermion_number"], 2)
-        read = obs.ClusterLineage.read(W, cut, lineage).toRecord()
+        self.assertTrue(cut.to_record()["separates"])
+        self.assertEqual(lineage.to_record()["fermion_number"], 2)
+        read = obs.ClusterLineage.read(W, cut, lineage).to_record()
         self.assertEqual(read["number"], 1)
         self.assertEqual(read["cluster_id"], "Q")
-        total = obs.ClusterLineage.totals(W, cut, [lineage]).toRecord()
+        total = obs.ClusterLineage.totals(W, cut, [lineage]).to_record()
         self.assertEqual(total["fermion_number"], 2)
-        self.assertEqual(total["schema_version"], obs.ClusterLineage.kSchemaVersion)
+        self.assertEqual(total["schema_version"], obs.ClusterLineage.k_schema_version)
 
 
 if __name__ == "__main__":

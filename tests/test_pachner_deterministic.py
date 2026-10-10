@@ -41,11 +41,11 @@ def _build_small(n_simplices=10):
     st = tessera.Spacetime(metric, tessera.CDT, 1.0, 1.0, tessera.PREFERRED,
                          tessera.Toroid())
     st.build(n_simplices)
-    target = st.getN41()
+    target = st.get_n41()
     # epsilon=0 removes volume-fixing from acceptance (we call moves directly)
     cdt = tessera.CDTSimulation(st, 2.2, 0.5, 0.6, 0.0, target)
     # Disable vertex relabeling so fingerprint-based before/after comparisons work
-    cdt.setRelabelVertices(False)
+    cdt.set_relabel_vertices(False)
     return cdt, st
 
 
@@ -53,16 +53,16 @@ def _snapshot(st):
     """Capture the full lattice state as a dict."""
     top_fps = set()
     orientations = {}
-    for s in st.getSimplices():
-        if len(s.getVertices()) == 5:
+    for s in st.get_simplices():
+        if len(s.get_vertices()) == 5:
             fp = hash(s)
             top_fps.add(fp)
-            orientations[fp] = s.getOrientation().numeric()
+            orientations[fp] = s.get_orientation().numeric()
     return {
-        "n4": st.getTopSimplexCount(),
-        "n41": st.getN41(),
-        "n32": st.getN32(),
-        "n0": st.getVertexCount(),
+        "n4": st.get_top_simplex_count(),
+        "n41": st.get_n41(),
+        "n32": st.get_n32(),
+        "n0": st.get_vertex_count(),
         "top_fps": top_fps,
         "orientations": orientations,
     }
@@ -70,12 +70,12 @@ def _snapshot(st):
 
 def _verify_all_top_causal(st):
     """Assert every top simplex spans exactly 2 time slices."""
-    for s in st.getSimplices():
-        if len(s.getVertices()) != 5:
+    for s in st.get_simplices():
+        if len(s.get_vertices()) != 5:
             continue
-        times = set(v.getTime() for v in s.getVertices())
+        times = set(v.get_time() for v in s.get_vertices())
         assert len(times) == 2, (
-            f"Non-causal top simplex: orientation={s.getOrientation().numeric()}, "
+            f"Non-causal top simplex: orientation={s.get_orientation().numeric()}, "
             f"times={times}")
 
 
@@ -84,23 +84,23 @@ def _verify_counts_consistent(st):
     n41_manual = 0
     n32_manual = 0
     n_top = 0
-    for s in st.getSimplices():
-        if len(s.getVertices()) != 5:
+    for s in st.get_simplices():
+        if len(s.get_vertices()) != 5:
             continue
         n_top += 1
-        o = s.getOrientation().numeric()
+        o = s.get_orientation().numeric()
         if o in ((4, 1), (1, 4)):
             n41_manual += 1
         elif o in ((3, 2), (2, 3)):
             n32_manual += 1
         else:
             raise AssertionError(f"Invalid orientation {o}")
-    assert st.getTopSimplexCount() == st.getN41() + st.getN32(), (
-        f"N4 mismatch: {st.getTopSimplexCount()} != {st.getN41()} + {st.getN32()}")
-    assert st.getN41() == n41_manual, (
-        f"N41 mismatch: {st.getN41()} != {n41_manual}")
-    assert st.getN32() == n32_manual, (
-        f"N32 mismatch: {st.getN32()} != {n32_manual}")
+    assert st.get_top_simplex_count() == st.get_n41() + st.get_n32(), (
+        f"N4 mismatch: {st.get_top_simplex_count()} != {st.get_n41()} + {st.get_n32()}")
+    assert st.get_n41() == n41_manual, (
+        f"N41 mismatch: {st.get_n41()} != {n41_manual}")
+    assert st.get_n32() == n32_manual, (
+        f"N32 mismatch: {st.get_n32()} != {n32_manual}")
     assert n_top == n41_manual + n32_manual, (
         f"Non-CDT orientations: {n_top} top simplices, "
         f"{n41_manual} N41 + {n32_manual} N32")
@@ -190,7 +190,7 @@ class TestAddRemoveRoundTrip(unittest.TestCase):
         d = 4
         delta_n41 = 2 * d - 2
         cdt, st = _build_small(n_simplices=20)
-        original_n41 = st.getN41()
+        original_n41 = st.get_n41()
 
         for cycle in range(10):
             added = False
@@ -201,7 +201,7 @@ class TestAddRemoveRoundTrip(unittest.TestCase):
             if not added:
                 continue
 
-            self.assertEqual(st.getN41(), original_n41 + delta_n41,
+            self.assertEqual(st.get_n41(), original_n41 + delta_n41,
                              f"Cycle {cycle}: N41 should be original+{delta_n41}")
             _verify_counts_consistent(st)
             _verify_all_top_causal(st)
@@ -212,10 +212,10 @@ class TestAddRemoveRoundTrip(unittest.TestCase):
                     removed = True
                     break
             if not removed:
-                original_n41 = st.getN41()
+                original_n41 = st.get_n41()
                 continue
 
-            self.assertEqual(st.getN41(), original_n41,
+            self.assertEqual(st.get_n41(), original_n41,
                              f"Cycle {cycle}: N41 should return after remove")
             _verify_counts_consistent(st)
             _verify_all_top_causal(st)
@@ -276,7 +276,7 @@ class TestFlipRoundTrip(unittest.TestCase):
     def test_flip_twice_deltas_accumulate(self):
         """Two flips: each adds exactly +2 to N4."""
         cdt, st = _build_small(n_simplices=30)
-        n4_start = st.getTopSimplexCount()
+        n4_start = st.get_top_simplex_count()
 
         flips_done = 0
         for _ in range(5000):
@@ -296,9 +296,9 @@ class TestFlipRoundTrip(unittest.TestCase):
         cdt, st = _build_small(n_simplices=30)
 
         verts_before = set()
-        for s in st.getSimplices():
-            for v in s.getVertices():
-                verts_before.add(v.getId())
+        for s in st.get_simplices():
+            for v in s.get_vertices():
+                verts_before.add(v.get_id())
 
         for _ in range(2000):
             if cdt.flip():
@@ -307,9 +307,9 @@ class TestFlipRoundTrip(unittest.TestCase):
             self.skipTest("No flip accepted")
 
         verts_after = set()
-        for s in st.getSimplices():
-            for v in s.getVertices():
-                verts_after.add(v.getId())
+        for s in st.get_simplices():
+            for v in s.get_vertices():
+                verts_after.add(v.get_id())
 
         self.assertEqual(verts_before, verts_after,
                          "Flip should not change the vertex set")
@@ -398,9 +398,9 @@ class TestShiftRoundTrip(unittest.TestCase):
         cdt.sweep(50)
 
         verts_before = set()
-        for s in st.getSimplices():
-            for v in s.getVertices():
-                verts_before.add(v.getId())
+        for s in st.get_simplices():
+            for v in s.get_vertices():
+                verts_before.add(v.get_id())
 
         for _ in range(20000):
             if cdt.shift():
@@ -409,9 +409,9 @@ class TestShiftRoundTrip(unittest.TestCase):
             self.skipTest("No shift accepted")
 
         verts_after = set()
-        for s in st.getSimplices():
-            for v in s.getVertices():
-                verts_after.add(v.getId())
+        for s in st.get_simplices():
+            for v in s.get_vertices():
+                verts_after.add(v.get_id())
 
         self.assertEqual(verts_before, verts_after)
 
@@ -428,8 +428,8 @@ class TestMultiIterationRoundTrips(unittest.TestCase):
     def test_five_adds_then_five_removes(self):
         """5 adds then 5 removes: N41 should return to start."""
         cdt, st = _build_small(n_simplices=20)
-        n41_start = st.getN41()
-        n0_start = st.getVertexCount()
+        n41_start = st.get_n41()
+        n0_start = st.get_vertex_count()
 
         n_added = 0
         for _ in range(2500):
@@ -440,7 +440,7 @@ class TestMultiIterationRoundTrips(unittest.TestCase):
 
         d = 4
         delta_per_add = 2 * d - 2  # +6 per add in 4D
-        self.assertEqual(st.getN41(), n41_start + n_added * delta_per_add)
+        self.assertEqual(st.get_n41(), n41_start + n_added * delta_per_add)
         _verify_counts_consistent(st)
         _verify_all_top_causal(st)
 
@@ -453,7 +453,7 @@ class TestMultiIterationRoundTrips(unittest.TestCase):
 
         self.assertEqual(n_removed, n_added,
                          f"Could only remove {n_removed} of {n_added}")
-        self.assertEqual(st.getN41(), n41_start,
+        self.assertEqual(st.get_n41(), n41_start,
                          f"N41 should return to {n41_start}")
         _verify_counts_consistent(st)
         _verify_all_top_causal(st)
@@ -466,7 +466,7 @@ class TestMultiIterationRoundTrips(unittest.TestCase):
         reuse on small complexes).  We check the invariants regardless.
         """
         cdt, st = _build_small(n_simplices=50)
-        prev_n4 = st.getTopSimplexCount()
+        prev_n4 = st.get_top_simplex_count()
 
         flips = 0
         for _ in range(10000):
@@ -476,7 +476,7 @@ class TestMultiIterationRoundTrips(unittest.TestCase):
                 # On small lattices with rich topology, net change can be negative.
                 _verify_counts_consistent(st)
                 _verify_all_top_causal(st)
-                prev_n4 = st.getTopSimplexCount()
+                prev_n4 = st.get_top_simplex_count()
                 if flips >= 3:
                     return
 
@@ -497,11 +497,11 @@ class TestMultiIterationRoundTrips(unittest.TestCase):
 
         for iteration in range(20):
             for move, name in zip(moves, move_names):
-                before_n4 = st.getTopSimplexCount()
-                before_n0 = st.getVertexCount()
+                before_n4 = st.get_top_simplex_count()
+                before_n0 = st.get_vertex_count()
                 if move():
-                    after_n4 = st.getTopSimplexCount()
-                    after_n0 = st.getVertexCount()
+                    after_n4 = st.get_top_simplex_count()
+                    after_n0 = st.get_vertex_count()
 
                     if name == "add":
                         # (2,2d) add: dN41 = +(2d-2) = +6 in 4D
@@ -546,11 +546,11 @@ class TestAddRemoveVertexStructure(unittest.TestCase):
             self.skipTest("No add accepted")
 
         # Find the new vertex (highest ID)
-        all_verts = st.getVertexList().toVector()
-        new_vert = max(all_verts, key=lambda v: v.getId())
+        all_verts = st.get_vertex_list().to_vector()
+        new_vert = max(all_verts, key=lambda v: v.get_id())
 
-        top_count = sum(1 for s in st.getSimplices()
-                        if len(s.getVertices()) == 5 and s.hasVertex(new_vert))
+        top_count = sum(1 for s in st.get_simplices()
+                        if len(s.get_vertices()) == 5 and s.has_vertex(new_vert))
 
         d = 4
         self.assertEqual(top_count, 2 * d,
@@ -567,14 +567,14 @@ class TestAddRemoveVertexStructure(unittest.TestCase):
         else:
             self.skipTest("No add accepted")
 
-        all_verts = st.getVertexList().toVector()
-        new_vert = max(all_verts, key=lambda v: v.getId())
+        all_verts = st.get_vertex_list().to_vector()
+        new_vert = max(all_verts, key=lambda v: v.get_id())
 
         # d+2 edges: d to spatial vertices + 2 to non-spatial
         d = 4
         edge_pairs = set()
-        for e in new_vert.getEdges():
-            a, b = e.getSource().getId(), e.getTarget().getId()
+        for e in new_vert.get_edges():
+            a, b = e.get_source().get_id(), e.get_target().get_id()
             edge_pairs.add((min(a, b), max(a, b)))
         self.assertEqual(len(edge_pairs), d + 2,
                          f"Added vertex should have {d+2} edges, "

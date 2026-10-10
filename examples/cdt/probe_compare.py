@@ -31,13 +31,13 @@ def ds_at_targets(st, sigma_targets, max_sigma, n_walks, seed):
     """D_S at each target sigma, read off the dual-graph spectral-
     dimension curve.  Returns ``(sg, [D_S or None per target])``;
     ``(None, [...])`` for an empty / edgeless dual graph."""
-    sg = st.getDualGraph()
-    if sg.nNodes() < 2 or sg.nEdges() == 0:
+    sg = st.get_dual_graph()
+    if sg.n_nodes() < 2 or sg.n_edges() == 0:
         return None, [None] * len(sigma_targets)
     sigmas = np.geomspace(1.0, float(max_sigma), N_SIGMA)
-    P = sg.returnProbability(list(sigmas), m=n_walks, seed=seed)
+    P = sg.return_probability(list(sigmas), m=n_walks, seed=seed)
     ds = np.asarray(
-        tessera.SparseGraph.spectralDimensionCurve(list(sigmas), list(P)))
+        tessera.SparseGraph.spectral_dimension_curve(list(sigmas), list(P)))
     out = []
     for s_t in sigma_targets:
         idx = int(np.argmin(np.abs(sigmas - s_t)))
@@ -47,8 +47,8 @@ def ds_at_targets(st, sigma_targets, max_sigma, n_walks, seed):
 
 
 def slice_widths(st):
-    times = list(st.getTimeSlices())
-    return [len(st.getVerticesAtTime(t)) for t in times]
+    times = list(st.get_time_slices())
+    return [len(st.get_vertices_at_time(t)) for t in times]
 
 
 def run(label, max_build, target, n_therm, max_sigma, n_walks, seed):
@@ -75,8 +75,8 @@ def run(label, max_build, target, n_therm, max_sigma, n_walks, seed):
         return
     widths = slice_widths(st)
     n_layers = len(widths)
-    n4 = st.getTopSimplexCount()
-    n41 = st.getN41()
+    n4 = st.get_top_simplex_count()
+    n41 = st.get_n41()
 
     print(f"\n=== {label} ===")
     print(f"  setup: max_build={max_build} target={target} n_therm={n_therm}")

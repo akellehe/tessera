@@ -36,8 +36,8 @@ edge from $v$ to $w$ is $e^{i k \cdot \Delta x_{vw}}$ with $\Delta x_{vw}$ the
 unwrapped displacement of the edge. Its curvature is 1 on every triangle and its
 holonomy around the fundamental cycle along the lattice vector $a_i$ is
 $e^{i k \cdot a_i}$. `CrystalCell.pencil` assembles the pencil at that
-connection with `CovariantChainHodge.sparsePencil` and
-`dressedVertexPotential`. Because such a connection is a pure gauge on every
+connection with `CovariantChainHodge.sparse_pencil` and
+`dressed_vertex_potential`. Because such a connection is a pure gauge on every
 tetrahedron, dressing the pencil by it multiplies the entry $(v, w)$ of both
 matrices by the link $U_{vw}$; `CrystalCell.certify` holds that entrywise form
 to the assembly and measures the premises the solver relies on

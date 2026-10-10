@@ -74,7 +74,7 @@ PYBIND11_MODULE(_tessera_rl, m) {
       .def_readonly("done", &StepResult::done)
       .def_readonly("move", &StepResult::move)
       .def_readonly("F", &StepResult::F)
-      .def_readonly("delta_F", &StepResult::deltaF)
+      .def_readonly("delta_f", &StepResult::deltaF)
       .def_readonly("r_u", &StepResult::rU)
       .def_readonly("rstate", &StepResult::rstate)
       .def_readonly("holes", &StepResult::holes)
@@ -96,7 +96,7 @@ PYBIND11_MODULE(_tessera_rl, m) {
       .def_property_readonly("obs_dim", &CobordismObjectiveEnv::obsDim)
       .def_property_readonly("num_moves", &CobordismObjectiveEnv::numMoves)
       .def_property_readonly("param_dim", &CobordismObjectiveEnv::paramDim)
-      .def_property_readonly("current_F", &CobordismObjectiveEnv::currentF)
+      .def_property_readonly("current_f", &CobordismObjectiveEnv::currentF)
       .def_property_readonly("node", &CobordismObjectiveEnv::node,
           "The environment's current MultiCobordism node, for drawing and metrics: node.st, "
           "node.objective(), emergent_holes(node.st, k), and so on.");
@@ -147,7 +147,7 @@ PYBIND11_MODULE(_tessera_rl, m) {
       .def_readonly("carry_rate", &EvalSummary::carryRate)
       .def_readonly("mean_holes", &EvalSummary::meanHoles)
       .def_readonly("mean_rstate", &EvalSummary::meanRstate)
-      .def_readonly("mean_final_F", &EvalSummary::meanFinalF)
+      .def_readonly("mean_final_f", &EvalSummary::meanFinalF)
       .def_readonly("mean_reward", &EvalSummary::meanReward);
 
   py::class_<IterStat>(m, "IterStat")

@@ -2,10 +2,10 @@
 # All rights reserved.
 """The N-qubit density-matrix utilities bound from quantum/DensityMatrix.hpp.
 
-* ``partialTrace(rho, n, keep)`` agrees with an independent numpy partial
+* ``partial_trace(rho, n, keep)`` agrees with an independent numpy partial
   trace on random states, keeps the listed order of the kept qubits, returns
   the trace for an empty ``keep``, and refuses malformed arguments;
-* ``randomCorrelatedState(n, seed)`` returns a density matrix (Hermitian,
+* ``random_correlated_state(n, seed)`` returns a density matrix (Hermitian,
   unit trace, positive semidefinite) that a seed reproduces and in which
   every pair of qubits shares mutual information.
 
@@ -20,8 +20,8 @@ import unittest
 import numpy as np
 
 try:
-    from tessera.quantum import (MutualInformation, mutualInformation, partialTrace,
-                                 randomCorrelatedState)
+    from tessera.quantum import (MutualInformation, mutual_information, partial_trace,
+                                 random_correlated_state)
     HAVE_QUANTUM = True
 except ImportError:
     HAVE_QUANTUM = False
@@ -57,18 +57,18 @@ class TestPartialTrace(unittest.TestCase):
                 for keep in itertools.permutations(range(n), k):
                     if k > 2 and keep != tuple(sorted(keep)):
                         continue                     # orders of larger sets: sorted only
-                    np.testing.assert_allclose(partialTrace(rho, n, list(keep)),
+                    np.testing.assert_allclose(partial_trace(rho, n, list(keep)),
                                                numpy_partial_trace(rho, n, keep), atol=1e-13)
 
     def test_kept_order_swaps_the_factors(self):
         a, b = ginibre_state(np.random.default_rng(2), 1), ginibre_state(np.random.default_rng(3), 1)
         rho = np.kron(np.kron(a, np.eye(2) / 2), b)
-        np.testing.assert_allclose(partialTrace(rho, 3, [0, 2]), np.kron(a, b), atol=1e-14)
-        np.testing.assert_allclose(partialTrace(rho, 3, [2, 0]), np.kron(b, a), atol=1e-14)
+        np.testing.assert_allclose(partial_trace(rho, 3, [0, 2]), np.kron(a, b), atol=1e-14)
+        np.testing.assert_allclose(partial_trace(rho, 3, [2, 0]), np.kron(b, a), atol=1e-14)
 
     def test_empty_keep_is_the_trace(self):
         rho = ginibre_state(np.random.default_rng(4), 3)
-        out = partialTrace(rho, 3, [])
+        out = partial_trace(rho, 3, [])
         self.assertEqual(out.shape, (1, 1))
         self.assertAlmostEqual(out[0, 0].real, 1.0, places=13)
 
@@ -76,7 +76,7 @@ class TestPartialTrace(unittest.TestCase):
         rho = np.eye(8, dtype=complex) / 8
         for n, keep in ((3, [0, 0]), (3, [3]), (3, [-1]), (2, [0]), (0, [])):
             with self.assertRaises(ValueError, msg=(n, keep)):
-                partialTrace(rho, n, keep)
+                partial_trace(rho, n, keep)
 
 
 @unittest.skipUnless(HAVE_QUANTUM, "tessera built without the quantum subsystem")
@@ -84,32 +84,32 @@ class TestRandomCorrelatedState(unittest.TestCase):
 
     def test_is_a_density_matrix(self):
         for n in (1, 2, 3, 4):
-            rho = randomCorrelatedState(n, 7 + n)
+            rho = random_correlated_state(n, 7 + n)
             self.assertEqual(rho.shape, (2 ** n, 2 ** n))
             np.testing.assert_allclose(rho, rho.conj().T, atol=1e-14)
             self.assertAlmostEqual(np.trace(rho).real, 1.0, places=13)
             self.assertGreater(np.linalg.eigvalsh(rho).min(), -1e-14)
 
     def test_seed_reproduces_and_distinguishes(self):
-        np.testing.assert_array_equal(randomCorrelatedState(3, 11), randomCorrelatedState(3, 11))
-        self.assertGreater(np.abs(randomCorrelatedState(3, 11)
-                                  - randomCorrelatedState(3, 12)).max(), 1e-3)
+        np.testing.assert_array_equal(random_correlated_state(3, 11), random_correlated_state(3, 11))
+        self.assertGreater(np.abs(random_correlated_state(3, 11)
+                                  - random_correlated_state(3, 12)).max(), 1e-3)
 
     def test_every_pair_shares_mutual_information(self):
-        rho = randomCorrelatedState(4, 5)
+        rho = random_correlated_state(4, 5)
         for i, j in itertools.combinations(range(4), 2):
-            self.assertGreater(mutualInformation(partialTrace(rho, 4, [i, j]), 2, 2), 1e-6)
+            self.assertGreater(mutual_information(partial_trace(rho, 4, [i, j]), 2, 2), 1e-6)
 
     def test_refuses_a_bad_qubit_count(self):
         for n in (0, 31):
             with self.assertRaises(ValueError):
-                randomCorrelatedState(n, 1)
+                random_correlated_state(n, 1)
 
     def test_entropy_of_the_reduced_state_matches_numpy(self):
-        rho = randomCorrelatedState(3, 9)
-        reduced = partialTrace(rho, 3, [1])
+        rho = random_correlated_state(3, 9)
+        reduced = partial_trace(rho, 3, [1])
         w = np.linalg.eigvalsh(reduced)
-        self.assertAlmostEqual(MutualInformation.vonNeumannEntropy(reduced),
+        self.assertAlmostEqual(MutualInformation.von_neumann_entropy(reduced),
                                float(-(w * np.log(w)).sum()), places=12)
 
 

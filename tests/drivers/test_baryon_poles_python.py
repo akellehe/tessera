@@ -41,7 +41,7 @@ def test_the_host_carries_the_unit_monopole_on_every_sheet():
     spacetime = bp.build_host()
     for sheet in range(bp.SHEETS):
         support, departure = bp.sheet_support(spacetime, sheet)
-        read = support.monopoleNumber()
+        read = support.monopole_number()
         assert read.monopole_number == 1 and read.odd and read.bundle
         assert departure < 1e-14
     faces = cob.JointAction(
@@ -99,7 +99,7 @@ def test_a_cell_with_one_length_changed_keeps_the_rotations_fixing_that_edge():
 
 def test_the_sheets_are_isomorphic():
     spacetime = bp.build_host()
-    read = obs.SheetedSupport(3, 6).certifyIsomorphism(
+    read = obs.SheetedSupport(3, 6).certify_isomorphism(
         [np.array(bp.sheet_squared_lengths(spacetime, t)) for t in range(3)],
         [np.array(bp.sheet_links(spacetime, t)) for t in range(3)], 1e-12)
     assert read.isomorphic
@@ -179,8 +179,8 @@ def test_the_covariant_operator_at_the_monopole_is_not_rotation_symmetric():
     values = np.sort(np.linalg.eigvals(h).real)
     assert np.min(np.diff(values)) > 0.1
     support = bp.monopole_support()
-    worst = max(np.linalg.norm(np.asarray(support.edgeRepresentation(g)) @ h
-                               - h @ np.asarray(support.edgeRepresentation(g)))
+    worst = max(np.linalg.norm(np.asarray(support.edge_representation(g)) @ h
+                               - h @ np.asarray(support.edge_representation(g)))
                 for g in bp.rotation_group())
     assert worst / np.linalg.norm(h) > 0.1
 
@@ -420,7 +420,7 @@ def test_the_T_averaged_operator_carries_three_doublets(alignment):
     assert residual < 1e-12
     assert len({round(e.real, 9) for e in energies}) == 3
     combinatorial = np.kron(np.eye(bp.SHEETS),
-                            np.asarray(support.edgeLaplacian()))
+                            np.asarray(support.edge_laplacian()))
     values = np.sort(np.linalg.eigvals(
         bp.rotation_averaged(combinatorial, actions)).real)[::3]
     expected = [4 - 2 / np.sqrt(3)] * 2 + [4.0] * 2 + [4 + 2 / np.sqrt(3)] * 2
@@ -878,8 +878,8 @@ def test_the_refined_host_keeps_the_boundary_and_its_monopole():
     holonomies and the unit monopole through them are unchanged, and the new
     edges carry the centroid's lengths and the trivial link."""
     refined, data = bp.refined_host(bp.build_host())
-    assert len(refined.getVertexList().toVector()) == 15
-    assert len(refined.getEdgeList().toVector()) == 30
+    assert len(refined.get_vertex_list().to_vector()) == 15
+    assert len(refined.get_edge_list().to_vector()) == 30
     assert len(data) == bp.SHEETS
     for sheet in data:
         assert len(sheet["squared_lengths"]) == 10
@@ -889,9 +889,9 @@ def test_the_refined_host_keeps_the_boundary_and_its_monopole():
                    for k in new)
         assert all(abs(sheet["links"][k] - 1.0) < 1e-12 for k in new)
         support = bp.refined_support(sheet)
-        read = support.monopoleNumber()
+        read = support.monopole_number()
         assert read.monopole_number == 1 and read.odd
-        spin = support.spinRead(bp.refined_rotation_group())
+        spin = support.spin_read(bp.refined_rotation_group())
         assert spin.cocycle.nontrivial and spin.half_integer_doublet
 
 

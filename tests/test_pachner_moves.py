@@ -26,7 +26,7 @@ def _make_cdt(n_simplices=200, k0=2.2, delta=0.6, epsilon=0.02):
     st = tessera.Spacetime(metric, tessera.CDT, 1.0, 1.0, tessera.PREFERRED,
                          tessera.Toroid())
     st.build(n_simplices)
-    target = st.getN41()
+    target = st.get_n41()
     cdt = tessera.CDTSimulation(st, k0, 0.5, delta, epsilon, target)
     return cdt, st
 
@@ -34,8 +34,8 @@ def _make_cdt(n_simplices=200, k0=2.2, delta=0.6, epsilon=0.02):
 def _count_top_simplices(st):
     """Count top-dimensional (5-vertex) simplices by iterating."""
     count = 0
-    for s in st.getSimplices():
-        if len(s.getVertices()) == 5:
+    for s in st.get_simplices():
+        if len(s.get_vertices()) == 5:
             count += 1
     return count
 
@@ -43,9 +43,9 @@ def _count_top_simplices(st):
 def _count_orientations(st):
     """Return dict of orientation -> count for top simplices."""
     counts = {}
-    for s in st.getSimplices():
-        if len(s.getVertices()) == 5:
-            o = s.getOrientation().numeric()
+    for s in st.get_simplices():
+        if len(s.get_vertices()) == 5:
+            o = s.get_orientation().numeric()
             counts[o] = counts.get(o, 0) + 1
     return counts
 
@@ -65,28 +65,28 @@ class TestCountingInvariants(unittest.TestCase):
     """[RU] eq. 2: Verify that N4, N41, N32, profile sum are always consistent."""
 
     def test_n4_equals_n41_plus_n32_after_build(self):
-        """After build(), getTopSimplexCount() == getN41() + getN32()."""
+        """After build(), get_top_simplex_count() == get_n41() + get_n32()."""
         _, st = _make_cdt()
-        self.assertEqual(st.getTopSimplexCount(), st.getN41() + st.getN32())
+        self.assertEqual(st.get_top_simplex_count(), st.get_n41() + st.get_n32())
 
     def test_n4_matches_manual_count_after_build(self):
-        """getTopSimplexCount() matches manual iteration over simplices."""
+        """get_top_simplex_count() matches manual iteration over simplices."""
         _, st = _make_cdt()
-        self.assertEqual(st.getTopSimplexCount(), _count_top_simplices(st))
+        self.assertEqual(st.get_top_simplex_count(), _count_top_simplices(st))
 
     def test_n41_n32_match_orientation_count(self):
-        """N41/N32 from getN41()/getN32() match manual orientation count."""
+        """N41/N32 from get_n41()/get_n32() match manual orientation count."""
         _, st = _make_cdt()
         counts = _count_orientations(st)
         n41, n32 = _orientation_n41_n32(counts)
-        self.assertEqual(st.getN41(), n41)
-        self.assertEqual(st.getN32(), n32)
+        self.assertEqual(st.get_n41(), n41)
+        self.assertEqual(st.get_n32(), n32)
 
     def test_profile_sums_to_n4(self):
         """Volume profile entries should sum to N4."""
         cdt, st = _make_cdt()
-        profile = cdt.getVolumeProfile()
-        self.assertEqual(sum(profile), st.getTopSimplexCount())
+        profile = cdt.get_volume_profile()
+        self.assertEqual(sum(profile), st.get_top_simplex_count())
 
     def test_no_uncounted_orientations(self):
         """Every top simplex should have a valid CDT orientation."""
@@ -105,24 +105,24 @@ class TestCountingInvariants(unittest.TestCase):
         cdt.sweep(100)
 
         # N4 = N41 + N32
-        self.assertEqual(st.getTopSimplexCount(), st.getN41() + st.getN32())
+        self.assertEqual(st.get_top_simplex_count(), st.get_n41() + st.get_n32())
 
         # Manual count matches
-        self.assertEqual(st.getTopSimplexCount(), _count_top_simplices(st))
+        self.assertEqual(st.get_top_simplex_count(), _count_top_simplices(st))
 
         # Orientation counts match
         counts = _count_orientations(st)
         n41, n32 = _orientation_n41_n32(counts)
-        self.assertEqual(st.getN41(), n41)
-        self.assertEqual(st.getN32(), n32)
+        self.assertEqual(st.get_n41(), n41)
+        self.assertEqual(st.get_n32(), n32)
 
         # No uncounted
         self.assertEqual(n41 + n32, _count_top_simplices(st),
                          f"Uncounted after 100 sweeps: {counts}")
 
         # Profile sums
-        profile = cdt.getVolumeProfile()
-        self.assertEqual(sum(profile), st.getTopSimplexCount())
+        profile = cdt.get_volume_profile()
+        self.assertEqual(sum(profile), st.get_top_simplex_count())
 
 
 # =====================================================================
@@ -134,17 +134,17 @@ class TestCausalityInvariants(unittest.TestCase):
 
     def _check_all_causal(self, st, label=""):
         """Assert every top simplex spans exactly 2 time slices."""
-        for s in st.getSimplices():
-            verts = s.getVertices()
+        for s in st.get_simplices():
+            verts = s.get_vertices()
             if len(verts) != 5:
                 continue
             times = set()
             for v in verts:
-                times.add(v.getTime())
+                times.add(v.get_time())
             self.assertEqual(
                 len(times), 2,
                 f"{label}: top simplex spans {len(times)} time slices "
-                f"(times={times}, orientation={s.getOrientation().numeric()})")
+                f"(times={times}, orientation={s.get_orientation().numeric()})")
 
     def test_all_causal_after_build(self):
         _, st = _make_cdt()
@@ -178,12 +178,12 @@ class TestAddMove(unittest.TestCase):
         """(2,2d) add: dN0=+1, dN41=+6 in 4D."""
         cdt, st = _make_cdt(n_simplices=200)
         for _ in range(2000):
-            n0_before = st.getVertexCount()
-            n41_before = st.getN41()
+            n0_before = st.get_vertex_count()
+            n41_before = st.get_n41()
             if cdt.add():
-                self.assertEqual(st.getVertexCount(), n0_before + 1,
+                self.assertEqual(st.get_vertex_count(), n0_before + 1,
                                  "add() should increment vertex count by 1")
-                self.assertEqual(st.getN41(), n41_before + 6,
+                self.assertEqual(st.get_n41(), n41_before + 6,
                                  "add() should increment N41 by 2d-2=6")
                 return
         self.skipTest("No add accepted in 2000 attempts")
@@ -192,8 +192,8 @@ class TestAddMove(unittest.TestCase):
         cdt, st = _make_cdt(n_simplices=200)
         for _ in range(2000):
             if cdt.add():
-                self.assertEqual(st.getTopSimplexCount(),
-                                 st.getN41() + st.getN32())
+                self.assertEqual(st.get_top_simplex_count(),
+                                 st.get_n41() + st.get_n32())
                 counts = _count_orientations(st)
                 n41, n32 = _orientation_n41_n32(counts)
                 self.assertEqual(n41 + n32, _count_top_simplices(st))
@@ -217,9 +217,9 @@ class TestRemoveMove(unittest.TestCase):
         for _ in range(500):
             cdt.add()
         for _ in range(2000):
-            n41_before = st.getN41()
+            n41_before = st.get_n41()
             if cdt.remove():
-                self.assertEqual(st.getN41(), n41_before - 6,
+                self.assertEqual(st.get_n41(), n41_before - 6,
                                  "remove() should decrement N41 by 2d-2=6")
                 return
         self.skipTest("No remove accepted")
@@ -230,8 +230,8 @@ class TestRemoveMove(unittest.TestCase):
             cdt.add()
         for _ in range(2000):
             if cdt.remove():
-                self.assertEqual(st.getTopSimplexCount(),
-                                 st.getN41() + st.getN32())
+                self.assertEqual(st.get_top_simplex_count(),
+                                 st.get_n41() + st.get_n32())
                 return
         self.skipTest("No remove accepted")
 
@@ -246,9 +246,9 @@ class TestFlipMove(unittest.TestCase):
     def test_flip_preserves_vertex_count(self):
         cdt, st = _make_cdt(n_simplices=100)
         for _ in range(1000):
-            n0_before = st.getVertexCount()
+            n0_before = st.get_vertex_count()
             if cdt.flip():
-                self.assertEqual(st.getVertexCount(), n0_before,
+                self.assertEqual(st.get_vertex_count(), n0_before,
                                  "flip() should not change vertex count")
                 return
         self.skipTest("No flip accepted in 1000 attempts")
@@ -257,9 +257,9 @@ class TestFlipMove(unittest.TestCase):
         """(2,d) flip: 2→d means +2 top simplices in 4D (2→4)."""
         cdt, st = _make_cdt(n_simplices=100)
         for _ in range(1000):
-            n4_before = st.getTopSimplexCount()
+            n4_before = st.get_top_simplex_count()
             if cdt.flip():
-                delta_n4 = st.getTopSimplexCount() - n4_before
+                delta_n4 = st.get_top_simplex_count() - n4_before
                 self.assertGreaterEqual(delta_n4, 0,
                                         f"(2,4) flip should not decrease N4, got {delta_n4}")
                 self.assertLessEqual(delta_n4, 2,
@@ -271,8 +271,8 @@ class TestFlipMove(unittest.TestCase):
         cdt, st = _make_cdt(n_simplices=100)
         for _ in range(1000):
             if cdt.flip():
-                self.assertEqual(st.getTopSimplexCount(),
-                                 st.getN41() + st.getN32())
+                self.assertEqual(st.get_top_simplex_count(),
+                                 st.get_n41() + st.get_n32())
                 counts = _count_orientations(st)
                 n41, n32 = _orientation_n41_n32(counts)
                 self.assertEqual(n41 + n32, _count_top_simplices(st),
@@ -284,10 +284,10 @@ class TestFlipMove(unittest.TestCase):
         cdt, st = _make_cdt(n_simplices=100)
         for _ in range(1000):
             if cdt.flip():
-                for s in st.getSimplices():
-                    if len(s.getVertices()) != 5:
+                for s in st.get_simplices():
+                    if len(s.get_vertices()) != 5:
                         continue
-                    times = set(v.getTime() for v in s.getVertices())
+                    times = set(v.get_time() for v in s.get_vertices())
                     self.assertEqual(len(times), 2,
                                      f"Flip created non-causal simplex "
                                      f"with times {times}")
@@ -305,9 +305,9 @@ class TestShiftMove(unittest.TestCase):
     def test_shift_preserves_vertex_count(self):
         cdt, st = _make_cdt(n_simplices=100)
         for _ in range(1000):
-            n0_before = st.getVertexCount()
+            n0_before = st.get_vertex_count()
             if cdt.shift():
-                self.assertEqual(st.getVertexCount(), n0_before,
+                self.assertEqual(st.get_vertex_count(), n0_before,
                                  "shift() should not change vertex count")
                 return
         self.skipTest("No shift accepted in 1000 attempts")
@@ -316,9 +316,9 @@ class TestShiftMove(unittest.TestCase):
         """(3,3) shift: 3→3 means N4 unchanged."""
         cdt, st = _make_cdt(n_simplices=100)
         for _ in range(1000):
-            n4_before = st.getTopSimplexCount()
+            n4_before = st.get_top_simplex_count()
             if cdt.shift():
-                self.assertLessEqual(st.getTopSimplexCount(), n4_before,
+                self.assertLessEqual(st.get_top_simplex_count(), n4_before,
                                      "shift() should not increase N4")
                 return
         self.skipTest("No shift accepted")
@@ -327,8 +327,8 @@ class TestShiftMove(unittest.TestCase):
         cdt, st = _make_cdt(n_simplices=100)
         for _ in range(1000):
             if cdt.shift():
-                self.assertEqual(st.getTopSimplexCount(),
-                                 st.getN41() + st.getN32())
+                self.assertEqual(st.get_top_simplex_count(),
+                                 st.get_n41() + st.get_n32())
                 counts = _count_orientations(st)
                 n41, n32 = _orientation_n41_n32(counts)
                 self.assertEqual(n41 + n32, _count_top_simplices(st),
@@ -340,10 +340,10 @@ class TestShiftMove(unittest.TestCase):
         cdt, st = _make_cdt(n_simplices=100)
         for _ in range(1000):
             if cdt.shift():
-                for s in st.getSimplices():
-                    if len(s.getVertices()) != 5:
+                for s in st.get_simplices():
+                    if len(s.get_vertices()) != 5:
                         continue
-                    times = set(v.getTime() for v in s.getVertices())
+                    times = set(v.get_time() for v in s.get_vertices())
                     self.assertEqual(len(times), 2,
                                      f"Shift created non-causal simplex")
                 return
@@ -361,14 +361,14 @@ class TestActionConsistency(unittest.TestCase):
         """S = -(k0+6d)*N0 + (k4+2d)*N41 + (k4+d)*N32 + eps*(N41-tgt)^2"""
         k0, k4, delta, eps = 2.2, 0.5, 0.6, 0.02
         cdt, st = _make_cdt(n_simplices=100)
-        target = st.getN41()
+        target = st.get_n41()
         cdt = tessera.CDTSimulation(st, k0, k4, delta, eps, target)
 
-        action = cdt.computeAction()
+        action = cdt.compute_action()
 
-        n0 = st.getVertexCount()
-        n41 = st.getN41()
-        n32 = st.getN32()
+        n0 = st.get_vertex_count()
+        n41 = st.get_n41()
+        n32 = st.get_n32()
 
         expected = (-(k0 + 6*delta)*n0
                     + (k4 + 2*delta)*n41
@@ -381,16 +381,16 @@ class TestActionConsistency(unittest.TestCase):
         """Action formula still consistent after moves change the complex."""
         k0, k4, delta, eps = 2.2, 0.5, 0.6, 0.02
         cdt, st = _make_cdt(n_simplices=100)
-        target = st.getN41()
+        target = st.get_n41()
         cdt = tessera.CDTSimulation(st, k0, k4, delta, eps, target)
         cdt.tune()
-        k4 = cdt.getK4()  # tune changes k4
+        k4 = cdt.get_k4()  # tune changes k4
         cdt.sweep(50)
 
-        action = cdt.computeAction()
-        n0 = st.getVertexCount()
-        n41 = st.getN41()
-        n32 = st.getN32()
+        action = cdt.compute_action()
+        n0 = st.get_vertex_count()
+        n41 = st.get_n41()
+        n32 = st.get_n32()
 
         expected = (-(k0 + 6*delta)*n0
                     + (k4 + 2*delta)*n41
@@ -416,66 +416,66 @@ class TestTemporalOrientation(unittest.TestCase):
         self._st = tessera.Spacetime()
         verts = []
         for i, t in enumerate(times):
-            v = self._st.createVertex(i, [float(t)])
+            v = self._st.create_vertex(i, [float(t)])
             verts.append(v)
-        s, _ = self._st.createSimplex(verts)
+        s, _ = self._st.create_simplex(verts)
         return s
 
     def test_41_orientation(self):
         """4 vertices at t=0, 1 at t=1 → (4,1)."""
         s = self._make_simplex([0, 0, 0, 0, 1])
-        self.assertEqual(s.getOrientation().numeric(), (4, 1))
+        self.assertEqual(s.get_orientation().numeric(), (4, 1))
 
     def test_14_orientation(self):
         """1 vertex at t=0, 4 at t=1 → (1,4)."""
         s = self._make_simplex([0, 1, 1, 1, 1])
-        self.assertEqual(s.getOrientation().numeric(), (1, 4))
+        self.assertEqual(s.get_orientation().numeric(), (1, 4))
 
     def test_32_orientation(self):
         """3 at t=0, 2 at t=1 → (3,2)."""
         s = self._make_simplex([0, 0, 0, 1, 1])
-        self.assertEqual(s.getOrientation().numeric(), (3, 2))
+        self.assertEqual(s.get_orientation().numeric(), (3, 2))
 
     def test_23_orientation(self):
         """2 at t=0, 3 at t=1 → (2,3)."""
         s = self._make_simplex([0, 0, 1, 1, 1])
-        self.assertEqual(s.getOrientation().numeric(), (2, 3))
+        self.assertEqual(s.get_orientation().numeric(), (2, 3))
 
     def test_orientation_independent_of_vertex_order(self):
         """Orientation should be the same regardless of vertex ordering."""
         for times in [[0,0,0,0,1], [0,0,0,1,0], [0,0,1,0,0],
                       [0,1,0,0,0], [1,0,0,0,0]]:
             s = self._make_simplex(times)
-            self.assertEqual(s.getOrientation().numeric(), (4, 1),
+            self.assertEqual(s.get_orientation().numeric(), (4, 1),
                              f"times={times}")
 
     def test_all_same_time_gives_k0_orientation(self):
         """All vertices at same time → (5,0)."""
         s = self._make_simplex([0, 0, 0, 0, 0])
-        self.assertEqual(s.getOrientation().numeric(), (5, 0))
+        self.assertEqual(s.get_orientation().numeric(), (5, 0))
 
     def test_vertex_count_in_4simplex(self):
         """A 4-simplex should have exactly 5 vertices."""
         s = self._make_simplex([0, 0, 0, 1, 1])
-        self.assertEqual(len(s.getVertices()), 5)
+        self.assertEqual(len(s.get_vertices()), 5)
 
     def test_edge_count_in_4simplex(self):
         """A 4-simplex should have C(5,2) = 10 edges."""
         s = self._make_simplex([0, 0, 0, 1, 1])
-        self.assertEqual(len(s.getEdges()), 10)
+        self.assertEqual(len(s.get_edges()), 10)
 
     def test_facet_count_in_4simplex(self):
         """A 4-simplex should have C(5,4) = 5 facets (3-simplices)."""
-        # Use a full spacetime (not bare) so getFacets() can create sub-simplices
+        # Use a full spacetime (not bare) so get_facets() can create sub-simplices
         sig = tessera.Signature(4, tessera.Lorentzian)
         metric = tessera.Metric(True, sig)
         st = tessera.Spacetime(metric, tessera.CDT, 1.0, 1.0,
                              tessera.PREFERRED, tessera.Toroid())
         st.build(5)
         # Get any top simplex
-        for s in st.getSimplices():
-            if len(s.getVertices()) == 5:
-                self.assertEqual(len(s.getFacets()), 5)
+        for s in st.get_simplices():
+            if len(s.get_vertices()) == 5:
+                self.assertEqual(len(s.get_facets()), 5)
                 return
         self.fail("No top simplex found")
 
@@ -491,7 +491,7 @@ class TestVolumeProfile(unittest.TestCase):
         """No negative entries in the volume profile."""
         cdt, st = _make_cdt(n_simplices=100)
         cdt.sweep(20)
-        profile = cdt.getVolumeProfile()
+        profile = cdt.get_volume_profile()
         for v in profile:
             self.assertGreaterEqual(v, 0)
 
@@ -501,8 +501,8 @@ class TestVolumeProfile(unittest.TestCase):
         cdt.tune()
         for _ in range(10):
             cdt.sweep(10)
-            profile = cdt.getVolumeProfile()
-            self.assertEqual(sum(profile), st.getTopSimplexCount(),
+            profile = cdt.get_volume_profile()
+            self.assertEqual(sum(profile), st.get_top_simplex_count(),
                              "Profile sum != N4")
 
     def test_profile_consistent_with_manual_count(self):
@@ -512,15 +512,15 @@ class TestVolumeProfile(unittest.TestCase):
 
         # Manual count
         manual = {}
-        for s in st.getSimplices():
-            verts = s.getVertices()
+        for s in st.get_simplices():
+            verts = s.get_vertices()
             if len(verts) != 5:
                 continue
-            tmin = min(v.getTime() for v in verts)
+            tmin = min(v.get_time() for v in verts)
             manual[tmin] = manual.get(tmin, 0) + 1
 
         # From getVolumeProfile
-        profile = cdt.getVolumeProfile()
+        profile = cdt.get_volume_profile()
 
         # Compare
         if manual:
@@ -546,14 +546,14 @@ class TestSweepInvariants(unittest.TestCase):
             cdt.sweep(10)
             with self.subTest(sweep=(step + 1) * 10):
                 # N4 = N41 + N32
-                self.assertEqual(st.getTopSimplexCount(),
-                                 st.getN41() + st.getN32())
+                self.assertEqual(st.get_top_simplex_count(),
+                                 st.get_n41() + st.get_n32())
 
                 # Manual orientation count matches
                 counts = _count_orientations(st)
                 n41, n32 = _orientation_n41_n32(counts)
-                self.assertEqual(st.getN41(), n41)
-                self.assertEqual(st.getN32(), n32)
+                self.assertEqual(st.get_n41(), n41)
+                self.assertEqual(st.get_n32(), n32)
 
                 # No non-CDT orientations
                 total = sum(counts.values())
@@ -562,14 +562,14 @@ class TestSweepInvariants(unittest.TestCase):
                                  f"{(step+1)*10}: {counts}")
 
                 # Profile consistency
-                profile = cdt.getVolumeProfile()
-                self.assertEqual(sum(profile), st.getTopSimplexCount())
+                profile = cdt.get_volume_profile()
+                self.assertEqual(sum(profile), st.get_top_simplex_count())
 
                 # Causality: every top simplex spans 2 times
-                for s in st.getSimplices():
-                    if len(s.getVertices()) != 5:
+                for s in st.get_simplices():
+                    if len(s.get_vertices()) != 5:
                         continue
-                    times = set(v.getTime() for v in s.getVertices())
+                    times = set(v.get_time() for v in s.get_vertices())
                     self.assertEqual(len(times), 2)
 
 

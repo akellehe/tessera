@@ -20,29 +20,29 @@ void register_observables_exchange_holonomy(py::module_ &m) {
       "yields an uncertified read, never a different "
       "sign.")
       .def(py::init<>())
-      .def_readwrite("leakFloor", &ExchangeHolonomyConfig::leakFloor,
+      .def_readwrite("leak_floor", &ExchangeHolonomyConfig::leakFloor,
                      "Minimum overlap singular value of a certified step "
                      "(a leaking transfer is rejected before polar "
                      "normalization).")
-      .def_readwrite("conditionCap", &ExchangeHolonomyConfig::conditionCap,
+      .def_readwrite("condition_cap", &ExchangeHolonomyConfig::conditionCap,
                      "Maximum overlap conditioning of a certified step.")
-      .def_readwrite("unitaryTolerance",
+      .def_readwrite("unitary_tolerance",
                      &ExchangeHolonomyConfig::unitaryTolerance,
                      "Certificate tolerance on loop unitarity / character "
                      "modulus.")
-      .def_readwrite("signTolerance",
+      .def_readwrite("sign_tolerance",
                      &ExchangeHolonomyConfig::signTolerance,
                      "Distance from +-1 within which a definite "
                      "characterSign is reported.")
-      .def_readwrite("blockMatchThreshold",
+      .def_readwrite("block_match_threshold",
                      &ExchangeHolonomyConfig::blockMatchThreshold,
                      "Minimum subspace overlap of a certified block "
                      "continuation (mirrors the band-tracker threshold).")
-      .def_readwrite("liftAngleMargin",
+      .def_readwrite("lift_angle_margin",
                      &ExchangeHolonomyConfig::liftAngleMargin,
                      "Lifted loop steps must stay this far below the pi "
                      "branch cut.")
-      .def_readwrite("cocycleTolerance",
+      .def_readwrite("cocycle_tolerance",
                      &ExchangeHolonomyConfig::cocycleTolerance,
                      "Cap on the verified SO(d) cocycle residual of "
                      "spinLift.");
@@ -58,10 +58,10 @@ void register_observables_exchange_holonomy(py::module_ &m) {
       "One overlap-transport step: singular-value data of the r x r frame "
       "overlap before polar normalization, and whether the step met the "
       "leak/conditioning thresholds.")
-      .def_readonly("fromIndex", &TransportStepRead::fromIndex)
-      .def_readonly("toIndex", &TransportStepRead::toIndex)
-      .def_readonly("minSingularValue", &TransportStepRead::minSingularValue)
-      .def_readonly("maxSingularValue", &TransportStepRead::maxSingularValue)
+      .def_readonly("from_index", &TransportStepRead::fromIndex)
+      .def_readonly("to_index", &TransportStepRead::toIndex)
+      .def_readonly("min_singular_value", &TransportStepRead::minSingularValue)
+      .def_readonly("max_singular_value", &TransportStepRead::maxSingularValue)
       .def_readonly("conditioning", &TransportStepRead::conditioning)
       .def_readonly("certified", &TransportStepRead::certified);
 
@@ -78,33 +78,33 @@ uncertified read, never a sign.)doc")
       .def_readonly("determinant", &LoopHolonomyRead::determinant)
       .def_readonly("steps", &LoopHolonomyRead::steps)
       .def_readonly("rank", &LoopHolonomyRead::rank)
-      .def_readonly("stepReads", &LoopHolonomyRead::stepReads)
-      .def_readonly("unitarityResidual",
+      .def_readonly("step_reads", &LoopHolonomyRead::stepReads)
+      .def_readonly("unitarity_residual",
                     &LoopHolonomyRead::unitarityResidual)
-      .def_readonly("minStepSingularValue",
+      .def_readonly("min_step_singular_value",
                     &LoopHolonomyRead::minStepSingularValue)
       .def_readonly("conditioning", &LoopHolonomyRead::conditioning)
-      .def_readonly("uncertifiedBand", &LoopHolonomyRead::uncertifiedBand)
+      .def_readonly("uncertified_band", &LoopHolonomyRead::uncertifiedBand)
       .def_readonly("certificate", &LoopHolonomyRead::certificate);
 
   py::class_<HolonomyCharacterRead>(m, "HolonomyCharacterRead",
       R"doc(The interferometric (Berry-cancelled) character chi_hat =
 det U_loop / det U_reference, with the phase channels kept separate:
-rawLoopDeterminant (exchange or rotation, plus Berry), referenceDeterminant
+raw_loop_determinant (exchange or rotation, plus Berry), reference_determinant
 (the Berry reference motion alone), character (the cancelled ratio).
 characterSign is -1/+1 only when the certificate holds and the character
 sits within signTolerance of -+1; an uncertified read never emits a
 sign.)doc")
       .def_readonly("channel", &HolonomyCharacterRead::channel)
-      .def_readonly("rawLoopDeterminant",
+      .def_readonly("raw_loop_determinant",
                     &HolonomyCharacterRead::rawLoopDeterminant)
-      .def_readonly("referenceDeterminant",
+      .def_readonly("reference_determinant",
                     &HolonomyCharacterRead::referenceDeterminant)
       .def_readonly("character", &HolonomyCharacterRead::character)
-      .def_readonly("characterSign", &HolonomyCharacterRead::characterSign)
-      .def_readonly("signResidual", &HolonomyCharacterRead::signResidual)
-      .def_readonly("timingMatched", &HolonomyCharacterRead::timingMatched)
-      .def_readonly("ranksMatched", &HolonomyCharacterRead::ranksMatched)
+      .def_readonly("character_sign", &HolonomyCharacterRead::characterSign)
+      .def_readonly("sign_residual", &HolonomyCharacterRead::signResidual)
+      .def_readonly("timing_matched", &HolonomyCharacterRead::timingMatched)
+      .def_readonly("ranks_matched", &HolonomyCharacterRead::ranksMatched)
       .def_readonly("certificate", &HolonomyCharacterRead::certificate);
 
   py::class_<ClusterOccupancy>(m, "ClusterOccupancy",
@@ -119,14 +119,14 @@ sheeted fibre has even rank and exchanging whole frames of even rank gives
              return ClusterOccupancy{occupation, sheetCount};
            }),
            py::arg("occupation") = std::size_t{1},
-           py::arg("sheetCount") = std::size_t{1})
+           py::arg("sheet_count") = std::size_t{1})
       .def_readwrite("occupation", &ClusterOccupancy::occupation)
       .def_readwrite("sheet_count", &ClusterOccupancy::sheetCount);
 
   py::class_<BlockPermutationRead>(m, "BlockPermutationRead",
       R"doc(The structural exchange channel: the permutation of persistent
 localized blocks around the loop (matching delegated to
-SpectralFiberTracker.matchFibers), its exact parities through the exterior
+SpectralFiberTracker.match_fibers), its exact parities through the exterior
 grading, and the residual in-block motion after reference cancellation.
 
 occupationParity is the exchange statistic: the graded sign the exterior
@@ -140,34 +140,34 @@ and compositeParity the optional composite-level sign.
 Parities are exact integers given the verified matching premise; a failed
 premise (gap closure, rank change, ambiguous matching) yields an
 uncertified read with no parities.)doc")
-      .def_readonly("blockPermutation",
+      .def_readonly("block_permutation",
                     &BlockPermutationRead::blockPermutation)
-      .def_readonly("blockRanks", &BlockPermutationRead::blockRanks)
-      .def_readonly("blockOccupations",
+      .def_readonly("block_ranks", &BlockPermutationRead::blockRanks)
+      .def_readonly("block_occupations",
                     &BlockPermutationRead::blockOccupations)
-      .def_readonly("blockSheetCounts",
+      .def_readonly("block_sheet_counts",
                     &BlockPermutationRead::blockSheetCounts)
-      .def_readonly("blockParity", &BlockPermutationRead::blockParity)
-      .def_readonly("occupationParity",
+      .def_readonly("block_parity", &BlockPermutationRead::blockParity)
+      .def_readonly("occupation_parity",
                     &BlockPermutationRead::occupationParity,
                     "The exchange statistic: the graded sign of the "
                     "reordering read off the declared occupations.")
-      .def_readonly("rankParity", &BlockPermutationRead::rankParity,
+      .def_readonly("rank_parity", &BlockPermutationRead::rankParity,
                     "The odd-rank determinant cross-check, reported "
                     "independently and never multiplied into the statistic.")
-      .def_readonly("rankParityRetired",
+      .def_readonly("rank_parity_retired",
                     &BlockPermutationRead::rankParityRetired,
                     "Whether the cross-check was retired, as it is on a "
                     "sheeted support.")
-      .def_readonly("rankParityAgrees",
+      .def_readonly("rank_parity_agrees",
                     &BlockPermutationRead::rankParityAgrees)
-      .def_readonly("compositePermutation",
+      .def_readonly("composite_permutation",
                     &BlockPermutationRead::compositePermutation)
-      .def_readonly("compositeParity",
+      .def_readonly("composite_parity",
                     &BlockPermutationRead::compositeParity)
-      .def_readonly("minMatchOverlap",
+      .def_readonly("min_match_overlap",
                     &BlockPermutationRead::minMatchOverlap)
-      .def_readonly("residualInBlockMotion",
+      .def_readonly("residual_in_block_motion",
                     &BlockPermutationRead::residualInBlockMotion)
       .def_readonly("certificate", &BlockPermutationRead::certificate);
 
@@ -177,8 +177,8 @@ uncertified read with no parities.)doc")
       "(uncertified) when a step approached the pi branch cut or the "
       "lifted product failed to close on +-I.")
       .def_readonly("character", &LoopLiftRead::character)
-      .def_readonly("maxStepAngle", &LoopLiftRead::maxStepAngle)
-      .def_readonly("closureResidual", &LoopLiftRead::closureResidual)
+      .def_readonly("max_step_angle", &LoopLiftRead::maxStepAngle)
+      .def_readonly("closure_residual", &LoopLiftRead::closureResidual)
       .def_readonly("certificate", &LoopLiftRead::certificate);
 
   py::class_<SpinLiftRead>(m, "SpinLiftRead",
@@ -187,13 +187,13 @@ with the second Stiefel-Whitney obstruction: per-triangle lift signs, the
 exact GF(2) coboundary decision, and (when the lift exists) a consistent
 per-edge sign choice.  Needed only for a continuum claim: the abstract
 CAR/Fock algebra needs no spin structure and no Kasteleyn orientation.)doc")
-      .def_readonly("liftExists", &SpinLiftRead::liftExists)
+      .def_readonly("lift_exists", &SpinLiftRead::liftExists)
       .def_readonly("obstructed", &SpinLiftRead::obstructed)
-      .def_readonly("triangleSigns", &SpinLiftRead::triangleSigns)
-      .def_readonly("edgeSigns", &SpinLiftRead::edgeSigns)
-      .def_readonly("maxCocycleResidual",
+      .def_readonly("triangle_signs", &SpinLiftRead::triangleSigns)
+      .def_readonly("edge_signs", &SpinLiftRead::edgeSigns)
+      .def_readonly("max_cocycle_residual",
                     &SpinLiftRead::maxCocycleResidual)
-      .def_readonly("maxLiftResidual", &SpinLiftRead::maxLiftResidual)
+      .def_readonly("max_lift_residual", &SpinLiftRead::maxLiftResidual)
       .def_readonly("certificate", &SpinLiftRead::certificate)
       .def("describe", &SpinLiftRead::describe)
       .def("__repr__", &SpinLiftRead::describe);
@@ -220,47 +220,47 @@ exchange, Berry reference motion, physical rotation.
 
 Read-only and stateless: never calls a solver, never mutates what it
 reads, and nothing here may enter any emergence objective.)doc")
-      .def_static("polarUnitary", &ExchangeHolonomy::polarUnitary,
+      .def_static("polar_unitary", &ExchangeHolonomy::polarUnitary,
                   py::arg("overlap"),
                   "The unitary polar factor U V^dagger of an overlap "
                   "matrix (the normative transport primitive).")
-      .def_static("loopHolonomy", &ExchangeHolonomy::loopHolonomy,
+      .def_static("loop_holonomy", &ExchangeHolonomy::loopHolonomy,
                   py::arg("frames"), py::arg("weights"),
                   py::arg("config") = ExchangeHolonomyConfig{},
                   "Closed-loop holonomy of an explicit frame path under a "
                   "constant diagonal metric.")
-      .def_static("loopHolonomyPerStep",
+      .def_static("loop_holonomy_per_step",
                   &ExchangeHolonomy::loopHolonomyPerStep,
-                  py::arg("frames"), py::arg("stepWeights"),
+                  py::arg("frames"), py::arg("step_weights"),
                   py::arg("config") = ExchangeHolonomyConfig{},
                   "Closed-loop holonomy with per-step diagonal metrics "
                   "W_t.")
-      .def_static("fiberLoopHolonomy",
+      .def_static("fiber_loop_holonomy",
                   &ExchangeHolonomy::fiberLoopHolonomy, py::arg("loop"),
                   py::arg("config") = ExchangeHolonomyConfig{},
                   "Closed-loop holonomy of a spectral-fiber track (shared "
                   "cells matched by vertex tuple; an uncertified band or "
                   "rank change yields an uncertified read).")
-      .def_static("exchangeCharacter",
+      .def_static("exchange_character",
                   &ExchangeHolonomy::exchangeCharacter,
-                  py::arg("exchangeLoop"), py::arg("referenceLoop"),
+                  py::arg("exchange_loop"), py::arg("reference_loop"),
                   py::arg("config") = ExchangeHolonomyConfig{},
                   "chi_hat_F = det U_exchange / det U_reference "
                   "(ParticleExchange channel).")
-      .def_static("rotationCharacter",
+      .def_static("rotation_character",
                   &ExchangeHolonomy::rotationCharacter,
-                  py::arg("rotationLoop"), py::arg("referenceLoop"),
+                  py::arg("rotation_loop"), py::arg("reference_loop"),
                   py::arg("config") = ExchangeHolonomyConfig{},
                   "chi_hat(2 pi) against the matched co-moving "
                   "non-rotating reference (PhysicalRotation channel).")
-      .def_static("doublyCancelledRatio",
+      .def_static("doubly_cancelled_ratio",
                   &ExchangeHolonomy::doublyCancelledRatio,
                   py::arg("exchange"), py::arg("rotation"),
                   "chi_hat(exchange) * chi_hat(2 pi)^{-1}; requires the "
                   "correct channel tags (ValueError otherwise).")
-      .def_static("blockPermutation", &ExchangeHolonomy::blockPermutation,
+      .def_static("block_permutation", &ExchangeHolonomy::blockPermutation,
                   py::arg("steps"),
-                  py::arg("referenceSteps") =
+                  py::arg("reference_steps") =
                       std::vector<std::vector<SpectralFiber>>{},
                   py::arg("composites") =
                       std::vector<std::vector<std::size_t>>{},
@@ -271,87 +271,87 @@ reads, and nothing here may enter any emergence objective.)doc")
                   "rank-parity cross-check, and the reference-cancelled "
                   "in-block residual.  An empty occupancy list declares one "
                   "occupied mode on an unsheeted support for every block.")
-      .def_static("frameExchangeDeterminant",
+      .def_static("frame_exchange_determinant",
                   &ExchangeHolonomy::frameExchangeDeterminant,
-                  py::arg("rankA"), py::arg("rankB"),
+                  py::arg("rank_a"), py::arg("rank_b"),
                   "det pi_AB = (-1)^{r_A r_B}, the determinant of exchanging "
                   "two complete fibre frames.  Exact as an identity about "
                   "frames; promoting it to particle statistics is the "
                   "hypothesis the construction does not adopt.")
-      .def_static("spinorDimension", &ExchangeHolonomy::spinorDimension,
+      .def_static("spinor_dimension", &ExchangeHolonomy::spinorDimension,
                   py::arg("d"))
       .def_static("gamma", &ExchangeHolonomy::gamma, py::arg("a"),
                   py::arg("d"),
                   "Euclidean gamma_a with {gamma_a, gamma_b} = 2 delta_ab "
                   "(Pauli at d = 3; the documented Dirac layer at d = 4).")
-      .def_static("spinGenerator", &ExchangeHolonomy::spinGenerator,
+      .def_static("spin_generator", &ExchangeHolonomy::spinGenerator,
                   py::arg("a"), py::arg("b"), py::arg("d"),
                   "Sigma_ab = [gamma_a, gamma_b]/4, eigenvalues -+i/2.")
-      .def_static("spinorRotation", &ExchangeHolonomy::spinorRotation,
+      .def_static("spinor_rotation", &ExchangeHolonomy::spinorRotation,
                   py::arg("theta"), py::arg("a"), py::arg("b"),
                   py::arg("d"),
                   "exp(theta Sigma_ab) in closed form; theta = 2 pi gives "
                   "exactly -I (the double cover).")
-      .def_static("transverseSpinorFrame",
+      .def_static("transverse_spinor_frame",
                   &ExchangeHolonomy::transverseSpinorFrame, py::arg("a"),
                   py::arg("b"), py::arg("d"),
                   "The canonical transverse rank-1 spinor frame of the "
                   "(a, b) plane (deterministic conventions).")
-      .def_static("rotationLoopFrames",
+      .def_static("rotation_loop_frames",
                   &ExchangeHolonomy::rotationLoopFrames, py::arg("frame0"),
                   py::arg("a"), py::arg("b"), py::arg("d"),
                   py::arg("turns"), py::arg("steps"),
                   "The constructed total-space spin holonomy cycle as an "
                   "explicit closed frame path (one global rotation of the "
                   "whole carried frame).")
-      .def_static("referenceLoopFrames",
+      .def_static("reference_loop_frames",
                   &ExchangeHolonomy::referenceLoopFrames, py::arg("frame0"),
                   py::arg("steps"),
                   "The matched co-moving non-rotating reference (same "
                   "timing, no rotation).")
-      .def_static("vectorLoopFrames", &ExchangeHolonomy::vectorLoopFrames,
+      .def_static("vector_loop_frames", &ExchangeHolonomy::vectorLoopFrames,
                   py::arg("frame0"), py::arg("a"), py::arg("b"),
                   py::arg("d"), py::arg("turns"), py::arg("steps"),
                   "The vector-representation rotation loop (the +1 "
                   "control).")
-      .def_static("totalJSquaredOperator",
+      .def_static("total_j_squared_operator",
                   &ExchangeHolonomy::totalJSquaredOperator,
                   py::arg("constituents"),
                   "J^2 = sum_a (sum_i S_a^(i))^2 on (C^2)^(tensor n) — the "
                   "total-space operator on the whole composite state.")
-      .def_static("totalJSquared", &ExchangeHolonomy::totalJSquared,
+      .def_static("total_j_squared", &ExchangeHolonomy::totalJSquared,
                   py::arg("state"),
                   "<J^2> of a composite state (exact oracles: proton "
                   "eigenstate 3/4, Delta 15/4, product |uud> 7/4).")
-      .def_static("rotationLog", &ExchangeHolonomy::rotationLog,
+      .def_static("rotation_log", &ExchangeHolonomy::rotationLog,
                   py::arg("rotation"),
                   "The principal antisymmetric logarithm via the real "
                   "Schur plane decomposition (pi branch by the documented "
                   "axis rule).")
-      .def_static("rotationToSpin", &ExchangeHolonomy::rotationToSpin,
+      .def_static("rotation_to_spin", &ExchangeHolonomy::rotationToSpin,
                   py::arg("rotation"), py::arg("d"),
                   "The principal Spin(d) lift of an SO(d) rotation "
                   "(half-angle plane factors; d = 3, 4).")
-      .def_static("loopLiftCharacter",
+      .def_static("loop_lift_character",
                   &ExchangeHolonomy::loopLiftCharacter, py::arg("loop"),
                   py::arg("d"),
                   py::arg("config") = ExchangeHolonomyConfig{},
                   "The Z2 character of a closed SO(d) loop by incremental "
                   "principal lifts (uncertified near the pi branch cut).")
-      .def_static("spinLift", &ExchangeHolonomy::spinLift,
-                  py::arg("edges"), py::arg("edgeRotations"),
+      .def_static("spin_lift", &ExchangeHolonomy::spinLift,
+                  py::arg("edges"), py::arg("edge_rotations"),
                   py::arg("triangles"), py::arg("d"),
                   py::arg("config") = ExchangeHolonomyConfig{},
                   "The SO(d) -> Spin(d) lift decision over Cech data with "
                   "the w2 obstruction (exact GF(2) coboundary decision "
                   "given the verified cocycle premise).")
-      .def_static("reorientedFrames", &ExchangeHolonomy::reorientedFrames,
-                  py::arg("frames"), py::arg("cellSigns"),
+      .def_static("reoriented_frames", &ExchangeHolonomy::reorientedFrames,
+                  py::arg("frames"), py::arg("cell_signs"),
                   "The simplex-reorientation gauge (common row sign "
                   "flips); every read is exactly invariant.")
-      .def_static("permutedCellFrames",
+      .def_static("permuted_cell_frames",
                   &ExchangeHolonomy::permutedCellFrames, py::arg("frames"),
-                  py::arg("rowPermutation"),
+                  py::arg("row_permutation"),
                   "The compilation-ordering gauge (common row "
                   "permutation); every read is exactly invariant.");
 }

@@ -18,7 +18,7 @@ Method = obs.EffectiveBettiNumber.Method
 class TestTorus:
     def test_the_actual_torus_is_an_effective_torus_at_the_trivial_connection(self):
         K, _, cov = covariant_torus(cubic_grid(3))
-        assert list(K.bettiNumbers()) == [1, 3, 3, 1]
+        assert list(K.betti_numbers()) == [1, 3, 3, 1]
         topology = obs.EffectiveTopology.read(cov, 1.0)
         assert topology.betti() == [1, 3, 3, 1] and topology.certified()
         assert topology.dimension() == 3 and topology.epsilon() == 1.0
@@ -31,7 +31,7 @@ class TestTorus:
 
     def test_a_connection_with_holonomy_is_no_effective_torus_on_the_same_complex(self):
         K, _, cov = covariant_torus(cubic_grid(3), KAPPA)
-        assert list(K.bettiNumbers()) == [1, 3, 3, 1]  # the incidence has not changed
+        assert list(K.betti_numbers()) == [1, 3, 3, 1]  # the incidence has not changed
         verdict = obs.EffectiveTorus(3).certify(cov, 1.0)
         assert verdict.measured == [0, 0, 0, 0]
         assert verdict.certified and not verdict.matches and not verdict.holds()
@@ -47,7 +47,7 @@ class TestTorus:
 
 class TestOtherSpaces:
     def test_the_boundary_of_a_tetrahedron_is_an_effective_sphere(self):
-        K = cob.ChainComplex.fromTopCells([[0, 1, 2], [0, 1, 3], [0, 2, 3], [1, 2, 3]])
+        K = cob.ChainComplex.from_top_cells([[0, 1, 2], [0, 1, 3], [0, 2, 3], [1, 2, 3]])
         cov = ch.CovariantChainHodge(ch.ChainHodge(K, [1.0] * 6), ch.Connection.trivial(K))
         verdict = obs.EffectiveSphere(2).certify(cov, 1e-6)
         assert verdict.holds() and verdict.measured == [1, 0, 1]
@@ -55,10 +55,10 @@ class TestOtherSpaces:
 
     def test_a_bottleneck_is_two_effective_components_on_one_actual_component(self):
         ring = lambda first: [[first + i, first + (i + 1) % 6] for i in range(6)]
-        K = cob.ChainComplex.fromTopCells(ring(0) + ring(6) + [[0, 6]])
-        s = [1.0e6 if tuple(e) == (0, 6) else 1.0 for e in K.kSimplexVertices(1)]
+        K = cob.ChainComplex.from_top_cells(ring(0) + ring(6) + [[0, 6]])
+        s = [1.0e6 if tuple(e) == (0, 6) else 1.0 for e in K.k_simplex_vertices(1)]
         cov = ch.CovariantChainHodge(ch.ChainHodge(K, s), ch.Connection.trivial(K))
-        assert list(K.bettiNumbers()) == [1, 2]
+        assert list(K.betti_numbers()) == [1, 2]
         assert obs.EffectiveComponents(2, 1).certify(cov, 0.01).holds()
         assert obs.EffectiveComponents(1, 1).certify(cov, 1e-8).holds()
         assert obs.EffectiveComponents(2, 1).name() == "2 effective components"
@@ -80,8 +80,8 @@ class TestAboveTheCrossover:
     def test_holonomy_empties_the_sparse_read_too(self):
         _, _, cov = covariant_torus(cubic_grid(4), KAPPA, crossover=8)
         zero = obs.EffectiveTopology.read(cov, 1.0).degrees()[0]
-        assert zero.rank == 0 and zero.certified and np.isnan(zero.lastInside)
-        assert zero.firstOutside > 5.0
+        assert zero.rank == 0 and zero.certified and np.isnan(zero.last_inside)
+        assert zero.first_outside > 5.0
 
 
 def test_refusals():

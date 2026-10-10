@@ -10,7 +10,7 @@ from tessera import cobordism as cob
 
 
 def edges(K):
-    return [tuple(int(v) for v in e) for e in K.kSimplexVertices(1)]
+    return [tuple(int(v) for v in e) for e in K.k_simplex_vertices(1)]
 
 
 def lengths(K, table):
@@ -34,7 +34,7 @@ def torus33(h=1.0, v=-0.5, dgl=0.5):
     horizontal edges h, vertical edges v, diagonals dgl."""
     n = 3
     cells, _ = torus_cells(n)
-    K = cob.ChainComplex.fromTopCells(cells)
+    K = cob.ChainComplex.from_top_cells(cells)
 
     def stype(e):
         a, b = e
@@ -53,7 +53,7 @@ def torus33(h=1.0, v=-0.5, dgl=0.5):
 
 def random_allowable(K, rng, scale=0.05):
     """Unit Euclidean lengths with a small complex perturbation (allowable)."""
-    n = K.numSimplices(1)
+    n = K.num_simplices(1)
     return [complex(1.0 + scale * rng.normal(), scale * rng.normal()) for _ in range(n)]
 
 
@@ -64,7 +64,7 @@ def flat_torus(N, jitter=0.0, lorentz=False, seed=0, Lt=1.0, Lx=1.0):
     displacement components, returned as the n_1 x 2 array W."""
     rng = np.random.default_rng(seed)
     cells, vid = torus_cells(N)
-    K = cob.ChainComplex.fromTopCells(cells)
+    K = cob.ChainComplex.from_top_cells(cells)
     coords = {vid(i, j): np.array([(i + jitter * rng.uniform(-1, 1)) * Lt / N,
                                    (j + jitter * rng.uniform(-1, 1)) * Lx / N])
               for i in range(N) for j in range(N)}
@@ -85,7 +85,7 @@ def conformal_torus(N, amp=0.3, jitter=0.15, lorentz=False, seed=0):
     so the continuum answer is span(dt, dx)."""
     rng = np.random.default_rng(seed)
     cells, vid = torus_cells(N)
-    K = cob.ChainComplex.fromTopCells(cells)
+    K = cob.ChainComplex.from_top_cells(cells)
     coords = {vid(i, j): np.array([(i + jitter * rng.uniform(-1, 1)) / N,
                                    (j + jitter * rng.uniform(-1, 1)) / N])
               for i in range(N) for j in range(N)}
@@ -117,7 +117,7 @@ def flat_cylinder(N, L, jitter=0.25, lorentz=False, seed=0):
         for j in range(N):
             cells.append([vid(i, j), vid(i + 1, j), vid(i + 1, j + 1)])
             cells.append([vid(i, j), vid(i, j + 1), vid(i + 1, j + 1)])
-    K = cob.ChainComplex.fromTopCells(cells)
+    K = cob.ChainComplex.from_top_cells(cells)
     coords = {vid(i, j): np.array([(i + (jitter * rng.uniform(-1, 1) if 0 < i < L else 0.0)) / N,
                                    (j + jitter * rng.uniform(-1, 1)) / N])
               for i in range(L + 1) for j in range(N)}
@@ -137,7 +137,7 @@ def conformal_torus_split(N, amp=0.3, jitter=0.15, seed=0):
     library's `LorentzianFamily` rotates. Returns (K, s, tau, W)."""
     rng = np.random.default_rng(seed)
     cells, vid = torus_cells(N)
-    K = cob.ChainComplex.fromTopCells(cells)
+    K = cob.ChainComplex.from_top_cells(cells)
     coords = {vid(i, j): np.array([(i + jitter * rng.uniform(-1, 1)) / N,
                                    (j + jitter * rng.uniform(-1, 1)) / N])
               for i in range(N) for j in range(N)}
@@ -164,7 +164,7 @@ def conformal_torus_rotated(N, amp=0.3, jitter=0.15, epsilon=0.0, seed=0):
     `LorentzianFamily.rotate` on `conformal_torus_split` is held to."""
     rng = np.random.default_rng(seed)
     cells, vid = torus_cells(N)
-    K = cob.ChainComplex.fromTopCells(cells)
+    K = cob.ChainComplex.from_top_cells(cells)
     coords = {vid(i, j): np.array([(i + jitter * rng.uniform(-1, 1)) / N,
                                    (j + jitter * rng.uniform(-1, 1)) / N])
               for i in range(N) for j in range(N)}

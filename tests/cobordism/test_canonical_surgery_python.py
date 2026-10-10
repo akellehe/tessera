@@ -121,7 +121,7 @@ class DirectedSurgeryProtonBuildTest(unittest.TestCase):
         # objective side is finite, and the singlet residual never exceeds its
         # 3.0 empty-register floor.
         st = self.p.spacetime()
-        self.assertGreater(len(st.getEdgeList().toVector()), 10)
+        self.assertGreater(len(st.get_edge_list().to_vector()), 10)
         self.assertTrue(math.isfinite(self.p.color_residual()))
         self.assertLessEqual(self.p.color_residual(), 3.0 + 1e-9)
 

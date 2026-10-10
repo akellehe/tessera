@@ -78,10 +78,10 @@ def _ring(n=60):
 
 
 def _fb_partition_labels(g, n_cliques=40, k=5, merge_pairs=False):
-    """Fixed-partition labels (indexed like ``g.cellIds()``) for the FB ring:
+    """Fixed-partition labels (indexed like ``g.cell_ids()``) for the FB ring:
     one community per clique, or adjacent cliques merged in pairs."""
-    pos = {cid: i for i, cid in enumerate(g.cellIds())}
-    labels = [0] * g.nCells()
+    pos = {cid: i for i, cid in enumerate(g.cell_ids())}
+    labels = [0] * g.n_cells()
     for c in range(n_cliques):
         community = c // 2 if merge_pairs else c
         for v in range(c * k, c * k + k):
@@ -108,8 +108,8 @@ def _cfg(resolutions=(1.0,), restarts=4, base_seed=0, overlap=0.5):
     cfg = tessera.PersistentModularityConfig()
     cfg.resolutions = list(resolutions)
     cfg.restarts = restarts
-    cfg.baseSeed = base_seed
-    cfg.overlapThreshold = overlap
+    cfg.base_seed = base_seed
+    cfg.overlap_threshold = overlap
     return cfg
 
 
@@ -131,7 +131,7 @@ class TestPlantedRecovery(unittest.TestCase):
 
     def test_disconnected_cliques_recovered_exactly(self):
         src, tgt = _two_disconnected_k6()
-        g = PM.fromWeightedEdges(src, tgt, [1.0] * len(src))
+        g = PM.from_weighted_edges(src, tgt, [1.0] * len(src))
         s = g.discover(1.0, _cfg())
         supports = sorted(tuple(c.support) for c in s.components)
         self.assertEqual(supports,
@@ -140,7 +140,7 @@ class TestPlantedRecovery(unittest.TestCase):
         # 2m = 60  ->  Q = 2 * (30/60 - (30/60)^2) = 1/2 exactly.
         self.assertEqual(s.q, 0.5)
         # Deterministic restarts all land on the planted optimum.
-        self.assertEqual(s.restartSpread, 0.0)
+        self.assertEqual(s.restart_spread, 0.0)
         self.assertEqual(len(s.restarts), 4)
 
     def test_disconnected_unequal_cliques_recovered(self):
@@ -148,7 +148,7 @@ class TestPlantedRecovery(unittest.TestCase):
         _clique_edges(list(range(5)), src, tgt)
         _clique_edges(list(range(100, 106)), src, tgt)
         _clique_edges(list(range(200, 207)), src, tgt)
-        g = PM.fromWeightedEdges(src, tgt, [1.0] * len(src))
+        g = PM.from_weighted_edges(src, tgt, [1.0] * len(src))
         s = g.discover(1.0, _cfg())
         supports = sorted(tuple(c.support) for c in s.components)
         self.assertEqual(supports, [tuple(range(5)),
@@ -157,7 +157,7 @@ class TestPlantedRecovery(unittest.TestCase):
 
     def test_planted_modular_recovered_with_analytic_q(self):
         src, tgt = _planted_modular_two_k8()
-        g = PM.fromWeightedEdges(src, tgt, [1.0] * len(src))
+        g = PM.from_weighted_edges(src, tgt, [1.0] * len(src))
         s = g.discover(1.0, _cfg())
         supports = sorted(tuple(c.support) for c in s.components)
         self.assertEqual(supports, [tuple(range(8)), tuple(range(20, 28))])
@@ -182,7 +182,7 @@ class TestPlantedRecovery(unittest.TestCase):
             src.append(rng.choice(blocks[a]))
             tgt.append(rng.choice(blocks[b]))
             w.append(0.1 * rng.random())
-        g = PM.fromWeightedEdges(src, tgt, w)
+        g = PM.from_weighted_edges(src, tgt, w)
         s = g.discover(1.0, _cfg())
         self.assertEqual(len(s.components), 6)
         recovered = sorted(tuple(c.support) for c in s.components)
@@ -200,8 +200,8 @@ class TestNoManufacturedScale(unittest.TestCase):
 
     def test_ring_partition_is_resolution_dependent(self):
         src, tgt = _ring(60)
-        g = PM.fromWeightedEdges(src, tgt, [1.0] * len(src))
-        report = g.scanResolutions(_cfg(self.SCAN))
+        g = PM.from_weighted_edges(src, tgt, [1.0] * len(src))
+        report = g.scan_resolutions(_cfg(self.SCAN))
         counts = [len(s.components) for s in report.slices]
         # The arc scale tracks gamma: strictly more communities at the top
         # of the scan than at the bottom -> no intrinsic scale.
@@ -210,21 +210,21 @@ class TestNoManufacturedScale(unittest.TestCase):
         # overlap: a homogeneous ring has no persistent component.
         full_range_stable = [
             t for t in report.tracks
-            if t.firstSlice == 0 and t.lastSlice == len(report.slices) - 1
-            and t.minAdjacentOverlap >= 0.9
+            if t.first_slice == 0 and t.last_slice == len(report.slices) - 1
+            and t.min_adjacent_overlap >= 0.9
         ]
         self.assertEqual(full_range_stable, [])
 
     def test_ring_restart_spread_reported_honestly(self):
         src, tgt = _ring(60)
-        g = PM.fromWeightedEdges(src, tgt, [1.0] * len(src))
+        g = PM.from_weighted_edges(src, tgt, [1.0] * len(src))
         s = g.discover(1.0, _cfg())
         self.assertEqual(len(s.restarts), 4)
-        qs = [r.objectiveValue for r in s.restarts]
-        self.assertEqual(s.restartSpread, max(qs) - min(qs))
+        qs = [r.objective_value for r in s.restarts]
+        self.assertEqual(s.restart_spread, max(qs) - min(qs))
         # The ring's degenerate arc placements genuinely disagree across
         # restarts; the spread must be surfaced, not hidden.
-        self.assertGreater(s.restartSpread, 0.0)
+        self.assertGreater(s.restart_spread, 0.0)
         # The winner is the best exact restart score.
         self.assertEqual(s.q, max(qs))
 
@@ -234,36 +234,36 @@ class TestNoManufacturedScale(unittest.TestCase):
         beat single cliques (the resolution limit); at gamma = 4 singles
         win."""
         src, tgt = _fb_ring()
-        g = PM.fromWeightedEdges(src, tgt, [1.0] * len(src))
+        g = PM.from_weighted_edges(src, tgt, [1.0] * len(src))
         singles = _fb_partition_labels(g, merge_pairs=False)
         pairs = _fb_partition_labels(g, merge_pairs=True)
-        self.assertGreater(g.modularityGamma(pairs, 1.0).real,
-                           g.modularityGamma(singles, 1.0).real)
-        self.assertGreater(g.modularityGamma(singles, 4.0).real,
-                           g.modularityGamma(pairs, 4.0).real)
+        self.assertGreater(g.modularity_gamma(pairs, 1.0).real,
+                           g.modularity_gamma(singles, 1.0).real)
+        self.assertGreater(g.modularity_gamma(singles, 4.0).real,
+                           g.modularity_gamma(pairs, 4.0).real)
 
     def test_fb_discovery_exhibits_not_hides_the_limit(self):
         src, tgt = _fb_ring()
-        g = PM.fromWeightedEdges(src, tgt, [1.0] * len(src))
+        g = PM.from_weighted_edges(src, tgt, [1.0] * len(src))
         singles = _fb_partition_labels(g, merge_pairs=False)
         s1 = g.discover(1.0, _cfg())
         s4 = g.discover(4.0, _cfg())
         # gamma = 1: the resolution limit is real - cliques merge, and the
         # discovered exact score is at least the single-clique score.
         self.assertLess(len(s1.components), 40)
-        self.assertGreaterEqual(s1.objectiveValue,
-                                g.modularityGamma(singles, 1.0).real)
+        self.assertGreaterEqual(s1.objective_value,
+                                g.modularity_gamma(singles, 1.0).real)
         # gamma = 4: all 40 planted cliques recovered exactly.
         self.assertEqual(len(s4.components), 40)
         self.assertEqual(sorted(tuple(c.support) for c in s4.components),
                          [tuple(range(c * 5, c * 5 + 5)) for c in range(40)])
-        self.assertLessEqual(abs(s4.q - g.modularityGamma(singles, 4.0)),
+        self.assertLessEqual(abs(s4.q - g.modularity_gamma(singles, 4.0)),
                              1e-15)
 
     def test_fb_scan_reports_scale_dependence(self):
         src, tgt = _fb_ring()
-        g = PM.fromWeightedEdges(src, tgt, [1.0] * len(src))
-        report = g.scanResolutions(_cfg(self.SCAN))
+        g = PM.from_weighted_edges(src, tgt, [1.0] * len(src))
+        report = g.scan_resolutions(_cfg(self.SCAN))
         counts = [len(s.components) for s in report.slices]
         # The partition changes across the scan; the report exposes it.
         self.assertNotEqual(counts[0], counts[-1])
@@ -271,14 +271,14 @@ class TestNoManufacturedScale(unittest.TestCase):
         # does not hand the recursion one persistent particle scale here.
         full_range_stable = [
             t for t in report.tracks
-            if t.firstSlice == 0 and t.lastSlice == len(report.slices) - 1
-            and t.minAdjacentOverlap >= 0.9
+            if t.first_slice == 0 and t.last_slice == len(report.slices) - 1
+            and t.min_adjacent_overlap >= 0.9
         ]
         self.assertEqual(full_range_stable, [])
         # Every track carries the unknown downstream status as None (never
         # zero) - the weight-aware certificates belong to later tickets.
         for t in report.tracks:
-            self.assertIsNone(t.weightAwareStatus)
+            self.assertIsNone(t.weight_aware_status)
 
 
 # ---------------------------------------------------------------------------
@@ -294,14 +294,14 @@ class TestIncrementalEqualsCold(unittest.TestCase):
         for gamma in gammas:
             s = g.discover(gamma, _cfg())
             self.assertLessEqual(
-                abs(s.q - s.qIncremental), self.TOL,
-                f"gamma={gamma}: ledger {s.qIncremental!r} vs cold {s.q!r}")
+                abs(s.q - s.q_incremental), self.TOL,
+                f"gamma={gamma}: ledger {s.q_incremental!r} vs cold {s.q!r}")
 
     def test_unit_weight_fixtures(self):
         for build in (_two_disconnected_k6, _planted_modular_two_k8,
                       _fb_ring, _ring):
             src, tgt = build()
-            g = PM.fromWeightedEdges(src, tgt, [1.0] * len(src))
+            g = PM.from_weighted_edges(src, tgt, [1.0] * len(src))
             self._check(g, (0.5, 1.0, 2.0, 4.0))
 
     def test_weighted_nondyadic_fixture(self):
@@ -314,7 +314,7 @@ class TestIncrementalEqualsCold(unittest.TestCase):
                     src.append(i)
                     tgt.append(j)
                     w.append(0.05 + rng.random())
-        g = PM.fromWeightedEdges(src, tgt, w)
+        g = PM.from_weighted_edges(src, tgt, w)
         self._check(g, (0.5, 1.0, 2.0))
 
     def test_gamma_affinity_exact_identity(self):
@@ -322,11 +322,11 @@ class TestIncrementalEqualsCold(unittest.TestCase):
         closed-form check that the evaluator implements the stated
         identity)."""
         src, tgt = _fb_ring()
-        g = PM.fromWeightedEdges(src, tgt, [1.0] * len(src))
+        g = PM.from_weighted_edges(src, tgt, [1.0] * len(src))
         labels = _fb_partition_labels(g)
-        q0 = g.modularityGamma(labels, 0.0)
-        q1 = g.modularityGamma(labels, 1.0)
-        q2 = g.modularityGamma(labels, 2.0)
+        q0 = g.modularity_gamma(labels, 0.0)
+        q1 = g.modularity_gamma(labels, 1.0)
+        q2 = g.modularity_gamma(labels, 2.0)
         self.assertLessEqual(abs(q2 - (2.0 * q1 - q0)), 1e-15)
 
 
@@ -349,10 +349,10 @@ class TestSweepsRunToAFixedPoint(unittest.TestCase):
         fixtures = [_two_disconnected_k6(), _planted_modular_two_k8(),
                     _fb_ring(), _ring()]
         for src, tgt in fixtures:
-            g = PM.fromWeightedEdges(src, tgt, [1.0] * len(src))
+            g = PM.from_weighted_edges(src, tgt, [1.0] * len(src))
             for gamma in (0.25, 1.0, 4.0):
                 s = g.discover(gamma, _cfg())
-                self.assertEqual(s.sweepRecurrences, 0)
+                self.assertEqual(s.sweep_recurrences, 0)
 
     def test_a_graph_of_exact_ties_in_inexact_weights_ends(self):
         # the complete graph on twelve nodes with every weight one third:
@@ -360,11 +360,11 @@ class TestSweepsRunToAFixedPoint(unittest.TestCase):
         # exact double, so the gains of the tied moves are decided in rounding
         src, tgt = [], []
         _clique_edges(list(range(12)), src, tgt)
-        g = PM.fromWeightedEdges(src, tgt, [1.0 / 3.0] * len(src))
+        g = PM.from_weighted_edges(src, tgt, [1.0 / 3.0] * len(src))
         for gamma in (0.5, 1.0, 2.0):
             s = g.discover(gamma, _cfg())
-            self.assertLessEqual(abs(s.q - s.qIncremental), 1e-14)
-            self.assertLessEqual(s.sweepRecurrences, s.levels)
+            self.assertLessEqual(abs(s.q - s.q_incremental), 1e-14)
+            self.assertLessEqual(s.sweep_recurrences, s.levels)
 
 
 # ---------------------------------------------------------------------------
@@ -377,11 +377,11 @@ class TestRelabelingInvariance(unittest.TestCase):
     SCAN = (0.5, 1.0, 2.0, 4.0)
 
     def _scan_pair(self, src, tgt, w, seed):
-        g = PM.fromWeightedEdges(src, tgt, w)
+        g = PM.from_weighted_edges(src, tgt, w)
         src2, tgt2, w2, perm = _relabeled(src, tgt, w, seed)
-        g2 = PM.fromWeightedEdges(src2, tgt2, w2)
+        g2 = PM.from_weighted_edges(src2, tgt2, w2)
         cfg = _cfg(self.SCAN)
-        return g.scanResolutions(cfg), g2.scanResolutions(cfg), perm
+        return g.scan_resolutions(cfg), g2.scan_resolutions(cfg), perm
 
     def _assert_isomorphic(self, a, b, perm, forced_supports=False):
         """Ticket acceptance: relabeling returns an isomorphic hierarchy and
@@ -394,14 +394,14 @@ class TestRelabelingInvariance(unittest.TestCase):
             # Unit / dyadic weights: every sum is exact in double, so
             # relabeling gives bitwise-identical scores.
             self.assertEqual(sa.q, sb.q)
-            self.assertEqual(sa.qIncremental, sb.qIncremental)
+            self.assertEqual(sa.q_incremental, sb.q_incremental)
             # Isomorphic hierarchy: identical per-level canonical hash
             # multisets (hashes derive from oriented incidence + lineage,
             # never raw vertex numbers) and identical size multisets.
             self.assertEqual(sa.levels, sb.levels)
             for la, lb in zip(sa.hierarchy, sb.hierarchy):
-                self.assertEqual(sorted(c.id.canonicalHash() for c in la),
-                                 sorted(c.id.canonicalHash() for c in lb))
+                self.assertEqual(sorted(c.id.canonical_hash() for c in la),
+                                 sorted(c.id.canonical_hash() for c in lb))
                 self.assertEqual(sorted(len(c.support) for c in la),
                                  sorted(len(c.support) for c in lb))
             if forced_supports:
@@ -411,9 +411,9 @@ class TestRelabelingInvariance(unittest.TestCase):
                 self.assertEqual(mapped, plain)
         # Track structure is isomorphic (same lifetimes).
         self.assertEqual(
-            sorted((t.firstSlice, t.lastSlice, len(t.members))
+            sorted((t.first_slice, t.last_slice, len(t.members))
                    for t in a.tracks),
-            sorted((t.firstSlice, t.lastSlice, len(t.members))
+            sorted((t.first_slice, t.last_slice, len(t.members))
                    for t in b.tracks))
 
     def test_fb_ring_relabeling(self):
@@ -442,9 +442,9 @@ class TestRelabelingInvariance(unittest.TestCase):
         # fixture.
         src, tgt = _fb_ring()
         w = [1.0] * len(src)
-        g = PM.fromWeightedEdges(src, tgt, w)
+        g = PM.from_weighted_edges(src, tgt, w)
         src2, tgt2, w2, perm = _relabeled(src, tgt, w, seed=7)
-        g2 = PM.fromWeightedEdges(src2, tgt2, w2)
+        g2 = PM.from_weighted_edges(src2, tgt2, w2)
         sa = g.discover(4.0, _cfg())
         sb = g2.discover(4.0, _cfg())
         self.assertEqual(sa.q, sb.q)
@@ -460,14 +460,14 @@ class TestRelabelingInvariance(unittest.TestCase):
         rng = random.Random(2)
         order = list(range(len(src)))
         rng.shuffle(order)
-        g = PM.fromWeightedEdges(src, tgt, w)
-        g2 = PM.fromWeightedEdges([src[i] for i in order],
+        g = PM.from_weighted_edges(src, tgt, w)
+        g2 = PM.from_weighted_edges([src[i] for i in order],
                                   [tgt[i] for i in order],
                                   [w[i] for i in order])
         s, s2 = g.discover(1.0, _cfg()), g2.discover(1.0, _cfg())
         self.assertEqual(s.q, s2.q)
-        self.assertEqual([c.id.canonicalHash() for c in s.components],
-                         [c.id.canonicalHash() for c in s2.components])
+        self.assertEqual([c.id.canonical_hash() for c in s.components],
+                         [c.id.canonical_hash() for c in s2.components])
         self.assertEqual([c.support for c in s.components],
                          [c.support for c in s2.components])
 
@@ -481,8 +481,8 @@ class TestRelabelingInvariance(unittest.TestCase):
         for i in range(len(src2)):
             if rng.random() < 0.5:
                 src2[i], tgt2[i] = tgt2[i], src2[i]
-        g = PM.fromWeightedEdges(src, tgt, [1.0] * len(src))
-        g2 = PM.fromWeightedEdges(src2, tgt2, [1.0] * len(src2))
+        g = PM.from_weighted_edges(src, tgt, [1.0] * len(src))
+        g2 = PM.from_weighted_edges(src2, tgt2, [1.0] * len(src2))
         s, s2 = g.discover(1.0, _cfg()), g2.discover(1.0, _cfg())
         self.assertEqual(s.q, s2.q)
         self.assertEqual(sorted(tuple(c.support) for c in s.components),
@@ -490,14 +490,14 @@ class TestRelabelingInvariance(unittest.TestCase):
 
     def test_determinism_same_config_twice(self):
         src, tgt = _fb_ring()
-        g = PM.fromWeightedEdges(src, tgt, [1.0] * len(src))
+        g = PM.from_weighted_edges(src, tgt, [1.0] * len(src))
         cfg = _cfg(self.SCAN)
-        a, b = g.scanResolutions(cfg), g.scanResolutions(cfg)
+        a, b = g.scan_resolutions(cfg), g.scan_resolutions(cfg)
         for sa, sb in zip(a.slices, b.slices):
             self.assertEqual(sa.q, sb.q)
-            self.assertEqual(sa.qIncremental, sb.qIncremental)
-            self.assertEqual([c.id.canonicalHash() for c in sa.components],
-                             [c.id.canonicalHash() for c in sb.components])
+            self.assertEqual(sa.q_incremental, sb.q_incremental)
+            self.assertEqual([c.id.canonical_hash() for c in sa.components],
+                             [c.id.canonical_hash() for c in sb.components])
             self.assertEqual([c.support for c in sa.components],
                              [c.support for c in sb.components])
             self.assertEqual([r.seed for r in sa.restarts],
@@ -520,59 +520,59 @@ class TestFixedPartitionContinuity(unittest.TestCase):
             edges.add((min(a, b), max(a, b)))
         rows = [e[0] for e in edges]
         cols = [e[1] for e in edges]
-        sg = tessera.SparseGraph.fromCOO(rows, cols, n)
-        g = PM.fromWeightedEdges(rows, cols, [1.0] * len(rows),
+        sg = tessera.SparseGraph.from_coo(rows, cols, n)
+        g = PM.from_weighted_edges(rows, cols, [1.0] * len(rows),
                                  list(range(n)))
-        ids = g.cellIds()
-        labels_pm = [ids[i] % 4 for i in range(g.nCells())]
+        ids = g.cell_ids()
+        labels_pm = [ids[i] % 4 for i in range(g.n_cells())]
         labels_sg = [v % 4 for v in range(n)]
         self.assertLessEqual(
-            abs(sg.modularity(labels_sg) - g.modularityGamma(labels_pm, 1.0)),
+            abs(sg.modularity(labels_sg) - g.modularity_gamma(labels_pm, 1.0)),
             1e-15)
 
     def test_gamma_one_matches_spacetime_modularity_on_skeleton(self):
         st = _make_spacetime()
-        g = PM.fromSpacetime(st, PM.WeightMap.Unit)
+        g = PM.from_spacetime(st, PM.WeightMap.Unit)
         M = 4
-        labels = [int(v % M) for v in g.cellIds()]
+        labels = [int(v % M) for v in g.cell_ids()]
         self.assertLessEqual(
-            abs(g.modularityGamma(labels, 1.0) - st.modularityOnSkeleton(M)),
+            abs(g.modularity_gamma(labels, 1.0) - st.modularity_on_skeleton(M)),
             1e-15)
 
     def test_label_length_mismatch_raises(self):
         src, tgt = _ring(10)
-        g = PM.fromWeightedEdges(src, tgt, [1.0] * len(src))
+        g = PM.from_weighted_edges(src, tgt, [1.0] * len(src))
         with self.assertRaises(ValueError):
-            g.modularityGamma([0] * 3, 1.0)
+            g.modularity_gamma([0] * 3, 1.0)
 
     def test_negative_weight_accepted_and_switches_the_null_model(self):
         # The domain is the REAL weighted graph (#849): a negative weight is
         # a measured dissimilarity, and it selects the signed null model.
         # Nonnegative graphs are untouched -- the reduction is held to
         # bit-identity in test_causal_modularity_python.py.
-        g = PM.fromWeightedEdges([0], [1], [-1.0])
-        self.assertTrue(g.isSigned())
-        self.assertFalse(g.isComplex())
+        g = PM.from_weighted_edges([0], [1], [-1.0])
+        self.assertTrue(g.is_signed())
+        self.assertFalse(g.is_complex())
         # T is the ABSOLUTE total; the signed sum SA is what the null model
         # redistributes, and here the two differ in sign.
-        self.assertEqual(g.totalWeight2(), 2.0)
-        self.assertEqual(g.totalWeightSum(), -2.0)
+        self.assertEqual(g.total_weight2(), 2.0)
+        self.assertEqual(g.total_weight_sum(), -2.0)
 
     def test_non_finite_weight_rejected(self):
         for bad in (float("nan"), float("inf")):
             with self.assertRaises(ValueError):
-                PM.fromWeightedEdges([0], [1], [bad])
+                PM.from_weighted_edges([0], [1], [bad])
 
     def test_edge_list_normalization(self):
         # Parallel edges (either direction) consolidate by weight sum;
         # self-loops and zero-weight edges are ignored at level 0.
-        g = PM.fromWeightedEdges([0, 1, 0, 2, 3],
+        g = PM.from_weighted_edges([0, 1, 0, 2, 3],
                                  [1, 0, 0, 2, 4],
                                  [1.0, 0.5, 0.5, 3.0, 0.0])
-        self.assertEqual(g.nEdges(), 1)
+        self.assertEqual(g.n_edges(), 1)
         # (0,1,1.0) + (1,0,0.5) + (0,0,self) + (2,2,self) + (3,4,zero)
         # -> one edge of weight 1.5, 2m = 3.0 exactly.
-        self.assertEqual(g.totalWeight2(), 3.0)
+        self.assertEqual(g.total_weight2(), 3.0)
 
 
 # ---------------------------------------------------------------------------
@@ -589,62 +589,62 @@ class TestComponentMatching(unittest.TestCase):
         src1, tgt1 = [], []
         _clique_edges(list(range(5)), src1, tgt1)
         _clique_edges([5] + list(range(10, 16)), src1, tgt1)
-        g0 = PM.fromWeightedEdges(src0, tgt0, [1.0] * len(src0))
-        g1 = PM.fromWeightedEdges(src1, tgt1, [1.0] * len(src1))
+        g0 = PM.from_weighted_edges(src0, tgt0, [1.0] * len(src0))
+        g1 = PM.from_weighted_edges(src1, tgt1, [1.0] * len(src1))
         s0 = g0.discover(1.0, _cfg())
         s1 = g1.discover(1.0, _cfg())
         return g0, s0, s1
 
     def test_support_overlap_matching_is_exact(self):
         g0, s0, s1 = self._two_frames()
-        matches = g0.matchComponents(s0.components, s1.components)
+        matches = g0.match_components(s0.components, s1.components)
         self.assertEqual(len(matches), 2)
-        by_from = {tuple(s0.components[m.fromIndex].support): m
+        by_from = {tuple(s0.components[m.from_index].support): m
                    for m in matches}
         m_a = by_from[tuple(range(6))]
         m_b = by_from[tuple(range(10, 16))]
         # {0..5} vs {0..4}: |I| = 5, |U| = 6 -> 5/6 exactly.
-        self.assertEqual(m_a.supportOverlap, 5.0 / 6.0)
-        self.assertEqual(tuple(s1.components[m_a.toIndex].support),
+        self.assertEqual(m_a.support_overlap, 5.0 / 6.0)
+        self.assertEqual(tuple(s1.components[m_a.to_index].support),
                          tuple(range(5)))
         # {10..15} vs {5, 10..15}: |I| = 6, |U| = 7 -> 6/7 exactly.
-        self.assertEqual(m_b.supportOverlap, 6.0 / 7.0)
+        self.assertEqual(m_b.support_overlap, 6.0 / 7.0)
 
     def test_projector_overlap_hook_unknown_until_installed(self):
         g0, s0, s1 = self._two_frames()
-        matches = g0.matchComponents(s0.components, s1.components)
+        matches = g0.match_components(s0.components, s1.components)
         for m in matches:
             # Unknown means absent, never zero.
-            self.assertIsNone(m.projectorOverlap)
+            self.assertIsNone(m.projector_overlap)
         seen = []
 
         def hook(from_id, to_id):
-            seen.append((from_id.canonicalHash(), to_id.canonicalHash()))
+            seen.append((from_id.canonical_hash(), to_id.canonical_hash()))
             return 0.25
 
-        g0.setProjectorOverlapHook(hook)
-        matches = g0.matchComponents(s0.components, s1.components)
+        g0.set_projector_overlap_hook(hook)
+        matches = g0.match_components(s0.components, s1.components)
         for m in matches:
-            self.assertEqual(m.projectorOverlap, 0.25)
+            self.assertEqual(m.projector_overlap, 0.25)
         self.assertEqual(len(seen), len(matches))
         # Matching decisions stayed support-based (documented: the hook is
         # an interface for a later ticket, not a decision input here).
-        self.assertEqual(sorted(m.supportOverlap for m in matches),
+        self.assertEqual(sorted(m.support_overlap for m in matches),
                          sorted((5.0 / 6.0, 6.0 / 7.0)))
-        g0.setProjectorOverlapHook(None)
-        matches = g0.matchComponents(s0.components, s1.components)
+        g0.set_projector_overlap_hook(None)
+        matches = g0.match_components(s0.components, s1.components)
         for m in matches:
-            self.assertIsNone(m.projectorOverlap)
+            self.assertIsNone(m.projector_overlap)
 
     def test_component_id_semantics(self):
         src, tgt = _two_disconnected_k6()
-        g = PM.fromWeightedEdges(src, tgt, [1.0] * len(src))
+        g = PM.from_weighted_edges(src, tgt, [1.0] * len(src))
         s = g.discover(1.0, _cfg())
         ids = [c.id for c in s.components]
         for cid in ids:
-            self.assertEqual(len(cid.canonicalHash()), 32)
+            self.assertEqual(len(cid.canonical_hash()), 32)
             self.assertTrue(all(ch in "0123456789abcdef"
-                                for ch in cid.canonicalHash()))
+                                for ch in cid.canonical_hash()))
             self.assertEqual(cid.level(), 1)
         # Automorphic twins (two identical K6) share the structural hash by
         # construction; disambiguation is positional.
@@ -664,14 +664,14 @@ class TestInvalidation(unittest.TestCase):
         _clique_edges(list(range(5)), src, tgt)
         _clique_edges(list(range(100, 106)), src, tgt)
         _clique_edges(list(range(200, 207)), src, tgt)
-        g = PM.fromWeightedEdges(src, tgt, [1.0] * len(src))
-        report = g.scanResolutions(_cfg((0.5, 1.0, 2.0)))
+        g = PM.from_weighted_edges(src, tgt, [1.0] * len(src))
+        report = g.scan_resolutions(_cfg((0.5, 1.0, 2.0)))
         return g, report
 
     def test_only_touched_ancestry_invalidated(self):
         g, report = self._report()
         touched = [101]  # a cell of the middle clique only
-        inv = PM.invalidatedAncestry(report, touched)
+        inv = PM.invalidated_ancestry(report, touched)
         touched_set = set(touched)
         # Every invalidated position intersects the touched cells...
         listed = set()
@@ -689,19 +689,19 @@ class TestInvalidation(unittest.TestCase):
         # Exactly one track (the middle clique's) is affected.
         self.assertEqual(len(inv.tracks), 1)
         t = report.tracks[inv.tracks[0]]
-        member0 = report.slices[t.firstSlice].components[t.memberIndices[0]]
+        member0 = report.slices[t.first_slice].components[t.member_indices[0]]
         self.assertIn(101, member0.support)
         # The untouched cliques' tracks are valid.
         for ti, t in enumerate(report.tracks):
             if ti in inv.tracks:
                 continue
-            for i, idx in enumerate(t.memberIndices):
-                comp = report.slices[t.firstSlice + i].components[idx]
+            for i, idx in enumerate(t.member_indices):
+                comp = report.slices[t.first_slice + i].components[idx]
                 self.assertFalse(set(comp.support) & touched_set)
 
     def test_untouched_report_invalidates_nothing(self):
         g, report = self._report()
-        inv = PM.invalidatedAncestry(report, [9999])
+        inv = PM.invalidated_ancestry(report, [9999])
         self.assertEqual(inv.components, [])
         self.assertEqual(inv.positions, [])
         self.assertEqual(inv.tracks, [])
@@ -710,10 +710,10 @@ class TestInvalidation(unittest.TestCase):
         # The ancestry that invalidation walks is real: every hierarchy
         # level partitions the cells and refines upward into the next.
         src, tgt = _ring(60)
-        g = PM.fromWeightedEdges(src, tgt, [1.0] * len(src))
+        g = PM.from_weighted_edges(src, tgt, [1.0] * len(src))
         s = g.discover(0.5, _cfg())
         self.assertGreaterEqual(s.levels, 2)  # aggregation actually ran
-        all_cells = set(g.cellIds())
+        all_cells = set(g.cell_ids())
         prev = None
         for level in s.hierarchy:
             cells = [v for c in level for v in c.support]
@@ -727,8 +727,8 @@ class TestInvalidation(unittest.TestCase):
                     self.assertEqual(len(holders), 1)
                     self.assertTrue(child_set <= holders[0])  # nested
             prev = level
-        self.assertEqual([c.id.canonicalHash() for c in s.hierarchy[-1]],
-                         [c.id.canonicalHash() for c in s.components])
+        self.assertEqual([c.id.canonical_hash() for c in s.hierarchy[-1]],
+                         [c.id.canonical_hash() for c in s.components])
 
 
 # ---------------------------------------------------------------------------
@@ -740,33 +740,33 @@ class TestSpacetimeDiscovery(unittest.TestCase):
 
     def test_discover_components_is_read_only(self):
         st = _make_spacetime()
-        n_v = st.getVertexCount()
-        n_e = st.getEdgeList().size()
-        n_s = st.getTopSimplexCount()
+        n_v = st.get_vertex_count()
+        n_e = st.get_edge_list().size()
+        n_s = st.get_top_simplex_count()
         opt = tessera.ModularityOptimizer(tessera.ModularityOptimizerConfig(),
                                           seed=0)
-        report = opt.discoverComponents(st, _cfg((0.5, 1.0, 2.0), restarts=2))
+        report = opt.discover_components(st, _cfg((0.5, 1.0, 2.0), restarts=2))
         self.assertEqual(len(report.slices), 3)
         for s in report.slices:
-            self.assertTrue(math.isfinite(s.objectiveValue))
-            self.assertLessEqual(abs(s.q - s.qIncremental), 1e-13)
+            self.assertTrue(math.isfinite(s.objective_value))
+            self.assertLessEqual(abs(s.q - s.q_incremental), 1e-13)
             self.assertGreater(len(s.components), 0)
         # Observables are read-only: the spacetime is untouched.
-        self.assertEqual(st.getVertexCount(), n_v)
-        self.assertEqual(st.getEdgeList().size(), n_e)
-        self.assertEqual(st.getTopSimplexCount(), n_s)
+        self.assertEqual(st.get_vertex_count(), n_v)
+        self.assertEqual(st.get_edge_list().size(), n_e)
+        self.assertEqual(st.get_top_simplex_count(), n_s)
 
     def test_weight_maps_documented_monotone_similarity(self):
         st = _make_spacetime()
-        unit = PM.fromSpacetime(st, PM.WeightMap.Unit)
-        expneg = PM.fromSpacetime(st, PM.WeightMap.ExpNegAbsLength)
-        self.assertEqual(unit.nCells(), expneg.nCells())
-        self.assertEqual(unit.nEdges(), expneg.nEdges())
+        unit = PM.from_spacetime(st, PM.WeightMap.Unit)
+        expneg = PM.from_spacetime(st, PM.WeightMap.ExpNegAbsLength)
+        self.assertEqual(unit.n_cells(), expneg.n_cells())
+        self.assertEqual(unit.n_edges(), expneg.n_edges())
         # Unit: 2m = 2 |E| exactly (the combinatorial one-skeleton).
-        self.assertEqual(unit.totalWeight2(), 2.0 * unit.nEdges())
+        self.assertEqual(unit.total_weight2(), 2.0 * unit.n_edges())
         # exp(-|l|) weights lie in (0, 1].
-        self.assertGreater(expneg.totalWeight2(), 0.0)
-        self.assertLessEqual(expneg.totalWeight2(), unit.totalWeight2())
+        self.assertGreater(expneg.total_weight2(), 0.0)
+        self.assertLessEqual(expneg.total_weight2(), unit.total_weight2())
 
     def test_spacetime_relabeling_scores(self):
         # RELABEL gate over the real complex loader: a relabeled rebuild
@@ -782,13 +782,13 @@ class TestSpacetimeDiscovery(unittest.TestCase):
         # preserved).
         st = _make_spacetime()
         relabeled = tessera.LiveComplex.relabel(st, seed=4)
-        g = PM.fromSpacetime(st, PM.WeightMap.Unit)
-        g2 = PM.fromSpacetime(relabeled.spacetime, PM.WeightMap.Unit)
+        g = PM.from_spacetime(st, PM.WeightMap.Unit)
+        g2 = PM.from_spacetime(relabeled.spacetime, PM.WeightMap.Unit)
         cfg = _cfg((1.0,), restarts=2)
         a = g.discover(1.0, cfg)
         b = g2.discover(1.0, cfg)
         self.assertEqual(a.q, b.q)
-        self.assertEqual(a.qIncremental, b.qIncremental)
+        self.assertEqual(a.q_incremental, b.q_incremental)
         self.assertEqual(sorted(len(c.support) for c in a.components),
                          sorted(len(c.support) for c in b.components))
 
@@ -800,8 +800,8 @@ class TestSpacetimeDiscovery(unittest.TestCase):
 
 class TestCobordismFrameTracks(unittest.TestCase):
     """The whitepaper's fiber-acceptance conjunct is "lifetime across
-    multiple cobordism frames".  `matchComponents` always supported a time
-    track; `trackAcrossFrames` is the supplier that calls it with more than
+    multiple cobordism frames".  `match_components` always supported a time
+    track; `track_across_frames` is the supplier that calls it with more than
     one frame."""
 
     def _frames(self, count=3, migrate_at=None):
@@ -816,46 +816,46 @@ class TestCobordismFrameTracks(unittest.TestCase):
                 _clique_edges([5] + list(range(10, 16)), src, tgt)
             else:
                 src, tgt = _two_disconnected_k6()
-            g = PM.fromWeightedEdges(src, tgt, [1.0] * len(src))
+            g = PM.from_weighted_edges(src, tgt, [1.0] * len(src))
             out.append(g.discover(1.0, _cfg()).components)
         return out
 
     def _graph(self):
         src, tgt = _two_disconnected_k6()
-        return PM.fromWeightedEdges(src, tgt, [1.0] * len(src))
+        return PM.from_weighted_edges(src, tgt, [1.0] * len(src))
 
     def test_an_unchanged_component_lives_for_every_frame(self):
         g = self._graph()
-        tracks = g.trackAcrossFrames(self._frames(4))
+        tracks = g.track_across_frames(self._frames(4))
         self.assertEqual(len(tracks), 2)
         for track in tracks:
             self.assertEqual(track.frames, 4)
-            self.assertEqual(track.firstFrame, 0)
-            self.assertEqual(track.lastFrame, 3)
-            self.assertEqual(track.minAdjacentOverlap, 1.0)
+            self.assertEqual(track.first_frame, 0)
+            self.assertEqual(track.last_frame, 3)
+            self.assertEqual(track.min_adjacent_overlap, 1.0)
             self.assertEqual(len(track.members), 4)
-            self.assertEqual(len(track.memberIndices), 4)
+            self.assertEqual(len(track.member_indices), 4)
 
     def test_a_single_frame_gives_a_one_frame_lifetime(self):
         # Not a structural artifact: one frame is one frame, and the read
         # says so instead of borrowing a resolution-slice count.
         g = self._graph()
-        tracks = g.trackAcrossFrames(self._frames(1))
+        tracks = g.track_across_frames(self._frames(1))
         self.assertEqual(len(tracks), 2)
         for track in tracks:
             self.assertEqual(track.frames, 1)
-            self.assertEqual(track.minAdjacentOverlap, 1.0)
+            self.assertEqual(track.min_adjacent_overlap, 1.0)
 
     def test_no_frames_yields_no_tracks(self):
-        self.assertEqual(self._graph().trackAcrossFrames([]), [])
+        self.assertEqual(self._graph().track_across_frames([]), [])
 
     def test_a_migrating_cell_lowers_the_adjacent_frame_overlap(self):
         # Frames 0, 1 are identical; at frame 2 cell 5 migrates.  The exact
         # Jaccard overlaps are 5/6 and 6/7 -- the same numbers
         # matchComponents reports, since the chaining IS matchComponents.
         g = self._graph()
-        tracks = g.trackAcrossFrames(self._frames(3, migrate_at=2))
-        worst = sorted(t.minAdjacentOverlap for t in tracks)
+        tracks = g.track_across_frames(self._frames(3, migrate_at=2))
+        worst = sorted(t.min_adjacent_overlap for t in tracks)
         self.assertEqual(len(tracks), 2)
         self.assertEqual(worst, [5.0 / 6.0, 6.0 / 7.0])
         for track in tracks:
@@ -868,10 +868,10 @@ class TestCobordismFrameTracks(unittest.TestCase):
         far_src = [v + 10_000 for v in src]
         far_tgt = [v + 10_000 for v in tgt]
         g = self._graph()
-        g_far = PM.fromWeightedEdges(far_src, far_tgt, [1.0] * len(far_src))
+        g_far = PM.from_weighted_edges(far_src, far_tgt, [1.0] * len(far_src))
         frames = [g.discover(1.0, _cfg()).components,
                   g_far.discover(1.0, _cfg()).components]
-        tracks = g.trackAcrossFrames(frames)
+        tracks = g.track_across_frames(frames)
         self.assertEqual(len(tracks), 4)
         for track in tracks:
             self.assertEqual(track.frames, 1)
@@ -882,12 +882,12 @@ class TestCobordismFrameTracks(unittest.TestCase):
         # resolutions of ONE frame reports lifetime 3 on the resolution
         # axis, while that single frame is one frame.
         g = self._graph()
-        report = g.scanResolutions(_cfg(resolutions=(0.5, 1.0, 2.0)))
+        report = g.scan_resolutions(_cfg(resolutions=(0.5, 1.0, 2.0)))
         self.assertEqual(len(report.slices), 3)
-        resolution_lifetimes = sorted(t.lastSlice - t.firstSlice + 1
+        resolution_lifetimes = sorted(t.last_slice - t.first_slice + 1
                                       for t in report.tracks)
         self.assertEqual(resolution_lifetimes, [3, 3])
-        frame_tracks = g.trackAcrossFrames([report.slices[1].components])
+        frame_tracks = g.track_across_frames([report.slices[1].components])
         self.assertEqual(sorted(t.frames for t in frame_tracks), [1, 1])
 
     def test_the_threshold_is_honoured(self):
@@ -895,9 +895,9 @@ class TestCobordismFrameTracks(unittest.TestCase):
         # resolution scan breaks: same rule, different axis.
         g = self._graph()
         frames = self._frames(2, migrate_at=1)
-        kept = g.trackAcrossFrames(frames, 0.8)
+        kept = g.track_across_frames(frames, 0.8)
         self.assertEqual(sorted(t.frames for t in kept), [2, 2])
-        broken = g.trackAcrossFrames(frames, 0.9)
+        broken = g.track_across_frames(frames, 0.9)
         self.assertEqual(sorted(t.frames for t in broken), [1, 1, 1, 1])
 
 

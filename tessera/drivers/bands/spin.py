@@ -4,7 +4,7 @@
 attachment block between them.
 
 Two copies of a cell that share one geometry carry the block-diagonal pencil
-`SparsePencilComposition.directSum`. A spin-orbit term of the projector form
+`SparsePencilComposition.direct_sum`. A spin-orbit term of the projector form
 
     H_so = xi sum_{m m' s s'} |beta_m> (L . S)_{m s, m' s'} <beta_m'| ,
 
@@ -53,7 +53,7 @@ def p_projectors(cell, center, width):
 def two_sheet_pencil(A, M):
     """The direct sum of a pencil with itself: both spin components, uncoupled."""
     sheet = ch.SparsePencil(0, sp.csc_matrix(A, dtype=complex), sp.csc_matrix(M, dtype=complex))
-    both = ch.SparsePencilComposition.directSum(sheet, sheet)
+    both = ch.SparsePencilComposition.direct_sum(sheet, sheet)
     return sp.csc_matrix(both.A), sp.csc_matrix(both.M)
 
 

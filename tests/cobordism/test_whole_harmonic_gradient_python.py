@@ -66,7 +66,7 @@ def seeded():
 
 
 def test_it_has_one_component_per_edge(seeded):
-    edges = seeded.spacetime().getEdgeList().toVector()
+    edges = seeded.spacetime().get_edge_list().to_vector()
     chi = seeded.two_body_target().chi
     assert np.asarray(seeded.whole_harmonic_residual_gradient(chi)).shape == (len(edges),)
 
@@ -75,8 +75,8 @@ def test_the_euler_identity_is_exact(seeded):
     """Necessary, and nowhere near sufficient -- see the module docstring."""
     chi = seeded.two_body_target().chi
     packed = np.asarray(seeded.whole_harmonic_residual_gradient(chi))
-    squared = np.array([complex(edge.getLength()) ** 2
-                        for edge in seeded.spacetime().getEdgeList().toVector()])
+    squared = np.array([complex(edge.get_length()) ** 2
+                        for edge in seeded.spacetime().get_edge_list().to_vector()])
     numerator = abs(np.sum(squared * holomorphic(packed)))
     scale = np.abs(packed).max() * np.abs(squared).max()
     # On the exact product collar this gradient is zero; dividing two

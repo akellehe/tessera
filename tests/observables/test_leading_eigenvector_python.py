@@ -56,7 +56,7 @@ def clique_chain(sizes, bridge=0.05):
         src.append(a)
         tgt.append(b)
         weight.append(bridge)
-    return PM.fromWeightedEdges(src, tgt, weight)
+    return PM.from_weighted_edges(src, tgt, weight)
 
 
 def clique_ring(k, size, bridge=0.05):
@@ -73,7 +73,7 @@ def clique_ring(k, size, bridge=0.05):
         src.append(c * size)
         tgt.append(((c + 1) % k) * size)
         weight.append(bridge)
-    return PM.fromWeightedEdges(src, tgt, weight)
+    return PM.from_weighted_edges(src, tgt, weight)
 
 
 def square_grid(n, jitter=0.0):
@@ -94,7 +94,7 @@ def square_grid(n, jitter=0.0):
                 src.append(idx(r, c))
                 tgt.append(idx(r + 1, c))
                 weight.append(1.0 + jitter * (r * n + c) * 0.5)
-    return PM.fromWeightedEdges(src, tgt, weight)
+    return PM.from_weighted_edges(src, tgt, weight)
 
 
 def planted(groups, p_in, p_out, seed=12345):
@@ -118,7 +118,7 @@ def planted(groups, p_in, p_out, seed=12345):
                 src.append(i)
                 tgt.append(j)
                 weight.append(1.0)
-    return PM.fromWeightedEdges(src, tgt, weight)
+    return PM.from_weighted_edges(src, tgt, weight)
 
 
 def spectral_config(**overrides):
@@ -137,13 +137,13 @@ def partition_of(slice_):
 def recompute_q(graph, slice_):
     """Independent recompute of Q_gamma from the reported supports through
     the class's own exact closed form."""
-    ids = list(graph.cellIds())
+    ids = list(graph.cell_ids())
     position = {cell: i for i, cell in enumerate(ids)}
     labels = [0] * len(ids)
     for index, comp in enumerate(slice_.components):
         for cell in comp.support:
             labels[position[cell]] = index
-    return graph.modularityGamma(labels, slice_.gamma)
+    return graph.modularity_gamma(labels, slice_.gamma)
 
 
 def reasons_of(slice_):
@@ -233,10 +233,10 @@ class StoppingRuleTest(unittest.TestCase):
         for split in accepted:
             self.assertTrue(split.accepted)
             self.assertTrue(split.resolved)
-            self.assertGreater(split.leadingEigenvalue, 0.0)
-            self.assertGreater(split.deltaQ, 0.0)
-            self.assertGreater(split.sizeA, 0)
-            self.assertGreater(split.sizeB, 0)
+            self.assertGreater(split.leading_eigenvalue, 0.0)
+            self.assertGreater(split.delta_q, 0.0)
+            self.assertGreater(split.size_a, 0)
+            self.assertGreater(split.size_b, 0)
 
     def test_a_non_positive_leading_eigenvalue_refuses_and_is_named(self):
         graph = clique_chain([4, 5, 6])
@@ -248,7 +248,7 @@ class StoppingRuleTest(unittest.TestCase):
             self.assertFalse(split.accepted)
             # A determined "do not split" is RESOLVED: the spectrum answered.
             self.assertTrue(split.resolved)
-            self.assertLessEqual(split.leadingEigenvalue, 1e-9)
+            self.assertLessEqual(split.leading_eigenvalue, 1e-9)
 
     def test_a_single_clique_is_indivisible(self):
         graph = clique_chain([6])
@@ -278,9 +278,9 @@ class DegenerateLeadingPairTest(unittest.TestCase):
         # Refused because UNDETERMINED, which is distinct from a determined
         # "do not split".
         self.assertFalse(split.resolved)
-        self.assertLess(abs(split.eigenvalueGap), 1e-9)
+        self.assertLess(abs(split.eigenvalue_gap), 1e-9)
         self.assertLess(
-            abs(split.leadingEigenvalue - split.secondEigenvalue), 1e-9)
+            abs(split.leading_eigenvalue - split.second_eigenvalue), 1e-9)
 
     def test_the_refused_ring_is_left_as_one_community(self):
         slice_ = clique_ring(3, 5).discover(1.0, spectral_config())
@@ -296,7 +296,7 @@ class DegenerateLeadingPairTest(unittest.TestCase):
             1.0, spectral_config())
         self.assertEqual(jittered.splits[0].reason, REASON.SPLIT_ACCEPTED)
         self.assertGreater(len(jittered.components), 1)
-        self.assertGreater(jittered.splits[0].eigenvalueGap, 0.0)
+        self.assertGreater(jittered.splits[0].eigenvalue_gap, 0.0)
 
     def test_relaxing_the_gap_threshold_admits_the_degenerate_split(self):
         """The refusal is the declared threshold speaking, not an inability
@@ -307,16 +307,16 @@ class DegenerateLeadingPairTest(unittest.TestCase):
         self.assertEqual(refused.splits[0].reason,
                          REASON.DEGENERATE_LEADING_PAIR)
         admitted = graph.discover(
-            1.0, spectral_config(minEigenvalueGap=-1.0))
+            1.0, spectral_config(min_eigenvalue_gap=-1.0))
         self.assertGreater(len(admitted.components), 1)
 
     def test_the_gap_is_reported_whenever_both_eigenvalues_are(self):
         slice_ = clique_chain([4, 5, 6]).discover(1.0, spectral_config())
         for split in slice_.splits:
-            if not math.isnan(split.secondEigenvalue):
+            if not math.isnan(split.second_eigenvalue):
                 self.assertAlmostEqual(
-                    split.eigenvalueGap,
-                    split.leadingEigenvalue - split.secondEigenvalue,
+                    split.eigenvalue_gap,
+                    split.leading_eigenvalue - split.second_eigenvalue,
                     places=12)
 
 
@@ -326,19 +326,19 @@ class UnmeasuredIsNaNTest(unittest.TestCase):
     def test_a_group_that_stops_has_no_second_eigenvalue(self):
         slice_ = clique_chain([6]).discover(1.0, spectral_config())
         split = slice_.splits[0]
-        self.assertTrue(math.isnan(split.secondEigenvalue))
-        self.assertTrue(math.isnan(split.eigenvalueGap))
-        self.assertTrue(math.isnan(split.deltaQ))
+        self.assertTrue(math.isnan(split.second_eigenvalue))
+        self.assertTrue(math.isnan(split.eigenvalue_gap))
+        self.assertTrue(math.isnan(split.delta_q))
 
     def test_the_spectral_strategy_reports_no_restart_spread(self):
         slice_ = clique_chain([4, 5, 6]).discover(1.0, spectral_config())
-        self.assertTrue(math.isnan(slice_.restartSpread))
+        self.assertTrue(math.isnan(slice_.restart_spread))
         self.assertEqual(slice_.restarts, [])
 
     def test_the_incumbent_still_reports_a_real_restart_spread(self):
         slice_ = clique_chain([4, 5, 6]).discover(
             1.0, obs.PersistentModularityConfig())
-        self.assertFalse(math.isnan(slice_.restartSpread))
+        self.assertFalse(math.isnan(slice_.restart_spread))
         self.assertGreater(len(slice_.restarts), 0)
 
 
@@ -358,7 +358,7 @@ class DeterminismTest(unittest.TestCase):
         base = graph.discover(1.0, spectral_config())
         for seed, restarts in ((1, 1), (7, 3), (999999, 8), (2 ** 40, 2)):
             other = graph.discover(
-                1.0, spectral_config(baseSeed=seed, restarts=restarts))
+                1.0, spectral_config(base_seed=seed, restarts=restarts))
             self.assertEqual(partition_of(other), partition_of(base))
             self.assertEqual(other.q, base.q)
 
@@ -367,8 +367,8 @@ class DeterminismTest(unittest.TestCase):
         first = graph.discover(1.0, spectral_config())
         again = graph.discover(1.0, spectral_config())
         self.assertEqual(reasons_of(first), reasons_of(again))
-        self.assertEqual([s.groupSize for s in first.splits],
-                         [s.groupSize for s in again.splits])
+        self.assertEqual([s.group_size for s in first.splits],
+                         [s.group_size for s in again.splits])
 
 
 class ComparableScoreTest(unittest.TestCase):
@@ -399,7 +399,7 @@ class ComparableScoreTest(unittest.TestCase):
         for name, build in self.FIXTURES:
             with self.subTest(fixture=name):
                 slice_ = build().discover(1.0, spectral_config())
-                self.assertAlmostEqual(slice_.qIncremental, slice_.q,
+                self.assertAlmostEqual(slice_.q_incremental, slice_.q,
                                        delta=1e-14)
 
     def test_every_accepted_split_raises_the_exact_modularity(self):
@@ -408,7 +408,7 @@ class ComparableScoreTest(unittest.TestCase):
                 slice_ = build().discover(1.0, spectral_config())
                 for split in slice_.splits:
                     if split.reason == REASON.SPLIT_ACCEPTED:
-                        self.assertGreater(split.deltaQ, 0.0)
+                        self.assertGreater(split.delta_q, 0.0)
 
     def test_the_accepted_deltas_sum_to_the_final_score(self):
         """Q starts at zero for the trivial one-community partition, so the
@@ -416,7 +416,7 @@ class ComparableScoreTest(unittest.TestCase):
         for name, build in self.FIXTURES:
             with self.subTest(fixture=name):
                 slice_ = build().discover(1.0, spectral_config())
-                total = sum(s.deltaQ for s in slice_.splits
+                total = sum(s.delta_q for s in slice_.splits
                             if s.reason == REASON.SPLIT_ACCEPTED)
                 self.assertAlmostEqual(total, slice_.q, delta=1e-13)
 
@@ -426,7 +426,7 @@ class KernighanLinRefinementTest(unittest.TestCase):
     asserted."""
 
     def test_it_is_enabled_by_default(self):
-        self.assertTrue(obs.PersistentModularityConfig().kernighanLinRefinement)
+        self.assertTrue(obs.PersistentModularityConfig().kernighan_lin_refinement)
 
     def test_it_never_lowers_the_score(self):
         fixtures = (clique_chain([4, 5, 6]), square_grid(6, jitter=1e-3),
@@ -436,9 +436,9 @@ class KernighanLinRefinementTest(unittest.TestCase):
             with self.subTest(fixture=index):
                 withkl = graph.discover(1.0, spectral_config())
                 without = graph.discover(
-                    1.0, spectral_config(kernighanLinRefinement=False))
-                self.assertGreaterEqual(withkl.objectiveValue,
-                                        without.objectiveValue - 1e-12)
+                    1.0, spectral_config(kernighan_lin_refinement=False))
+                self.assertGreaterEqual(withkl.objective_value,
+                                        without.objective_value - 1e-12)
 
     def test_it_measurably_raises_the_score_on_a_noisy_partition(self):
         """On planted partitions with inter-block noise the sign bisection is
@@ -446,8 +446,8 @@ class KernighanLinRefinementTest(unittest.TestCase):
         graph = planted([8] * 4, 0.7, 0.08)
         withkl = graph.discover(1.0, spectral_config())
         without = graph.discover(
-            1.0, spectral_config(kernighanLinRefinement=False))
-        self.assertGreater(withkl.objectiveValue - without.objectiveValue, 0.01)
+            1.0, spectral_config(kernighan_lin_refinement=False))
+        self.assertGreater(withkl.objective_value - without.objective_value, 0.01)
 
 
 class DenseAndIterativeAgreeTest(unittest.TestCase):
@@ -458,16 +458,16 @@ class DenseAndIterativeAgreeTest(unittest.TestCase):
         graph = clique_chain([4, 5, 6])
         dense = graph.discover(1.0, spectral_config())
         iterative = graph.discover(
-            1.0, spectral_config(denseEigenSolveMaxGroup=0,
-                                 maxPowerIterations=500000))
+            1.0, spectral_config(dense_eigen_solve_max_group=0,
+                                 max_power_iterations=500000))
         self.assertEqual(partition_of(iterative), partition_of(dense))
         self.assertAlmostEqual(iterative.q, dense.q, places=9)
 
     def test_a_starved_iteration_refuses_rather_than_answering_wrongly(self):
         graph = clique_chain([4, 5, 6])
         starved = graph.discover(
-            1.0, spectral_config(denseEigenSolveMaxGroup=0,
-                                 maxPowerIterations=50))
+            1.0, spectral_config(dense_eigen_solve_max_group=0,
+                                 max_power_iterations=50))
         self.assertIn(REASON.POWER_ITERATION_NOT_CONVERGED,
                       reasons_of(starved))
         for split in starved.splits:
@@ -480,20 +480,20 @@ class DegenerateInputTest(unittest.TestCase):
     """Edge cases are handled explicitly, not by luck."""
 
     def test_a_disconnected_graph_splits_into_its_components(self):
-        graph = PM.fromWeightedEdges([0, 1, 3, 4], [1, 2, 4, 5], [1.0] * 4)
+        graph = PM.from_weighted_edges([0, 1, 3, 4], [1, 2, 4, 5], [1.0] * 4)
         slice_ = graph.discover(1.0, spectral_config())
         self.assertEqual(partition_of(slice_), ((0, 1, 2), (3, 4, 5)))
 
     def test_a_single_edge_is_indivisible(self):
-        slice_ = PM.fromWeightedEdges([0], [1], [1.0]).discover(
+        slice_ = PM.from_weighted_edges([0], [1], [1.0]).discover(
             1.0, spectral_config())
         self.assertEqual(len(slice_.components), 1)
 
     def test_isolated_cells_do_not_break_the_search(self):
-        graph = PM.fromWeightedEdges([0], [1], [1.0], [50, 51, 52])
+        graph = PM.from_weighted_edges([0], [1], [1.0], [50, 51, 52])
         slice_ = graph.discover(1.0, spectral_config())
         self.assertGreaterEqual(len(slice_.components), 1)
-        self.assertFalse(math.isnan(slice_.objectiveValue))
+        self.assertFalse(math.isnan(slice_.objective_value))
 
     def test_a_singleton_side_terminates_with_group_too_small(self):
         """A high gamma drives the recursion down to singletons, which is the
@@ -502,8 +502,8 @@ class DegenerateInputTest(unittest.TestCase):
         self.assertIn(REASON.GROUP_TOO_SMALL, reasons_of(slice_))
         for split in slice_.splits:
             if split.reason == REASON.GROUP_TOO_SMALL:
-                self.assertLess(split.groupSize, 2)
-                self.assertTrue(math.isnan(split.leadingEigenvalue))
+                self.assertLess(split.group_size, 2)
+                self.assertTrue(math.isnan(split.leading_eigenvalue))
 
 
 class HeuristicStatusUnchangedTest(unittest.TestCase):
@@ -516,7 +516,7 @@ class HeuristicStatusUnchangedTest(unittest.TestCase):
         graph = planted([10] * 3, 0.6, 0.10)
         spectral = graph.discover(1.0, spectral_config())
         incumbent = graph.discover(1.0, obs.PersistentModularityConfig())
-        self.assertLess(spectral.objectiveValue, incumbent.objectiveValue)
+        self.assertLess(spectral.objective_value, incumbent.objective_value)
 
     def test_both_strategies_produce_the_same_shape_of_component(self):
         graph = clique_chain([4, 5, 6])
@@ -524,9 +524,9 @@ class HeuristicStatusUnchangedTest(unittest.TestCase):
         incumbent = graph.discover(1.0, obs.PersistentModularityConfig())
         for slice_ in (spectral, incumbent):
             for comp in slice_.components:
-                self.assertTrue(comp.id.canonicalHash())
+                self.assertTrue(comp.id.canonical_hash())
                 self.assertGreater(len(comp.support), 0)
-                self.assertFalse(math.isnan(abs(comp.modularityContribution)))
+                self.assertFalse(math.isnan(abs(comp.modularity_contribution)))
 
     def test_components_from_either_strategy_are_matchable(self):
         """Identity is hashed by the same rule, so the cross-strategy match
@@ -534,11 +534,11 @@ class HeuristicStatusUnchangedTest(unittest.TestCase):
         graph = clique_chain([4, 5, 6])
         spectral = graph.discover(1.0, spectral_config())
         incumbent = graph.discover(1.0, obs.PersistentModularityConfig())
-        matches = graph.matchComponents(spectral.components,
+        matches = graph.match_components(spectral.components,
                                         incumbent.components)
         self.assertEqual(len(matches), len(spectral.components))
         for match in matches:
-            self.assertAlmostEqual(match.supportOverlap, 1.0, places=12)
+            self.assertAlmostEqual(match.support_overlap, 1.0, places=12)
 
 
 class ScanUsesTheSelectedStrategyTest(unittest.TestCase):
@@ -548,17 +548,17 @@ class ScanUsesTheSelectedStrategyTest(unittest.TestCase):
         graph = clique_chain([4, 5, 6])
         cfg = spectral_config()
         cfg.resolutions = [0.5, 1.0, 2.0]
-        report = graph.scanResolutions(cfg)
+        report = graph.scan_resolutions(cfg)
         self.assertEqual(len(report.slices), 3)
         for slice_ in report.slices:
             self.assertEqual(slice_.strategy, STRATEGY.LeadingEigenvector)
-            self.assertTrue(math.isnan(slice_.restartSpread))
+            self.assertTrue(math.isnan(slice_.restart_spread))
 
     def test_a_scan_still_chains_persistence_tracks(self):
         graph = clique_chain([4, 5, 6])
         cfg = spectral_config()
         cfg.resolutions = [0.8, 1.0, 1.2]
-        report = graph.scanResolutions(cfg)
+        report = graph.scan_resolutions(cfg)
         self.assertGreater(len(report.tracks), 0)
 
 

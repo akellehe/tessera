@@ -11,7 +11,7 @@ phase on every rejected/rolled-back move.  Both capture paths are covered:
 
 Each test seeds every edge with a distinct synthetic ``Im l^2 != 0`` and
 ``phase != 0``, applies the move, rolls it back, and asserts every edge's
-``getSquaredLength()`` (Re and Im) and ``getPhase()`` are bit-exact.  The
+``get_squared_length()`` (Re and Im) and ``get_phase()`` are bit-exact.  The
 rollback path is storage-level (no geometry evaluation), so the synthetic Im
 never meets the geometry stack.  A real signed-l^2 (timelike-carrying) action
 round trip on the CDT toroid extends the hinge-exactness contract.
@@ -34,25 +34,25 @@ PRE = None if not _IMPORT_OK else tessera.PachnerMode.PreGeometric
 
 
 def _seed_complex_geometry(st):
-    for e in st.getEdgeList().toVector():
-        a, b = e.getSource().getId(), e.getTarget().getId()
+    for e in st.get_edge_list().to_vector():
+        a, b = e.get_source().get_id(), e.get_target().get_id()
         lo, hi = min(a, b), max(a, b)
-        e.setLength(cmath.sqrt(complex(complex(1.0 + 0.001 * lo, 0.02 + 0.001 * hi))))
-        e.setPhase(0.05 + 0.002 * (lo * 7 + hi))
+        e.set_length(cmath.sqrt(complex(complex(1.0 + 0.001 * lo, 0.02 + 0.001 * hi))))
+        e.set_phase(0.05 + 0.002 * (lo * 7 + hi))
 
 
 def _edge_state(st):
     out = {}
-    for e in st.getEdgeList().toVector():
-        a, b = e.getSource().getId(), e.getTarget().getId()
-        out[(min(a, b), max(a, b))] = (complex(e.getLength()**2),
-                                       e.getPhase())
+    for e in st.get_edge_list().to_vector():
+        a, b = e.get_source().get_id(), e.get_target().get_id()
+        out[(min(a, b), max(a, b))] = (complex(e.get_length()**2),
+                                       e.get_phase())
     return out
 
 
 def _tops(st):
-    return sorted(tuple(sorted(v.getId() for v in s.getVertices()))
-                  for s in st.getTopSimplices())
+    return sorted(tuple(sorted(v.get_id() for v in s.get_vertices()))
+                  for s in st.get_top_simplices())
 
 
 def _assert_state_equal(before, after):
@@ -74,7 +74,7 @@ def _grown_cdt_with_removable_vertex(d=4, n_simplices=60,
     st = tessera.Spacetime(metric, tessera.CDT, 1.0, 1.0,
                            tessera.PREFERRED, tessera.Toroid())
     st.build(n_simplices)
-    cdt = tessera.CDTSimulation(st, 2.2, 0.5, 0.6, 0.02, st.getN41())
+    cdt = tessera.CDTSimulation(st, 2.2, 0.5, 0.6, 0.02, st.get_n41())
     for _ in range(max_batches):
         for _ in range(batch):
             cdt.add()
@@ -142,7 +142,7 @@ class TestRemoveMoveComplexRollback(unittest.TestCase):
         # the rollback must retrace the full complex dual Regge action.
         st = _grown_cdt_with_removable_vertex()
         solver = tessera.ReggeSolver(st, tessera.MatterConfiguration())
-        s0 = complex(solver.dualReggeAction())
+        s0 = complex(solver.dual_regge_action())
         self.assertGreater(abs(s0.imag), 1e-6,
                            "fixture is not genuinely Lorentzian")
 
@@ -157,7 +157,7 @@ class TestRemoveMoveComplexRollback(unittest.TestCase):
 
         s1 = complex(
             tessera.ReggeSolver(st, tessera.MatterConfiguration())
-            .dualReggeAction())
+            .dual_regge_action())
         self.assertLess(abs(s1.real - s0.real), 1e-6)
         self.assertLess(abs(s1.imag - s0.imag), 1e-6)
 

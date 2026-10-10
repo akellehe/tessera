@@ -61,18 +61,18 @@ def _from_simplices(num_vertices, simplices, ids=None):
     st = tessera.Spacetime(metric, tessera.HERMITIAN_WEIGHTED, 1.0, 1.0,
                            tessera.PREFERRED, tessera.Toroid())
     ids = list(range(num_vertices)) if ids is None else ids
-    verts = [st.createVertex(i) for i in ids]
+    verts = [st.create_vertex(i) for i in ids]
     for simplex in simplices:
-        st.createSimplex([verts[i] for i in simplex])
-    for e in st.getEdgeList().toVector():
-        e.setLength(1.0 + 0j)
-        e.setPhase(0.0)
+        st.create_simplex([verts[i] for i in simplex])
+    for e in st.get_edge_list().to_vector():
+        e.set_length(1.0 + 0j)
+        e.set_phase(0.0)
     return st
 
 
 def _edge(st, a, b):
-    for e in st.getEdgeList().toVector():
-        if {e.getSource().getId(), e.getTarget().getId()} == {a, b}:
+    for e in st.get_edge_list().to_vector():
+        if {e.get_source().get_id(), e.get_target().get_id()} == {a, b}:
             return e
     raise KeyError((a, b))
 
@@ -87,7 +87,7 @@ def _ladder():
          (0, 3), (1, 4), (2, 5)],
     )
     for a, b in ((0, 3), (1, 4), (2, 5)):
-        _edge(st, a, b).setLength(1j)
+        _edge(st, a, b).set_length(1j)
     return st
 
 
@@ -105,7 +105,7 @@ def _cone():
     st = _from_simplices(
         4, [(0, 1), (0, 2), (0, 3), (1, 2), (2, 3), (1, 3)])
     for a, b in CONE_RUNGS:
-        _edge(st, a, b).setLength(1j)
+        _edge(st, a, b).set_length(1j)
     return st
 
 
@@ -125,7 +125,7 @@ def _certified_rank_one_record(degree):
     isolated).
 
     The tests below re-point this record's CELLS at the ladder's timelike
-    rungs through the sanctioned `fromRecord` replay path.  The CERTIFICATE
+    rungs through the sanctioned `from_record` replay path.  The CERTIFICATE
     is never fabricated: it stays exactly the one the tracker issued, which
     is what makes `accepted` and the positive signature real rather than
     asserted.
@@ -138,19 +138,19 @@ def _certified_rank_one_record(degree):
     # permissive analysis cap the spectral-fiber suite defines for exactly
     # this situation; the conjunct itself is exercised there.
     cfg = obs.SpectralFiberConfig()
-    cfg.maxLocalizationExcess = 1.0
+    cfg.max_localization_excess = 1.0
     # A positive band with Krein signature (1, 0) is the diagonal weights'
     # certificate: the default Whitney pencil reads degree >= 1 in the
     # complex-symmetric pencil regime, whose bands carry the bilinear pairing
     # and no inertia, so the diagonal source is named.
     tracker = obs.SpectralFiberTracker(
         st, cfg, metric_source=tessera.cobordism.HodgeMetricSource.DiagonalWeights)
-    read = tracker.enumerateBands([0, 1, 2], degree)
+    read = tracker.enumerate_bands([0, 1, 2], degree)
     for fiber in read.fibers:
         cert = fiber.certificate()
         if (fiber.rank() == 1 and cert.accepted
-                and cert.positiveSignature == 1 and cert.negativeSignature == 0):
-            return fiber.toRecord()
+                and cert.positive_signature == 1 and cert.negative_signature == 0):
+            return fiber.to_record()
     raise AssertionError(
         f"no certified rank-one positive band at degree {degree}")
 
@@ -181,18 +181,18 @@ def _band_on(cells, amplitudes, degree=1):
     record["weights_im"] = [0.0] * rows
     record["eigenvalues_re"] = [0.0]
     record["eigenvalues_im"] = [0.0]
-    return obs.SpectralFiber.fromRecord(record)
+    return obs.SpectralFiber.from_record(record)
 
 
 def _tube(tube_id, cells, amplitudes, orientation=1, quark=True,
           winding=None, degree=1):
     tube = obs.WorldTubeInput()
-    tube.tubeId = tube_id
+    tube.tube_id = tube_id
     tube.band = _band_on(cells, amplitudes, degree)
     tube.orientation = orientation
-    tube.certifiedQuarkTube = quark
+    tube.certified_quark_tube = quark
     if winding is not None:
-        tube.determinantWinding = winding
+        tube.determinant_winding = winding
     return tube
 
 
@@ -207,17 +207,17 @@ class TestTemporalFunction(unittest.TestCase):
     def test_ladder_tau_is_exact_and_certified(self):
         """tau = 0 on M0 and exactly 1 on the upper layer: the proper time
         sqrt(-l^2) of a rung with l = i.  The certificate holds."""
-        read = obs.CrossingReadouts.temporalFunction(_ladder(), M0)
-        self.assertTrue(read.certified, read.failedCertificates)
-        self.assertEqual(list(read.failedCertificates), [])
+        read = obs.CrossingReadouts.temporal_function(_ladder(), M0)
+        self.assertTrue(read.certified, read.failed_certificates)
+        self.assertEqual(list(read.failed_certificates), [])
         for vertex in M0:
             self.assertAlmostEqual(abs(read.at(vertex)), 0.0, delta=MACHINE)
         for vertex in (3, 4, 5):
             self.assertAlmostEqual(read.at(vertex).real, 1.0, delta=MACHINE)
             self.assertAlmostEqual(read.at(vertex).imag, 0.0, delta=MACHINE)
-        self.assertAlmostEqual(read.minCausalIncrement, 1.0, delta=MACHINE)
-        self.assertEqual(read.causalEdgeCount, 3)
-        self.assertEqual(read.unreachableCount, 0)
+        self.assertAlmostEqual(read.min_causal_increment, 1.0, delta=MACHINE)
+        self.assertEqual(read.causal_edge_count, 3)
+        self.assertEqual(read.unreachable_count, 0)
 
     def test_a_generically_complex_rung_is_mixed_and_carries_no_time(self):
         """Measured after #870, and NOT obviously the behaviour to want.
@@ -241,11 +241,11 @@ class TestTemporalFunction(unittest.TestCase):
         """
         st = _ladder()
         edge = _edge(st, 0, 3)
-        edge.setLength(cmath.sqrt(complex(-1.0, -1.0)))
-        self.assertTrue(edge.isMixed())
-        self.assertAlmostEqual(edge.squaredArgument(), -3.0 * math.pi / 4.0,
+        edge.set_length(cmath.sqrt(complex(-1.0, -1.0)))
+        self.assertTrue(edge.is_mixed())
+        self.assertAlmostEqual(edge.squared_argument(), -3.0 * math.pi / 4.0,
                                delta=1e-12)
-        read = obs.CrossingReadouts.temporalFunction(st, M0)
+        read = obs.CrossingReadouts.temporal_function(st, M0)
         self.assertTrue(math.isnan(read.at(3).real))   # unreachable, not zero
 
     def test_layers_are_intrinsic_not_coordinates(self):
@@ -253,18 +253,18 @@ class TestTemporalFunction(unittest.TestCase):
         vertex coordinate is read.  Moving a vertex's stored time cannot
         change the layering."""
         st = _ladder()
-        before = obs.CrossingReadouts.temporalFunction(st, M0)
-        for vertex in st.getVertexList().toVector():
-            if vertex.getId() in (3, 4, 5):
-                vertex.setTime(-99.0)
-        after = obs.CrossingReadouts.temporalFunction(st, M0)
+        before = obs.CrossingReadouts.temporal_function(st, M0)
+        for vertex in st.get_vertex_list().to_vector():
+            if vertex.get_id() in (3, 4, 5):
+                vertex.set_time(-99.0)
+        after = obs.CrossingReadouts.temporal_function(st, M0)
         self.assertEqual(list(before.layer), list(after.layer))
         self.assertEqual(before.certified, after.certified)
 
     def test_empty_boundary_refuses_by_name(self):
-        read = obs.CrossingReadouts.temporalFunction(_ladder(), [])
+        read = obs.CrossingReadouts.temporal_function(_ladder(), [])
         self.assertFalse(read.certified)
-        self.assertIn("empty-boundary", list(read.failedCertificates))
+        self.assertIn("empty-boundary", list(read.failed_certificates))
 
     def test_null_causal_edge_refuses_by_name(self):
         """A null edge is refused, never counted at zero.
@@ -278,29 +278,29 @@ class TestTemporalFunction(unittest.TestCase):
         st = _ladder()
         component = math.sqrt(0.5)
         edge = _edge(st, 0, 3)
-        edge.setLength(complex(component, component))
-        self.assertTrue(edge.isNull())          # a lightlike ray ...
-        self.assertFalse(edge.isDegenerate())   # ... not an absent edge
-        read = obs.CrossingReadouts.temporalFunction(st, M0)
+        edge.set_length(complex(component, component))
+        self.assertTrue(edge.is_null())          # a lightlike ray ...
+        self.assertFalse(edge.is_degenerate())   # ... not an absent edge
+        read = obs.CrossingReadouts.temporal_function(st, M0)
         self.assertFalse(read.certified)
-        self.assertIn("null-causal-edge", list(read.failedCertificates))
+        self.assertIn("null-causal-edge", list(read.failed_certificates))
 
     def test_causal_edge_inside_one_layer_refuses_by_name(self):
         """A causal edge joining two vertices of the same layer cannot be
         ordered by the induced time orientation."""
         st = _ladder()
-        _edge(st, 0, 1).setLength(1j)   # a timelike edge inside M0
-        read = obs.CrossingReadouts.temporalFunction(st, M0)
+        _edge(st, 0, 1).set_length(1j)   # a timelike edge inside M0
+        read = obs.CrossingReadouts.temporal_function(st, M0)
         self.assertFalse(read.certified)
-        self.assertIn("causal-cycle", list(read.failedCertificates))
+        self.assertIn("causal-cycle", list(read.failed_certificates))
 
     def test_uncertified_temporal_function_blocks_every_crossing(self):
-        read = obs.CrossingReadouts.temporalFunction(_ladder(), [])
+        read = obs.CrossingReadouts.temporal_function(_ladder(), [])
         crossing = obs.CrossingReadouts.crossing(
             _rung_tube("q", RUNGS[0]), read, 0.5)
         self.assertFalse(crossing.admissible)
         self.assertIn("uncertified-temporal-function",
-                      list(crossing.failedCertificates))
+                      list(crossing.failed_certificates))
 
 
 # --------------------------------------------------------------------------- #
@@ -323,8 +323,8 @@ class TestConnectionIndependence(unittest.TestCase):
     def _phased(spacetime):
         """An arbitrary, edge-dependent COMPLEX phase on every edge: a
         nontrivial compact angle and a nontrivial non-compact scale."""
-        for index, edge in enumerate(spacetime.getEdgeList().toVector()):
-            edge.setPhase(complex(0.37 * (index + 1), -0.21 * (index + 2)))
+        for index, edge in enumerate(spacetime.get_edge_list().to_vector()):
+            edge.set_phase(complex(0.37 * (index + 1), -0.21 * (index + 2)))
         return spacetime
 
     def _tubes(self, orientations=(1, 1, 1), windings=None):
@@ -335,19 +335,19 @@ class TestConnectionIndependence(unittest.TestCase):
         ]
 
     def test_temporal_function_is_bitwise_phase_independent(self):
-        plain = obs.CrossingReadouts.temporalFunction(_ladder(), M0)
-        phased = obs.CrossingReadouts.temporalFunction(
+        plain = obs.CrossingReadouts.temporal_function(_ladder(), M0)
+        phased = obs.CrossingReadouts.temporal_function(
             self._phased(_ladder()), M0)
         self.assertEqual(plain.certified, phased.certified)
         self.assertEqual(list(plain.vertices), list(phased.vertices))
         for a, b in zip(plain.tau, phased.tau):
             self.assertEqual(a.real, b.real)
             self.assertEqual(a.imag, b.imag)
-        self.assertEqual(plain.minCausalIncrement, phased.minCausalIncrement)
+        self.assertEqual(plain.min_causal_increment, phased.min_causal_increment)
 
     def test_pi_perp_is_bitwise_phase_independent(self):
-        plain_t = obs.CrossingReadouts.temporalFunction(_ladder(), M0)
-        phased_t = obs.CrossingReadouts.temporalFunction(
+        plain_t = obs.CrossingReadouts.temporal_function(_ladder(), M0)
+        phased_t = obs.CrossingReadouts.temporal_function(
             self._phased(_ladder()), M0)
         tube = _rung_tube("q", RUNGS[0])
         a = obs.CrossingReadouts.crossing(tube, plain_t, 0.5)
@@ -359,27 +359,27 @@ class TestConnectionIndependence(unittest.TestCase):
         self.assertEqual(list(a.density), list(b.density))
 
     def test_mass_baryon_and_profile_are_bitwise_phase_independent(self):
-        plain_t = obs.CrossingReadouts.temporalFunction(_ladder(), M0)
-        phased_t = obs.CrossingReadouts.temporalFunction(
+        plain_t = obs.CrossingReadouts.temporal_function(_ladder(), M0)
+        phased_t = obs.CrossingReadouts.temporal_function(
             self._phased(_ladder()), M0)
         tubes = self._tubes()
         for temporal_a, temporal_b in ((plain_t, phased_t),):
-            mass_a = obs.CrossingReadouts.crossingMass(
+            mass_a = obs.CrossingReadouts.crossing_mass(
                 tubes, temporal_a, 0.5, 0.0)
-            mass_b = obs.CrossingReadouts.crossingMass(
+            mass_b = obs.CrossingReadouts.crossing_mass(
                 tubes, temporal_b, 0.5, 0.0)
-            self.assertEqual(mass_a.crossingMass, mass_b.crossingMass)
-            self.assertEqual(mass_a.levelSum, mass_b.levelSum)
+            self.assertEqual(mass_a.crossing_mass, mass_b.crossing_mass)
+            self.assertEqual(mass_a.level_sum, mass_b.level_sum)
 
-            baryon_a = obs.CrossingReadouts.baryonNumber(
+            baryon_a = obs.CrossingReadouts.baryon_number(
                 tubes, temporal_a, 0.5, 0.0)
-            baryon_b = obs.CrossingReadouts.baryonNumber(
+            baryon_b = obs.CrossingReadouts.baryon_number(
                 tubes, temporal_b, 0.5, 0.0)
-            self.assertEqual(baryon_a.baryonNumber, baryon_b.baryonNumber)
+            self.assertEqual(baryon_a.baryon_number, baryon_b.baryon_number)
 
-            profile_a = obs.CrossingReadouts.chargePowerProfile(
+            profile_a = obs.CrossingReadouts.charge_power_profile(
                 tubes, temporal_a, 0.5)
-            profile_b = obs.CrossingReadouts.chargePowerProfile(
+            profile_b = obs.CrossingReadouts.charge_power_profile(
                 tubes, temporal_b, 0.5)
             self.assertEqual(list(profile_a.eigenvalues),
                              list(profile_b.eigenvalues))
@@ -390,7 +390,7 @@ class TestConnectionIndependence(unittest.TestCase):
         """Guard against a vacuous invariance test: the phases must actually
         be set to nonzero complex values on the fixture being compared."""
         spacetime = self._phased(_ladder())
-        phases = [e.getPhase() for e in spacetime.getEdgeList().toVector()]
+        phases = [e.get_phase() for e in spacetime.get_edge_list().to_vector()]
         self.assertTrue(all(abs(p) > 0.0 for p in phases))
         self.assertTrue(any(abs(p.imag) > 0.0 for p in phases))
         self.assertTrue(any(abs(p.real) > 0.0 for p in phases))
@@ -400,7 +400,7 @@ class TestBandDensity(unittest.TestCase):
     def test_density_matches_the_projector_diagonal(self):
         band = _band_on([[0, 3], [1, 4]],
                         [math.sqrt(0.25), math.sqrt(0.75)])
-        density = obs.CrossingReadouts.bandEdgeDensity(band)
+        density = obs.CrossingReadouts.band_edge_density(band)
         self.assertAlmostEqual(density[(0, 3)], 0.25, delta=MACHINE)
         self.assertAlmostEqual(density[(1, 4)], 0.75, delta=MACHINE)
 
@@ -409,7 +409,7 @@ class TestBandDensity(unittest.TestCase):
         frames by g and CANCELS in the bilinear product, so the density is
         unchanged.  Verified through the whole crossing: pi_perp is
         identical."""
-        temporal = obs.CrossingReadouts.temporalFunction(_ladder(), M0)
+        temporal = obs.CrossingReadouts.temporal_function(_ladder(), M0)
         plain = _tube("q", [list(RUNGS[0]), list(RUNGS[1])],
                       [math.sqrt(0.25), math.sqrt(0.75)])
         phase = cmath.exp(0.7j)
@@ -428,14 +428,14 @@ class TestBandDensity(unittest.TestCase):
         so it has no crossing set at all."""
         band = _band_on([[0]], [1.0 + 0j], degree=0)
         self.assertEqual(band.degree(), 0)
-        self.assertEqual(dict(obs.CrossingReadouts.bandEdgeDensity(band)), {})
+        self.assertEqual(dict(obs.CrossingReadouts.band_edge_density(band)), {})
 
     def test_degree_zero_band_refuses_by_name(self):
-        temporal = obs.CrossingReadouts.temporalFunction(_ladder(), M0)
+        temporal = obs.CrossingReadouts.temporal_function(_ladder(), M0)
         tube = _tube("v", [[0]], [1.0 + 0j], degree=0)
         read = obs.CrossingReadouts.crossing(tube, temporal, 0.5)
         self.assertFalse(read.admissible)
-        self.assertIn("degree-zero-band", list(read.failedCertificates))
+        self.assertIn("degree-zero-band", list(read.failed_certificates))
 
 
 # --------------------------------------------------------------------------- #
@@ -443,17 +443,17 @@ class TestBandDensity(unittest.TestCase):
 # --------------------------------------------------------------------------- #
 class TestCrossing(unittest.TestCase):
     def setUp(self):
-        self.temporal = obs.CrossingReadouts.temporalFunction(_ladder(), M0)
+        self.temporal = obs.CrossingReadouts.temporal_function(_ladder(), M0)
 
     def test_pi_perp_is_exact_on_one_rung(self):
         """A tube localized on one rung crosses with pi_perp = dtau = 1."""
         read = obs.CrossingReadouts.crossing(
             _rung_tube("q", RUNGS[0]), self.temporal, 0.5)
-        self.assertTrue(read.admissible, read.failedCertificates)
+        self.assertTrue(read.admissible, read.failed_certificates)
         self.assertAlmostEqual(read.perpendicular.real, 1.0, delta=MACHINE)
         self.assertAlmostEqual(read.perpendicular.imag, 0.0, delta=MACHINE)
         self.assertEqual(read.sign, 1)
-        self.assertEqual([tuple(e) for e in read.crossingEdges], [(0, 3)])
+        self.assertEqual([tuple(e) for e in read.crossing_edges], [(0, 3)])
         self.assertAlmostEqual(read.density[0], 1.0, delta=MACHINE)
 
     def test_density_normalizes_over_the_crossing_set(self):
@@ -462,8 +462,8 @@ class TestCrossing(unittest.TestCase):
         band_cells = [list(RUNGS[0]), [3, 4]]     # one rung + one edge above
         tube = _tube("q", band_cells, [math.sqrt(0.5), math.sqrt(0.5)])
         read = obs.CrossingReadouts.crossing(tube, self.temporal, 0.5)
-        self.assertTrue(read.admissible, read.failedCertificates)
-        self.assertEqual([tuple(e) for e in read.crossingEdges], [(0, 3)])
+        self.assertTrue(read.admissible, read.failed_certificates)
+        self.assertEqual([tuple(e) for e in read.crossing_edges], [(0, 3)])
         self.assertAlmostEqual(sum(read.density), 1.0, delta=MACHINE)
         self.assertAlmostEqual(read.perpendicular.real, 1.0, delta=MACHINE)
 
@@ -486,7 +486,7 @@ class TestCrossing(unittest.TestCase):
         read = obs.CrossingReadouts.crossing(
             _rung_tube("q", RUNGS[0]), self.temporal, 7.5)
         self.assertFalse(read.admissible)
-        self.assertIn("empty-crossing", list(read.failedCertificates))
+        self.assertIn("empty-crossing", list(read.failed_certificates))
         self.assertEqual(read.sign, 0)
 
     def test_nonregular_level_refuses_by_name(self):
@@ -494,7 +494,7 @@ class TestCrossing(unittest.TestCase):
         read = obs.CrossingReadouts.crossing(
             _rung_tube("q", RUNGS[0]), self.temporal, 1.0)
         self.assertFalse(read.admissible)
-        self.assertIn("nonregular-level", list(read.failedCertificates))
+        self.assertIn("nonregular-level", list(read.failed_certificates))
 
     def test_inadmissible_crossing_has_no_sign(self):
         """An inadmissible crossing reports sign 0 = UNKNOWN, never a silent
@@ -510,7 +510,7 @@ class TestCrossing(unittest.TestCase):
 # --------------------------------------------------------------------------- #
 class TestMassAndBaryon(unittest.TestCase):
     def setUp(self):
-        self.temporal = obs.CrossingReadouts.temporalFunction(_ladder(), M0)
+        self.temporal = obs.CrossingReadouts.temporal_function(_ladder(), M0)
 
     def _tubes(self, orientations, windings=None):
         windings = windings or [None] * len(orientations)
@@ -520,93 +520,93 @@ class TestMassAndBaryon(unittest.TestCase):
         ]
 
     def test_three_forward_quark_tubes_give_baryon_one(self):
-        read = obs.CrossingReadouts.baryonNumber(
+        read = obs.CrossingReadouts.baryon_number(
             self._tubes([1, 1, 1]), self.temporal, 0.5, 0.0)
-        self.assertIsNotNone(read.baryonNumber)
-        self.assertAlmostEqual(read.baryonNumber, 1.0, delta=MACHINE)
-        self.assertEqual(read.quarkTubes, 3)
+        self.assertIsNotNone(read.baryon_number)
+        self.assertAlmostEqual(read.baryon_number, 1.0, delta=MACHINE)
+        self.assertEqual(read.quark_tubes, 3)
 
     def test_conjugate_pair_cancels_baryon_and_doubles_mass(self):
         """Moduli add while signs cancel: the pair carries twice the crossing
         mass of one constituent and zero net baryon number."""
-        single = obs.CrossingReadouts.crossingMass(
+        single = obs.CrossingReadouts.crossing_mass(
             self._tubes([1]), self.temporal, 0.5, 0.0)
         pair_tubes = self._tubes([1, -1])
-        pair_mass = obs.CrossingReadouts.crossingMass(
+        pair_mass = obs.CrossingReadouts.crossing_mass(
             pair_tubes, self.temporal, 0.5, 0.0)
-        pair_baryon = obs.CrossingReadouts.baryonNumber(
+        pair_baryon = obs.CrossingReadouts.baryon_number(
             pair_tubes, self.temporal, 0.5, 0.0)
-        self.assertAlmostEqual(pair_mass.crossingMass,
-                               2.0 * single.crossingMass, delta=MACHINE)
-        self.assertIsNotNone(pair_baryon.baryonNumber)
-        self.assertAlmostEqual(pair_baryon.baryonNumber, 0.0, delta=MACHINE)
+        self.assertAlmostEqual(pair_mass.crossing_mass,
+                               2.0 * single.crossing_mass, delta=MACHINE)
+        self.assertIsNotNone(pair_baryon.baryon_number)
+        self.assertAlmostEqual(pair_baryon.baryon_number, 0.0, delta=MACHINE)
 
     def test_baryon_thirds_are_the_normalization(self):
         """One certified quark tube carries exactly B = 1/3, consistent with
         the independent determinant-line proposal B = nu/3."""
-        read = obs.CrossingReadouts.baryonNumber(
+        read = obs.CrossingReadouts.baryon_number(
             self._tubes([1]), self.temporal, 0.5, 0.0)
-        self.assertAlmostEqual(read.baryonNumber, 1.0 / 3.0, delta=MACHINE)
-        reversed_read = obs.CrossingReadouts.baryonNumber(
+        self.assertAlmostEqual(read.baryon_number, 1.0 / 3.0, delta=MACHINE)
+        reversed_read = obs.CrossingReadouts.baryon_number(
             self._tubes([-1]), self.temporal, 0.5, 0.0)
-        self.assertAlmostEqual(reversed_read.baryonNumber, -1.0 / 3.0,
+        self.assertAlmostEqual(reversed_read.baryon_number, -1.0 / 3.0,
                                delta=MACHINE)
 
     def test_non_quark_tubes_carry_mass_but_no_baryon_number(self):
         tubes = [_rung_tube("g", RUNGS[0], quark=False)]
-        mass = obs.CrossingReadouts.crossingMass(
+        mass = obs.CrossingReadouts.crossing_mass(
             tubes, self.temporal, 0.5, 0.0)
-        baryon = obs.CrossingReadouts.baryonNumber(
+        baryon = obs.CrossingReadouts.baryon_number(
             tubes, self.temporal, 0.5, 0.0)
-        self.assertAlmostEqual(mass.crossingMass, 1.0, delta=MACHINE)
-        self.assertIsNone(baryon.baryonNumber)   # unknown, never zero
+        self.assertAlmostEqual(mass.crossing_mass, 1.0, delta=MACHINE)
+        self.assertIsNone(baryon.baryon_number)   # unknown, never zero
 
     def test_mass_ships_uncalibrated(self):
-        read = obs.CrossingReadouts.crossingMass(
+        read = obs.CrossingReadouts.crossing_mass(
             self._tubes([1]), self.temporal, 0.5, 0.0)
         self.assertFalse(read.calibrated)
         self.assertEqual(read.units, "uncalibrated")
-        self.assertAlmostEqual(read.kappaMass, 1.0, delta=MACHINE)
+        self.assertAlmostEqual(read.kappa_mass, 1.0, delta=MACHINE)
 
     def test_kappa_scales_the_mass_only(self):
         cfg = obs.CrossingReadoutsConfig()
-        cfg.kappaMass = 3.5
-        scaled = obs.CrossingReadouts.crossingMass(
+        cfg.kappa_mass = 3.5
+        scaled = obs.CrossingReadouts.crossing_mass(
             self._tubes([1]), self.temporal, 0.5, 0.0, cfg)
-        plain = obs.CrossingReadouts.crossingMass(
+        plain = obs.CrossingReadouts.crossing_mass(
             self._tubes([1]), self.temporal, 0.5, 0.0)
-        self.assertAlmostEqual(scaled.crossingMass,
-                               3.5 * plain.crossingMass, delta=MACHINE)
-        baryon = obs.CrossingReadouts.baryonNumber(
+        self.assertAlmostEqual(scaled.crossing_mass,
+                               3.5 * plain.crossing_mass, delta=MACHINE)
+        baryon = obs.CrossingReadouts.baryon_number(
             self._tubes([1]), self.temporal, 0.5, 0.0, cfg)
-        self.assertAlmostEqual(baryon.baryonNumber, 1.0 / 3.0, delta=MACHINE)
+        self.assertAlmostEqual(baryon.baryon_number, 1.0 / 3.0, delta=MACHINE)
 
     def test_readout_at_m0_itself_is_zero(self):
         """Every readout is the difference against the same sum at M0, so
         reading M0 against itself is zero by construction."""
         tubes = self._tubes([1, 1, 1])
-        mass = obs.CrossingReadouts.crossingMass(
+        mass = obs.CrossingReadouts.crossing_mass(
             tubes, self.temporal, 0.5, 0.5)
-        baryon = obs.CrossingReadouts.baryonNumber(
+        baryon = obs.CrossingReadouts.baryon_number(
             tubes, self.temporal, 0.5, 0.5)
-        self.assertAlmostEqual(mass.crossingMass, 0.0, delta=MACHINE)
-        self.assertAlmostEqual(baryon.baryonNumber, 0.0, delta=MACHINE)
+        self.assertAlmostEqual(mass.crossing_mass, 0.0, delta=MACHINE)
+        self.assertAlmostEqual(baryon.baryon_number, 0.0, delta=MACHINE)
 
     def test_winding_disagreement_is_a_defect_signal(self):
         """A tube whose crossing sign disagrees with its certified winding is
         NAMED, and it is not dropped from the sum."""
         tubes = self._tubes([-1], windings=[+1])
-        read = obs.CrossingReadouts.baryonNumber(
+        read = obs.CrossingReadouts.baryon_number(
             tubes, self.temporal, 0.5, 0.0)
-        self.assertEqual(list(read.signDefects), ["t0"])
-        self.assertEqual(read.windingAgreements, 0)
-        self.assertAlmostEqual(read.baryonNumber, -1.0 / 3.0, delta=MACHINE)
+        self.assertEqual(list(read.sign_defects), ["t0"])
+        self.assertEqual(read.winding_agreements, 0)
+        self.assertAlmostEqual(read.baryon_number, -1.0 / 3.0, delta=MACHINE)
 
     def test_winding_agreement_is_counted(self):
-        read = obs.CrossingReadouts.baryonNumber(
+        read = obs.CrossingReadouts.baryon_number(
             self._tubes([1, -1], windings=[+1, -1]), self.temporal, 0.5, 0.0)
-        self.assertEqual(list(read.signDefects), [])
-        self.assertEqual(read.windingAgreements, 2)
+        self.assertEqual(list(read.sign_defects), [])
+        self.assertEqual(read.winding_agreements, 2)
 
 
 # --------------------------------------------------------------------------- #
@@ -614,7 +614,7 @@ class TestMassAndBaryon(unittest.TestCase):
 # --------------------------------------------------------------------------- #
 class TestChargePowerProfile(unittest.TestCase):
     def setUp(self):
-        self.temporal = obs.CrossingReadouts.temporalFunction(
+        self.temporal = obs.CrossingReadouts.temporal_function(
             _cone(), CONE_M0)
 
     def _cone_tube(self, tube_id, rung, **kwargs):
@@ -632,9 +632,9 @@ class TestChargePowerProfile(unittest.TestCase):
         eigenspace is genuinely two-dimensional.
         """
         tubes = [self._cone_tube(f"t{i}", CONE_RUNGS[i]) for i in range(3)]
-        read = obs.CrossingReadouts.chargePowerProfile(
+        read = obs.CrossingReadouts.charge_power_profile(
             tubes, self.temporal, 0.5)
-        self.assertEqual(read.sliceNodes, 3)
+        self.assertEqual(read.slice_nodes, 3)
         self.assertEqual(len(read.eigenvalues), 2)
         self.assertAlmostEqual(read.eigenvalues[0], 0.0, delta=1e-9)
         self.assertAlmostEqual(read.eigenvalues[1], 3.0, delta=1e-9)
@@ -671,23 +671,23 @@ class TestChargePowerProfile(unittest.TestCase):
             self._cone_tube("q", CONE_RUNGS[0]),
             self._cone_tube("qbar", CONE_RUNGS[1], orientation=-1),
         ]
-        read = obs.CrossingReadouts.chargePowerProfile(
+        read = obs.CrossingReadouts.charge_power_profile(
             tubes, self.temporal, 0.5)
-        self.assertEqual(read.sliceNodes, 2)
+        self.assertEqual(read.slice_nodes, 2)
         self.assertFalse(read.normalized)
-        self.assertIn("neutral-system", list(read.failedCertificates))
-        self.assertEqual(list(read.normalizedPower), [])
+        self.assertIn("neutral-system", list(read.failed_certificates))
+        self.assertEqual(list(read.normalized_power), [])
         self.assertGreater(sum(read.power), 0.0)
         self.assertAlmostEqual(read.monopole, 0.0, delta=1e-9)
 
     def test_charged_system_normalizes_to_one_at_zero(self):
         tubes = [self._cone_tube(f"t{i}", CONE_RUNGS[i]) for i in range(3)]
-        read = obs.CrossingReadouts.chargePowerProfile(
+        read = obs.CrossingReadouts.charge_power_profile(
             tubes, self.temporal, 0.5)
-        self.assertTrue(read.normalized, list(read.failedCertificates))
+        self.assertTrue(read.normalized, list(read.failed_certificates))
         zero_index = min(range(len(read.eigenvalues)),
                          key=lambda i: abs(read.eigenvalues[i]))
-        self.assertAlmostEqual(read.normalizedPower[zero_index], 1.0,
+        self.assertAlmostEqual(read.normalized_power[zero_index], 1.0,
                                delta=1e-9)
         # Total charge 3 spread over K3: the monopole is (sum rho)^2 / 3 = 3
         # and the degenerate lambda = 3 power vanishes on the constant.
@@ -695,11 +695,11 @@ class TestChargePowerProfile(unittest.TestCase):
         self.assertAlmostEqual(read.power[1], 0.0, delta=1e-9)
 
     def test_empty_slice_refuses_by_name(self):
-        read = obs.CrossingReadouts.chargePowerProfile(
+        read = obs.CrossingReadouts.charge_power_profile(
             [self._cone_tube("q", CONE_RUNGS[0])], self.temporal, 7.5)
         self.assertFalse(read.normalized)
-        self.assertIn("empty-slice", list(read.failedCertificates))
-        self.assertEqual(read.sliceNodes, 0)
+        self.assertIn("empty-slice", list(read.failed_certificates))
+        self.assertEqual(read.slice_nodes, 0)
 
 
 # --------------------------------------------------------------------------- #
@@ -710,29 +710,29 @@ class TestFormFactor(unittest.TestCase):
         """G_E needs a certified conserved current, certified momentum-
         transfer states, and a refinement extrapolation.  None exist here, so
         the radius is UNAVAILABLE with every missing certificate named."""
-        temporal = obs.CrossingReadouts.temporalFunction(_cone(), CONE_M0)
+        temporal = obs.CrossingReadouts.temporal_function(_cone(), CONE_M0)
         tubes = [_tube(f"t{i}", [list(CONE_RUNGS[i])], [1.0 + 0j])
                  for i in range(3)]
-        profile = obs.CrossingReadouts.chargePowerProfile(
+        profile = obs.CrossingReadouts.charge_power_profile(
             tubes, temporal, 0.5)
-        read = obs.CrossingReadouts.formFactor(profile)
+        read = obs.CrossingReadouts.form_factor(profile)
         self.assertFalse(read.available)
-        self.assertIsNone(read.chargeRadiusSquared)
+        self.assertIsNone(read.charge_radius_squared)
         self.assertEqual(
-            set(read.failedCertificates),
+            set(read.failed_certificates),
             {"no-certified-conserved-current", "no-certified-momentum-states",
              "no-refinement-extrapolation"})
 
     def test_spectral_power_is_never_substituted_for_g_e(self):
         """Even on a fully normalized profile the form factor refuses: the
         incoherent structure factor is not the coherent matrix element."""
-        temporal = obs.CrossingReadouts.temporalFunction(_cone(), CONE_M0)
+        temporal = obs.CrossingReadouts.temporal_function(_cone(), CONE_M0)
         tubes = [_tube(f"t{i}", [list(CONE_RUNGS[i])], [1.0 + 0j])
                  for i in range(3)]
-        profile = obs.CrossingReadouts.chargePowerProfile(
+        profile = obs.CrossingReadouts.charge_power_profile(
             tubes, temporal, 0.5)
         self.assertTrue(profile.normalized)
-        read = obs.CrossingReadouts.formFactor(profile)
+        read = obs.CrossingReadouts.form_factor(profile)
         self.assertFalse(read.available)
         self.assertIn("never substituted", read.note)
 
@@ -742,12 +742,12 @@ class TestFormFactor(unittest.TestCase):
 # --------------------------------------------------------------------------- #
 class TestOverlayRecord(unittest.TestCase):
     def test_overlay_is_versioned_and_complete(self):
-        temporal = obs.CrossingReadouts.temporalFunction(_ladder(), M0)
+        temporal = obs.CrossingReadouts.temporal_function(_ladder(), M0)
         tubes = [_rung_tube(f"t{i}", RUNGS[i]) for i in range(3)]
-        record = obs.CrossingReadouts.overlayRecord(
+        record = obs.CrossingReadouts.overlay_record(
             tubes, temporal, 0.5, 0.0)
         self.assertEqual(record["schema_version"],
-                         obs.CrossingReadouts.kSchemaVersion)
+                         obs.CrossingReadouts.k_schema_version)
         for key in ("level", "reference_level", "thresholds",
                     "temporal_function", "crossings", "crossing_mass",
                     "baryon_number", "charge_power_profile", "form_factor"):
@@ -760,8 +760,8 @@ class TestOverlayRecord(unittest.TestCase):
     def test_complex_channels_carry_both_parts(self):
         """pi_perp is complex and both parts always travel: nothing is
         silently .real-ed."""
-        temporal = obs.CrossingReadouts.temporalFunction(_ladder(), M0)
-        record = obs.CrossingReadouts.overlayRecord(
+        temporal = obs.CrossingReadouts.temporal_function(_ladder(), M0)
+        record = obs.CrossingReadouts.overlay_record(
             [_rung_tube("q", RUNGS[0])], temporal, 0.5, 0.0)
         crossing = record["crossings"][0]
         self.assertIn("perpendicular_re", crossing)
@@ -771,9 +771,9 @@ class TestOverlayRecord(unittest.TestCase):
 
     def test_thresholds_are_echoed(self):
         cfg = obs.CrossingReadoutsConfig()
-        cfg.kappaMass = 2.25
-        temporal = obs.CrossingReadouts.temporalFunction(_ladder(), M0)
-        record = obs.CrossingReadouts.overlayRecord(
+        cfg.kappa_mass = 2.25
+        temporal = obs.CrossingReadouts.temporal_function(_ladder(), M0)
+        record = obs.CrossingReadouts.overlay_record(
             [_rung_tube("q", RUNGS[0])], temporal, 0.5, 0.0, cfg)
         self.assertAlmostEqual(record["thresholds"]["kappa_mass"], 2.25,
                                delta=MACHINE)

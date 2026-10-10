@@ -106,9 +106,9 @@ def _declaration(**overrides):
 
 def _canonical_edges(spacetime):
     """The canonical degree-one cells of the complex, as vertex pairs."""
-    complex_ = cob.ChainComplex.fromSpacetime(spacetime)
+    complex_ = cob.ChainComplex.from_spacetime(spacetime)
     return [tuple(int(vertex) for vertex in cell)
-            for cell in complex_.kSimplexVertices(1)]
+            for cell in complex_.k_simplex_vertices(1)]
 
 
 def _history(levels):
@@ -127,10 +127,10 @@ def _triangulate(W):
     are the tetrahedra of the staircase prisms and it is pure.
     """
     top = [list(cell) for cell in W.cells if len(cell) == 4]
-    spacetime = T.Spacetime.fromVertexTuples(3, top, 1.0, 0.0)
-    for index, edge in enumerate(spacetime.getEdgeList().toVector()):
-        edge.setLength(cmath.sqrt(_metric(index)))
-        edge.setPhase(_flux_phase(index))
+    spacetime = T.Spacetime.from_vertex_tuples(3, top, 1.0, 0.0)
+    for index, edge in enumerate(spacetime.get_edge_list().to_vector()):
+        edge.set_length(cmath.sqrt(_metric(index)))
+        edge.set_phase(_flux_phase(index))
     return spacetime
 
 
@@ -145,19 +145,19 @@ def _incoming_state(spacetime, W):
     incoming fermion number is three.
     """
     stored = {}
-    for edge in spacetime.getEdgeList().toVector():
-        source = int(edge.getSource().getId())
-        target = int(edge.getTarget().getId())
+    for edge in spacetime.get_edge_list().to_vector():
+        source = int(edge.get_source().get_id())
+        target = int(edge.get_target().get_id())
         stored[(min(source, target), max(source, target))] = (
-            edge.getLength(), edge.getPhase(), source < target)
-    level = T.Spacetime.fromVertexTuples(2, SPHERE2, 1.0, 0.0)
-    for edge in level.getEdgeList().toVector():
-        source = int(edge.getSource().getId())
-        target = int(edge.getTarget().getId())
+            edge.get_length(), edge.get_phase(), source < target)
+    level = T.Spacetime.from_vertex_tuples(2, SPHERE2, 1.0, 0.0)
+    for edge in level.get_edge_list().to_vector():
+        source = int(edge.get_source().get_id())
+        target = int(edge.get_target().get_id())
         length, phase, ascending = stored[(min(source, target),
                                            max(source, target))]
-        edge.setLength(length)
-        edge.setPhase(phase if ascending == (source < target) else -phase)
+        edge.set_length(length)
+        edge.set_phase(phase if ascending == (source < target) else -phase)
     bare = cob.JointAction(level, _declaration(holonomy_weight=HOLONOMY_WEIGHT))
     local = np.array(bare.occupation_projector(OCCUPIED),
                      dtype=complex).reshape(6, 6)
@@ -189,8 +189,8 @@ class QuasiFreeHistory:
         self.covariance = bare.occupation_projector(OCCUPIED)
         self.action = self.action_for(self.covariance)
         self.cuts = [
-            obs.ClusterLineage.levelCut(self.W, 0),
-            obs.ClusterLineage.levelCut(self.W, 1),
+            obs.ClusterLineage.level_cut(self.W, 0),
+            obs.ClusterLineage.level_cut(self.W, 1),
             self.moved_cut(),
         ]
 
@@ -202,10 +202,10 @@ class QuasiFreeHistory:
 
     def moved_cut(self):
         """The first level cut moved past two interior vertices."""
-        side = list(obs.ClusterLineage.levelCut(self.W, 0).side)
+        side = list(obs.ClusterLineage.level_cut(self.W, 0).side)
         side[4] = 0
         side[6] = 0
-        return obs.ClusterLineage.cutFromSides(self.W, side)
+        return obs.ClusterLineage.cut_from_sides(self.W, side)
 
     def scale(self, action=None):
         current = (action or self.action).canonical_ward_current()
@@ -268,9 +268,9 @@ class TheWardIdentityHoldsForEveryGaugeInvariantTermTest(unittest.TestCase):
         canonical = dict(zip(_canonical_edges(spacetime),
                              action.canonical_ward_current()))
         stored = action.ward_current()
-        for index, edge in enumerate(spacetime.getEdgeList().toVector()):
-            source = int(edge.getSource().getId())
-            target = int(edge.getTarget().getId())
+        for index, edge in enumerate(spacetime.get_edge_list().to_vector()):
+            source = int(edge.get_source().get_id())
+            target = int(edge.get_target().get_id())
             sign = 1.0 if source < target else -1.0
             key = (min(source, target), max(source, target))
             self.assertAlmostEqual(
@@ -303,18 +303,18 @@ class TheFixtureIsTheWhitepapersStateTest(unittest.TestCase):
             self.assertTrue(cut.separates)
             self.assertEqual(cut.side[:4], [0, 0, 0, 0])
             self.assertEqual(cut.side[8:], [1, 1, 1, 1])
-        self.assertNotEqual(list(self.history.cuts[0].crossingEdges),
-                            list(self.history.cuts[1].crossingEdges))
+        self.assertNotEqual(list(self.history.cuts[0].crossing_edges),
+                            list(self.history.cuts[1].crossing_edges))
 
     def test_a_three_sheeted_lineage_reads_baryon_number_one_on_these_cuts(self):
         """The cuts the flux is read on are the cuts the lineage number is
         read on: a cluster carrying three occupied sheets across ``W`` has
         ``N_q = 3`` and ``B = 1`` on every one of them."""
-        lineage = obs.ClusterLineage.fromFiberPath(self.history.W, 0, 3, "q")
+        lineage = obs.ClusterLineage.from_fiber_path(self.history.W, 0, 3, "q")
         for cut in self.history.cuts:
             totals = obs.ClusterLineage.totals(self.history.W, cut, [lineage])
-            self.assertEqual(totals.fermionNumber, 3)
-            self.assertAlmostEqual(totals.baryonNumber, 1.0, places=12)
+            self.assertEqual(totals.fermion_number, 3)
+            self.assertAlmostEqual(totals.baryon_number, 1.0, places=12)
 
 
 class TheDivergenceTheoremIsExactTest(unittest.TestCase):
@@ -351,8 +351,8 @@ class TheDivergenceTheoremIsExactTest(unittest.TestCase):
                 current[index] * (cut.side[b] - cut.side[a])
                 for index, (a, b) in enumerate(self.history.W.edges))
             self.assertAlmostEqual(abs(read.flux - expected), 0.0, places=12)
-            self.assertEqual(list(read.crossing_edges), list(cut.crossingEdges))
-            self.assertEqual(list(read.crossing_signs), list(cut.crossingSigns))
+            self.assertEqual(list(read.crossing_edges), list(cut.crossing_edges))
+            self.assertEqual(list(read.crossing_signs), list(cut.crossing_signs))
 
     def test_two_cuts_differ_by_the_divergence_of_their_slab(self):
         read = cob.WardFlux.homologous_fluxes(self.sourced, self.history.W,
@@ -556,7 +556,7 @@ class TheReadRefusesByNameTest(unittest.TestCase):
 
     def test_a_cut_that_does_not_separate_is_named(self):
         side = [0] * 12
-        cut = obs.ClusterLineage.cutFromSides(self.history.W, side)
+        cut = obs.ClusterLineage.cut_from_sides(self.history.W, side)
         read = cob.WardFlux.flux(self.history.action, self.history.W, cut)
         self.assertFalse(read.cut_separates)
         self.assertIn("cut-does-not-separate", read.failed_certificates)
@@ -572,7 +572,7 @@ class TheReadRefusesByNameTest(unittest.TestCase):
             _declaration(holonomy_weight=HOLONOMY_WEIGHT,
                          matter_weight=MATTER_WEIGHT,
                          covariance=bare.occupation_projector(OCCUPIED)))
-        read = cob.WardFlux.flux(action, W, obs.ClusterLineage.levelCut(W, 0))
+        read = cob.WardFlux.flux(action, W, obs.ClusterLineage.level_cut(W, 0))
         self.assertEqual(read.bulk_vertices, 0)
         self.assertTrue(math.isnan(read.bulk_divergence_max))
         self.assertIsNone(read.bulk_divergence_vertex)
@@ -697,7 +697,7 @@ class TheIntrinsicSpectralResponseTest(unittest.TestCase):
 
     def test_the_slice_is_the_cut_crossing_edges(self):
         read = self._read([])
-        self.assertEqual(list(read.slice_cells), list(self.cut.crossingEdges))
+        self.assertEqual(list(read.slice_cells), list(self.cut.crossing_edges))
 
     def test_the_response_is_the_resolvent_form(self):
         samples = [complex(0.3, 0.2), complex(-1.1, 0.0)]

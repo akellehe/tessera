@@ -61,9 +61,9 @@ def _solve(lengths=True, links=True, iterations=30):
 
 
 def _tetrahedron(squared=8.0):
-    spacetime = T.Spacetime.fromVertexTuples(3, [[0, 1, 2, 3]], 1.0, 0.0)
-    for edge in spacetime.getEdgeList().toVector():
-        edge.setLength(cmath.sqrt(complex(squared)))
+    spacetime = T.Spacetime.from_vertex_tuples(3, [[0, 1, 2, 3]], 1.0, 0.0)
+    for edge in spacetime.get_edge_list().to_vector():
+        edge.set_length(cmath.sqrt(complex(squared)))
     return spacetime
 
 
@@ -76,8 +76,8 @@ def test_the_holonomy_alone_relaxes_to_a_flat_connection():
     to 0.62 rad from 1) the solve converges and every face holonomy is 1
     within 1e-14."""
     spacetime = _tetrahedron()
-    for k, edge in enumerate(spacetime.getEdgeList().toVector()):
-        edge.setPhase(complex(0.1 * math.sqrt(k + 1) * (-1) ** k))
+    for k, edge in enumerate(spacetime.get_edge_list().to_vector()):
+        edge.set_phase(complex(0.1 * math.sqrt(k + 1) * (-1) ** k))
     action = cob.JointAction(spacetime, _declaration(spacetime, beta=1.0))
     relaxation = cob.HolomorphicRelaxation(action, _solve(lengths=False))
     report = relaxation.solve()
@@ -438,7 +438,7 @@ def test_the_determinant_factorizes_at_several_lambda(tick_zero, lam):
     bands.band_rank = 1
     declaration.bands = bands
     n = operator.shape[0]
-    recursion = cob.LevelRecursion.overPencil(list(operator.reshape(-1)), [],
+    recursion = cob.LevelRecursion.over_pencil(list(operator.reshape(-1)), [],
                                               n, declaration)
     recursion.advance()
     direct = np.linalg.det(operator - lam * np.eye(n))

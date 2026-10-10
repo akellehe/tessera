@@ -23,7 +23,7 @@ def _all_holding():
 
 class TestQuarkConditions(unittest.TestCase):
     def test_seven_named_conditions(self):
-        self.assertEqual(obs.QuarkConditions.kConditionCount, 7)
+        self.assertEqual(obs.QuarkConditions.k_condition_count, 7)
         self.assertEqual(obs.QuarkConditions.condition_names(),
                          ["persistent-cluster", "color-spin-fiber",
                           "anchor-atlas", "odd-occupation", "color-transport",
@@ -85,8 +85,8 @@ class TestQuarkConditions(unittest.TestCase):
 
 class TestEighteenModeStates(unittest.TestCase):
     def test_state_vectors_reach_the_exterior_algebra_limit(self):
-        self.assertEqual(obs.SharpSpin.kMaxStateModes, 24)
-        self.assertEqual(obs.SharpSpin.kMaxDenseModes, 16)
+        self.assertEqual(obs.SharpSpin.k_max_state_modes, 24)
+        self.assertEqual(obs.SharpSpin.k_max_dense_modes, 16)
         state = np.asarray(obs.SharpSpin.determinant([0, 7, 17], 18))
         self.assertEqual(state.size, 1 << 18)
         self.assertEqual(int(np.count_nonzero(state)), 1)
@@ -94,15 +94,15 @@ class TestEighteenModeStates(unittest.TestCase):
             obs.SharpSpin.determinant([0, 1], 25)
 
     def test_nine_carriers_give_eighteen_mode_spin_matrices(self):
-        matrices = obs.SharpSpin.doubletSpinMatrices(9)
+        matrices = obs.SharpSpin.doublet_spin_matrices(9)
         self.assertEqual(np.asarray(matrices[0]).shape, (18, 18))
         with self.assertRaises(ValueError):
-            obs.SharpSpin.doubletSpinMatrices(13)
+            obs.SharpSpin.doublet_spin_matrices(13)
 
     def test_an_eighteen_mode_spin_read(self):
         """Three up spins on carriers 0, 1 and 2 of nine: J = 3/2, sharp at
         its own eigenvalue and not at 3/4."""
-        matrices = obs.SharpSpin.doubletSpinMatrices(9)
+        matrices = obs.SharpSpin.doublet_spin_matrices(9)
         state = np.asarray(obs.SharpSpin.determinant([0, 2, 4], 18))
         self.assertTrue(obs.SharpSpin.read(matrices, state, state,
                                            15.0 / 4.0).sharp)

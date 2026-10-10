@@ -41,13 +41,13 @@ def build_spacetime(n_simplices, *, k0=2.2, k4=0.5, delta=0.6,
     Returns (spacetime, cdt_simulation).
     """
     metric = tessera.Metric(
-        coordinateFree=True,
+        coordinate_free=True,
         signature=tessera.Signature(dimensions=4,
-                                  signatureType=tessera.Lorentzian),
+                                  signature_type=tessera.Lorentzian),
     )
     topo = topology or tessera.Toroid()
     st = tessera.Spacetime(
-        metric=metric, spacetimeType=tessera.CDT,
+        metric=metric, spacetime_type=tessera.CDT,
         alpha=1.0, a=1.0,
         foliation=tessera.PREFERRED, topology=topo,
     )
@@ -57,17 +57,17 @@ def build_spacetime(n_simplices, *, k0=2.2, k4=0.5, delta=0.6,
     # would create n/20 slices (e.g. 160k → 8000 razor-thin slices).
     max_build = 80 * 20  # 80 slabs × 20 simplices/slab in 4D
     if seed is not None:
-        st.setSeed(seed)
+        st.set_seed(seed)
     st.build(min(n_simplices, max_build))
-    target = st.getN41() if n_simplices <= max_build else n_simplices // 2
+    target = st.get_n41() if n_simplices <= max_build else n_simplices // 2
     if epsilon is None:
         epsilon = 1.0 / max(target, 1)
     cdt = tessera.CDTSimulation(
         spacetime=st, k0=k0, k4=k4, delta=delta,
-        epsilon=epsilon, targetN41=target,
+        epsilon=epsilon, target_n41=target,
     )
     if seed is not None:
-        cdt.setSeed(seed)
+        cdt.set_seed(seed)
     cdt.tune()
     if nSweeps > 0:
         cdt.sweep(nSweeps)
@@ -80,7 +80,7 @@ def build_spacetime(n_simplices, *, k0=2.2, k4=0.5, delta=0.6,
 
 def time_slices(st):
     """Sorted list of integer time values present in the spacetime."""
-    return st.getTimeSlices()
+    return st.get_time_slices()
 
 
 def spatial_subgraph(st, t):
@@ -88,7 +88,7 @@ def spatial_subgraph(st, t):
 
     Delegates to the C++ ``Spacetime::getSpatialSubgraph``.
     """
-    return st.getSpatialSubgraph(t)
+    return st.get_spatial_subgraph(t)
 
 
 def bfs_distances(center, st_or_verts=None, edges=None, *, max_depth=None):
@@ -107,18 +107,18 @@ def bfs_distances(center, st_or_verts=None, edges=None, *, max_depth=None):
     falls back to a Python BFS.
     """
     if isinstance(st_or_verts, tessera.Spacetime):
-        return st_or_verts.bfsDistances(center,
+        return st_or_verts.bfs_distances(center,
                                         -1 if max_depth is None else max_depth)
     # Legacy path: explicit verts + edges
     from collections import defaultdict, deque
     verts, edges_ = st_or_verts, edges
     adj = defaultdict(list)
     for e in edges_:
-        s, t = e.getSource().getId(), e.getTarget().getId()
+        s, t = e.get_source().get_id(), e.get_target().get_id()
         adj[s].append(t)
         adj[t].append(s)
-    dist = {center.getId(): 0}
-    queue = deque([center.getId()])
+    dist = {center.get_id(): 0}
+    queue = deque([center.get_id()])
     while queue:
         vid = queue.popleft()
         if max_depth is not None and dist[vid] >= max_depth:
@@ -140,21 +140,21 @@ def force_layout_3d(n, edges, *, center_idx=None, init_pos=None,
                     seed=42):
     """Spring-electrical force-directed layout in 3D.
 
-    Delegates to ``tessera.ForceLayout.layout3D`` (C++) for performance.
+    Delegates to ``tessera.ForceLayout.layout_3d`` (C++) for performance.
 
     Returns an ``(n, 3)`` numpy array of positions.
     """
-    flat = tessera.ForceLayout.layout3D(
+    flat = tessera.ForceLayout.layout_3d(
         n=n,
         edges=edges,
-        centerIdx=center_idx if center_idx is not None else -1,
-        initPos=list(init_pos.ravel()) if init_pos is not None else [],
-        restLengths=list(rest_lengths) if rest_lengths is not None else [],
-        springK=spring_k,
-        repulsionK=repulsion_k,
+        center_idx=center_idx if center_idx is not None else -1,
+        init_pos=list(init_pos.ravel()) if init_pos is not None else [],
+        rest_lengths=list(rest_lengths) if rest_lengths is not None else [],
+        spring_k=spring_k,
+        repulsion_k=repulsion_k,
         iters=iters,
         cooling=cooling,
-        repulsionCap=repulsion_cap,
+        repulsion_cap=repulsion_cap,
         seed=seed,
     )
     return np.array(flat).reshape(n, 3)
@@ -166,24 +166,24 @@ def radial_layout_2d(n, edges, target_radii, *, center_idx=None,
                      repulsion_cap=200, initial_step=0.3, seed=42):
     """Radius-constrained 2D radial force-directed layout.
 
-    Delegates to ``tessera.ForceLayout.layout2D`` (C++).  Each node's radius
+    Delegates to ``tessera.ForceLayout.layout_2d`` (C++).  Each node's radius
     is pinned to ``target_radii``; only the angular coordinate is solved.
 
     Returns an ``(n, 2)`` numpy array of positions.
     """
-    flat = tessera.ForceLayout.layout2D(
+    flat = tessera.ForceLayout.layout_2d(
         n=n,
         edges=edges,
-        targetRadii=list(target_radii),
-        centerIdx=center_idx if center_idx is not None else -1,
-        initPos=list(init_pos.ravel()) if init_pos is not None else [],
-        restLengths=list(rest_lengths) if rest_lengths is not None else [],
-        springK=spring_k,
-        repulsionK=repulsion_k,
+        target_radii=list(target_radii),
+        center_idx=center_idx if center_idx is not None else -1,
+        init_pos=list(init_pos.ravel()) if init_pos is not None else [],
+        rest_lengths=list(rest_lengths) if rest_lengths is not None else [],
+        spring_k=spring_k,
+        repulsion_k=repulsion_k,
         iters=iters,
         cooling=cooling,
-        repulsionCap=repulsion_cap,
-        initialStep=initial_step,
+        repulsion_cap=repulsion_cap,
+        initial_step=initial_step,
         seed=seed,
     )
     return np.array(flat).reshape(n, 2)
@@ -194,12 +194,12 @@ def layout_from_spacetime(verts, edges, **kwargs):
 
     Returns ``(positions, vid_to_idx, edge_idx_list)``.
     """
-    vid_to_idx = {v.getId(): i for i, v in enumerate(verts)}
+    vid_to_idx = {v.get_id(): i for i, v in enumerate(verts)}
     edge_idx = []
     rest_lens = []
     for e in edges:
-        si = vid_to_idx.get(e.getSource().getId())
-        ti = vid_to_idx.get(e.getTarget().getId())
+        si = vid_to_idx.get(e.get_source().get_id())
+        ti = vid_to_idx.get(e.get_target().get_id())
         if si is not None and ti is not None:
             edge_idx.append((si, ti))
             # Layout-only collapse of the complex signed l^2 to a positive
@@ -208,7 +208,7 @@ def layout_from_spacetime(verts, edges, **kwargs):
             # vertices together — the multicobordism animation's convention
             #.
             rest_lens.append(
-                math.sqrt(max(abs((e.getLength()**2).real), 1e-6)))
+                math.sqrt(max(abs((e.get_length()**2).real), 1e-6)))
 
     pos = force_layout_3d(len(verts), edge_idx,
                           rest_lengths=rest_lens, **kwargs)

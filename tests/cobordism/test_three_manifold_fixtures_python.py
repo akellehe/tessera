@@ -99,20 +99,20 @@ def _build(topology):
 
 
 def _betti(topology):
-    return cobordism.ChainComplex.fromSpacetime(_build(topology)).bettiNumbers()
+    return cobordism.ChainComplex.from_spacetime(_build(topology)).betti_numbers()
 
 
 def _top_simplices(topology):
     """Top-simplex vertex-id tuples of the built complex, as plain ints.
 
     The Spacetime is held in a local for the duration of the extraction (the
-    Simplex handles from getSimplices() point into its storage); only the
+    Simplex handles from get_simplices() point into its storage); only the
     decoupled int tuples escape, so the result is safe to use afterwards.
     """
     st = _build(topology)
     by_size = {}
-    for s in st.getSimplices():
-        t = tuple(sorted(v.getId() for v in s.getVertices()))
+    for s in st.get_simplices():
+        t = tuple(sorted(v.get_id() for v in s.get_vertices()))
         by_size.setdefault(len(t), []).append(t)
     return [list(t) for t in by_size[max(by_size)]]
 
@@ -227,7 +227,7 @@ class TestClosedThreeManifoldInvariants(unittest.TestCase):
 
     @staticmethod
     def _chain(topology):
-        return cobordism.ChainComplex.fromSpacetime(_build(topology))
+        return cobordism.ChainComplex.from_spacetime(_build(topology))
 
     def test_euler_characteristic_zero(self):
         # A closed odd-dimensional manifold has chi = 0, and Euler-Poincare ties
@@ -235,8 +235,8 @@ class TestClosedThreeManifoldInvariants(unittest.TestCase):
         # Betti sum) -- an independent cross-check of each triangulation.
         for topo in (tessera.SphereCircleProduct(), _t3_product(), _t3_subdivided()):
             cc = self._chain(topo)
-            self.assertEqual(cc.eulerCharacteristic(), 0)
-            betti = cc.bettiNumbers()
+            self.assertEqual(cc.euler_characteristic(), 0)
+            betti = cc.betti_numbers()
             self.assertEqual(sum((-1) ** k * b for k, b in enumerate(betti)), 0)
 
     def test_orientable_with_unique_fundamental_class(self):
@@ -245,9 +245,9 @@ class TestClosedThreeManifoldInvariants(unittest.TestCase):
         # weight.
         for topo in (tessera.SphereCircleProduct(), _t3_product()):
             cc = self._chain(topo)
-            fundamental = cc.fundamentalClass()
-            tops = cc.orientedTopSimplices()
-            self.assertEqual(cc.bettiNumbers()[3], 1)
+            fundamental = cc.fundamental_class()
+            tops = cc.oriented_top_simplices()
+            self.assertEqual(cc.betti_numbers()[3], 1)
             self.assertEqual(len(fundamental), len(tops))
             self.assertTrue(all(abs(coeff) == 1 for coeff in fundamental))
 

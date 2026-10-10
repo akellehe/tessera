@@ -35,10 +35,10 @@ def _tetrahedron(seed=3):
     """A single tetrahedron with generic complex squared lengths near 8 and a
     generic complex connection (phases with small imaginary parts)."""
     rng = np.random.default_rng(seed)
-    spacetime = T.Spacetime.fromVertexTuples(3, [[0, 1, 2, 3]], 1.0, 0.0)
-    for edge in spacetime.getEdgeList().toVector():
-        edge.setLength(cmath.sqrt(8.0 + rng.normal() + 0.2j * rng.normal()))
-        edge.setPhase(complex(rng.normal(), 0.05 * rng.normal()))
+    spacetime = T.Spacetime.from_vertex_tuples(3, [[0, 1, 2, 3]], 1.0, 0.0)
+    for edge in spacetime.get_edge_list().to_vector():
+        edge.set_length(cmath.sqrt(8.0 + rng.normal() + 0.2j * rng.normal()))
+        edge.set_phase(complex(rng.normal(), 0.05 * rng.normal()))
     return spacetime
 
 
@@ -95,13 +95,13 @@ def test_the_length_force_is_the_derivative_at_fixed_gamma():
     np.testing.assert_allclose(np.asarray(action.length_stationarity()),
                                force, rtol=1e-13, atol=1e-15)
     h = 1e-5
-    for index, edge in enumerate(spacetime.getEdgeList().toVector()):
-        z = complex(edge.getLength()) ** 2
+    for index, edge in enumerate(spacetime.get_edge_list().to_vector()):
+        z = complex(edge.get_length()) ** 2
         values = []
         for step in (h, -h):
-            edge.setLength(cmath.sqrt(z + step))
+            edge.set_length(cmath.sqrt(z + step))
             values.append(complex(_matter(spacetime, gamma).matter_term()))
-        edge.setLength(cmath.sqrt(z))
+        edge.set_length(cmath.sqrt(z))
         difference = (values[0] - values[1]) / (2 * h)
         assert abs(force[index] - difference) <= 1e-8 * abs(force[index])
 
@@ -114,13 +114,13 @@ def test_the_link_force_is_the_maurer_cartan_derivative_at_fixed_gamma():
     gamma = _fixed_gamma(spacetime)
     force = np.asarray(_matter(spacetime, gamma).hellmann_feynman_link_force())
     h = 1e-5
-    for index, edge in enumerate(spacetime.getEdgeList().toVector()):
-        phase = edge.getPhase()
+    for index, edge in enumerate(spacetime.get_edge_list().to_vector()):
+        phase = edge.get_phase()
         values = []
         for step in (h, -h):
-            edge.setPhase(phase - 1j * step)
+            edge.set_phase(phase - 1j * step)
             values.append(complex(_matter(spacetime, gamma).matter_term()))
-        edge.setPhase(phase)
+        edge.set_phase(phase)
         difference = (values[0] - values[1]) / (2 * h)
         assert abs(force[index] - difference) <= 1e-8 * max(abs(force[index]),
                                                             1e-3)
@@ -133,8 +133,8 @@ def test_the_length_force_obeys_the_euler_identity():
     spacetime = _tetrahedron()
     gamma = _fixed_gamma(spacetime)
     action = _matter(spacetime, gamma)
-    z = np.array([complex(e.getLength()) ** 2
-                  for e in spacetime.getEdgeList().toVector()])
+    z = np.array([complex(e.get_length()) ** 2
+                  for e in spacetime.get_edge_list().to_vector()])
     euler = np.sum(z * np.asarray(action.hellmann_feynman_length_force()))
     assert euler == pytest.approx(-complex(action.matter_term()), rel=1e-12)
 

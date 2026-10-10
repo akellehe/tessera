@@ -14,17 +14,17 @@ def _make_cdt(d=4, n_simplices=200):
     st = tessera.Spacetime(metric, tessera.CDT, 1.0, 1.0,
                            tessera.PREFERRED, tessera.Toroid())
     st.build(n_simplices)
-    cdt = tessera.CDTSimulation(st, 2.2, 0.5, 0.6, 0.02, st.getN41())
+    cdt = tessera.CDTSimulation(st, 2.2, 0.5, 0.6, 0.02, st.get_n41())
     return cdt, st
 
 
 def _default_config(target_dq=0.05, max_iter=80, M=4):
     cfg = tessera.ModularityOptimizerConfig()
-    cfg.targetDq = target_dq
-    cfg.maxIterations = max_iter
-    cfg.nDiffusionWalks = 20
-    cfg.maxSigma = 50.0
-    cfg.targetNModules = M
+    cfg.target_dq = target_dq
+    cfg.max_iterations = max_iter
+    cfg.n_diffusion_walks = 20
+    cfg.max_sigma = 50.0
+    cfg.target_n_modules = M
     return cfg
 
 
@@ -37,18 +37,18 @@ class TestOptimizerConfig(unittest.TestCase):
 
     def test_defaults_sane(self):
         cfg = tessera.ModularityOptimizerConfig()
-        self.assertGreater(cfg.targetDq, 0)
-        self.assertGreater(cfg.maxIterations, 0)
-        self.assertGreater(cfg.targetNModules, 0)
+        self.assertGreater(cfg.target_dq, 0)
+        self.assertGreater(cfg.max_iterations, 0)
+        self.assertGreater(cfg.target_n_modules, 0)
 
     def test_writable(self):
         cfg = tessera.ModularityOptimizerConfig()
-        cfg.targetDq = 0.1
-        cfg.maxIterations = 50
-        cfg.targetNModules = 3
-        self.assertEqual(cfg.targetDq, 0.1)
-        self.assertEqual(cfg.maxIterations, 50)
-        self.assertEqual(cfg.targetNModules, 3)
+        cfg.target_dq = 0.1
+        cfg.max_iterations = 50
+        cfg.target_n_modules = 3
+        self.assertEqual(cfg.target_dq, 0.1)
+        self.assertEqual(cfg.max_iterations, 50)
+        self.assertEqual(cfg.target_n_modules, 3)
 
 
 # ---------------------------------------------------------------------------
@@ -85,9 +85,9 @@ class TestSweepInvariants(unittest.TestCase):
         for m in opt.sweep(cdt, "up"):
             self.assertTrue(math.isfinite(m.Q),
                             f"Q={m.Q} not finite")
-            self.assertGreater(m.nVertices, 0)
-            self.assertGreater(m.nEdges, 0)
-            self.assertGreater(m.nSimplices, 0)
+            self.assertGreater(m.n_vertices, 0)
+            self.assertGreater(m.n_edges, 0)
+            self.assertGreater(m.n_simplices, 0)
             self.assertGreaterEqual(m.iter, 0)
 
 
@@ -141,7 +141,7 @@ class TestEarlyExit(unittest.TestCase):
         cfg = _default_config(target_dq=0.5, max_iter=2000, M=4)
         # Aggressive epsilon so early exit fires even on short
         # sweeps.
-        cfg.epsilonQMax = 0.5
+        cfg.epsilon_q_max = 0.5
         opt = tessera.ModularityOptimizer(cfg, seed=0)
         meas = opt.sweep(cdt, "up")
         # Should not have used the full 2000 iterations.

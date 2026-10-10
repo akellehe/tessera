@@ -87,7 +87,7 @@ def _collect_worker(worker_id, n_simplices, n_therm, n_meas, interval,
                          tessera.Toroid())
     max_build = 80 * 20  # cap at ~80 time slices (20 simplices/slab in 4D)
     st.build(min(n_simplices, max_build))
-    target = st.getN41() if n_simplices <= max_build else n_simplices // 2
+    target = st.get_n41() if n_simplices <= max_build else n_simplices // 2
     cdt = tessera.CDTSimulation(st, 2.2, 0.5, 0.6, 1.0 / target, target)
 
     _ph("tuning")
@@ -102,7 +102,7 @@ def _collect_worker(worker_id, n_simplices, n_therm, n_meas, interval,
     profiles = []
     for i in range(n_meas):
         cdt.sweep(interval, progress=sweep_cb)
-        profiles.append(np.array(cdt.getVolumeProfile(), dtype=float))
+        profiles.append(np.array(cdt.get_volume_profile(), dtype=float))
         _ph("measuring", i + 1, n_meas)
 
     return worker_id, profiles
@@ -280,9 +280,9 @@ def main():
     T = max(lengths)
 
     # Center on peak, subtract the stalk, and normalise the peak to 1 in a
-    # single shared C++ pass (see VolumeProfile.centeredAverage).
-    avg_centered = np.asarray(tessera.VolumeProfile.centeredAverage(
-        profiles, subtractStalk=True, normalizePeak=True))
+    # single shared C++ pass (see VolumeProfile.centered_average).
+    avg_centered = np.asarray(tessera.VolumeProfile.centered_average(
+        profiles, subtract_stalk=True, normalize_peak=True))
 
     # x-axis: centered time so peak is at 0
     tau_centered = np.arange(T) - T // 2
@@ -312,7 +312,7 @@ def main():
     st = tessera.Spacetime(metric, tessera.CDT, 1.0, 1.0, tessera.PREFERRED,
                          tessera.Toroid())
     st.build(args.n_simplices)
-    target = st.getN41()  # [RU] eq. 6: volume-fix targets N41
+    target = st.get_n41()  # [RU] eq. 6: volume-fix targets N41
     cdt = tessera.CDTSimulation(st, 2.2, 0.5, 0.6, 1.0 / target, target)
 
     n_track = max(100, args.n_therm * 2)
@@ -326,8 +326,8 @@ def main():
     prog2.phase("tracking action", total=n_track)
     for _ in range(n_track):
         cdt.sweep(1)
-        actions.append(cdt.computeAction())
-        volumes.append(st.getTopSimplexCount())
+        actions.append(cdt.compute_action())
+        volumes.append(st.get_top_simplex_count())
         prog2.on_tick()
     prog2.finish()
 

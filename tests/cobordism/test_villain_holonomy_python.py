@@ -67,38 +67,38 @@ def _flux(index):
 def _chi(spacetime, seed=0):
     """A complex vertex function: the parameter of a C* gauge transformation."""
     values = {}
-    for index, vertex in enumerate(spacetime.getVertexList().toVector()):
+    for index, vertex in enumerate(spacetime.get_vertex_list().to_vector()):
         step = index + seed
-        values[int(vertex.getId())] = complex(0.31 * ((step % 7) - 3),
+        values[int(vertex.get_id())] = complex(0.31 * ((step % 7) - 3),
                                               0.17 * ((step % 4) - 1.5))
     return values
 
 
 def _gauge(spacetime, chi):
     """U_xy -> g_x^-1 U_xy g_y with g = exp(i chi), on the stored phases."""
-    for edge in spacetime.getEdgeList().toVector():
-        source = int(edge.getSource().getId())
-        target = int(edge.getTarget().getId())
-        edge.setPhase(edge.getPhase() + chi[target] - chi[source])
+    for edge in spacetime.get_edge_list().to_vector():
+        source = int(edge.get_source().get_id())
+        target = int(edge.get_target().get_id())
+        edge.set_phase(edge.get_phase() + chi[target] - chi[source])
 
 
 def _multiply_link(spacetime, index, delta):
     """U_e -> U_e exp(delta) on the stored orientation: phi -> phi - i delta."""
-    edge = spacetime.getEdgeList().toVector()[index]
-    edge.setPhase(edge.getPhase() - 1j * delta)
+    edge = spacetime.get_edge_list().to_vector()[index]
+    edge.set_phase(edge.get_phase() - 1j * delta)
 
 
 def _signed_up_laplacian(spacetime):
-    """d_2 d_2^T in getEdgeList() order on the stored orientations."""
-    complex_ = cob.ChainComplex.fromSpacetime(spacetime)
-    boundary = np.array(complex_.boundaryMatrix(2), dtype=float).reshape(
-        complex_.numSimplices(1), complex_.numSimplices(2))
+    """d_2 d_2^T in get_edge_list() order on the stored orientations."""
+    complex_ = cob.ChainComplex.from_spacetime(spacetime)
+    boundary = np.array(complex_.boundary_matrix(2), dtype=float).reshape(
+        complex_.num_simplices(1), complex_.num_simplices(2))
     index_of = {tuple(cell): position for position, cell
-                in enumerate(complex_.kSimplexVertices(1))}
+                in enumerate(complex_.k_simplex_vertices(1))}
     rows = []
-    for edge in spacetime.getEdgeList().toVector():
-        source = int(edge.getSource().getId())
-        target = int(edge.getTarget().getId())
+    for edge in spacetime.get_edge_list().to_vector():
+        source = int(edge.get_source().get_id())
+        target = int(edge.get_target().get_id())
         sign = 1.0 if source < target else -1.0
         rows.append(sign * boundary[index_of[tuple(sorted((source,
                                                            target)))]])
@@ -134,20 +134,20 @@ def _quarter_turn_tetrahedron():
     every coboundary must and give F = i on every outward face.
     """
     spacetime = tetrahedron(squared=lambda index: 8.0)
-    complex_ = cob.ChainComplex.fromSpacetime(spacetime)
-    edges, faces = complex_.numSimplices(1), complex_.numSimplices(2)
-    d2 = np.array(complex_.boundaryMatrix(2), dtype=float).reshape(edges, faces)
-    d3 = np.array(complex_.boundaryMatrix(3), dtype=float).reshape(faces, 1)
+    complex_ = cob.ChainComplex.from_spacetime(spacetime)
+    edges, faces = complex_.num_simplices(1), complex_.num_simplices(2)
+    d2 = np.array(complex_.boundary_matrix(2), dtype=float).reshape(edges, faces)
+    d3 = np.array(complex_.boundary_matrix(3), dtype=float).reshape(faces, 1)
     outward = d3[:, 0]
     target = outward * np.array([0.5, 0.5, 0.5, -1.5]) * math.pi
     phases, *_ = np.linalg.lstsq(d2.T, target, rcond=None)
     index_of = {tuple(cell): position for position, cell
-                in enumerate(complex_.kSimplexVertices(1))}
-    for edge in spacetime.getEdgeList().toVector():
-        source = int(edge.getSource().getId())
-        target_id = int(edge.getTarget().getId())
+                in enumerate(complex_.k_simplex_vertices(1))}
+    for edge in spacetime.get_edge_list().to_vector():
+        source = int(edge.get_source().get_id())
+        target_id = int(edge.get_target().get_id())
         phase = phases[index_of[tuple(sorted((source, target_id)))]]
-        edge.setPhase(complex(phase if source < target_id else -phase))
+        edge.set_phase(complex(phase if source < target_id else -phase))
     return spacetime
 
 
@@ -272,8 +272,8 @@ class TheTermIsGaugeInvariantAndEvenTest(unittest.TestCase):
     def test_reversing_the_connection_leaves_the_term_unchanged(self):
         spacetime = sphere3(phase=_flux)
         value = cob.JointAction(spacetime, _declaration()).holonomy_term()
-        for edge in spacetime.getEdgeList().toVector():
-            edge.setPhase(-edge.getPhase())
+        for edge in spacetime.get_edge_list().to_vector():
+            edge.set_phase(-edge.get_phase())
         reversed_value = cob.JointAction(spacetime,
                                          _declaration()).holonomy_term()
         self.assertLess(abs(reversed_value - value), 1e-12)

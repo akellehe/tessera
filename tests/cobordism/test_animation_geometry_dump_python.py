@@ -12,7 +12,7 @@ be rebuilt from: the run document records measurements OF a geometry, never
 the geometry.
 
 Measured here: a two-unit qubit drive's dump rebuilds through
-``Spacetime.fromVertexTuples`` to a complex with the same cells and the same edge
+``Spacetime.from_vertex_tuples`` to a complex with the same cells and the same edge
 squared lengths to a few units in the last place, and a node rebuilt on
 it reports the same objective and the same block residuals as the node that
 was driven. The last place is where the schema puts the limit: an ``Edge``
@@ -76,31 +76,31 @@ def driven():
 
 def squared_lengths(spacetime):
     out = {}
-    for edge in spacetime.getEdgeList().toVector():
-        a, b = edge.getSource().getId(), edge.getTarget().getId()
-        out[(min(a, b), max(a, b))] = complex(edge.getLength()) ** 2
+    for edge in spacetime.get_edge_list().to_vector():
+        a, b = edge.get_source().get_id(), edge.get_target().get_id()
+        out[(min(a, b), max(a, b))] = complex(edge.get_length()) ** 2
     return out
 
 
 def rebuild(document):
     """The dump's own rebuild path (`tests/cobordism/_causal_specimen`)."""
-    spacetime = tessera.spacetime.Spacetime.fromVertexTuples(document["dimensions"],
+    spacetime = tessera.spacetime.Spacetime.from_vertex_tuples(document["dimensions"],
                                                       document["cells"])
-    vertices = spacetime.getVertexList()
+    vertices = spacetime.get_vertex_list()
     for vid, t in document["vertex_times"]:
-        vertices.get(int(vid)).setTime(float(t))
+        vertices.get(int(vid)).set_time(float(t))
     by_pair = {}
-    for edge in spacetime.getEdgeList().toVector():
-        a, b = edge.getSource().getId(), edge.getTarget().getId()
+    for edge in spacetime.get_edge_list().to_vector():
+        a, b = edge.get_source().get_id(), edge.get_target().get_id()
         by_pair[(min(a, b), max(a, b))] = edge
     for u, v, re_l2, im_l2 in document["edges"]:
         key = (min(int(u), int(v)), max(int(u), int(v)))
-        by_pair[key].setLength(np.sqrt(complex(re_l2, im_l2)))
+        by_pair[key].set_length(np.sqrt(complex(re_l2, im_l2)))
     for entry in document.get("edge_phases", []):
         u, v, re_p, im_p = entry
-        by_pair[(min(int(u), int(v)), max(int(u), int(v)))].setPhase(
+        by_pair[(min(int(u), int(v)), max(int(u), int(v)))].set_phase(
             complex(re_p, im_p))
-    spacetime.materializeFacets()
+    spacetime.materialize_facets()
     return spacetime
 
 
@@ -113,11 +113,11 @@ def test_the_dump_is_schema_1_and_describes_the_driven_complex(driven):
     assert document["schema"] == 1
     assert document["dimensions"] == 3
     cells = {tuple(sorted(c)) for c in document["cells"]}
-    live = {tuple(sorted(int(v.getId()) for v in cell.getVertices()))
-            for cell in spacetime.getTopSimplices()}
+    live = {tuple(sorted(int(v.get_id()) for v in cell.get_vertices()))
+            for cell in spacetime.get_top_simplices()}
     assert cells == live and len(document["cells"]) == len(live)
-    assert len(document["edges"]) == len(spacetime.getEdgeList().toVector())
-    assert len(document["vertex_times"]) == len(spacetime.getVertexList().toVector())
+    assert len(document["edges"]) == len(spacetime.get_edge_list().to_vector())
+    assert len(document["vertex_times"]) == len(spacetime.get_vertex_list().to_vector())
     # the qubit blocks: what a Spacetime alone cannot say
     assert [b["label"] for b in document["blocks"]] == ["A", "B"]
     for index, tau_in in enumerate((TAU_A, TAU_B)):
@@ -162,13 +162,13 @@ def test_each_torus_loads_on_its_own_as_the_qubit_it_was(driven):
 
     for index, block in enumerate(document["blocks"]):
         surface = rebuild(block["surface"])
-        ids = sorted(int(v.getId()) for v in surface.getVertexList().toVector())
+        ids = sorted(int(v.get_id()) for v in surface.get_vertex_list().to_vector())
         position = {vid: n for n, vid in enumerate(ids)}
-        pairs = sorted((min(position[int(e.getSource().getId())],
-                            position[int(e.getTarget().getId())]),
-                        max(position[int(e.getSource().getId())],
-                            position[int(e.getTarget().getId())]))
-                       for e in surface.getEdgeList().toVector())
+        pairs = sorted((min(position[int(e.get_source().get_id())],
+                            position[int(e.get_target().get_id())]),
+                        max(position[int(e.get_source().get_id())],
+                            position[int(e.get_target().get_id())]))
+                       for e in surface.get_edge_list().to_vector())
         index_of = {pair: n for n, pair in enumerate(pairs)}
         cycles = []
         for cycle in block["marking"]:
@@ -191,8 +191,8 @@ def test_each_torus_loads_on_its_own_as_the_qubit_it_was(driven):
 
 def test_a_node_rebuilt_on_the_dump_reads_what_the_driven_node_read(driven):
     node, _result, document = driven
-    previous = cob.HodgeLaplacian.defaultMetricSource()
-    cob.HodgeLaplacian.setDefaultMetricSource(cob.HodgeMetricSource.WhitneyPencil)
+    previous = cob.HodgeLaplacian.default_metric_source()
+    cob.HodgeLaplacian.set_default_metric_source(cob.HodgeMetricSource.WhitneyPencil)
     try:
         rebuilt = MC(rebuild(document), [[1.0 + 0j], [1.0 + 0j]], [], degrees=[1],
                      seed=0, einstein_hilbert=True, real_squared_lengths_only=False,
@@ -214,4 +214,4 @@ def test_a_node_rebuilt_on_the_dump_reads_what_the_driven_node_read(driven):
         assert rebuilt.r_u(rebuilt.spacetime()) == pytest.approx(
             node.r_u(node.spacetime()), rel=1e-9)
     finally:
-        cob.HodgeLaplacian.setDefaultMetricSource(previous)
+        cob.HodgeLaplacian.set_default_metric_source(previous)

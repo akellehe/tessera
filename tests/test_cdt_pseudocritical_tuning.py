@@ -45,7 +45,7 @@ class TestPseudoCriticalTuning(unittest.TestCase):
         search is the expensive part of these tests."""
         _, cdt = cls._simulation(k4=0.5)
         cdt.tune()
-        cls.TUNED_K4 = cdt.getK4()
+        cls.TUNED_K4 = cdt.get_k4()
 
     @classmethod
     def _simulation(cls, k4, epsilon=None, target=None, build=None, seed=SEED):
@@ -54,15 +54,15 @@ class TestPseudoCriticalTuning(unittest.TestCase):
         sig = tessera.Signature(4, tessera.Lorentzian)
         st = tessera.Spacetime(tessera.Metric(True, sig), tessera.CDT,
                                1.0, 1.0, tessera.PREFERRED, tessera.Toroid())
-        st.setSeed(seed)
+        st.set_seed(seed)
         st.build(cls.BUILD if build is None else build)
         cdt = tessera.CDTSimulation(st, cls.K0, k4, cls.DELTA, epsilon, target)
-        cdt.setSeed(seed)
+        cdt.set_seed(seed)
         return st, cdt
 
     @staticmethod
     def _volume(st):
-        return st.getN41() + st.getN32()
+        return st.get_n41() + st.get_n32()
 
     def _settled_drift(self, k4):
         """Relative change in the four-volume per sweep at k4, with no
@@ -97,7 +97,7 @@ class TestPseudoCriticalTuning(unittest.TestCase):
         At the tuned coupling N41 stays near the target itself."""
         st, cdt = self._simulation(self.TUNED_K4)
         cdt.sweep(800)
-        self.assertLess(abs(st.getN41() - self.TARGET), 0.25 * self.TARGET)
+        self.assertLess(abs(st.get_n41() - self.TARGET), 0.25 * self.TARGET)
 
     def test_tuning_keeps_the_configuration_it_was_given(self):
         """Measurements above critical shrink the complex and measurements below
@@ -117,7 +117,7 @@ class TestPseudoCriticalTuning(unittest.TestCase):
         first.tune()
         _, second = self._simulation(k4=0.5, build=400)
         second.tune()
-        self.assertEqual(first.getK4(), second.getK4())
+        self.assertEqual(first.get_k4(), second.get_k4())
 
 
 if __name__ == "__main__":

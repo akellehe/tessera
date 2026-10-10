@@ -2,11 +2,11 @@
 # All rights reserved.
 """Exact analytic gradient of a simplex's signed `volume()` w.r.t. edge ℓ² (#461).
 
-`Simplex.volumeGradient` is the per-degree **Hodge inner-product weight** gradient
+`Simplex.volume_gradient` is the per-degree **Hodge inner-product weight** gradient
 (the weights `W_k` are signed simplex volumes) — the keystone for an arbitrary-degree
 analytic `∂L_k/∂ℓ²`, hence the general-k `r_U` gradient. By Jacobi's formula on the
 Gram determinant, `∂V/∂ℓ²_e = (V/2)·tr(G⁻¹ ∂_e G)`, reusing the same
-`gramMatrix`/`cofactorMatrix` machinery as the circumcentric `dualVolumeGradient`
+`gram_matrix`/`cofactorMatrix` machinery as the circumcentric `dual_volume_gradient`
 (#354). Here it must match a central finite difference of `volume()` to ~machine
 precision across every degree (triangle, tetrahedron, pentatope).
 """
@@ -18,14 +18,14 @@ import cmath
 
 
 def _top_of_dim(st, nverts):
-    return next(s for s in st.getSimplices()
-               if len([v for v in s.getVertices()]) == nverts)
+    return next(s for s in st.get_simplices()
+               if len([v for v in s.get_vertices()]) == nverts)
 
 
 def _l2(st):
-    return {(min(e.getSource().getId(), e.getTarget().getId()),
-             max(e.getSource().getId(), e.getTarget().getId())):
-            (e.getLength() * e.getLength()).real for e in st.getEdgeList().toVector()}
+    return {(min(e.get_source().get_id(), e.get_target().get_id()),
+             max(e.get_source().get_id(), e.get_target().get_id())):
+            (e.get_length() * e.get_length()).real for e in st.get_edge_list().to_vector()}
 
 
 def _jittered_s4():
@@ -33,13 +33,13 @@ def _jittered_s4():
     st = T.Spacetime(T.Metric(True, sig), T.CDT, 1.0, 1.0, T.PREFERRED,
                      T.SimplexBoundarySphere(4))
     st.build()
-    for i, e in enumerate(st.getEdgeList().toVector()):
-        e.setLength(cmath.sqrt(complex(1.0 + 0.017 * (i % 5))))
+    for i, e in enumerate(st.get_edge_list().to_vector()):
+        e.set_length(cmath.sqrt(complex(1.0 + 0.017 * (i % 5))))
     # materialize sub-simplices down to triangles
-    for s in list(st.getTopSimplices()):
-        for f in s.getFacets():
-            for g in f.getFacets():
-                g.getFacets()
+    for s in list(st.get_top_simplices()):
+        for f in s.get_facets():
+            for g in f.get_facets():
+                g.get_facets()
     return st
 
 
@@ -54,43 +54,43 @@ class VolumeGradientHandCalcTest(unittest.TestCase):
 
     def test_equilateral_triangle_closed_form(self):
         # All ℓ²=1: A = √3/4, and ∂A/∂ℓ²_e = 1/(4√3) for every edge (by symmetry).
-        st = T.Spacetime.fromVertexTuples(2, [[0, 1, 2]], 1.0, 0.0)
+        st = T.Spacetime.from_vertex_tuples(2, [[0, 1, 2]], 1.0, 0.0)
         tri = _top_of_dim(st, 3)
         self.assertAlmostEqual(tri.volume(), math.sqrt(3) / 4, places=12)
-        for _e, dA in tri.volumeGradient().items():
+        for _e, dA in tri.volume_gradient().items():
             self.assertAlmostEqual(dA, 1.0 / (4 * math.sqrt(3)), places=12)
 
     def test_regular_tetrahedron_closed_form(self):
         # All ℓ²=1: V = 1/(6√2), and ∂V/∂ℓ²_e = 1/(24√2) for every edge.
-        st = T.Spacetime.fromVertexTuples(3, [[0, 1, 2, 3]], 1.0, 0.0)
+        st = T.Spacetime.from_vertex_tuples(3, [[0, 1, 2, 3]], 1.0, 0.0)
         tet = _top_of_dim(st, 4)
         self.assertAlmostEqual(tet.volume(), 1.0 / (6 * math.sqrt(2)), places=12)
-        for _e, dV in tet.volumeGradient().items():
+        for _e, dV in tet.volume_gradient().items():
             self.assertAlmostEqual(dV, 1.0 / (24 * math.sqrt(2)), places=12)
 
     def test_euler_homogeneity_identity(self):
         # A j-simplex volume is homogeneous of degree j/2 in ℓ² ⇒
         # Σ_e ℓ²_e ∂V/∂ℓ²_e = (j/2)·V exactly (independent of finite difference).
         for nverts, cell in [(3, [0, 1, 2]), (4, [0, 1, 2, 3])]:
-            st = T.Spacetime.fromVertexTuples(nverts - 1, [cell], 1.0, 0.0)
+            st = T.Spacetime.from_vertex_tuples(nverts - 1, [cell], 1.0, 0.0)
             # jitter so the identity is non-trivial (not just the symmetric point)
-            for i, e in enumerate(st.getEdgeList().toVector()):
-                e.setLength(cmath.sqrt(complex(1.0 + 0.07 * (i % 4))))
+            for i, e in enumerate(st.get_edge_list().to_vector()):
+                e.set_length(cmath.sqrt(complex(1.0 + 0.07 * (i % 4))))
             s = _top_of_dim(st, nverts)
             l2 = _l2(st)
             j = nverts - 1
-            euler = sum(l2[e] * dV for e, dV in s.volumeGradient().items())
+            euler = sum(l2[e] * dV for e, dV in s.volume_gradient().items())
             self.assertAlmostEqual(euler, (j / 2.0) * s.volume(), places=12)
 
 
 class VolumeGradientTest(unittest.TestCase):
     def test_matches_finite_difference_every_degree(self):
         st = _jittered_s4()
-        em = {_key(e.getSource().getId(), e.getTarget().getId()): e
-              for e in st.getEdgeList().toVector()}
+        em = {_key(e.get_source().get_id(), e.get_target().get_id()): e
+              for e in st.get_edge_list().to_vector()}
         by_size = {}
-        for s in st.getSimplices():
-            n = len([v for v in s.getVertices()])
+        for s in st.get_simplices():
+            n = len([v for v in s.get_vertices()])
             by_size.setdefault(n, []).append(s)
         # 3 = triangle (W_2), 4 = tetrahedron (W_3), 5 = pentatope (top)
         self.assertTrue({3, 4, 5}.issubset(by_size.keys()))
@@ -99,16 +99,16 @@ class VolumeGradientTest(unittest.TestCase):
         for size in (3, 4, 5):
             worst, tested = 0.0, 0
             for s in by_size[size]:
-                for (a, b), ga in s.volumeGradient().items():
+                for (a, b), ga in s.volume_gradient().items():
                     e = em.get((a, b))
                     if e is None:
                         continue
-                    o = (e.getLength() * e.getLength())
-                    e.setLength(cmath.sqrt(complex(o + h)))
+                    o = (e.get_length() * e.get_length())
+                    e.set_length(cmath.sqrt(complex(o + h)))
                     vp = s.volume()
-                    e.setLength(cmath.sqrt(complex(o - h)))
+                    e.set_length(cmath.sqrt(complex(o - h)))
                     vm = s.volume()
-                    e.setLength(cmath.sqrt(complex(o)))
+                    e.set_length(cmath.sqrt(complex(o)))
                     worst = max(worst, abs(ga - (vp - vm) / (2 * h)))
                     tested += 1
             self.assertGreater(tested, 0, f"no edge-derivatives tested at size {size}")

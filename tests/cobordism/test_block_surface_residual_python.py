@@ -83,12 +83,12 @@ FLOOR = 1e-24  # the zero mode of a flat torus carries its holomorphic form to r
 
 @pytest.fixture
 def whitney_default():
-    previous = HL.defaultMetricSource()
-    HL.setDefaultMetricSource(cob.HodgeMetricSource.WhitneyPencil)
+    previous = HL.default_metric_source()
+    HL.set_default_metric_source(cob.HodgeMetricSource.WhitneyPencil)
     try:
         yield
     finally:
-        HL.setDefaultMetricSource(previous)
+        HL.set_default_metric_source(previous)
 
 
 # --------------------------------------------------------------------------- #
@@ -164,18 +164,18 @@ def pencil_leak(st, fiber):
 
 def edge_geometry(st):
     out = {}
-    for e in st.getEdgeList().toVector():
-        u, v = e.getSource().getId(), e.getTarget().getId()
-        out[tuple(sorted((u, v)))] = (complex(e.getLength()), complex(e.getPhase()))
+    for e in st.get_edge_list().to_vector():
+        u, v = e.get_source().get_id(), e.get_target().get_id()
+        out[tuple(sorted((u, v)))] = (complex(e.get_length()), complex(e.get_phase()))
     return out
 
 
 def edge_keys(st):
-    return [tuple(sorted((e.getSource().getId(), e.getTarget().getId()))) for e in st.getEdgeList().toVector()]
+    return [tuple(sorted((e.get_source().get_id(), e.get_target().get_id()))) for e in st.get_edge_list().to_vector()]
 
 
 def tops(st):
-    return sorted(tuple(sorted(v.getId() for v in s.getVertices())) for s in st.getTopSimplices())
+    return sorted(tuple(sorted(v.get_id() for v in s.get_vertices())) for s in st.get_top_simplices())
 
 
 def block_split(cell, regions):
@@ -201,15 +201,15 @@ def surface_is_the_torus(node, st, q, ids, index):
 
 def scale_edges(st, factor, keep):
     """Multiply the length of every edge ``keep`` selects by ``factor``."""
-    for e in st.getEdgeList().toVector():
-        if keep(tuple(sorted((e.getSource().getId(), e.getTarget().getId())))):
-            e.setLength(complex(e.getLength()) * factor)
+    for e in st.get_edge_list().to_vector():
+        if keep(tuple(sorted((e.get_source().get_id(), e.get_target().get_id())))):
+            e.set_length(complex(e.get_length()) * factor)
 
 
 def jitter(st, rng, scale=0.25):
     """Generic real positive lengths so no torus sits on its flat point."""
-    for e in st.getEdgeList().toVector():
-        e.setLength(complex(e.getLength()) * (1.0 + scale * rng.uniform(-1, 1)))
+    for e in st.get_edge_list().to_vector():
+        e.set_length(complex(e.get_length()) * (1.0 + scale * rng.uniform(-1, 1)))
 
 
 def holomorphic(packed):
@@ -274,7 +274,7 @@ def test_stage1_moves_keep_the_surface_and_the_residual(whitney_default):
     sc = cob.SurgicalCone(st)
     refusals = {}
     for cell in tops(st):
-        ok, reason = sc.coneOut(list(cell))
+        ok, reason = sc.cone_out(list(cell))
         assert not ok, f"a one-layer collar cell {cell} was dented"
         assert reason
         refusals[block_split(cell, regions)] = refusals.get(block_split(cell, regions), 0) + 1
@@ -283,7 +283,7 @@ def test_stage1_moves_keep_the_surface_and_the_residual(whitney_default):
     # an interior Pachner add: the 1->4 stellar subdivision of a collar cell
     add = T.AddMove(st, 5, False, T.PachnerMode.PreGeometric, True)
     assert add.propose() and add.apply()
-    assert len(tops(st)) == 54 + 3 and len(st.getVertexList().toVector()) == 19
+    assert len(tops(st)) == 54 + 3 and len(st.get_vertex_list().to_vector()) == 19
     after_add = residuals(node)
     for index, (q, ids) in enumerate(zip((qa, qb), (ids_a, ids_b))):
         surface_is_the_torus(node, st, q, ids, index)
@@ -302,7 +302,7 @@ def test_stage1_moves_keep_the_surface_and_the_residual(whitney_default):
     for cell in tops(st):
         if block_split(cell, regions) not in ((3, 0), (0, 3)):
             continue
-        ok, reason = sc.coneOut(list(cell))
+        ok, reason = sc.cone_out(list(cell))
         if ok:
             dented = cell
             break
@@ -352,10 +352,10 @@ def test_bulk_edges_do_not_enter_the_block_residual(whitney_default):
     before = residuals(node)
     rng = np.random.default_rng(0)
     bulk = lambda edge: not any(edge[0] in r and edge[1] in r for r in regions)
-    for e in st.getEdgeList().toVector():
-        edge = tuple(sorted((e.getSource().getId(), e.getTarget().getId())))
+    for e in st.get_edge_list().to_vector():
+        edge = tuple(sorted((e.get_source().get_id(), e.get_target().get_id())))
         if bulk(edge):
-            e.setLength(complex(e.getLength()) * (1.0 + 0.5 * rng.uniform(-1, 1)))
+            e.set_length(complex(e.get_length()) * (1.0 + 0.5 * rng.uniform(-1, 1)))
     assert sum(1 for edge in edge_keys(st) if bulk(edge)) == 9 + 27  # the collar: vertical + diagonal cross edges
     assert residuals(node) == before, "bulk edges are not in the block's own Laplacian"
     # one edge of torus A: only A's residual moves
@@ -386,7 +386,7 @@ def test_gradient_support_euler_identity_and_sign(whitney_default):
     assert keys == edge_keys(only_a.spacetime()) == edge_keys(only_b.spacetime())
     inside = [np.array([edge[0] in r and edge[1] in r for edge in keys]) for r in regions]
     bulk = ~(inside[0] | inside[1])
-    s = np.array([complex(e.getLength()) ** 2 for e in both.spacetime().getEdgeList().toVector()])
+    s = np.array([complex(e.get_length()) ** 2 for e in both.spacetime().get_edge_list().to_vector()])
     off_floor = residuals(both)
     assert all(r > 1e-4 for r in off_floor), off_floor
     total_l, total_p = (np.asarray(g) for g in both.fiber_mode_ascent())
@@ -404,15 +404,15 @@ def test_gradient_support_euler_identity_and_sign(whitney_default):
         assert euler[-1] < 1e-10, f"Euler identity violated: {euler[-1]:.3e}"
     # a central difference on the A edge with the largest sensitivity (sanity only)
     st = only_a.spacetime()
-    edges = st.getEdgeList().toVector()
+    edges = st.get_edge_list().to_vector()
     i = int(np.argmax(np.abs(a_l) * inside[0]))
     e, h = edges[i], 1e-6
-    s0 = complex(e.getLength()) ** 2
-    e.setLength(np.sqrt(s0 + h))
+    s0 = complex(e.get_length()) ** 2
+    e.set_length(np.sqrt(s0 + h))
     plus = only_a.fiber_residual_for_input_block(0)
-    e.setLength(np.sqrt(s0 - h))
+    e.set_length(np.sqrt(s0 - h))
     minus = only_a.fiber_residual_for_input_block(0)
-    e.setLength(np.sqrt(s0))
+    e.set_length(np.sqrt(s0))
     fd = (plus - minus) / (2 * h)
     analytic = a_l[i].real  # d/dRe s of the packed gradient
     assert np.sign(fd) == np.sign(analytic) and fd != 0
@@ -452,14 +452,14 @@ def ordinary_read(st, block):
     the fiber's stored contour or band 1 above the zero mode, the
     least-squares leak on the fiber's cells."""
     region = set(int(v) for v in block.vertices)
-    cells = [[int(v) for v in t] for t in cob.ChainComplex.fromSpacetime(st).kSimplexVertices(3)
+    cells = [[int(v) for v in t] for t in cob.ChainComplex.from_spacetime(st).k_simplex_vertices(3)
              if set(int(v) for v in t) <= region]
-    sub = T.Spacetime.fromVertexTuples(3, cells, 1.0, 0j)
+    sub = T.Spacetime.from_vertex_tuples(3, cells, 1.0, 0j)
     host = edge_geometry(st)
-    for e in sub.getEdgeList().toVector():
-        length, phase = host[tuple(sorted((e.getSource().getId(), e.getTarget().getId())))]
-        e.setLength(length)
-        e.setPhase(phase)
+    for e in sub.get_edge_list().to_vector():
+        length, phase = host[tuple(sorted((e.get_source().get_id(), e.get_target().get_id())))]
+        e.set_length(length)
+        e.set_phase(phase)
     assembled = cob.PencilLayer.assemble([sub])
     fiber = block.fiber
     contour = fiber.contour if fiber.contour.nodes else cob.PencilLayer.band_contour(assembled, 0, 1)
@@ -474,10 +474,10 @@ def test_ordinary_nodes_read_as_before(whitney_default):
     psi, phi = (rng.normal(size=4) + 1j * rng.normal(size=4) for _ in range(2))
     node = MC(MC.seed_simplex(3), [[1.0 + 0j, 0j, 0j, 0j], [1.0 + 0j, 0j, 0j, 0j]], [], degrees=[0],
               seed=0, precone=8, einstein_hilbert=False)
-    for e in node.spacetime().getEdgeList().toVector():
+    for e in node.spacetime().get_edge_list().to_vector():
         s = 1.0 + 0.15 * rng.uniform(-1, 1) + 1j * 0.15 * rng.uniform(-1, 1)
-        e.setLength(np.sqrt(complex(s)))
-    tets = [tuple(int(v) for v in t) for t in cob.ChainComplex.fromSpacetime(node.spacetime()).kSimplexVertices(3)]
+        e.set_length(np.sqrt(complex(s)))
+    tets = [tuple(int(v) for v in t) for t in cob.ChainComplex.from_spacetime(node.spacetime()).k_simplex_vertices(3)]
     a, b = next((x, y) for x, y in itertools.combinations(tets, 2) if not set(x) & set(y))
     node.seed_inputs([0, 1])
     node.attach_input_fiber(0, degree0_fiber(psi), [[v] for v in a])
@@ -493,19 +493,19 @@ def test_ordinary_nodes_read_as_before(whitney_default):
     assert node.r_u(st) == pytest.approx(sum(block_residuals) + node.two_body_residual(), rel=1e-12)
     # the ascent is the exact gradient of r_U (a central difference at its own accuracy)
     total_l, _ = (np.asarray(g) for g in node.fiber_mode_ascent())
-    edges = st.getEdgeList().toVector()
+    edges = st.get_edge_list().to_vector()
     fd = np.zeros(len(edges), dtype=complex)
     for i, e in enumerate(edges):
-        l0 = complex(e.getLength())
+        l0 = complex(e.get_length())
         s0 = l0 * l0
         parts = []
         for step in (1e-6, 1e-6j):
-            e.setLength(np.sqrt(s0 + step))
+            e.set_length(np.sqrt(s0 + step))
             plus = node.r_u(st)
-            e.setLength(np.sqrt(s0 - step))
+            e.set_length(np.sqrt(s0 - step))
             minus = node.r_u(st)
             parts.append((plus - minus) / 2e-6)
-        e.setLength(l0)
+        e.set_length(l0)
         fd[i] = complex(parts[0], parts[1])
     assert np.abs(fd - total_l).max() < 1e-5 * max(1.0, np.abs(total_l).max())
     print(f"\n[T2] ordinary node: block residuals {block_residuals[0]:.12e} {block_residuals[1]:.12e}, "
@@ -516,7 +516,7 @@ def test_ordinary_nodes_read_as_before(whitney_default):
 # (f) stage 2: the residual is descended next to the bulk term
 # --------------------------------------------------------------------------- #
 def spacelike_real(st):
-    s = np.array([complex(e.getLength()) ** 2 for e in st.getEdgeList().toVector()])
+    s = np.array([complex(e.get_length()) ** 2 for e in st.get_edge_list().to_vector()])
     return bool(np.all(s.real > 0) and np.all(np.abs(s.imag) < 1e-15))
 
 

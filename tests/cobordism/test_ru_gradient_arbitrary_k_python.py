@@ -2,10 +2,10 @@
 # All rights reserved.
 """Arbitrary-degree analytic r_U gradient (#461, c).
 
-`EigenstateSynthesis.residualForPeriodsGradient` is the degree-generic `∂r_U/∂ℓ²` of
-`residualForPeriods` — it now works at the b₂ register (k=2) and beyond (it used to be
+`EigenstateSynthesis.residual_for_periods_gradient` is the degree-generic `∂r_U/∂ℓ²` of
+`residual_for_periods` — it now works at the b₂ register (k=2) and beyond (it used to be
 k=1 only). It uses `M = L_k` and the exact per-edge `∂L_k/∂ℓ²`
-(`HodgeLaplacian.laplacianGradient`, built on `Simplex.volumeGradient`) through
+(`HodgeLaplacian.laplacian_gradient`, built on `Simplex.volume_gradient`) through
 eigenvector-perturbation theory, with the period covector read from each
 removed-(k+1)-cell hole's facet boundary.
 
@@ -40,25 +40,25 @@ def _refined_s3(n_refine=12):
     st = T.Spacetime(T.Metric(True, sig), T.CDT, 1.0, 1.0, T.PREFERRED,
                      T.SimplexBoundarySphere(3))
     st.build()
-    for e in st.getEdgeList().toVector():
-        e.setLength(cmath.sqrt(complex(1.0)))
+    for e in st.get_edge_list().to_vector():
+        e.set_length(cmath.sqrt(complex(1.0)))
     for seed in range(n_refine):
         mv = T.AddMove(st, seed, False, T.PachnerMode.PreGeometric, False)
         if mv.propose():
             mv.apply()
-    for i, e in enumerate(st.getEdgeList().toVector()):
-        e.setLength(cmath.sqrt(complex(1.0 + 0.013 * (i % 6))))
+    for i, e in enumerate(st.get_edge_list().to_vector()):
+        e.set_length(cmath.sqrt(complex(1.0 + 0.013 * (i % 6))))
     return st
 
 
 def _edge_l2(st):
-    return {tuple(sorted((e.getSource().getId(), e.getTarget().getId()))):
-            (e.getLength() * e.getLength()).real for e in st.getEdgeList().toVector()}
+    return {tuple(sorted((e.get_source().get_id(), e.get_target().get_id()))):
+            (e.get_length() * e.get_length()).real for e in st.get_edge_list().to_vector()}
 
 
 def _edges_1cell(st):
-    cc = cob.ChainComplex.fromSpacetime(st)
-    return [tuple(sorted(c)) for c in cc.kSimplexVertices(1)]
+    cc = cob.ChainComplex.from_spacetime(st)
+    return [tuple(sorted(c)) for c in cc.k_simplex_vertices(1)]
 
 
 def _euler_lhs(st, grad):
@@ -78,9 +78,9 @@ class ArbitraryKRuGradientTest(unittest.TestCase):
         target = [complex(z) for z in periods[0]]
         target[0] += 0.5
 
-        r_u = es.residualForPeriods(holes, target)
+        r_u = es.residual_for_periods(holes, target)
         self.assertGreater(r_u, 1e-3, "target should be non-realizable (r_U > 0)")
-        g = np.asarray(es.residualForPeriodsGradient(holes, target), float)
+        g = np.asarray(es.residual_for_periods_gradient(holes, target), float)
         # With the V^2 weights L_k is homogeneous of degree -1 in l^2, so
         # r_U = ||(L - lambda)p||^2 is degree -2 and Euler reads -2 r_U
         # (measured exactly: r_U(s*l^2) = r_U/s^2).
@@ -94,8 +94,8 @@ class ArbitraryKRuGradientTest(unittest.TestCase):
         # cone-outs on a refined S^3 (raising b₂ by 1); the Euler identity is exact on
         # any such metric 3-complex and does not depend on the register's topology.
         st = _refined_s3()
-        cells = sorted(tuple(sorted(v.getId() for v in c.getVertices()))
-                       for c in st.getTopSimplices())
+        cells = sorted(tuple(sorted(v.get_id() for v in c.get_vertices()))
+                       for c in st.get_top_simplices())
         pair = None
         for i, a in enumerate(cells):
             for b in cells[i + 1:]:
@@ -107,16 +107,16 @@ class ArbitraryKRuGradientTest(unittest.TestCase):
         self.assertIsNotNone(pair, "refined S^3 must contain a disjoint cell pair")
         a, b = pair
         sc = cob.SurgicalCone(st)
-        self.assertTrue(sc.coneOut(list(a))[0])   # opens the manifold (b₃ → 0)
-        self.assertTrue(sc.coneOut(list(b))[0])   # disjoint ⇒ raises b₂ by 1
+        self.assertTrue(sc.cone_out(list(a))[0])   # opens the manifold (b₃ → 0)
+        self.assertTrue(sc.cone_out(list(b))[0])   # disjoint ⇒ raises b₂ by 1
 
         es = cob.EigenstateSynthesis(st, 2)
         holes = [list(a), list(b)]                 # 2 holes, 1 mode ⇒ over-constrained
         target = [complex(1.0), complex(0.3)]      # non-carriable ⇒ r_U > 0
 
-        r_u = es.residualForPeriods(holes, target)
+        r_u = es.residual_for_periods(holes, target)
         self.assertGreater(r_u, 1.0)
-        g = np.asarray(es.residualForPeriodsGradient(holes, target), float)
+        g = np.asarray(es.residual_for_periods_gradient(holes, target), float)
         self.assertLess(abs(_euler_lhs(st, g) + 2.0 * r_u) / r_u, 1e-9,
                         "Euler identity Σℓ²∂r_U = −2·r_U failed at k=2")
 

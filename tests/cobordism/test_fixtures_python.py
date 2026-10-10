@@ -49,8 +49,8 @@ def _top_tuples(st):
     """Vertex-id tuples of the registered top simplices (facets are lazy, so
     immediately after build the registered simplices are exactly the tops)."""
     by_size = {}
-    for s in st.getSimplices():
-        t = tuple(sorted(v.getId() for v in s.getVertices()))
+    for s in st.get_simplices():
+        t = tuple(sorted(v.get_id() for v in s.get_vertices()))
         by_size.setdefault(len(t), []).append(t)
     top_card = max(by_size)
     return by_size[top_card]
@@ -73,11 +73,11 @@ def _euler(fvec):
 
 def _materialized_face_counts(st):
     """Count tessera's own k-simplices once all facets are materialized.
-    materializeFacets() forces lazy facet materialization to a fixpoint."""
-    st.materializeFacets()
+    materialize_facets() forces lazy facet materialization to a fixpoint."""
+    st.materialize_facets()
     counts = {}
-    for s in st.getSimplices():
-        k = len(s.getVertices()) - 1
+    for s in st.get_simplices():
+        k = len(s.get_vertices()) - 1
         counts[k] = counts.get(k, 0) + 1
     return [counts.get(k, 0) for k in range(max(counts) + 1)] if counts else []
 
@@ -125,12 +125,12 @@ class TestSimplexBoundarySphere(unittest.TestCase):
         for n in range(1, STRUCT_MAX + 1):
             with self.subTest(n=n):
                 st = _build(tessera.SimplexBoundarySphere(n))
-                st.materializeFacets()  # materialize facets/cofaces
+                st.materialize_facets()  # materialize facets/cofaces
                 checked = 0
-                for s in st.getSimplices():
-                    if len(s.getVertices()) == n + 1:  # a top n-simplex
-                        for facet in s.getFacets():
-                            self.assertEqual(len(facet.getCofaces()), 2)
+                for s in st.get_simplices():
+                    if len(s.get_vertices()) == n + 1:  # a top n-simplex
+                        for facet in s.get_facets():
+                            self.assertEqual(len(facet.get_cofaces()), 2)
                             checked += 1
                 self.assertGreater(checked, 0)
 
@@ -223,20 +223,20 @@ class TestComplexProjectivePlane(unittest.TestCase):
 
     def test_homology_and_signature(self):
         st = _build(tessera.ComplexProjectivePlane())
-        cc = cobordism.ChainComplex.fromSpacetime(st)
-        self.assertEqual(cc.fVector(), self.F_VECTOR)
-        self.assertTrue(cc.boundaryComposesToZero())
+        cc = cobordism.ChainComplex.from_spacetime(st)
+        self.assertEqual(cc.f_vector(), self.F_VECTOR)
+        self.assertTrue(cc.boundary_composes_to_zero())
         # Betti numbers of CP^2 agree over Q and GF(2) (the homology is
         # torsion-free), so there is no 2-torsion to split them apart.
-        self.assertEqual(cc.bettiNumbers(), [1, 0, 1, 0, 1])
-        self.assertEqual(cc.bettiNumbersGF2(), [1, 0, 1, 0, 1])
-        self.assertEqual(cc.eulerCharacteristic(), 3)
+        self.assertEqual(cc.betti_numbers(), [1, 0, 1, 0, 1])
+        self.assertEqual(cc.betti_numbers_gf2(), [1, 0, 1, 0, 1])
+        self.assertEqual(cc.euler_characteristic(), 3)
         self.assertEqual(cc.torsion(2), [])
         self.assertEqual(cc.torsion(3), [])
         # H^2 is rank one with a definite, unimodular intersection form: the
         # 1x1 matrix [±1]. |signature| = 1 is the orientation-independent fact
         # (the sign is a convention fixed by the choice of fundamental class).
-        form = cc.intersectionForm()
+        form = cc.intersection_form()
         self.assertEqual(len(form), 1)
         self.assertEqual(abs(form[0]), 1.0)
         self.assertEqual(abs(cc.signature()), 1)
@@ -251,9 +251,9 @@ class TestPreGeometric(unittest.TestCase):
                          tessera.ComplexProjectivePlane()):
             with self.subTest(topology=type(topology).__name__):
                 st = _build(topology)
-                for v in st.getVertexList().toVector():
+                for v in st.get_vertex_list().to_vector():
                     with self.assertRaises(Exception):
-                        v.getCoordinates()
+                        v.get_coordinates()
 
 
 if __name__ == "__main__":

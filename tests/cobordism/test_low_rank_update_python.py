@@ -38,7 +38,7 @@ class TestWoodburySolve(unittest.TestCase):
             rhs = _random_complex(rng, dim)
 
             solver = cob.LowRankUpdate(_flat(base), dim)
-            solver.setUpdate(_flat(left), _flat(right), rank)
+            solver.set_update(_flat(left), _flat(right), rank)
             result = solver.solve([complex(z) for z in rhs])
 
             expected = np.linalg.solve(base + left @ right, rhs)
@@ -68,7 +68,7 @@ class TestWoodburySolve(unittest.TestCase):
         right = _random_complex(rng, (rank, dim))
         x = _random_complex(rng, dim)
         solver = cob.LowRankUpdate(_flat(base), dim)
-        solver.setUpdate(_flat(left), _flat(right), rank)
+        solver.set_update(_flat(left), _flat(right), rank)
         got = solver.apply([complex(z) for z in x])
         np.testing.assert_allclose(got, (base + left @ right) @ x,
                                    rtol=1e-12, atol=1e-13)
@@ -89,9 +89,9 @@ class TestExactnessContract(unittest.TestCase):
             updated[i, :] += _random_complex(rng, dim, 0.5)
             updated[:, i] += _random_complex(rng, dim, 0.5)
 
-        factors = cob.LowRankUpdate.factorsFromTouched(
+        factors = cob.LowRankUpdate.factors_from_touched(
             _flat(base), _flat(updated), dim, touched)
-        self.assertTrue(factors.spansChange)
+        self.assertTrue(factors.spans_change)
         self.assertLessEqual(factors.rank, 2 * len(touched))
 
         left = np.array(factors.left).reshape(dim, factors.rank)
@@ -101,8 +101,8 @@ class TestExactnessContract(unittest.TestCase):
                                    rtol=0, atol=1e-15)
 
         solver = cob.LowRankUpdate(_flat(base), dim)
-        solver.setUpdate(factors.left, factors.right, factors.rank)
-        self.assertTrue(solver.spansAffectedChange(_flat(updated)))
+        solver.set_update(factors.left, factors.right, factors.rank)
+        self.assertTrue(solver.spans_affected_change(_flat(updated)))
         rhs = _random_complex(rng, dim)
         result = solver.solve([complex(z) for z in rhs])
         np.testing.assert_allclose(result.values,
@@ -120,22 +120,22 @@ class TestExactnessContract(unittest.TestCase):
         updated[1, 2] += 0.5       # inside the star
         updated[6, 7] += 1e-3      # leak: outside rows/cols {1, 2}
 
-        factors = cob.LowRankUpdate.factorsFromTouched(
+        factors = cob.LowRankUpdate.factors_from_touched(
             _flat(base), _flat(updated), dim, [1, 2])
-        self.assertFalse(factors.spansChange)
+        self.assertFalse(factors.spans_change)
         self.assertEqual(factors.rank, 0)
 
         solver = cob.LowRankUpdate(_flat(base), dim)
         # A partial update that misses the leak fails the exactness check.
-        partial = cob.LowRankUpdate.factorsFromTouched(
+        partial = cob.LowRankUpdate.factors_from_touched(
             _flat(base), _flat(base + (updated - base) *
                                (np.abs(updated - base) > 1e-2)), dim, [1, 2])
-        solver.setUpdate(partial.left, partial.right, partial.rank)
-        self.assertFalse(solver.spansAffectedChange(_flat(updated)))
+        solver.set_update(partial.left, partial.right, partial.rank)
+        self.assertFalse(solver.spans_affected_change(_flat(updated)))
 
         # Cold-recompute fallback.
         solver.refactor(_flat(updated), dim)
-        self.assertEqual(solver.updateRank, 0)
+        self.assertEqual(solver.update_rank, 0)
         rhs = _random_complex(rng, dim)
         result = solver.solve([complex(z) for z in rhs])
         np.testing.assert_allclose(result.values,
@@ -149,21 +149,21 @@ class TestExactnessContract(unittest.TestCase):
         base = _random_complex(rng, (dim, dim)) + 3 * np.eye(dim)
         updated = base.copy()
         updated[4, 4] += 1.0
-        factors = cob.LowRankUpdate.factorsFromTouched(
+        factors = cob.LowRankUpdate.factors_from_touched(
             _flat(base), _flat(updated), dim, [0, 4, 5])
-        self.assertTrue(factors.spansChange)
+        self.assertTrue(factors.spans_change)
         self.assertEqual(factors.rank, 1)  # zero rows/columns are trimmed
 
     def test_out_of_range_touched_raises(self):
         base = np.eye(3, dtype=complex)
         with self.assertRaises(ValueError):
-            cob.LowRankUpdate.factorsFromTouched(_flat(base), _flat(base), 3,
+            cob.LowRankUpdate.factors_from_touched(_flat(base), _flat(base), 3,
                                                  [3])
 
 
 class TestSecularRankOneEigenvalues(unittest.TestCase):
     def _check_against_dense(self, d, z, rho, atol=1e-10):
-        result = cob.LowRankUpdate.rankOneEigenvalues(
+        result = cob.LowRankUpdate.rank_one_eigenvalues(
             list(map(float, d)), [complex(v) for v in z], rho)
         z = np.asarray(z, dtype=complex)
         dense = np.linalg.eigvalsh(np.diag(np.asarray(d, dtype=float))
@@ -207,14 +207,14 @@ class TestSecularRankOneEigenvalues(unittest.TestCase):
 
     def test_zero_rho_is_identity(self):
         d = [0.0, 2.0]
-        result = cob.LowRankUpdate.rankOneEigenvalues(d, [1 + 0j, 1 + 0j], 0.0)
+        result = cob.LowRankUpdate.rank_one_eigenvalues(d, [1 + 0j, 1 + 0j], 0.0)
         np.testing.assert_allclose(np.real(result.values), d, rtol=0, atol=0)
 
     def test_interlacing(self):
         rng = np.random.default_rng(59)
         d = np.sort(rng.normal(size=7))
         z = rng.normal(size=7) + 0j
-        result = cob.LowRankUpdate.rankOneEigenvalues(
+        result = cob.LowRankUpdate.rank_one_eigenvalues(
             list(map(float, d)), [complex(v) for v in z], 2.0)
         lam = np.real(result.values)
         # rho > 0: d_k <= lambda_k <= d_{k+1} (last one above d_max).
@@ -233,30 +233,30 @@ class TestSecularRankOneEigenvalues(unittest.TestCase):
         d = np.sort(rng.normal(size=n))
         z = rng.normal(size=n) + 1j * rng.normal(size=n)
         rho = 0.6
-        result = cob.LowRankUpdate.rankOneEigenvalues(
+        result = cob.LowRankUpdate.rank_one_eigenvalues(
             list(map(float, d)), [complex(v) for v in z], rho)
 
         dense = cob.DenseReference(64)
-        self.assertTrue(dense.belowCrossover(n))
+        self.assertTrue(dense.below_crossover(n))
         updated = np.diag(d) + rho * np.outer(z, np.conj(z))
         reference = dense.spectrum(
             [complex(v) for v in updated.reshape(-1)], n, True)
         error = float(np.max(np.abs(np.real(result.values) -
                                     np.real(reference.values))))
-        result.certificate.setDenseReferenceError(error)
-        self.assertLess(result.certificate.denseReferenceError, 1e-10)
+        result.certificate.set_dense_reference_error(error)
+        self.assertLess(result.certificate.dense_reference_error, 1e-10)
         self.assertTrue(result.certificate.holds())
 
     def test_non_ascending_input_refused(self):
         # The Hermitian domain is certified by the caller via ascending real
         # eigenvalues; anything else must be refused, never coerced.
         with self.assertRaises(ValueError):
-            cob.LowRankUpdate.rankOneEigenvalues([1.0, 0.0], [1 + 0j, 1 + 0j],
+            cob.LowRankUpdate.rank_one_eigenvalues([1.0, 0.0], [1 + 0j, 1 + 0j],
                                                  1.0)
 
     def test_size_mismatch_refused(self):
         with self.assertRaises(ValueError):
-            cob.LowRankUpdate.rankOneEigenvalues([0.0, 1.0], [1 + 0j], 1.0)
+            cob.LowRankUpdate.rank_one_eigenvalues([0.0, 1.0], [1 + 0j], 1.0)
 
 
 if __name__ == "__main__":

@@ -49,9 +49,9 @@ def condition_number(hodge, k=1):
     condition number is cond(M_k); under GRASSMANN_ALL the sparse object is
     G_k itself."""
     try:
-        A = hodge.Minv(k).toarray()
+        A = hodge.m_inv(k).toarray()
     except Exception:                       # GRASSMANN_ALL: the metric is sparse
-        A = hodge.chainMetricSparse(k).toarray()
+        A = hodge.chain_metric_sparse(k).toarray()
     sv = np.linalg.svd(A, compute_uv=False)
     return float(sv[0] / sv[-1])
 
@@ -65,7 +65,7 @@ def betti_numbers(hodge):
     plan's tables, where every row of a table is a different geometry on the
     same complex."""
     K = hodge.complex()
-    key = (K.dimension(), tuple(tuple(int(v) for v in t) for t in K.orientedTopSimplices()))
+    key = (K.dimension(), tuple(tuple(int(v) for v in t) for t in K.oriented_top_simplices()))
     if key not in _BETTI:
         _BETTI[key] = list(hodge.betti())
     return list(_BETTI[key])
@@ -77,7 +77,7 @@ def rank_report(hodge, k=1, limit=301):
     record is worth here (7.5 s at 432 edges, 13 s at 1728), and the rank
     conditions at scale and their trend with N are the subject of #1204 and
     #1206. Returns None when it was not measured."""
-    return hodge.rankConditions(k) if hodge.size(k) <= limit else None
+    return hodge.rank_conditions(k) if hodge.size(k) <= limit else None
 
 
 def angles_deg(A, B):
@@ -120,7 +120,7 @@ def ratio_torus(N, epsilon=None, amp=0.3, jitter=0.15, seed=1, Lt=1.0, Lx=2.0):
     counter-clockwise top cells (both for the deficit angles of G4)."""
     rng = np.random.default_rng(seed)
     cells, vid = torus_cells(N)
-    K = cob.ChainComplex.fromTopCells(cells)
+    K = cob.ChainComplex.from_top_cells(cells)
     period = np.array([Lt, Lx])
     coords = {vid(i, j): np.array([(i + jitter * rng.uniform(-1, 1)) * Lt / N,
                                    (j + jitter * rng.uniform(-1, 1)) * Lx / N])
@@ -174,7 +174,7 @@ def cdt_like_torus(N, rng):
     so an edge with equal i is a slice edge, one with equal j is transverse and
     the rest are diagonals. No continuum target: used for spectral statistics."""
     cells, _ = torus_cells(N)
-    K = cob.ChainComplex.fromTopCells(cells)
+    K = cob.ChainComplex.from_top_cells(cells)
     s = []
     for (a, b) in edges(K):
         di, dj = (b // N - a // N) % N, (b % N - a % N) % N
@@ -191,7 +191,7 @@ def random_sign_torus(N, rng):
     """F5: the same combinatorics with s_e ~ N(0, 1) i.i.d. -- incoherent
     causal structure."""
     cells, _ = torus_cells(N)
-    K = cob.ChainComplex.fromTopCells(cells)
+    K = cob.ChainComplex.from_top_cells(cells)
     return K, [complex(rng.normal()) for _ in edges(K)]
 
 
@@ -200,8 +200,8 @@ def prism_complex(base_cells, layers):
     product triangulation of base x [0, layers], with layer l holding vertex
     v + l * stride."""
     import tessera
-    cells = tessera.Spacetime.prismCells([list(c) for c in base_cells], layers)
-    return cob.ChainComplex.fromTopCells([list(c) for c in cells]), len(cells)
+    cells = tessera.Spacetime.prism_cells([list(c) for c in base_cells], layers)
+    return cob.ChainComplex.from_top_cells([list(c) for c in cells]), len(cells)
 
 
 def prism_geometry(K, base_coords, N, layers, stride, lorentz=False, jitter=0.15,
@@ -238,7 +238,7 @@ def prism_geometry(K, base_coords, N, layers, stride, lorentz=False, jitter=0.15
         s.append(complex(q))
         W1.append(d[:2])
     W2 = []
-    for f in K.kSimplexVertices(2):
+    for f in K.k_simplex_vertices(2):
         p, q, r = (int(v) for v in f)
         u, w = delta(p, q), delta(p, r)
         W2.append([0.5 * (u[0] * w[1] - u[1] * w[0])])
@@ -365,11 +365,11 @@ def whitney_reference(K, s, k):
     the Kontsevich-Segal branch."""
     table = dict(zip(edges(K), s))
     d = K.dimension()
-    cells = [tuple(int(v) for v in c) for c in K.kSimplexVertices(k)]
+    cells = [tuple(int(v) for v in c) for c in K.k_simplex_vertices(k)]
     idx = {c: i for i, c in enumerate(cells)}
     M = np.zeros((len(cells), len(cells)), dtype=complex)
     faces = list(itertools.combinations(range(d + 1), k + 1))
-    for T in K.orientedTopSimplices():
+    for T in K.oriented_top_simplices():
         T = tuple(sorted(int(v) for v in T))
         g = np.array([[blade_dot(table, (T[0], T[i]), (T[0], T[j])) for j in range(1, d + 1)]
                       for i in range(1, d + 1)], dtype=complex)
@@ -464,7 +464,7 @@ def grassmann_reference(K, s, k):
     """Dense port of the specification oracle's metric(): the number of
     simplices containing both faces times their blade pairing."""
     table = dict(zip(edges(K), s))
-    cells = [tuple(int(v) for v in c) for c in K.kSimplexVertices(k)]
+    cells = [tuple(int(v) for v in c) for c in K.k_simplex_vertices(k)]
     idx = {c: i for i, c in enumerate(cells)}
     n = len(cells)
     Gam = np.zeros((n, n), dtype=complex)
@@ -479,7 +479,7 @@ def grassmann_reference(K, s, k):
         return np.linalg.det(A) / (math.factorial(k) ** 2)
 
     for kk in range(k, K.dimension() + 1):
-        for rho in K.kSimplexVertices(kk):
+        for rho in K.k_simplex_vertices(kk):
             rho = tuple(int(v) for v in rho)
             for a in itertools.combinations(rho, k + 1):
                 for b in itertools.combinations(rho, k + 1):
@@ -537,7 +537,7 @@ def dyadic_torus(N, lorentz=False, jitter=2, seed=1, scale=8):
     (K, s_float, s_exact) with s_exact a list of `Fraction`."""
     rng = np.random.default_rng(seed)
     cells, vid = torus_cells(N)
-    K = cob.ChainComplex.fromTopCells(cells)
+    K = cob.ChainComplex.from_top_cells(cells)
     coords = {vid(i, j): (Fraction(int(i * scale + rng.integers(-jitter, jitter + 1)), scale),
                           Fraction(int(j * scale + rng.integers(-jitter, jitter + 1)), scale))
               for i in range(N) for j in range(N)}
@@ -561,14 +561,14 @@ def rational_grassmann(K, s, k):
         c, d = f
         return Fraction(1, 2) * (S(b, c) + S(a, d) - S(b, d) - S(a, c))
 
-    cells = [tuple(int(v) for v in c) for c in K.kSimplexVertices(k)]
+    cells = [tuple(int(v) for v in c) for c in K.k_simplex_vertices(k)]
     idx = {c: i for i, c in enumerate(cells)}
     n = len(cells)
     G = [[Fraction(0) for _ in range(n)] for _ in range(n)]
     mult = [[0 for _ in range(n)] for _ in range(n)]
     blades = {}
     for kk in range(k, K.dimension() + 1):
-        for rho in K.kSimplexVertices(kk):
+        for rho in K.k_simplex_vertices(kk):
             rho = tuple(int(v) for v in rho)
             for a in itertools.combinations(rho, k + 1):
                 for b in itertools.combinations(rho, k + 1):
@@ -630,8 +630,8 @@ def integer_boundary(K, k):
     """The integer incidence matrix d_k (n_{k-1} x n_k) of the reference
     orientation (ascending vertex id), built here from the cell lists alone:
     the coefficient of the face that drops the i-th vertex is (-1)^i."""
-    cells = [tuple(int(v) for v in c) for c in K.kSimplexVertices(k)]
-    faces = {tuple(int(v) for v in f): i for i, f in enumerate(K.kSimplexVertices(k - 1))}
+    cells = [tuple(int(v) for v in c) for c in K.k_simplex_vertices(k)]
+    faces = {tuple(int(v) for v in f): i for i, f in enumerate(K.k_simplex_vertices(k - 1))}
     B = [[0] * len(cells) for _ in range(len(faces))]
     for j, c in enumerate(cells):
         for i in range(len(c)):
@@ -646,7 +646,7 @@ def integer_betti(K):
     ranks = {0: 0, d + 1: 0}
     for k in range(1, d + 1):
         ranks[k] = rational_rank(integer_boundary(K, k))
-    return [K.numSimplices(k) - ranks[k] - ranks[k + 1] for k in range(d + 1)]
+    return [K.num_simplices(k) - ranks[k] - ranks[k + 1] for k in range(d + 1)]
 
 
 # --------------------------------------------------------------------------
@@ -776,8 +776,8 @@ class Recorder:
         if rank_report is not None:
             fields["rank_conditions"] = {
                 "measured": list(rank_report.measured), "expected": list(rank_report.expected),
-                "holds": list(rank_report.holds), "kernel_is_harmonic": rank_report.kernelIsHarmonic,
-                "decomposition_holds": rank_report.decompositionHolds}
+                "holds": list(rank_report.holds), "kernel_is_harmonic": rank_report.kernel_is_harmonic,
+                "decomposition_holds": rank_report.decomposition_holds}
         if started is not None:
             fields["time_s"] = round(time.time() - started, 3)
         fields.update(extra)

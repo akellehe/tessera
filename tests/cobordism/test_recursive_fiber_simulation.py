@@ -90,16 +90,16 @@ def _overlay_config(enabled=True, cadence=1, degrees=(1,), resolutions=(1.0,),
 
 def _cells(node):
     """The node's top-cell set as a canonical, comparable object."""
-    return sorted(tuple(sorted(v.getId() for v in c.getVertices()))
-                  for c in node.st.getTopSimplices())
+    return sorted(tuple(sorted(v.get_id() for v in c.get_vertices()))
+                  for c in node.st.get_top_simplices())
 
 
 def _lengths(node):
     """Every edge length, keyed by endpoints — the exact geometric state."""
     out = {}
-    for e in node.st.getEdgeList().toVector():
-        a, b = e.getSource().getId(), e.getTarget().getId()
-        out[(min(a, b), max(a, b))] = e.getLength()
+    for e in node.st.get_edge_list().to_vector():
+        a, b = e.get_source().get_id(), e.get_target().get_id()
+        out[(min(a, b), max(a, b))] = e.get_length()
     return out
 
 
@@ -110,9 +110,9 @@ def _phases(node):
     orientation carries the inverse link, so an edge stored target->source
     contributes the negated phase."""
     out = {}
-    for e in node.st.getEdgeList().toVector():
-        a, b = e.getSource().getId(), e.getTarget().getId()
-        out[(min(a, b), max(a, b))] = e.getPhase() if a < b else -e.getPhase()
+    for e in node.st.get_edge_list().to_vector():
+        a, b = e.get_source().get_id(), e.get_target().get_id()
+        out[(min(a, b), max(a, b))] = e.get_phase() if a < b else -e.get_phase()
     return out
 
 
@@ -121,8 +121,8 @@ def _twist(node, seed=804):
     that drops the field, or keeps only its compact part, is caught."""
     import numpy as np
     rng = np.random.default_rng(seed)
-    for e in node.st.getEdgeList().toVector():
-        e.setPhase(complex(rng.normal(), rng.normal()))
+    for e in node.st.get_edge_list().to_vector():
+        e.set_phase(complex(rng.normal(), rng.normal()))
 
 
 def _drive(node, candidates=6):
@@ -443,8 +443,8 @@ class AdversarialFeedbackTest(unittest.TestCase):
         would show.
         """
         def uniform(node):
-            for edge in node.st.getEdgeList().toVector():
-                edge.setLength(cmath.sqrt(complex(1.0)))
+            for edge in node.st.get_edge_list().to_vector():
+                edge.set_length(cmath.sqrt(complex(1.0)))
 
         plain = _node()
         uniform(plain)
@@ -466,8 +466,8 @@ class AdversarialFeedbackTest(unittest.TestCase):
     def test_uncertified_reads_do_not_destabilize_the_optimization(self):
         """Graceful degradation: uncertified reads, a finite objective."""
         node = _node()
-        for edge in node.st.getEdgeList().toVector():
-            edge.setLength(cmath.sqrt(complex(1.0)))
+        for edge in node.st.get_edge_list().to_vector():
+            edge.set_length(cmath.sqrt(complex(1.0)))
         node.set_analysis_config(self._poisoned_config())
         trace, _, _ = _drive(node)
         self.assertTrue(all(math.isfinite(value) for value in trace))
@@ -570,7 +570,7 @@ class EmergenceSubmodeTest(unittest.TestCase):
         Gamma = diag(1,...,1,0,...) is an exact projector, so the #780 purity
         certificate holds at machine precision.
         """
-        cells = cob.ChainComplex.fromSpacetime(node.st).kSimplexVertices(degree)
+        cells = cob.ChainComplex.from_spacetime(node.st).k_simplex_vertices(degree)
         cells = cells[:modes]
         gamma = [0j] * (len(cells) * len(cells))
         for i in range(len(cells) // 2):
@@ -677,7 +677,7 @@ class EmergenceSubmodeTest(unittest.TestCase):
         cells = self._carried(node, modes=5)
         node.set_carried_state_energy_weight(1.0)
         laplacian = cob.HodgeLaplacian(node.st).laplacian(1, True)
-        order = cob.ChainComplex.fromSpacetime(node.st).kSimplexVertices(1)
+        order = cob.ChainComplex.from_spacetime(node.st).k_simplex_vertices(1)
         index = {tuple(sorted(c)): i for i, c in enumerate(order)}
         n = len(order)
         rows = [index[tuple(sorted(c))] for c in cells]
@@ -701,19 +701,19 @@ class EmergenceSubmodeTest(unittest.TestCase):
         self._carried(node, modes=5)
         node.set_carried_state_energy_weight(1.0)
         analytic = node.carried_state_energy_gradient(node.st)
-        edges = node.st.getEdgeList().toVector()
+        edges = node.st.get_edge_list().to_vector()
         self.assertEqual(len(analytic), len(edges))
         step = 1e-6
         worst = 0.0
         for i in range(0, len(edges), max(1, len(edges) // 6)):
             edge = edges[i]
-            base = edge.getLength()
+            base = edge.get_length()
             z = base * base
-            edge.setLength(cmath.sqrt(z + step))
+            edge.set_length(cmath.sqrt(z + step))
             plus = node.carried_state_energy(node.st)
-            edge.setLength(cmath.sqrt(z - step))
+            edge.set_length(cmath.sqrt(z - step))
             minus = node.carried_state_energy(node.st)
-            edge.setLength(base)
+            edge.set_length(base)
             numeric = (plus - minus) / (2.0 * step)
             worst = max(worst, abs(numeric - analytic[i].real) /
                         max(1.0, abs(numeric)))
@@ -734,13 +734,13 @@ class EmergenceSubmodeTest(unittest.TestCase):
         graph Laplacian is ordered by sorted vertex id, not by the canonical
         cell order) and has no exact gradient. Refuse loudly."""
         node = _node()
-        cells = cob.ChainComplex.fromSpacetime(node.st).kSimplexVertices(0)[:2]
+        cells = cob.ChainComplex.from_spacetime(node.st).k_simplex_vertices(0)[:2]
         with self.assertRaises(ValueError):
             node.set_carried_state(cells, 0, [1 + 0j, 0j, 0j, 0j])
 
     def test_a_malformed_carried_covariance_is_refused(self):
         node = _node()
-        cells = cob.ChainComplex.fromSpacetime(node.st).kSimplexVertices(1)[:3]
+        cells = cob.ChainComplex.from_spacetime(node.st).k_simplex_vertices(1)[:3]
         with self.assertRaises(ValueError):
             node.set_carried_state(cells, 1, [1 + 0j, 0j])
 
@@ -912,8 +912,8 @@ class RefinementIndependenceTest(unittest.TestCase):
         self.assertGreaterEqual(committed, 0)
         self.assertEqual(len(_cells(node)), before + committed)
         # The gate ran: the result is still a valid dual complex.
-        self.assertTrue(cob.ChainComplex.fromSpacetime(node.st)
-                        .boundaryComposesToZero())
+        self.assertTrue(cob.ChainComplex.from_spacetime(node.st)
+                        .boundary_composes_to_zero())
 
     def test_a_committed_refinement_cell_counts_as_an_accepted_move(self):
         node = _node()
@@ -1136,7 +1136,7 @@ class ReplayTest(unittest.TestCase):
 
     def test_replay_from_a_host_never_rebuilt_agrees_within_round_off(self):
         """A hand-built host's edge list is in construction order, not the
-        `fromVertexTuples` order every optimizer-produced complex has, so the
+        `from_vertex_tuples` order every optimizer-produced complex has, so the
         modularity sums accumulate in a different order. The VERDICTS are
         identical; the continuous aggregates agree to double round-off."""
         node = _node()
@@ -1450,8 +1450,8 @@ class AnalysisOverlayTest(unittest.TestCase):
         self.assertGreater(len(supports), 1)
         # An edge whose endpoints both lie in ONE level-0 component.
         target = None
-        for edge in node.st.getEdgeList().toVector():
-            a, b = edge.getSource().getId(), edge.getTarget().getId()
+        for edge in node.st.get_edge_list().to_vector():
+            a, b = edge.get_source().get_id(), edge.get_target().get_id()
             owners = [key for key, support in supports.items()
                       if a in support and b in support]
             if owners:
@@ -1459,7 +1459,7 @@ class AnalysisOverlayTest(unittest.TestCase):
                 break
         self.assertIsNotNone(target, "no intra-component edge in the fixture")
         edge, endpoints = target
-        edge.setLength(edge.getLength() * 1.001)
+        edge.set_length(edge.get_length() * 1.001)
         node.run_recursive_analysis()
         second = json.loads(node.checkpoint_json)
         ancestry = second["invalidated_ancestry"]
@@ -1482,8 +1482,8 @@ class AnalysisOverlayTest(unittest.TestCase):
         node.run_recursive_analysis()
         first = json.loads(node.checkpoint_json)["analysis"]
         self.assertGreater(first["cache_entries"], 1)
-        edges = node.st.getEdgeList().toVector()
-        edges[0].setLength(edges[0].getLength() * 1.01)
+        edges = node.st.get_edge_list().to_vector()
+        edges[0].set_length(edges[0].get_length() * 1.01)
         node.run_recursive_analysis()
         after = json.loads(node.checkpoint_json)["analysis"]
         self.assertGreater(after["cache_invalidations"], 0)
@@ -1519,8 +1519,8 @@ class RelabelingInvarianceTest(unittest.TestCase):
     def _rebuild(node, permutation=None, shuffle_cells=False):
         """The SAME complex with its vertex ids permuted and/or its cell list
         presented in a different order, carrying the same edge lengths."""
-        cells = [[v.getId() for v in c.getVertices()]
-                 for c in node.st.getTopSimplices()]
+        cells = [[v.get_id() for v in c.get_vertices()]
+                 for c in node.st.get_top_simplices()]
         lengths = _lengths(node)
         if permutation is not None:
             cells = [[permutation[v] for v in cell] for cell in cells]
@@ -1530,12 +1530,12 @@ class RelabelingInvarianceTest(unittest.TestCase):
         if shuffle_cells:
             cells = list(reversed(cells))
         dimension = len(cells[0]) - 1
-        rebuilt = T.spacetime.Spacetime.fromVertexTuples(dimension, cells, 1.0, 0.0)
-        for edge in rebuilt.getEdgeList().toVector():
-            a, b = edge.getSource().getId(), edge.getTarget().getId()
-            edge.setLength(lengths[(min(a, b), max(a, b))])
+        rebuilt = T.spacetime.Spacetime.from_vertex_tuples(dimension, cells, 1.0, 0.0)
+        for edge in rebuilt.get_edge_list().to_vector():
+            a, b = edge.get_source().get_id(), edge.get_target().get_id()
+            edge.set_length(lengths[(min(a, b), max(a, b))])
         rebuilt_node = MC(rebuilt, [], [], [1], 1.0, _NODE_SEED,
-                          metric_source=node.metricSource())
+                          metric_source=node.metric_source())
         rebuilt_node.set_objective(cob.JointStationarityObjective())
         rebuilt_node.set_analysis_config(_overlay_config())
         rebuilt_node.run_recursive_analysis()

@@ -9,7 +9,7 @@ elements) and `M0` (their mass matrix). A crystal momentum is the flat
 connection `U_vw = exp(i k . dx_vw)` with `dx_vw` the unwrapped displacement of
 the edge. Because it is a pure gauge on every top simplex, dressing by it is a
 unitary congruence of every local block, and the assembled matrices are the
-entrywise products `A0 * Phi` and `M0 * Phi` with `Phi_vw = U_vw`. That is what
+entrywise products `A0 * phi` and `M0 * phi` with `Phi_vw = U_vw`. That is what
 `pencil` forms, so a scan over crystal momenta costs one assembly.
 `CrystalCell.certify` holds the entrywise form to the C++ `CovariantChainHodge`
 and measures the premises of the Hermitian specialization.
@@ -115,14 +115,14 @@ class CrystalCell:
         self.kinetic_scale = float(kinetic_scale)
         gram = self.lattice @ self.lattice.T
         self.grid = tessera.PeriodicKuhnGrid(*self.divisions, gram.tolist())
-        self.complex = cob.ChainComplex.fromTopCells(self.grid.cells())
-        self.edges = self.complex.kSimplexVertices(1)
-        self.squared_lengths = self.grid.squaredLengths(self.edges)
+        self.complex = cob.ChainComplex.from_top_cells(self.grid.cells())
+        self.edges = self.complex.k_simplex_vertices(1)
+        self.squared_lengths = self.grid.squared_lengths(self.edges)
         # The dense crossover is kept small: nothing here asks for a dense kernel.
         self.base = ch.ChainHodge(self.complex, self.squared_lengths, ch.Preset.L2,
                                   ch.Branch.Continuation, crossover)
         trivial = ch.CovariantChainHodge(self.base, ch.Connection.trivial(self.complex), 7, False)
-        pencil = trivial.sparsePencil()
+        pencil = trivial.sparse_pencil()
         self.size = pencil.A.shape[0]
         n2, n3 = self.divisions[1], self.divisions[2]
         ids = np.arange(self.size)
@@ -148,7 +148,7 @@ class CrystalCell:
     def weighted_mass(self, values):
         """M_0[V] for vertex values `values` (the bilinear form of multiplication by V)."""
         values = np.asarray(values).astype(complex)
-        weighted = GridMatrix(self, ch.WhitneyMass.assembleVertexPotential(
+        weighted = GridMatrix(self, ch.WhitneyMass.assemble_vertex_potential(
             self.complex, self.squared_lengths, list(values)))
         # The interpolant lies between its vertex values, so the weighted form
         # is bounded below by this times the mass matrix.
@@ -159,49 +159,49 @@ class CrystalCell:
     def covariant(self, kappa=(0.0, 0.0, 0.0)):
         """The `CovariantChainHodge` of the cell at the flat connection whose
         links are the Bloch phases of the crystal momentum `kappa`
-        (`PeriodicKuhnGrid.blochLinks`)."""
-        links = self.grid.blochLinks(self.edges, [float(x) for x in kappa])
+        (`PeriodicKuhnGrid.bloch_links`)."""
+        links = self.grid.bloch_links(self.edges, [float(x) for x in kappa])
         return ch.CovariantChainHodge(self.base, ch.Connection(self.complex, links), 7, False)
 
     def pencil(self, kappa=(0.0, 0.0, 0.0), potential=None):
         """(A, M) at the crystal momentum `kappa` (reciprocal coordinates), in
         energy units: `A = kinetic_scale * A0^U + M0^U[V]`, assembled by
-        `CovariantChainHodge.sparsePencil` and `dressedVertexPotential` at the
+        `CovariantChainHodge.sparse_pencil` and `dressed_vertex_potential` at the
         connection of `covariant(kappa)`. `potential` is either vertex values or
         a `GridMatrix` from `weighted_mass`. (`GridMatrix.dressed` is the same
         matrices by an entrywise rule, which `certify` holds to this assembly.)"""
         cov = self.covariant(kappa)
-        assembled = cov.sparsePencil()
+        assembled = cov.sparse_pencil()
         A = self.kinetic_scale * sp.csc_matrix(assembled.A)
         if potential is not None:
             values = potential.values if isinstance(potential, GridMatrix) else np.asarray(potential).astype(complex)
-            A = A + sp.csc_matrix(cov.dressedVertexPotential(list(values)))
+            A = A + sp.csc_matrix(cov.dressed_vertex_potential(list(values)))
         return A.tocsc(), sp.csc_matrix(assembled.M)
 
     def spacetime(self, kappa=(0.0, 0.0, 0.0)):
         """The cell as a `Spacetime` whose edges carry the declared fields: the
-        lengths set by `PeriodicKuhnGrid.build` (`Edge.setLength`) and the Bloch
+        lengths set by `PeriodicKuhnGrid.build` (`Edge.set_length`) and the Bloch
         phase of the crystal momentum on each edge's own source-to-target
-        orientation (`Edge.setPhase`)."""
+        orientation (`Edge.set_phase`)."""
         signature = tessera.Signature(3, tessera.Lorentzian)
         spacetime = tessera.Spacetime(tessera.Metric(True, signature), tessera.CDT, 1.0, 1.0,
                                       tessera.PREFERRED, self.grid)
         spacetime.build()
-        for edge in spacetime.getEdgeList().toVector():
-            edge.setPhase(self.grid.blochPhase(edge.getSource().getId(), edge.getTarget().getId(), list(kappa)))
+        for edge in spacetime.get_edge_list().to_vector():
+            edge.set_phase(self.grid.bloch_phase(edge.get_source().get_id(), edge.get_target().get_id(), list(kappa)))
         return spacetime
 
     def pencil_from_spacetime(self, kappa=(0.0, 0.0, 0.0)):
         """(A, M) read back from the declared fields of `spacetime(kappa)` through
-        `WhitneyMass.complexOf`, `WhitneyMass.squaredLengthsOf` and
-        `Connection.fromSpacetime`: the route by which a relaxed geometry would
+        `WhitneyMass.complex_of`, `WhitneyMass.squared_lengths_of` and
+        `Connection.from_spacetime`: the route by which a relaxed geometry would
         reach the solver. It equals `pencil(kappa)` without a potential."""
         spacetime = self.spacetime(kappa)
-        K = ch.WhitneyMass.complexOf(spacetime)
-        lengths = ch.WhitneyMass.squaredLengthsOf(spacetime, K)
-        base = ch.ChainHodge(K, lengths, ch.Preset.L2, ch.Branch.Continuation, self.base.crossoverDimension())
-        cov = ch.CovariantChainHodge(base, ch.Connection.fromSpacetime(spacetime, K), 7, False)
-        pencil = cov.sparsePencil()
+        K = ch.WhitneyMass.complex_of(spacetime)
+        lengths = ch.WhitneyMass.squared_lengths_of(spacetime, K)
+        base = ch.ChainHodge(K, lengths, ch.Preset.L2, ch.Branch.Continuation, self.base.crossover_dimension())
+        cov = ch.CovariantChainHodge(base, ch.Connection.from_spacetime(spacetime, K), 7, False)
+        pencil = cov.sparse_pencil()
         return self.kinetic_scale * sp.csc_matrix(pencil.A), sp.csc_matrix(pencil.M)
 
     def momentum(self, kappa):
@@ -241,13 +241,13 @@ class CrystalCell:
     def certify(self, kappa=(0.0, 0.0, 0.0), compare_dressing=True):
         """Measure the premises of the Hermitian specialization at `kappa` on
         the C++ objects, and hold the entrywise dressing of `pencil` to them."""
-        links = self.grid.blochLinks(self.edges, list(kappa))
+        links = self.grid.bloch_links(self.edges, list(kappa))
         U = ch.Connection(self.complex, links)
         cov = ch.CovariantChainHodge(self.base, U, 7, False)
-        curvature = max((abs(U.curvature(*t) - 1.0) for t in self.complex.kSimplexVertices(2)), default=0.0)
-        holonomy = max(abs(U.holonomy(self.grid.fundamentalCycle(a)) - np.exp(2j * np.pi * kappa[a]))
+        curvature = max((abs(U.curvature(*t) - 1.0) for t in self.complex.k_simplex_vertices(2)), default=0.0)
+        holonomy = max(abs(U.holonomy(self.grid.fundamental_cycle(a)) - np.exp(2j * np.pi * kappa[a]))
                        for a in range(3))
-        reference = cov.sparsePencil()
+        reference = cov.sparse_pencil()
         A, M = sp.csc_matrix(reference.A), sp.csc_matrix(reference.M)
         defect = lambda X: sp.linalg.norm(X - X.conj().T) / sp.linalg.norm(X)
         dressing = 0.0
@@ -259,19 +259,19 @@ class CrystalCell:
         # Hermitian defects above are the same identities at any size.
         regime = cob.CertificateRegime.ComplexSymmetricPencil
         notes = []
-        if self.size < self.base.crossoverDimension():
-            regime = cov.regimeCertificate(0).regime
+        if self.size < self.base.crossover_dimension():
+            regime = cov.regime_certificate(0).regime
         else:
             notes.append("regime read from the sparse Hermitian defects (above the dense crossover)")
         try:
             # The solver refuses a mass matrix that has no Cholesky factorization.
-            positive = ch.SparsePencilSolver.lowest(M, M, 1, -1.0).shiftBelowSpectrum
+            positive = ch.SparsePencilSolver.lowest(M, M, 1, -1.0).shift_below_spectrum
         except ValueError:
             positive = False
         certificate = self.base.certificate()
         return CellCertificate(
             allowable=certificate.allowable, margin=certificate.margin,
-            continuation_ambiguous=certificate.continuationAmbiguous, unitary=U.isUnitary(),
+            continuation_ambiguous=certificate.continuation_ambiguous, unitary=U.is_unitary(),
             max_curvature_defect=float(curvature), max_holonomy_defect=float(holonomy), regime=regime,
             hermitian_defect_stiffness=float(defect(A)), hermitian_defect_mass=float(defect(M)),
             mass_positive_definite=bool(positive), dressing_defect=float(dressing), notes=notes)
@@ -284,7 +284,7 @@ def solve_pencil(A, M, count, sigma, tolerance=1e-10, kappa=(0.0, 0.0, 0.0), **o
     return BandRead(kappa=tuple(kappa), energies=np.array(read.eigenvalues.values).real,
                     vectors=np.asarray(read.vectors), residual=certificate.residual,
                     conditioning=certificate.conditioning, holds=certificate.holds(),
-                    shift_below_spectrum=read.shiftBelowSpectrum, solves=read.solves)
+                    shift_below_spectrum=read.shift_below_spectrum, solves=read.solves)
 
 
 def richardson_amplification(spacings, orders=None):
@@ -376,13 +376,13 @@ def band_fibers(cell, read, degeneracy=1e-7):
                   "rank": len(group), "certificate": certificate,
                   **split(energies[group].astype(complex), "eigenvalues"), **split(frame.ravel(), "right_frame"),
                   **split(frame.ravel(), "left_frame"), **split(np.ones(cell.size, dtype=complex), "weights")}
-        fibers.append(observables.SpectralFiber.fromRecord(record))
+        fibers.append(observables.SpectralFiber.from_record(record))
     return fibers, groups
 
 
 def track_bands(cell, reads, overlap_threshold=0.5):
     """Follow bands along a path of crystal momenta by overlap, not by ordering,
-    with the overlap rule of `SpectralFiberTracker.matchFibers` (principal
+    with the overlap rule of `SpectralFiberTracker.match_fibers` (principal
     angles of the frames on shared cells) on the fibers of `band_fibers`.
 
     Between two neighbouring momenta every fiber is matched to its best partner
@@ -406,16 +406,16 @@ def track_bands(cell, reads, overlap_threshold=0.5):
     previous, previous_groups = band_fibers(cell, reads[0])
     for p in range(1, len(reads)):
         current, current_groups = band_fibers(cell, reads[p])
-        forward = observables.SpectralFiberTracker.matchFibers(previous, current, overlap_threshold)
-        backward = observables.SpectralFiberTracker.matchFibers(current, previous, overlap_threshold)
+        forward = observables.SpectralFiberTracker.match_fibers(previous, current, overlap_threshold)
+        backward = observables.SpectralFiberTracker.match_fibers(current, previous, overlap_threshold)
         # The library normalizes the overlap by the larger rank; the share of the smaller
         # subspace that lies in the larger one is what links a level to the parts it splits into.
         def contained(match, a, b):
             ranks = len(previous_groups[a]), len(current_groups[b])
-            return match.overlap.subspaceOverlap * max(ranks) / min(ranks)
-        links = {(m.fromIndex, m.toIndex): contained(m, m.fromIndex, m.toIndex) for m in forward}
+            return match.overlap.subspace_overlap * max(ranks) / min(ranks)
+        links = {(m.from_index, m.to_index): contained(m, m.from_index, m.to_index) for m in forward}
         for m in backward:
-            key = (m.toIndex, m.fromIndex)
+            key = (m.to_index, m.from_index)
             links[key] = max(contained(m, *key), links.get(key, 0.0))
         links = {key: weight for key, weight in links.items() if weight >= overlap_threshold}
         # Connected groups of the bipartite match graph.

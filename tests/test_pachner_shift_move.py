@@ -48,12 +48,12 @@ def _make_st(d=4, n_simplices=200):
 
 def _top_size(st):
     # CDT top simplices are (d+1)-vertex; d is the spacetime's declared
-    # (signature) dimension. getTopVertexCount() == signature.dimensions + 1,
+    # (signature) dimension. get_top_vertex_count() == signature.dimensions + 1,
     # the engine's single source of truth for top-cell membership -- O(1) and
     # immune to the lazily-materialized lower-dimensional facets that
-    # propose()/getFacets() register into getSimplices() (where the first
+    # propose()/get_facets() register into get_simplices() (where the first
     # scanned simplex may be a lower-dimensional face).
-    return st.getTopVertexCount()
+    return st.get_top_vertex_count()
 
 
 def _full_snapshot(st):
@@ -61,19 +61,19 @@ def _full_snapshot(st):
     top-simplex, edge, and vertex fingerprints."""
     dPlus1 = _top_size(st)
     return {
-        "n0": st.getVertexCount(),
-        "n41": st.getN41(),
-        "n32": st.getN32(),
-        "n4": st.getTopSimplexCount(),
+        "n0": st.get_vertex_count(),
+        "n41": st.get_n41(),
+        "n32": st.get_n32(),
+        "n4": st.get_top_simplex_count(),
         "top_fps": frozenset(
-            hash(s) for s in st.getSimplices()
-            if len(s.getVertices()) == dPlus1
+            hash(s) for s in st.get_simplices()
+            if len(s.get_vertices()) == dPlus1
         ),
         "edge_fps": frozenset(
-            hash(e) for e in st.getEdgeList().toVector()
+            hash(e) for e in st.get_edge_list().to_vector()
         ),
         "vertex_ids": frozenset(
-            v.getId() for v in st.getVertexList().toVector()
+            v.get_id() for v in st.get_vertex_list().to_vector()
         ),
     }
 
@@ -124,14 +124,14 @@ class TestShiftPropose(unittest.TestCase):
         st = _make_st()
         m = tessera.ShiftMove(st, 0)
         # Move type is fixed regardless of propose() outcome.
-        self.assertEqual(m.moveType(), "shift")
+        self.assertEqual(m.move_type(), "shift")
 
     def test_dN0_is_zero(self):
         """Shift never changes vertex count."""
         st = _make_st()
         m = _try_propose(st, range(200), tessera.ShiftMove)
         self.assertIsNotNone(m)
-        self.assertEqual(m.dN0(), 0)
+        self.assertEqual(m.d_n0(), 0)
 
     def test_dN41_plus_dN32_is_zero_advertised(self):
         """Shift's *advertised* deltas always sum to zero (predicts a
@@ -142,14 +142,14 @@ class TestShiftPropose(unittest.TestCase):
         st = _make_st()
         m = _try_propose(st, range(200), tessera.ShiftMove)
         self.assertIsNotNone(m)
-        self.assertEqual(m.dN41() + m.dN32(), 0)
+        self.assertEqual(m.d_n41() + m.d_n32(), 0)
 
     def test_log_prefactor_is_zero(self):
         """Shift's combinatorial selection is symmetric."""
         st = _make_st()
         m = _try_propose(st, range(200), tessera.ShiftMove)
         self.assertIsNotNone(m)
-        self.assertEqual(m.metropolisLogPrefactor(), 0.0)
+        self.assertEqual(m.metropolis_log_prefactor(), 0.0)
 
     def test_touched_vertex_ids_dPlus2(self):
         """Shift touches exactly d+2 vertices."""
@@ -157,7 +157,7 @@ class TestShiftPropose(unittest.TestCase):
         m = _try_propose(st, range(200), tessera.ShiftMove)
         self.assertIsNotNone(m)
         # d=4 → d+2 = 6 unique vertex IDs
-        ids = m.touchedVertexIds()
+        ids = m.touched_vertex_ids()
         self.assertEqual(len(ids), 6)
         self.assertEqual(len(set(ids)), 6, "vertex IDs must be unique")
 
@@ -178,16 +178,16 @@ class TestShiftApply(unittest.TestCase):
         self.assertTrue(ok)
         self.assertNotEqual(before, after,
                             "apply() must change state")
-        self.assertTrue(m.isApplied())
+        self.assertTrue(m.is_applied())
 
     def test_apply_dN0_matches_advertised(self):
-        """N0 always changes by exactly dN0 (=0 for shift)."""
+        """N0 always changes by exactly d_n0 (=0 for shift)."""
         st = _make_st()
         m = _try_propose(st, range(200), tessera.ShiftMove)
         self.assertIsNotNone(m)
-        n0_b = st.getVertexCount()
+        n0_b = st.get_vertex_count()
         m.apply()
-        self.assertEqual(st.getVertexCount(), n0_b + m.dN0())
+        self.assertEqual(st.get_vertex_count(), n0_b + m.d_n0())
 
     def test_apply_n4_in_documented_range(self):
         """Shift advertises dN41+dN32 = 0, but on small lattices dedupe
@@ -198,9 +198,9 @@ class TestShiftApply(unittest.TestCase):
         st = _make_st()
         m = _try_propose(st, range(200), tessera.ShiftMove)
         self.assertIsNotNone(m)
-        n4_b = st.getTopSimplexCount()
+        n4_b = st.get_top_simplex_count()
         m.apply()
-        actual_dN4 = st.getTopSimplexCount() - n4_b
+        actual_dN4 = st.get_top_simplex_count() - n4_b
         self.assertIn(actual_dN4, (-3, -2, -1, 0),
                       f"Shift's actual ΔN4 ({actual_dN4}) outside "
                       f"documented [-3, 0] range")
@@ -209,9 +209,9 @@ class TestShiftApply(unittest.TestCase):
         st = _make_st()
         m = _try_propose(st, range(200), tessera.ShiftMove)
         self.assertIsNotNone(m)
-        n0_b = st.getVertexCount()
+        n0_b = st.get_vertex_count()
         m.apply()
-        self.assertEqual(st.getVertexCount(), n0_b,
+        self.assertEqual(st.get_vertex_count(), n0_b,
                          "Shift must preserve N0 exactly (dedupe only "
                          "affects top simplices, not vertices)")
 
@@ -256,7 +256,7 @@ class TestShiftRollback(unittest.TestCase):
         m.rollback()
         self.assertEqual(_full_snapshot(st), before,
                          "rollback() must restore byte-identical state")
-        self.assertFalse(m.isApplied())
+        self.assertFalse(m.is_applied())
 
     def test_rollback_without_apply_is_noop(self):
         st = _make_st()
@@ -292,11 +292,11 @@ class TestShiftLifecycle(unittest.TestCase):
         st = _make_st()
         m = _try_propose(st, range(200), tessera.ShiftMove)
         self.assertIsNotNone(m)
-        self.assertFalse(m.isApplied())
+        self.assertFalse(m.is_applied())
         m.apply()
-        self.assertTrue(m.isApplied())
+        self.assertTrue(m.is_applied())
         m.rollback()
-        self.assertFalse(m.isApplied())
+        self.assertFalse(m.is_applied())
 
     def test_propose_called_twice_returns_false(self):
         """propose() is one-shot per object."""
@@ -349,14 +349,14 @@ class TestShiftStress(unittest.TestCase):
         """Apply two shifts, then rollback in reverse order; final
         state must equal initial state.
 
-        Seeds the spacetime's internal RNG (``st.setSeed``) so the
+        Seeds the spacetime's internal RNG (``st.set_seed``) so the
         sigma-selection inside ``ShiftMove.propose`` is deterministic
         across processes. The previous version of this test depended
         on ``std::random_device``-seeded sigma selection and was
         intermittently flaky in CI.
         """
         st = _make_st(d=4)
-        st.setSeed(0)
+        st.set_seed(0)
         before = _full_snapshot(st)
         # Find two shifts that succeed sequentially.
         m1 = m2 = None
@@ -370,11 +370,11 @@ class TestShiftStress(unittest.TestCase):
                 m2 = tessera.ShiftMove(st, seed2)
                 if m2.propose() and m2.apply():
                     break
-            if m2 is not None and m2.isApplied():
+            if m2 is not None and m2.is_applied():
                 break
             m1.rollback()
             m1 = None
-        if m1 is None or m2 is None or not m2.isApplied():
+        if m1 is None or m2 is None or not m2.is_applied():
             self.skipTest("Could not chain two shift applies")
         # Now rollback in REVERSE order.
         m2.rollback()
@@ -391,12 +391,12 @@ class TestShiftStress(unittest.TestCase):
         ``SimplexPtr`` for cells m1 created.  If m2 then removed one
         of those cells (and m2.rollback recreated it as a fresh
         allocation), m1's stored pointer was dangling.
-        ``m1.rollback`` would feed it to ``removeSimplex``, whose
+        ``m1.rollback`` would feed it to ``remove_simplex``, whose
         swap-and-pop on the stale ``vecIdx_`` would clobber an
         unrelated simplex in the spacetime — leaving the dead cell in
         place and removing the wrong one.
 
-        With ``st.setSeed(0)`` the failure is deterministic at
+        With ``st.set_seed(0)`` the failure is deterministic at
         ``(m1_seed=2, m2_seed=13)``: BEFORE has
         ``(25,27,32,33,34)`` and lacks ``(25,26,27,33,34)``; AFTER had
         the opposite.  After the fix (verts-based rollback resolution
@@ -404,7 +404,7 @@ class TestShiftStress(unittest.TestCase):
         byte-for-byte.
         """
         st = _make_st(d=4)
-        st.setSeed(0)
+        st.set_seed(0)
         before = _full_snapshot(st)
 
         m1 = tessera.ShiftMove(st, 2)

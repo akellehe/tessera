@@ -7,8 +7,8 @@ a small complex perturbation has tau and its eigenline continuous in the
 perturbation; (c) a pure-gauge phase assignment leaves tau, the state and the
 period frame's coefficient pairs invariant, on real and complex-length tori;
 (d) flux and flat holonomy are refused by name; (e) the branch rules (Heron on
-WhitneyMass.volumeOnBranch, the principal acos, the transpose pairing); (f)
-the Connection.transportedPeriod primitive."""
+WhitneyMass.volume_on_branch, the principal acos, the transpose pairing); (f)
+the Connection.transported_period primitive."""
 import cmath
 import json
 import math
@@ -46,8 +46,8 @@ def rebuilt(q, lengths=None, cycle_A=None, cycle_B=None):
     return quiet(lambda: SimplicialQubit(
         list(q.vertices()), list(q.edges()), list(q.faces()),
         list(q.lengths()) if lengths is None else list(lengths),
-        list(q.cycle_A()) if cycle_A is None else cycle_A,
-        list(q.cycle_B()) if cycle_B is None else cycle_B))
+        list(q.cycle_a()) if cycle_A is None else cycle_A,
+        list(q.cycle_b()) if cycle_B is None else cycle_B))
 
 
 def conformal_lengths(q, n, amplitude=0.3):
@@ -80,13 +80,13 @@ def read_spacetime(q, lengths=None, phases=None, reversed_flag=False):
     edge's stored source -> target orientation) onto its Spacetime's edges."""
     st = q.spacetime()
     index = {tuple(e): k for k, e in enumerate(q.edges())}
-    for edge in st.getEdgeList().toVector():
-        u, v = edge.getSource().getId(), edge.getTarget().getId()
+    for edge in st.get_edge_list().to_vector():
+        u, v = edge.get_source().get_id(), edge.get_target().get_id()
         e = index[(min(u, v), max(u, v))]
         if lengths is not None:
-            edge.setLength(complex(lengths[e]))
-        edge.setPhase(complex(0.0) if phases is None else complex(phases[e]))
-    return quiet(lambda: SimplicialQubit(st, list(q.cycle_A()), list(q.cycle_B()), reversed_flag))
+            edge.set_length(complex(lengths[e]))
+        edge.set_phase(complex(0.0) if phases is None else complex(phases[e]))
+    return quiet(lambda: SimplicialQubit(st, list(q.cycle_a()), list(q.cycle_b()), reversed_flag))
 
 
 def pure_gauge_phases(q, g):
@@ -95,8 +95,8 @@ def pure_gauge_phases(q, g):
     st = q.spacetime()
     index = {tuple(e): k for k, e in enumerate(q.edges())}
     phases = [0j] * len(q.edges())
-    for edge in st.getEdgeList().toVector():
-        u, v = edge.getSource().getId(), edge.getTarget().getId()
+    for edge in st.get_edge_list().to_vector():
+        u, v = edge.get_source().get_id(), edge.get_target().get_id()
         phases[index[(min(u, v), max(u, v))]] = g[v] - g[u]
     return phases
 
@@ -311,7 +311,7 @@ def test_pure_gauge_phases_leave_tau_the_state_and_the_coefficient_pairs_invaria
     assert plain.on_real_locus() == (case != "conformal_complex")
     assert gauged.harmonic_basis().dtype.kind == "c"
     if case == "flat_complex_gauge":
-        assert not gauged.connection().isUnitary()
+        assert not gauged.connection().is_unitary()
 
     # tau, the state, the Bloch vector, the density matrix: invariant to rounding.
     assert abs(gauged.tau() - plain.tau()) < 1e-11
@@ -327,8 +327,8 @@ def test_pure_gauge_phases_leave_tau_the_state_and_the_coefficient_pairs_invaria
 
     # Both walks start at the common base point.
     v0 = gauged.base_vertex()
-    assert gauged.walk_A()[0][0] == v0 and gauged.walk_B()[0][0] == v0
-    assert gauged.walk_A()[-1][1] == v0 and gauged.walk_B()[-1][1] == v0
+    assert gauged.walk_a()[0][0] == v0 and gauged.walk_b()[0][0] == v0
+    assert gauged.walk_a()[-1][1] == v0 and gauged.walk_b()[-1][1] == v0
     gv = np.exp(1j * np.asarray(g))
     # The twisted kernel: the holomorphic form is rho_1 omega, rho_1 = diag(g_{b(e)}^{-1}),
     # up to the eigenvector's scale; the frame is exactly g_{v0} rho_1 F.
@@ -357,18 +357,18 @@ def test_pure_gauge_with_a_marking_whose_steps_do_not_chain_in_the_given_order()
     Hierholzer's algorithm and tau -> -1/tau holds under a pure gauge."""
     tau = 0.35 + 1.1j
     base = flat(tau, 4, 4)
-    A, B = list(base.cycle_A()), list(base.cycle_B())
+    A, B = list(base.cycle_a()), list(base.cycle_b())
     minus_A = [(e, -s) for (e, s) in A]
     st = base.spacetime()
     phases = pure_gauge_phases(base, gauge_function(base, seed=5))
     index = {tuple(e): k for k, e in enumerate(base.edges())}
-    for edge in st.getEdgeList().toVector():
-        u, v = edge.getSource().getId(), edge.getTarget().getId()
-        edge.setPhase(complex(phases[index[(min(u, v), max(u, v))]]))
+    for edge in st.get_edge_list().to_vector():
+        u, v = edge.get_source().get_id(), edge.get_target().get_id()
+        edge.set_phase(complex(phases[index[(min(u, v), max(u, v))]]))
     swapped = quiet(lambda: SimplicialQubit(st, B, minus_A))
     assert not swapped.trivial_connection()
     assert abs(swapped.tau() - (-1.0 / tau)) < 1e-9
-    assert len(swapped.walk_B()) == len(A) and swapped.walk_B()[0][0] == swapped.base_vertex()
+    assert len(swapped.walk_b()) == len(A) and swapped.walk_b()[0][0] == swapped.base_vertex()
     shifted = quiet(lambda: SimplicialQubit(st, A, A + B))
     assert abs(shifted.tau() - (tau + 1.0)) < 1e-9
 
@@ -394,21 +394,21 @@ def test_flux_and_flat_holonomy_are_refused_by_name():
     st = base.spacetime()
     index = {tuple(e): k for k, e in enumerate(base.edges())}
     flat_phases = [0j] * len(base.edges())
-    for edge in st.getEdgeList().toVector():
-        u, v = edge.getSource().getId(), edge.getTarget().getId()
+    for edge in st.get_edge_list().to_vector():
+        u, v = edge.get_source().get_id(), edge.get_target().get_id()
         di = reduce(divmod(v, n)[0] - divmod(u, n)[0])
         flat_phases[index[(min(u, v), max(u, v))]] = theta * di / n
     with pytest.raises(ValueError, match="not a pure gauge: the connection is flat but has holonomy"):
         read_spacetime(base, phases=flat_phases)
     # The same connection seen by the chainhodge primitives: no curvature, a
     # Wilson loop of exp(i theta) along A.
-    K = cob.ChainComplex.fromTopCells([list(f) for f in base.faces()])
-    U = ch.Connection.fromSpacetime(st, K)
+    K = cob.ChainComplex.from_top_cells([list(f) for f in base.faces()])
+    U = ch.Connection.from_spacetime(st, K)
     for f in base.faces():
         p, q_, r = sorted(f)
         assert abs(U.curvature(p, q_, r) - 1) < 1e-12
-    assert abs(U.holonomy(list(base.walk_A())) - cmath.exp(1j * theta)) < 1e-12
-    assert abs(U.holonomy(list(base.walk_B())) - 1) < 1e-12
+    assert abs(U.holonomy(list(base.walk_a())) - cmath.exp(1j * theta)) < 1e-12
+    assert abs(U.holonomy(list(base.walk_b())) - 1) < 1e-12
     read_spacetime(base)  # phases reset to zero: accepted again
 
 
@@ -439,10 +439,10 @@ def test_branch_rules_and_the_transpose_pairing():
         b = complex(lengths[index[(min(k, i), max(k, i))]])
         c = complex(lengths[index[(min(i, j), max(i, j))]])
         sa, sb, sc = a * a, b * b, c * c
-        # Heron on the continuation branch = WhitneyMass.volumeOnBranch of the
+        # Heron on the continuation branch = WhitneyMass.volume_on_branch of the
         # face's Gram matrix, bit for bit.
         gram = np.array([[sc, 0.5 * (sc + sb - sa)], [0.5 * (sc + sb - sa), sb]])
-        volume, ambiguous = ch.WhitneyMass.volumeOnBranch(gram, ch.Branch.Continuation)
+        volume, ambiguous = ch.WhitneyMass.volume_on_branch(gram, ch.Branch.Continuation)
         assert not ambiguous and abs(areas[t] - volume) < 1e-13 * abs(volume)
         assert abs(areas[t] ** 2 - 0.25 * np.linalg.det(gram)) < 1e-12 * abs(areas[t]) ** 2
         # The principal branch of acos of the complex cosine.
@@ -512,8 +512,8 @@ def test_branch_rules_and_the_transpose_pairing():
     assert np.abs(H @ c - omega).max() < 1e-12
     assert proportional(J @ c, c)
     P_A, P_B = q.periods()
-    assert abs(sum(s * omega[e] for e, s in q.cycle_A()) - P_A) < 1e-12
-    assert abs(sum(s * omega[e] for e, s in q.cycle_B()) - P_B) < 1e-12
+    assert abs(sum(s * omega[e] for e, s in q.cycle_a()) - P_A) < 1e-12
+    assert abs(sum(s * omega[e] for e, s in q.cycle_b()) - P_B) < 1e-12
     assert abs(q.tau() - P_B / P_A) < 1e-14
     assert abs(np.linalg.norm(q.bloch()) - 1.0) < 1e-12
 
@@ -532,17 +532,17 @@ def test_a_root_on_the_continuation_segment_is_refused_by_name():
 
 
 # --------------------------------------------------------------------------- #
-# (f) Connection.transportedPeriod
+# (f) Connection.transported_period
 # --------------------------------------------------------------------------- #
 def test_transported_period_primitive():
     base = flat(0.3 + 1.2j, 4, 4)
-    K = cob.ChainComplex.fromTopCells([list(f) for f in base.faces()])
-    canonical = [tuple(int(v) for v in e) for e in K.kSimplexVertices(1)]
+    K = cob.ChainComplex.from_top_cells([list(f) for f in base.faces()])
+    canonical = [tuple(int(v) for v in e) for e in K.k_simplex_vertices(1)]
     assert sorted(canonical) == canonical
     nE = len(canonical)
     rng = np.random.default_rng(2)
     omega = rng.normal(size=nE) + 1j * rng.normal(size=nE)
-    walk_A, walk_B = list(base.walk_A()), list(base.walk_B())
+    walk_A, walk_B = list(base.walk_a()), list(base.walk_b())
     assert walk_A[0][0] == walk_B[0][0] == base.base_vertex()
 
     def plain(walk):
@@ -550,15 +550,15 @@ def test_transported_period_primitive():
 
     # Trivial connection: the plain signed sum, and the qubit's own periods.
     trivial = ch.Connection.trivial(K)
-    assert abs(trivial.transportedPeriod(omega, walk_A) - plain(walk_A)) < 1e-13
+    assert abs(trivial.transported_period(omega, walk_A) - plain(walk_A)) < 1e-13
     assert abs(trivial.holonomy(walk_A) - 1) == 0
     own = np.asarray(base.holomorphic_form())
     own_canonical = np.zeros(nE, dtype=complex)
     for e in range(nE):
         own_canonical[base.canonical_edge_index(e)] = own[e]
     P_A, P_B = base.periods()
-    assert abs(trivial.transportedPeriod(own_canonical, walk_A) - P_A) < 1e-13
-    assert abs(trivial.transportedPeriod(own_canonical, walk_B) - P_B) < 1e-13
+    assert abs(trivial.transported_period(own_canonical, walk_A) - P_A) < 1e-13
+    assert abs(trivial.transported_period(own_canonical, walk_B) - P_B) < 1e-13
     # Pure gauge U = 1^g on the twisted cochain rho_1 omega: g_{v0}^{-1} times the
     # plain period, so the ratio P_B / P_A is invariant.
     g = {v: cmath.exp(1j * x) * (1 + 0.3 * math.sin(v)) for v, x in enumerate(np.linspace(-2, 2, len(base.vertices())))}
@@ -567,19 +567,19 @@ def test_transported_period_primitive():
     v0 = walk_A[0][0]
     for walk in (walk_A, walk_B):
         assert abs(U.holonomy(walk) - 1) < 1e-12
-        assert abs(U.transportedPeriod(twisted, walk) - plain(walk) / g[v0]) < 1e-12 * abs(plain(walk))
-    assert abs(U.transportedPeriod(twisted, walk_B) / U.transportedPeriod(twisted, walk_A)
+        assert abs(U.transported_period(twisted, walk) - plain(walk) / g[v0]) < 1e-12 * abs(plain(walk))
+    assert abs(U.transported_period(twisted, walk_B) / U.transported_period(twisted, walk_A)
                - plain(walk_B) / plain(walk_A)) < 1e-12
     # The base point matters: the same walk started elsewhere is another base.
     rotated = walk_A[1:] + walk_A[:1]
     v1 = rotated[0][0]
-    assert abs(U.transportedPeriod(twisted, rotated) - plain(walk_A) / g[v1]) < 1e-12 * abs(plain(walk_A))
+    assert abs(U.transported_period(twisted, rotated) - plain(walk_A) / g[v1]) < 1e-12 * abs(plain(walk_A))
     # Refusals by name.
     with pytest.raises(ValueError, match="does not chain"):
-        U.transportedPeriod(twisted, [walk_A[0], walk_A[2]] + walk_A[1:2] + walk_A[3:])
+        U.transported_period(twisted, [walk_A[0], walk_A[2]] + walk_A[1:2] + walk_A[3:])
     with pytest.raises(ValueError, match="not closed"):
-        U.transportedPeriod(twisted, walk_A[:-1])
+        U.transported_period(twisted, walk_A[:-1])
     with pytest.raises(ValueError, match="is not an edge"):
         U.holonomy([(0, 6), (6, 0)])
     with pytest.raises(ValueError, match="entries for"):
-        U.transportedPeriod(twisted[:-1], walk_A)
+        U.transported_period(twisted[:-1], walk_A)

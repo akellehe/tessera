@@ -7,11 +7,11 @@ suite closes the loop by comparing the two implementations to each other
 on identical Slater states, with no dense construction in the loop.
 
 Conventions used here:
-  - ``LazyFockEngine.covarianceMatrix`` returns Gamma_ef = <a_f^+ a_e>,
+  - ``LazyFockEngine.covariance_matrix`` returns Gamma_ef = <a_f^+ a_e>,
     the same convention as ``CovarianceState.gamma()``.
-  - ``CovarianceState.wickNormalOrdered(creators, annihilators)`` uses
+  - ``CovarianceState.wick_normal_ordered(creators, annihilators)`` uses
     paired slot order, so equal distinct lists give joint occupations.
-  - ``LazyFockEngine.innerProduct(a, b)`` is <a|b>, antilinear in ``a``.
+  - ``LazyFockEngine.inner_product(a, b)`` is <a|b>, antilinear in ``a``.
 """
 
 import numpy as np
@@ -44,7 +44,7 @@ def projector(frame):
 
 @pytest.fixture(scope="module")
 def cov(projector):
-    return CovarianceState.fromBandProjector(projector)
+    return CovarianceState.from_band_projector(projector)
 
 
 @pytest.fixture(scope="module")
@@ -54,38 +54,38 @@ def engine():
 
 @pytest.fixture(scope="module")
 def slater(engine, projector):
-    ref = engine.slaterFromProjector(list(range(M)), projector, TOL)
+    ref = engine.slater_from_projector(list(range(M)), projector, TOL)
     assert ref.certificate.holds()
     return ref.state
 
 
 def _lazy_expectation(engine, state, one_particle_factors):
-    """<dGamma(A_1) ... dGamma(A_n)> on a normalized lazy state."""
+    """<d_gamma(A_1) ... d_gamma(A_n)> on a normalized lazy state."""
     modes = list(range(M))
     ket = state
     for a in reversed(one_particle_factors):
-        ket = engine.applyDGamma(ket, modes, np.ascontiguousarray(a))
-    value = engine.innerProduct(state, ket).value
-    norm = engine.normSquared(state).value
+        ket = engine.apply_d_gamma(ket, modes, np.ascontiguousarray(a))
+    value = engine.inner_product(state, ket).value
+    norm = engine.norm_squared(state).value
     return value / norm
 
 
 class TestCovarianceAgreement:
     def test_gamma_matrices_agree(self, engine, slater, cov):
-        lazy_gamma = engine.covarianceMatrix(slater).matrix
+        lazy_gamma = engine.covariance_matrix(slater).matrix
         assert np.max(np.abs(lazy_gamma - cov.gamma())) <= TOL
 
     def test_occupations_agree(self, engine, slater, cov):
-        lazy_gamma = engine.covarianceMatrix(slater).matrix
+        lazy_gamma = engine.covariance_matrix(slater).matrix
         for mode in range(M):
-            wick = cov.wickOccupation(mode)
+            wick = cov.wick_occupation(mode)
             assert wick.certificate.holds()
             assert abs(lazy_gamma[mode, mode].real - wick.value.real) <= TOL
             assert abs(wick.value.imag) <= TOL
 
     def test_particle_number_agrees(self, engine, slater, cov):
-        lazy_n = np.trace(engine.covarianceMatrix(slater).matrix)
-        wick_n = cov.wickTotalNumber().value
+        lazy_n = np.trace(engine.covariance_matrix(slater).matrix)
+        wick_n = cov.wick_total_number().value
         assert abs(lazy_n - wick_n) <= TOL
         assert abs(wick_n - RANK) <= TOL
 
@@ -93,7 +93,7 @@ class TestCovarianceAgreement:
         # (-1)^N on a rank-RANK Slater state; det(I - 2 Gamma) on the
         # covariance side.  The lazy side fixes N = RANK by construction,
         # so the analytic value anchors both.
-        parity = cov.wickParity().value
+        parity = cov.wick_parity().value
         assert abs(parity - (-1.0) ** RANK) <= TOL
 
 
@@ -105,7 +105,7 @@ class TestMomentAgreement:
 
     def test_quadratic_moment_agrees(self, engine, slater, cov):
         h = self._hermitian(7)
-        wick = cov.wickBilinearMoment([h])
+        wick = cov.wick_bilinear_moment([h])
         lazy = _lazy_expectation(engine, slater, [h])
         assert wick.certificate.holds()
         assert abs(wick.value - lazy) <= 1e-11
@@ -113,14 +113,14 @@ class TestMomentAgreement:
     def test_quartic_ordered_moment_agrees(self, engine, slater, cov):
         a = self._hermitian(11)
         b = self._hermitian(13)
-        wick = cov.wickBilinearMoment([a, b])
+        wick = cov.wick_bilinear_moment([a, b])
         lazy = _lazy_expectation(engine, slater, [a, b])
         assert wick.certificate.holds()
         assert abs(wick.value - lazy) <= 1e-10
 
     def test_joint_occupation_agrees(self, engine, slater, cov):
         # <n_0 n_1> both ways: Wick determinant vs nested bit-level dGamma.
-        wick = cov.wickNormalOrdered([0, 1], [0, 1])
+        wick = cov.wick_normal_ordered([0, 1], [0, 1])
         d0 = np.zeros((M, M), dtype=complex)
         d0[0, 0] = 1.0
         d1 = np.zeros((M, M), dtype=complex)
@@ -146,12 +146,12 @@ class TestSpinAgreement:
         jx, jy, jz = self._spin_matrices()
         v = np.zeros((M, 1), dtype=complex)
         v[0, 0] = 1.0  # orbital 0, spin up
-        cov1 = CovarianceState.fromSlaterFrame(v)
-        expect = cov1.wickSpinSquaredExpectation(jx, jy, jz)
-        var = cov1.wickSpinSquaredVariance(jx, jy, jz)
+        cov1 = CovarianceState.from_slater_frame(v)
+        expect = cov1.wick_spin_squared_expectation(jx, jy, jz)
+        var = cov1.wick_spin_squared_variance(jx, jy, jz)
         assert abs(expect.value - 0.75) <= TOL
         assert abs(var.value) <= TOL
-        ref = engine.slaterFromProjector(
+        ref = engine.slater_from_projector(
             list(range(M)), v @ v.conj().T, TOL
         )
         lazy_j2 = sum(
@@ -162,8 +162,8 @@ class TestSpinAgreement:
 
     def test_generic_slater_j2_agrees_with_lazy(self, engine, frame, cov):
         jx, jy, jz = self._spin_matrices()
-        expect = cov.wickSpinSquaredExpectation(jx, jy, jz)
-        ref = engine.slaterFromProjector(
+        expect = cov.wick_spin_squared_expectation(jx, jy, jz)
+        ref = engine.slater_from_projector(
             list(range(M)), frame @ frame.conj().T, TOL
         )
         lazy_j2 = sum(

@@ -75,8 +75,8 @@ def _small_sphere4():
                      T.CDT, 1.0, 1.0, T.PREFERRED,
                      T.SimplexBoundarySphere(4))
     st.build()
-    for index, edge in enumerate(st.getEdgeList().toVector()):
-        edge.setLength(cmath.sqrt(complex(1.0 + 0.019 * (index % 5),
+    for index, edge in enumerate(st.get_edge_list().to_vector()):
+        edge.set_length(cmath.sqrt(complex(1.0 + 0.019 * (index % 5),
                                           0.011 * (1 + index % 4))))
     return st
 
@@ -92,8 +92,8 @@ def _refined_host(n_refine=COMMITTING_REFINEMENTS, seed=3):
                      T.CDT, 1.0, 1.0, T.PREFERRED,
                      T.SimplexBoundarySphere(4))
     st.build()
-    for edge in st.getEdgeList().toVector():
-        edge.setLength(cmath.sqrt(complex(1.0)))
+    for edge in st.get_edge_list().to_vector():
+        edge.set_length(cmath.sqrt(complex(1.0)))
     applied = 0
     for step in range(seed, seed + n_refine * 4):
         move = T.AddMove(st, step, False, T.PachnerMode.PreGeometric, False)
@@ -101,8 +101,8 @@ def _refined_host(n_refine=COMMITTING_REFINEMENTS, seed=3):
             applied += 1
         if applied >= n_refine:
             break
-    for index, edge in enumerate(st.getEdgeList().toVector()):
-        edge.setLength(cmath.sqrt(complex(1.0 + 0.01 * (index % 6),
+    for index, edge in enumerate(st.get_edge_list().to_vector()):
+        edge.set_length(cmath.sqrt(complex(1.0 + 0.01 * (index % 6),
                                           0.007 * (1 + index % 4))))
     return st
 
@@ -114,7 +114,7 @@ def _node(st, gamma=0.0):
 
 def _topology(st):
     """The topological facts a Pachner move cannot change but surgery can."""
-    return (len(st.getTopSimplices()),
+    return (len(st.get_top_simplices()),
             tuple(MC.betti(st)),
             len(MC.emergent_holes(st, DEGREE)))
 

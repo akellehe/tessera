@@ -128,12 +128,12 @@ PRECHANGE_RESIDUAL = {3: 0.9965969445169056, 4: 0.999399418478379}
 
 @pytest.fixture
 def whitney_default():
-    previous = HL.defaultMetricSource()
-    HL.setDefaultMetricSource(cob.HodgeMetricSource.WhitneyPencil)
+    previous = HL.default_metric_source()
+    HL.set_default_metric_source(cob.HodgeMetricSource.WhitneyPencil)
     try:
         yield
     finally:
-        HL.setDefaultMetricSource(previous)
+        HL.set_default_metric_source(previous)
 
 
 # --------------------------------------------------------------------------- #
@@ -157,7 +157,7 @@ def rescaled(q, factor):
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         return obs.SimplicialQubit(list(q.vertices()), list(q.edges()), list(q.faces()),
-                                   [factor * l for l in q.lengths()], list(q.cycle_A()), list(q.cycle_B()))
+                                   [factor * l for l in q.lengths()], list(q.cycle_a()), list(q.cycle_b()))
 
 
 def reversed_cycle(cycle):
@@ -233,7 +233,7 @@ def identity_transfer(st, degree, cells_a, cells_b):
         f.degree = degree
         f.cells = [list(c) for c in cells]
         f.images = np.eye(len(cells), dtype=complex)
-        f.dualImages = np.eye(len(cells), dtype=complex)
+        f.dual_images = np.eye(len(cells), dtype=complex)
     return cob.PencilLayer.transfer(assembled, degree, fa, fb)
 
 
@@ -266,7 +266,7 @@ def holomorphic(packed):
 
 
 def squared_lengths(st):
-    return np.array([complex(e.getLength()) ** 2 for e in st.getEdgeList().toVector()])
+    return np.array([complex(e.get_length()) ** 2 for e in st.get_edge_list().to_vector()])
 
 
 def euler_defect(st, gradient):
@@ -278,8 +278,8 @@ def euler_defect(st, gradient):
 
 
 def scale_all(st, factor):
-    for e in st.getEdgeList().toVector():
-        e.setLength(complex(e.getLength()) * factor)
+    for e in st.get_edge_list().to_vector():
+        e.set_length(complex(e.get_length()) * factor)
 
 
 def residuals(node):
@@ -313,7 +313,7 @@ def degree0_fiber(psi):
 def interaction_node(psi, phi, seed=0):
     node = MC(MC.seed_simplex(3), [[1.0 + 0j, 0j, 0j, 0j], [1.0 + 0j, 0j, 0j, 0j]], [], degrees=[0],
               seed=seed, precone=8, einstein_hilbert=False)
-    tets = [tuple(int(v) for v in t) for t in cob.ChainComplex.fromSpacetime(node.spacetime()).kSimplexVertices(3)]
+    tets = [tuple(int(v) for v in t) for t in cob.ChainComplex.from_spacetime(node.spacetime()).k_simplex_vertices(3)]
     a, b = next((x, y) for x, y in itertools.combinations(tets, 2) if not set(x) & set(y))
     node.seed_inputs([0, 1])
     node.attach_input_fiber(0, degree0_fiber(psi), [[v] for v in a])
@@ -333,7 +333,7 @@ def test_period_frame(n, whitney_default):
         F = np.asarray(q.period_frame())
         assert F.dtype.kind == "f" and F.shape == (len(q.edges()), 2), "real, one row per edge, two columns"
         # the columns have periods (1, 0) and (0, 1) over the marking
-        periods = np.array([[period(F[:, c], cycle) for cycle in (q.cycle_A(), q.cycle_B())] for c in range(2)])
+        periods = np.array([[period(F[:, c], cycle) for cycle in (q.cycle_a(), q.cycle_b())] for c in range(2)])
         assert np.abs(periods - np.eye(2)).max() < 1e-13, periods
         assert not q.marking_swapped()
         # the frame spans the harmonic space: F = H times a 2 x 2 matrix
@@ -349,9 +349,9 @@ def test_period_frame(n, whitney_default):
         assert abs(scaled.tau() - q.tau()) < 1e-12
         assert np.abs(np.asarray(scaled.period_frame()) - F).max() < 1e-12
         # remarking: swapping the cycles swaps the columns, reversing a cycle negates its column
-        swapped = remarked(q, q.cycle_B(), q.cycle_A())
+        swapped = remarked(q, q.cycle_b(), q.cycle_a())
         assert np.abs(np.asarray(swapped.period_frame()) - F[:, [1, 0]]).max() < 1e-12
-        flipped = remarked(q, q.cycle_A(), reversed_cycle(q.cycle_B()))
+        flipped = remarked(q, q.cycle_a(), reversed_cycle(q.cycle_b()))
         assert np.abs(np.asarray(flipped.period_frame()) - F * np.array([1.0, -1.0])).max() < 1e-12
         print(f"\n[T3] {n}x{n} tau={tau}: frame periods {periods.tolist()}, |omega - F(P_A,P_B)| "
               f"{np.abs(omega - F @ np.array([PA, PB])).max():.1e}, |omega/P_A - F(1,tau)| "
@@ -465,24 +465,24 @@ def test_transfer_in_the_period_frames(n, whitney_default):
     assert np.abs(T.imag).max() < 1e-14 * np.abs(T).max()
     # swapping torus B's marking (A <-> B) permutes the columns; reversing a
     # cycle flips the sign of its column; on torus A the same acts on the rows
-    swapped_b = remarked(qb, qb.cycle_B(), qb.cycle_A())
+    swapped_b = remarked(qb, qb.cycle_b(), qb.cycle_a())
     cells, Z, Zd = frame_on(node, 1, swapped_b)
     assert np.abs(Z - Zb[:, [1, 0]]).max() < 1e-12
     node.set_input_frame(1, cells, Z, Zd)
     T_swap = np.asarray(node.read_two_body().transfer)
     assert np.abs(T_swap - T[:, [1, 0]]).max() < 1e-12 * np.abs(T).max()
-    flipped_b = remarked(qb, qb.cycle_A(), reversed_cycle(qb.cycle_B()))
+    flipped_b = remarked(qb, qb.cycle_a(), reversed_cycle(qb.cycle_b()))
     cells, Z, Zd = frame_on(node, 1, flipped_b)
     node.set_input_frame(1, cells, Z, Zd)
     T_flip = np.asarray(node.read_two_body().transfer)
     assert np.abs(T_flip - T * np.array([1.0, -1.0])).max() < 1e-12 * np.abs(T).max()
     node.set_input_frame(1, cells_b, Zb, Zdb)
-    swapped_a = remarked(qa, qa.cycle_B(), qa.cycle_A())
+    swapped_a = remarked(qa, qa.cycle_b(), qa.cycle_a())
     cells, Z, Zd = frame_on(node, 0, swapped_a)
     node.set_input_frame(0, cells, Z, Zd)
     T_swap_a = np.asarray(node.read_two_body().transfer)
     assert np.abs(T_swap_a - T[[1, 0], :]).max() < 1e-12 * np.abs(T).max()
-    flipped_a = remarked(qa, reversed_cycle(qa.cycle_A()), qa.cycle_B())
+    flipped_a = remarked(qa, reversed_cycle(qa.cycle_a()), qa.cycle_b())
     cells, Z, Zd = frame_on(node, 0, flipped_a)
     node.set_input_frame(0, cells, Z, Zd)
     T_flip_a = np.asarray(node.read_two_body().transfer)
@@ -640,20 +640,20 @@ def test_spin_half_target_and_gradient(whitney_default):
     assert np.abs(np.asarray(total_l) - g).max() < 1e-10 * np.abs(g).max()
     # one central-difference probe on the edge of largest sensitivity (a sanity
     # check of this test only; the engine never uses a finite difference)
-    edges = st.getEdgeList().toVector()
+    edges = st.get_edge_list().to_vector()
     i = int(np.argmax(np.abs(g)))
     e, h = edges[i], 1e-6
-    s0 = complex(e.getLength()) ** 2
-    e.setLength(np.sqrt(s0 + h))
+    s0 = complex(e.get_length()) ** 2
+    e.set_length(np.sqrt(s0 + h))
     plus = node.two_body_residual()
-    e.setLength(np.sqrt(s0 - h))
+    e.set_length(np.sqrt(s0 - h))
     minus = node.two_body_residual()
-    e.setLength(np.sqrt(s0))
+    e.set_length(np.sqrt(s0))
     fd = (plus - minus) / (2 * h)
     analytic = g[i].real  # d/dRe s of the packed gradient
     assert fd != 0 and np.sign(fd) == np.sign(analytic)
     assert abs(fd - analytic) < 1e-5 * abs(analytic)
-    key = tuple(sorted((e.getSource().getId(), e.getTarget().getId())))
+    key = tuple(sorted((e.get_source().get_id(), e.get_target().get_id())))
     print(f"\n[T3] chi(S5) for tau_A, tau_B: singular values {np.linalg.svd(chi, compute_uv=False)}; residual "
           f"{residual:.6e}; Euler defect {defect:.2e}; edge {key}: analytic {analytic:.6e} central difference "
           f"{fd:.6e}; |g|max {np.abs(g).max():.3e}")

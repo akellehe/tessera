@@ -51,7 +51,7 @@ not of signature; neither reintroduces a Euclidean path.)doc")
       R"doc(Hodge Laplacian on a Spacetime, degree-parameterized by int k.
 
 METRIC SOURCE. The metric is chosen by HodgeMetricSource, read from the
-process-wide defaultMetricSource() at construction unless named. The default,
+process-wide default_metric_source() at construction unless named. The default,
 WhitneyPencil, is the chain-level Whitney pencil: W_k = M_k^-1 with M_k the sparse
 Whitney mass matrix of the complex squared lengths, dressed by the connection U of
 the edge phases. laplacian(k) is then the operator on geometric images
@@ -81,12 +81,12 @@ null (<h,h>_W = sum_i W_{k,i}|h_i|^2 ~= 0, see nullNorms) -- but L_0 @ 1 = 0
 survives every weight. metric=False selects unit weights (the combinatorial
 d_{k+1} d_{k+1}^T + d_k^T d_k) at every degree. k-cells follow the canonical
 ChainComplex column order at every degree, so the matrices align with
-boundaryMatrix(k) and weights(k). Negative k raises; k above the top dimension
+boundary_matrix(k) and weights(k). Negative k raises; k above the top dimension
 yields empty results. Spectra are computed lazily and cached. This is the
 operator only -- fluxes, cycle bases, and Betti numbers belong to WilsonLoop /
 ChainComplex.
 
-The U(1) CONNECTION Laplacian is a DIFFERENT operator. connectionLaplacian
+The U(1) CONNECTION Laplacian is a DIFFERENT operator. connection_laplacian
 (with adjacency, degree, connectionSpectrum and friends) is the Hermitian
 L = D - A on the 1-skeleton assembled from each edge's complex weight
 squaredLength * exp(i*phase): adjacency Hermitian (the reverse orientation
@@ -113,11 +113,11 @@ ChainComplex omits.)doc")
                     HodgeLaplacian::MetricSource>(),
            py::arg("spacetime"), py::arg("weights"), py::arg("metric_source"),
            "Build with an explicit metric source (see HodgeMetricSource).")
-      .def_static("defaultMetricSource", &HodgeLaplacian::defaultMetricSource,
+      .def_static("default_metric_source", &HodgeLaplacian::defaultMetricSource,
            "The process-wide default HodgeMetricSource (ships as WhitneyPencil).")
-      .def_static("setDefaultMetricSource", &HodgeLaplacian::setDefaultMetricSource,
+      .def_static("set_default_metric_source", &HodgeLaplacian::setDefaultMetricSource,
            py::arg("source"), "Flip the process-wide default metric source ONCE at startup.")
-      .def("metricSource", &HodgeLaplacian::metricSource, "This operator's metric source.")
+      .def("metric_source", &HodgeLaplacian::metricSource, "This operator's metric source.")
       .def("pencil",
            [](const HodgeLaplacian &hodge, int k) {
              HodgeLaplacian::MetricPencil pencil = hodge.pencil(k);
@@ -127,24 +127,24 @@ ChainComplex omits.)doc")
            "Whitney pencil only: (A~_k^U, M_k^U), both flat row-major |C_k| x |C_k| in the "
            "cell order and stored orientation of laplacian(k), which is M^-1 A~. Raises "
            "under DiagonalWeights, whose metric is weights(k).")
-      .def("laplacianPhaseGradient", &HodgeLaplacian::laplacianPhaseGradient,
+      .def("laplacian_phase_gradient", &HodgeLaplacian::laplacianPhaseGradient,
            py::arg("k"), py::arg("ea"), py::arg("eb"),
            "Whitney pencil: the analytic dL_k/dphi_e of the link on edge (ea, eb), flat "
            "row-major; identically zero under DiagonalWeights.")
-      .def_static("kontsevichSegalMargin", &HodgeLaplacian::kontsevichSegalMargin,
+      .def_static("kontsevich_segal_margin", &HodgeLaplacian::kontsevichSegalMargin,
            py::arg("spacetime"),
            "min over top simplices of pi - sum_i |arg lambda_i(g_T)| of the current geometry.")
-      .def_static("defaultWeightConvention",
+      .def_static("default_weight_convention",
            &HodgeLaplacian::defaultWeightConvention,
            "The process-wide default HodgeWeightConvention, read by every "
            "internally-constructed operator (r_U terms, the near-kernel "
            "residual, the register readout). See setDefaultWeightConvention.")
-      .def_static("defaultWeightConvention",
+      .def_static("default_weight_convention",
            &HodgeLaplacian::defaultWeightConvention,
            "The process-global default weight convention new HodgeLaplacian "
            "instances adopt — capture it before setDefaultWeightConvention "
            "to restore the prior state exactly.")
-      .def_static("setDefaultWeightConvention",
+      .def_static("set_default_weight_convention",
            &HodgeLaplacian::setDefaultWeightConvention, py::arg("convention"),
            "Set the process-wide default HodgeWeightConvention. Flip it ONCE "
            "at startup (e.g. the animation's --hodge-weights flag); flipping "
@@ -158,7 +158,7 @@ ChainComplex omits.)doc")
            "Degree vector of the U(1) CONNECTION operator (length N, real): "
            "D_ii = sum |squaredLength| over incident edges (magnitude "
            "convention). Not part of L_0.")
-      .def("connectionLaplacian", &HodgeLaplacian::connectionLaplacian,
+      .def("connection_laplacian", &HodgeLaplacian::connectionLaplacian,
            "The Hermitian U(1) connection graph Laplacian L = D - A as a flat "
            "row-major N*N complex array over the FULL sorted vertex-id order "
            "(every vertex, including any carried by no simplex). NOT the "
@@ -181,33 +181,33 @@ ChainComplex omits.)doc")
            "which is what makes the L_0 row sums vanish). A Lorentzian cell's "
            "content is negative or imaginary. Empty for k<0 or k above the top "
            "dimension.")
-      .def("laplacianGradient", &HodgeLaplacian::laplacianGradient, py::arg("k"),
-           py::arg("edgeA"), py::arg("edgeB"),
+      .def("laplacian_gradient", &HodgeLaplacian::laplacianGradient, py::arg("k"),
+           py::arg("edge_a"), py::arg("edge_b"),
            "Exact analytic dL_k/dl^2_e w.r.t. one edge's squared length, flat "
            "|C_k|x|C_k| row-major, at every degree k>=0. Only the weights W_j "
-           "depend on l^2 (dW_j = Simplex.volumeGradient); at k=0, where "
+           "depend on l^2 (dW_j = Simplex.volume_gradient); at k=0, where "
            "W_0 = I is constant, the only surviving term is "
            "-d_1 W_1^-1 (dW_1) W_1^-1 d_1^dagger. Empty for k<0 or an absent "
            "edge.")
-      .def("spectralEntropy", &HodgeLaplacian::spectralEntropy, py::arg("k"),
+      .def("spectral_entropy", &HodgeLaplacian::spectralEntropy, py::arg("k"),
            py::arg("phase_mode") =
                HodgeLaplacian::EntropyPhaseMode::IncludeComplexPhase,
            "Von Neumann entropy of rho=A/Tr(A), A=M^dagger M. M=L_k when "
            "complex phase is included and M_ij=|L_k,ij| in the phase-blind "
            "ablation. Empty/zero operators return zero.")
-      .def("spectralEntropyGradient",
+      .def("spectral_entropy_gradient",
            &HodgeLaplacian::spectralEntropyGradient, py::arg("k"),
            py::arg("phase_mode") =
                HodgeLaplacian::EntropyPhaseMode::IncludeComplexPhase,
            "Complex-z gradient h=dS/dRe(z)-i*dS/dIm(z), in EdgeList order, "
            "for z=l^2. conj(h) is the steepest-ascent displacement. Available "
            "at every degree k>=0: L_k is holomorphic in z at all of them.")
-      .def("spectralEntropyGradientNorm",
+      .def("spectral_entropy_gradient_norm",
            &HodgeLaplacian::spectralEntropyGradientNorm, py::arg("k"),
            py::arg("phase_mode") =
                HodgeLaplacian::EntropyPhaseMode::IncludeComplexPhase,
            "Entropy-stationarity residual sum_e |dS/dz_e|^2.")
-      .def("connectionSpectralEntropy",
+      .def("connection_spectral_entropy",
            &HodgeLaplacian::connectionSpectralEntropy,
            "-sum p log p over the normalized SQUARED EIGENVALUE MODULI of the "
            "C* CONNECTION operator, p_i = |lambda_i|^2 / sum_j |lambda_j|^2. "
@@ -221,7 +221,7 @@ ChainComplex omits.)doc")
            "sigma^2 are exactly the eigenvalues of A. The entropy of the 1-skeleton "
            "operator; spectralEntropy of the default h_k(s, U) sees the connection "
            "as well, at every degree.")
-      .def("connectionSpectralEntropyPhaseGradient",
+      .def("connection_spectral_entropy_phase_gradient",
            &HodgeLaplacian::connectionSpectralEntropyPhaseGradient,
            "dS/dphi_e of connectionSpectralEntropy, EdgeList order, in the "
            "h = S_x - i S_y convention. Each eigenvalue is holomorphic in phi "
@@ -229,10 +229,10 @@ ChainComplex omits.)doc")
            "conjugate -- and the squared modulus supplies the only "
            "non-holomorphic step, in closed form, so this is exact rather than "
            "a real-parameter approximation. Both components are differentiated.")
-      .def("connectionSpectralEntropyPhaseGradientNorm",
+      .def("connection_spectral_entropy_phase_gradient_norm",
            &HodgeLaplacian::connectionSpectralEntropyPhaseGradientNorm,
            "Connection-entropy stationarity residual sum_e |dS/dphi_e|^2.")
-      .def("spectralEntropyGradientDirectionalDerivative",
+      .def("spectral_entropy_gradient_directional_derivative",
            &HodgeLaplacian::spectralEntropyGradientDirectionalDerivative,
            py::arg("k"), py::arg("direction"),
            py::arg("phase_mode") =
@@ -245,48 +245,48 @@ ChainComplex omits.)doc")
            "dS/dA on the fixed-rank stratum. S is invariant under complex "
            "rescaling of z, so h is homogeneous of degree -1 and the exact "
            "Euler check is: direction = z reproduces -h.")
-      .def("localSpectralMoments", &HodgeLaplacian::localSpectralMoments, py::arg("k"), py::arg("orders"),
+      .def("local_spectral_moments", &HodgeLaplacian::localSpectralMoments, py::arg("k"), py::arg("orders"),
            "The local spectral moments mu_j(x) = (L_k^j)_xx, j = 1..orders, flat row-major |C_k| x orders: the "
            "local parts of the power sums tr(L_k^j), holomorphic in z. L_k is the one spectralEntropy uses.")
-      .def("spectralMomentStiffness", &HodgeLaplacian::spectralMomentStiffness, py::arg("k"),
+      .def("spectral_moment_stiffness", &HodgeLaplacian::spectralMomentStiffness, py::arg("k"),
            py::arg("reference"), py::arg("coefficients"),
-           "S_M = 1/2 sum_j beta_j sum_x (mu_j(x) - mu_j^0(x))^2 about the carrier whose localSpectralMoments(k, m) "
+           "S_M = 1/2 sum_j beta_j sum_x (mu_j(x) - mu_j^0(x))^2 about the carrier whose local_spectral_moments(k, m) "
            "are `reference`, beta_j = coefficients[j-1]: extensive, zero with its gradient at the carrier, and with "
            "the Hessian sum_j beta_j sum_x grad mu_j grad mu_j^T there. Holomorphic in z.")
-      .def("spectralMomentStiffnessGradient", &HodgeLaplacian::spectralMomentStiffnessGradient, py::arg("k"),
+      .def("spectral_moment_stiffness_gradient", &HodgeLaplacian::spectralMomentStiffnessGradient, py::arg("k"),
            py::arg("reference"), py::arg("coefficients"),
            "dS_M/dz_e in EdgeList order, the holomorphic derivative; for Re S_M it is also the h of "
            "spectralEntropyGradient.")
-      .def("spectralMomentStiffnessHessianProduct", &HodgeLaplacian::spectralMomentStiffnessHessianProduct,
+      .def("spectral_moment_stiffness_hessian_product", &HodgeLaplacian::spectralMomentStiffnessHessianProduct,
            py::arg("k"), py::arg("reference"), py::arg("coefficients"), py::arg("direction"),
            "EXACT Hessian-vector product sum_f d^2 S_M / dz_e dz_f v_f in EdgeList order: the product rule on "
            "the moments and the exact second derivative of L_k along v.")
-      .def("isHermitian", &HodgeLaplacian::isHermitian, py::arg("tol") = 1e-12,
+      .def("is_hermitian", &HodgeLaplacian::isHermitian, py::arg("tol") = 1e-12,
            "True iff ||L - L^dagger|| <= tol (Frobenius) for the U(1) CONNECTION "
            "Laplacian. True by construction; it says nothing about L_0, which is "
            "complex symmetric as soon as a weight is complex.")
-      .def("unitarityResidual", &HodgeLaplacian::unitarityResidual,
+      .def("unitarity_residual", &HodgeLaplacian::unitarityResidual,
            py::arg("t") = 1.0,
            "Residual ||U U^dagger - I|| of U = e^{-iLt} for the U(1) CONNECTION "
            "Laplacian, formed from its eigendecomposition (~0, that operator "
            "being Hermitian).")
-      .def("connectionSpectrum", &HodgeLaplacian::connectionSpectrum,
+      .def("connection_spectrum", &HodgeLaplacian::connectionSpectrum,
            "The U(1) CONNECTION Laplacian's eigendecomposition as a Spectrum "
            "(real ascending eigenvalues + eigenvectors as degree-0 Cochains; "
-           "isHermitian()==True), over the full sorted vertex order.")
-      .def("connectionEigenvalues", &HodgeLaplacian::connectionEigenvalues,
+           "is_hermitian()==True), over the full sorted vertex order.")
+      .def("connection_eigenvalues", &HodgeLaplacian::connectionEigenvalues,
            "Eigenvalues of the U(1) CONNECTION Laplacian (real, ascending), "
            "complex-typed for parity with the L_k family.")
-      .def("connectionEigenvectors", &HodgeLaplacian::connectionEigenvectors,
+      .def("connection_eigenvectors", &HodgeLaplacian::connectionEigenvectors,
            "Eigenvectors of the U(1) CONNECTION Laplacian as a flat row-major "
            "N*N complex array (column j is the eigenvector for the j-th "
            "ascending eigenvalue).")
-      .def("connectionHarmonics", &HodgeLaplacian::connectionHarmonics,
+      .def("connection_harmonics", &HodgeLaplacian::connectionHarmonics,
            py::arg("tol") = 1e-9,
            "Harmonic representatives of the U(1) CONNECTION Laplacian "
            "(|lambda| < tol) as degree-0 Cochains. NOT b_0: a nonzero U(1) flux "
            "lifts this zero mode.")
-      .def("connectionHarmonicMatrix",
+      .def("connection_harmonic_matrix",
            &HodgeLaplacian::connectionHarmonicMatrix, py::arg("tol") = 1e-9,
            "The U(1) CONNECTION harmonic amplitude matrix: connectionHarmonics "
            "stacked as the ROWS of a flat row-major (dim ker) x N complex "
@@ -296,7 +296,7 @@ ChainComplex omits.)doc")
            "The eigendecomposition of L_k as a Spectrum. L_k is the "
            "signed-weight d'Alembertian at every degree, generally "
            "non-self-adjoint, so eigenvalues are complex, sorted by (Re, Im), "
-           "and isHermitian()==False. metric selects signed-content vs. unit "
+           "and is_hermitian()==False. metric selects signed-content vs. unit "
            "weights. Raises for k<0; empty above the top dimension.")
       .def("eigenvalues", &HodgeLaplacian::eigenvalues, py::arg("k") = 0,
            py::arg("metric") = true,
@@ -317,7 +317,7 @@ ChainComplex omits.)doc")
            "weights; at k=0 the constant is always among them, so dim ker L_0 = "
            "b_0 always). metric selects signed-content vs. unit weights. Raises "
            "for k<0; empty above the top dimension.")
-      .def("harmonicMatrix", &HodgeLaplacian::harmonicMatrix, py::arg("k") = 0,
+      .def("harmonic_matrix", &HodgeLaplacian::harmonicMatrix, py::arg("k") = 0,
            py::arg("tol") = 1e-9, py::arg("metric") = true,
            "The harmonic amplitude matrix: the harmonics(k, tol, metric) "
            "representatives stacked as the ROWS of a flat row-major "
@@ -328,7 +328,7 @@ ChainComplex omits.)doc")
            "amplitudeFor round-trip per cell per harmonic. Raises for k<0; "
            "empty when the kernel is empty or k is above the top dimension.")
       // ----- indefinite W-norms of the near-kernel -----
-      .def("nullNorms", &HodgeLaplacian::nullNorms,
+      .def("null_norms", &HodgeLaplacian::nullNorms,
            py::arg("k"), py::arg("tol") = 1e-9, py::arg("metric") = true,
            "Indefinite norms of the near-kernel representatives in the metric that "
            "produced them, one per column of harmonics (same order): h^dagger M_k^U h "
@@ -350,7 +350,7 @@ readout would be identically gauge-flat. psi is then a vertex vector
 (|V|, sorted-id order). At k>=1 L_k is the metric Hodge Laplacian
 on k-forms (|C_k|, ChainComplex k-cell order); the tunable parameters stay the
 edge squared-lengths, which feed the volume weights W_k of L_k via Simplex.volume
-(phases enter only k=0). cellSimplices() gives each psi component's vertex tuple,
+(phases enter only k=0). cell_simplices() gives each psi component's vertex tuple,
 so a caller can pin the boundary k-cells to a target form (k=1
 3-manifold boundary-harmonic synthesis). The non-convex, multi-restart search
 itself (e.g.
@@ -368,15 +368,15 @@ HodgeLaplacian (k=0).
 
 Parameters: the per-edge SIGNED real squared lengths {w_ij} = Re l^2
 (Edge.setSquaredLength; weights() reads Re, not a magnitude) and U(1)
-phases {theta_ij} (Edge.setPhase), in a stable edge order fixed at
+phases {theta_ij} (Edge.set_phase), in a stable edge order fixed at
 construction (the weight-carrying edges: both endpoints present, no self-loops).
 
 Fixed-boundary interior fill: the tunable edges split into a boundary set
 dW (edges on a codim-1 face in exactly one top cell — held fixed) and an interior
 set (free). interiorWeights / interiorPhases + setInteriorWeights /
 setInteriorPhases read/write only the interior edges, so a search drives r -> 0
-for a target output eigenvector while dW stays byte-identical (boundaryEdges()
-exposes that fixed set). growInterior() cones a fresh interior vertex via the
+for a target output eigenvector while dW stays byte-identical (boundary_edges()
+exposes that fixed set). grow_interior() cones a fresh interior vertex via the
 boundary-fixed pre-geometric Pachner add, enriching the interior with dW
 untouched; interiorVertexCount / numInteriorEdges report the interior complexity
 reached. On a 1-complex there is no boundary — every edge is interior.)doc")
@@ -391,17 +391,17 @@ reached. On a 1-complex there is no boundary — every edge is interior.)doc")
            "synthesis). Raises if k < 0.")
       .def("degree", &EigenstateSynthesis::degree,
            "The cochain degree k of L_k this synthesizer scores against.")
-      .def("metricSource", &EigenstateSynthesis::metricSource,
+      .def("metric_source", &EigenstateSynthesis::metricSource,
            "Where this synthesizer's operator takes its metric from (HodgeMetricSource).")
       .def("order", &EigenstateSynthesis::order,
            "Operator dimension N — the required length of any psi (|V| at k=0, "
            "else |C_k|, the number of k-cells).")
-      .def("cellSimplices", &EigenstateSynthesis::cellSimplices,
+      .def("cell_simplices", &EigenstateSynthesis::cellSimplices,
            "The sorted vertex-id tuple of each psi component, in operator order "
            "(a single-vertex tuple per component at k=0, else the k-cell tuples "
            "in canonical ChainComplex column order) — used to pin the boundary "
            "k-cells to a target form and leave the interior free.")
-      .def("numEdges", &EigenstateSynthesis::numEdges,
+      .def("num_edges", &EigenstateSynthesis::numEdges,
            "Number of tunable edges — the length of weights() / phases().")
       .def("residual", &EigenstateSynthesis::residual, py::arg("psi"),
            "Eigenvalue-agnostic residual r(psi) = ||(I - psi psi^dagger) L psi||^2 "
@@ -420,53 +420,53 @@ reached. On a 1-complex there is no boundary — every edge is interior.)doc")
            "negative), and any resident Im l^2 is not reported.")
       .def("phases", &EigenstateSynthesis::phases,
            "Edge phases {theta_ij} (radians) in the stable edge order.")
-      .def("setWeights", &EigenstateSynthesis::setWeights, py::arg("w"),
+      .def("set_weights", &EigenstateSynthesis::setWeights, py::arg("w"),
            "Write the edge squared lengths in place as REAL signed values "
            "(l^2 = w + 0i, zeroing any resident Im — the ordinary-Lorentzian "
-           "convention). Raises if len(w) != numEdges().")
-      .def("setPhases", &EigenstateSynthesis::setPhases, py::arg("theta"),
-           "Write the edge phases in place. Raises if len(theta) != numEdges().")
+           "convention). Raises if len(w) != num_edges().")
+      .def("set_phases", &EigenstateSynthesis::setPhases, py::arg("theta"),
+           "Write the edge phases in place. Raises if len(theta) != num_edges().")
       // ----- Fixed-boundary interior fill -----
-      .def("numInteriorEdges", &EigenstateSynthesis::numInteriorEdges,
+      .def("num_interior_edges", &EigenstateSynthesis::numInteriorEdges,
            "Number of interior tunable edges (not on dW) — the length of "
-           "interiorWeights() / interiorPhases() and the free parameters a "
+           "interior_weights() / interior_phases() and the free parameters a "
            "fixed-boundary search varies.")
-      .def("numBoundaryEdges", &EigenstateSynthesis::numBoundaryEdges,
+      .def("num_boundary_edges", &EigenstateSynthesis::numBoundaryEdges,
            "Number of boundary tunable edges (on dW, held fixed).")
-      .def("interiorVertexCount", &EigenstateSynthesis::interiorVertexCount,
+      .def("interior_vertex_count", &EigenstateSynthesis::interiorVertexCount,
            "Number of interior vertices (on no boundary face) — the coned-in "
            "apexes; the interior complexity the synthesis grows / reports.")
-      .def("interiorWeights", &EigenstateSynthesis::interiorWeights,
+      .def("interior_weights", &EigenstateSynthesis::interiorWeights,
            "Interior edge SIGNED real squared lengths {Re l^2_ij} in "
            "interior-edge order (Re, not magnitudes).")
-      .def("interiorPhases", &EigenstateSynthesis::interiorPhases,
+      .def("interior_phases", &EigenstateSynthesis::interiorPhases,
            "Interior edge phases {theta_ij} (radians) in interior-edge order.")
-      .def("setInteriorWeights", &EigenstateSynthesis::setInteriorWeights,
+      .def("set_interior_weights", &EigenstateSynthesis::setInteriorWeights,
            py::arg("w"),
            "Write the interior edge squared lengths in place as REAL signed "
            "values (l^2 = w + 0i, zeroing any resident Im); the boundary "
-           "edges are left untouched. Raises if len(w) != numInteriorEdges().")
-      .def("setInteriorPhases", &EigenstateSynthesis::setInteriorPhases,
+           "edges are left untouched. Raises if len(w) != num_interior_edges().")
+      .def("set_interior_phases", &EigenstateSynthesis::setInteriorPhases,
            py::arg("theta"),
            "Write the interior edge phases in place; the boundary edges are left "
-           "untouched. Raises if len(theta) != numInteriorEdges().")
-      .def("boundaryEdges", &EigenstateSynthesis::boundaryEdges,
+           "untouched. Raises if len(theta) != num_interior_edges().")
+      .def("boundary_edges", &EigenstateSynthesis::boundaryEdges,
            "The boundary tunable edges as sorted (min_id, max_id) endpoint "
            "tuples — the fixed dW edge set, for asserting it is untouched through "
            "an interior fill / growth sweep.")
-      .def("interiorEdges", &EigenstateSynthesis::interiorEdges,
+      .def("interior_edges", &EigenstateSynthesis::interiorEdges,
            "The interior tunable edges as sorted (min_id, max_id) endpoint tuples "
-           "(the complement of boundaryEdges()).")
-      .def("growInterior", &EigenstateSynthesis::growInterior, py::arg("seed"),
+           "(the complement of boundary_edges()).")
+      .def("grow_interior", &EigenstateSynthesis::growInterior, py::arg("seed"),
            "Cone a fresh interior vertex into a top cell via the boundary-fixed "
            "pre-geometric Pachner add: a 1->(d+1) stellar subdivision that "
            "leaves dW exactly fixed while enriching the interior. Re-captures the "
            "vertex order and interior/boundary partition, so order() grows by one "
            "(extend psi on the new apex, appended last in sorted-id order) and "
-           "numInteriorEdges() grows. Returns False if no top cell can be "
+           "num_interior_edges() grows. Returns False if no top cell can be "
            "subdivided (e.g. a 1-complex), leaving the complex unchanged.")
       // ----- Free interior connectivity (general growth primitive) -----
-      .def("attachInteriorVertex", &EigenstateSynthesis::attachInteriorVertex,
+      .def("attach_interior_vertex", &EigenstateSynthesis::attachInteriorVertex,
            py::arg("incident_simplices"),
            "Add a fresh interior vertex with an arbitrary specified set of "
            "incident simplices — the cone-free generalization of growInterior. "
@@ -478,28 +478,28 @@ reached. On a 1-complex there is no boundary — every edge is interior.)doc")
            "(b) the pinned boundary dW bit-exact; no manifold/topology constraint. "
            "Returns False, leaving the complex unchanged, on an invalid spec "
            "(missing/repeated vertex, empty) or any perturbation of dW.")
-      .def("detachLastInteriorVertex",
+      .def("detach_last_interior_vertex",
            &EigenstateSynthesis::detachLastInteriorVertex,
-           "Undo the most recent attachInteriorVertex (LIFO): remove its created "
+           "Undo the most recent attach_interior_vertex (LIFO): remove its created "
            "simplices/edges and the interior vertex, restoring the complex bit-"
            "exactly, and re-capture. Returns False if there is no attach to undo. "
            "Lets a search try a candidate connectivity, score it, and roll back.")
-      .def("vertexIds", &EigenstateSynthesis::vertexIds,
+      .def("vertex_ids", &EigenstateSynthesis::vertexIds,
            "All vertex ids, sorted — the candidate pool a connectivity search "
            "wires a fresh interior vertex into.")
-      .def("boundaryVertexIds", &EigenstateSynthesis::boundaryVertexIds,
+      .def("boundary_vertex_ids", &EigenstateSynthesis::boundaryVertexIds,
            "The boundary (dW) vertex ids, sorted — the vertices on a codim-one "
            "face of exactly one top cell (a 'boundary-star' candidate).")
-      .def("topCells", &EigenstateSynthesis::topCells,
+      .def("top_cells", &EigenstateSynthesis::topCells,
            "The top cells as sorted vertex-id tuples (the d+1-vertex simplices); "
            "wiring the new vertex to one reproduces growInterior's 1-skeleton.")
-      .def("dualComplexValid", &EigenstateSynthesis::dualComplexValid,
-           "(ok, reason): ChainComplex.dualComplexIsValid for the CURRENT "
+      .def("dual_complex_valid", &EigenstateSynthesis::dualComplexValid,
+           "(ok, reason): ChainComplex.dual_complex_is_valid for the CURRENT "
            "complex -- top cells from the surgery state, with the k-cell "
            "universe checked for dangling facets when k = n-1 (the register "
            "layers). Accept topology moves only while this stays true.")
       // ----- The carried register read-outs -----
-      .def("cyclePeriods", &EigenstateSynthesis::cyclePeriods, py::arg("holes"),
+      .def("cycle_periods", &EigenstateSynthesis::cyclePeriods, py::arg("holes"),
            "The period matrix of the current harmonics over the boundary "
            "cycles of the given (removed) cells: flat row-major "
            "(dim ker L_k) x len(holes), complex. Entry [r*m + q] sums "
@@ -509,7 +509,7 @@ reached. On a 1-complex there is no boundary — every edge is interior.)doc")
            "Harmonics are read fresh from the live complex, rows ascending "
            "by eigenvalue. Raises if a hole is not a (k+2)-vertex tuple "
            "whose facets are all current k-cells.")
-      .def("carriedRepresentative", &EigenstateSynthesis::carriedRepresentative,
+      .def("carried_representative", &EigenstateSynthesis::carriedRepresentative,
            py::arg("holes"), py::arg("target_periods"),
            "The carried representative psi that residualForPeriods scores, as a "
            "cochain in its own right (it builds this internally but does not "
@@ -520,7 +520,7 @@ reached. On a 1-complex there is no boundary — every edge is interior.)doc")
            "psi's periods are exactly target_periods. A full order()-length cell "
            "vector; residual(psi) is residualForPeriods. Raises on a hole/target "
            "length mismatch or a malformed hole.")
-      .def("residualForPeriods", &EigenstateSynthesis::residualForPeriods,
+      .def("residual_for_periods", &EigenstateSynthesis::residualForPeriods,
            py::arg("holes"), py::arg("target_periods"),
            "The verdict primitive in one call: the genuine residual of the "
            "carried representative of target_periods over the holes' cycles. "
@@ -532,13 +532,13 @@ reached. On a 1-complex there is no boundary — every edge is interior.)doc")
            "sign +1), and returns residual(psi): -> 0 iff the targets lie "
            "in the carried register, floored otherwise. Raises on a "
            "hole/target length mismatch or a malformed hole.")
-      .def("residualForPeriodsGradient",
+      .def("residual_for_periods_gradient",
            &EigenstateSynthesis::residualForPeriodsGradient,
            py::arg("holes"), py::arg("target_periods"),
            "Arbitrary-degree exact analytic gradient d r_U / d l^2 of "
            "residualForPeriods w.r.t. each edge's squared length, in ChainComplex "
            "1-cell (edge) order. M = L_k, the per-edge dL_k/dl^2 = HodgeLaplacian."
-           "laplacianGradient (built on Simplex.volumeGradient), through eigenvector-"
+           "laplacian_gradient (built on Simplex.volume_gradient), through eigenvector-"
            "perturbation theory; period covector + leak from each removed-(k+1)-cell "
            "hole's facets. Reproduces the k=1 edge-loop core on triangle holes. At "
            "k=0 the core runs against the genuinely COMPLEX Hermitian U(1) "
@@ -547,34 +547,34 @@ reached. On a 1-complex there is no boundary — every edge is interior.)doc")
            "the k=0 Euler identity is Σ l² ∂r_U = +2 r_U (that operator is "
            "degree +1 in l²). At k>=1, certified by the exact Euler identity Σ l² ∂r_U = −r_U (FD does not "
            "converge). Raises on a hole/target length mismatch.")
-      .def("periodGapForPeriods", &EigenstateSynthesis::periodGapForPeriods,
+      .def("period_gap_for_periods", &EigenstateSynthesis::periodGapForPeriods,
            py::arg("holes"), py::arg("target_periods"),
            "The hard period-pin r_psi over the holes' cycles: r_psi = "
            "||P^T c - target||^2, where the columns of P^T are the live "
            "harmonics' periods over the holes and c is their least-squares fit "
            "-- the squared norm of the part of target_periods no pure harmonic "
-           "can carry. Unlike residualForPeriods (r_U), the carried object stays "
+           "can carry. Unlike residual_for_periods (r_U), the carried object stays "
            "a pure harmonic (NO leak). -> 0 iff the targets lie in the carried "
            "period span (the same realizable set as r_U), floored otherwise. "
            "Raises on a hole/target length mismatch or a malformed hole.")
-      .def("periodGapForPeriodsGradient",
+      .def("period_gap_for_periods_gradient",
            &EigenstateSynthesis::periodGapForPeriodsGradient,
            py::arg("holes"), py::arg("target_periods"),
            "The exact analytic gradient d r_psi / d l^2 of periodGapForPeriods, "
-           "in cellSimplices() (k=1 cell) order. By least-squares optimality "
+           "in cell_simplices() (k=1 cell) order. By least-squares optimality "
            "(A^T r = 0, the envelope theorem) only the harmonic-subspace "
            "perturbation enters: d r_psi = 2 Re( r^H (Q dUn) c ) -- no leak, no "
            "dpsi chain. Raises on a hole/target length mismatch or a malformed "
            "hole.")
       // ----- The discovered operator: ker L1(W - dW) -----
-      .def("bulkMinusBoundaryCells",
+      .def("bulk_minus_boundary_cells",
            &EigenstateSynthesis::bulkMinusBoundaryCells,
            "The interior 1-cells of W - dW (edges both of whose endpoints are "
            "interior vertices, on no dW face), as sorted (u,v) tuples in "
            "canonical ChainComplex C_1 order -- the column ordering of "
            "bulkMinusBoundaryHarmonicMatrix. Empty for a bare (un-grown) "
            "cobordism (all boundary, no interior bulk).")
-      .def("bulkMinusBoundaryHarmonicMatrix",
+      .def("bulk_minus_boundary_harmonic_matrix",
            &EigenstateSynthesis::bulkMinusBoundaryHarmonicMatrix,
            py::arg("tol") = 1e-9, py::arg("metric") = false,
            "ker L1(W - dW) after deleting the full boundary subcomplex. "
@@ -582,35 +582,35 @@ reached. On a 1-complex there is no boundary — every edge is interior.)doc")
            "metric=True restricts the live signed Hodge weights and takes the "
            "right nullspace of the generally non-normal Lorentzian operator. "
            "The null vectors are stacked as rows of a flat row-major "
-           "(dim ker L1) x len(bulkMinusBoundaryCells()) complex array. "
+           "(dim ker L1) x len(bulk_minus_boundary_cells()) complex array. "
            "Use metric=True for relaxed-geometry claims; metric=False is "
            "topology-only. Read fresh from the live complex.")
       // ----- Surgery: the topology-changing interior remove move -----
-      .def("interiorTopCells", &EigenstateSynthesis::interiorTopCells,
+      .def("interior_top_cells", &EigenstateSynthesis::interiorTopCells,
            "The interior top cells (all-interior vertices, on no dW face) as "
            "sorted vertex-id tuples — the surgery removal candidates. Removing one "
            "(removeInteriorCell) cannot touch dW, so it is the boundary-fixed "
            "TOPOLOGY-CHANGING move that can open a hole/handle and MOVE b_k, unlike "
            "growInterior's subdivision and the additive attach.")
-      .def("removeInteriorCell", &EigenstateSynthesis::removeInteriorCell,
+      .def("remove_interior_cell", &EigenstateSynthesis::removeInteriorCell,
            py::arg("cell"),
            "Surgery: remove the interior top cell `cell` (a tuple from "
-           "interiorTopCells()) and any edges it leaves orphaned, keeping a valid "
+           "interior_top_cells()) and any edges it leaves orphaned, keeping a valid "
            "downward-closed complex. Topology-CHANGING: b_k moves (a filled disk "
            "b_1=0 becomes an annulus b_1=1). dW is held bit-exact — the cell has no "
            "boundary vertex, and the move is rejected if a dW edge would vanish; "
            "the EXPOSED interior boundary (the opened hole) is allowed. Records the "
            "removal for restoreLastRemoval. Returns False, complex unchanged, if "
            "`cell` is not an interior top cell or the removal would touch dW.")
-      .def("restoreLastRemoval", &EigenstateSynthesis::restoreLastRemoval,
-           "Undo the most recent removeInteriorCell (LIFO): re-create the removed "
+      .def("restore_last_removal", &EigenstateSynthesis::restoreLastRemoval,
+           "Undo the most recent remove_interior_cell (LIFO): re-create the removed "
            "top cell and the edges it orphaned, restoring their weights/phases bit-"
            "exactly, and re-capture. Returns False if there is no removal to undo. "
            "Lets a surgery search try a removal, score it, and roll back.")
       // ----- Gated moves: the checked cut and the composed stellar move -----
-      .def("removeInteriorCellChecked",
+      .def("remove_interior_cell_checked",
            &EigenstateSynthesis::removeInteriorCellChecked, py::arg("cell"),
-           "(ok, reason): the gated surgery cut — removeInteriorCell(cell), then "
+           "(ok, reason): the gated surgery cut — remove_interior_cell(cell), then "
            "the dual-validity gate (dualComplexValid), rolled back via "
            "restoreLastRemoval when the cut violates the dual. (True, 'ok') means "
            "the cut is applied and the dual complex stayed valid; (False, reason) "
@@ -618,7 +618,7 @@ reached. On a 1-complex there is no boundary — every edge is interior.)doc")
            "top cell, or the reason names the dual violation. The gate is rigorous "
            "for n <= 3; dimension-4 callers use explicit constructions, not gated "
            "moves.")
-      .def("stellarSubdivideInterior",
+      .def("stellar_subdivide_interior",
            &EigenstateSynthesis::stellarSubdivideInterior, py::arg("cell"),
            "(ok, reason): the composed gated stellar move — attach a fresh "
            "interior vertex onto `cell`'s facet fan (attachInteriorVertex with "
@@ -633,7 +633,7 @@ reached. On a 1-complex there is no boundary — every edge is interior.)doc")
            "with, held by construction rather than by the createSimplexTracked "
            "time-rule coincidence on all-same-time seeds.")
       // ----- Charge sector: the E/B split of F in Omega^2 -----
-      .def("curvatureFromConnection",
+      .def("curvature_from_connection",
            &EigenstateSynthesis::curvatureFromConnection, py::arg("A"),
            "The curvature 2-cochain F = dA from a U(1) connection 1-cochain A by "
            "discrete coboundary: on each sorted degree-2 cell (a,b,c), F = "
@@ -645,7 +645,7 @@ reached. On a 1-complex there is no boundary — every edge is interior.)doc")
            "pure gauge A -> A + d chi leaves F unchanged. Raises if degree() != 2, "
            "if len(A) is not the number of 1-cells, or if a 2-cell edge is "
            "missing.")
-      .def("fieldStrengthSplit", &EigenstateSynthesis::fieldStrengthSplit,
+      .def("field_strength_split", &EigenstateSynthesis::fieldStrengthSplit,
            py::arg("F"),
            "The electric/magnetic split of a field-strength 2-cochain F by the "
            "causal type of each plaquette: electric = F on plaquettes carrying a "
@@ -654,12 +654,12 @@ reached. On a 1-complex there is no boundary — every edge is interior.)doc")
            "whose electric/magnetic are order()-length cochains (agreeing with F "
            "on their own support, zero elsewhere, so electric + magnetic == F) "
            "and whose electricCells/magneticCells are the disjoint, complete "
-           "index lists into cellSimplices(). A plaquette is electric iff any of "
-           "its three edges is Edge.isTimelike() on the live complex. Raises if "
+           "index lists into cell_simplices(). A plaquette is electric iff any of "
+           "its three edges is Edge.is_timelike() on the live complex. Raises if "
            "degree() != 2, if len(F) != order(), or if a plaquette edge is "
            "missing.")
-      .def("gaussLawCharge", &EigenstateSynthesis::gaussLawCharge, py::arg("F"),
-           py::arg("enclosedVertices"), py::arg("electricOnly") = true,
+      .def("gauss_law_charge", &EigenstateSynthesis::gaussLawCharge, py::arg("F"),
+           py::arg("enclosed_vertices"), py::arg("electric_only") = true,
            "The discrete Gauss-law charge Q = oint_S E: the temporal-sector "
            "flux of a field-strength 2-cochain F through the closed surface S = dV "
            "bounding the worldtube V (the closed star of enclosedVertices, the quark "
@@ -677,9 +677,9 @@ reached. On a 1-complex there is no boundary — every edge is interior.)doc")
   py::class_<EigenstateSynthesis::FieldStrengthSplit>(
       eigenstateSynthesis, "FieldStrengthSplit",
       "The E/B split of a field-strength 2-cochain F by plaquette causal type "
-      "(EigenstateSynthesis.fieldStrengthSplit): electric (timelike-leg "
+      "(EigenstateSynthesis.field_strength_split): electric (timelike-leg "
       "plaquettes), magnetic (purely-spacelike plaquettes), and their disjoint "
-      "index lists into cellSimplices(). electric + magnetic == F.")
+      "index lists into cell_simplices(). electric + magnetic == F.")
       .def_readonly("electric",
                     &EigenstateSynthesis::FieldStrengthSplit::electric,
                     "F on plaquettes with a timelike leg (zero elsewhere); an "
@@ -688,12 +688,12 @@ reached. On a 1-complex there is no boundary — every edge is interior.)doc")
                     &EigenstateSynthesis::FieldStrengthSplit::magnetic,
                     "F on purely-spacelike plaquettes (zero elsewhere); an "
                     "order()-length 2-cochain.")
-      .def_readonly("electricCells",
+      .def_readonly("electric_cells",
                     &EigenstateSynthesis::FieldStrengthSplit::electricCells,
-                    "Indices into cellSimplices() of the electric (timelike-leg) "
+                    "Indices into cell_simplices() of the electric (timelike-leg) "
                     "plaquettes.")
-      .def_readonly("magneticCells",
+      .def_readonly("magnetic_cells",
                     &EigenstateSynthesis::FieldStrengthSplit::magneticCells,
-                    "Indices into cellSimplices() of the magnetic "
+                    "Indices into cell_simplices() of the magnetic "
                     "(purely-spacelike) plaquettes.");
 }

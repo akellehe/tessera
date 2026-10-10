@@ -331,7 +331,7 @@ class CausalClassTest(unittest.TestCase):
                 host = ea.build_cobordism_host(HOST, ea.DECLARED_HOST_SEED,
                                                disposition, epsilon=0.0)
                 classes = {ea.causal_class(e)
-                           for e in host.getEdgeList().toVector()}
+                           for e in host.get_edge_list().to_vector()}
                 self.assertEqual(classes, {causal})
 
     def test_random_is_entirely_mixed(self):
@@ -347,14 +347,14 @@ class CausalClassTest(unittest.TestCase):
         """
         host = ea.build_cobordism_host(HOST, ea.DECLARED_HOST_SEED,
                                        ea.EdgeDisposition.RANDOM)
-        classes = {ea.causal_class(e) for e in host.getEdgeList().toVector()}
+        classes = {ea.causal_class(e) for e in host.get_edge_list().to_vector()}
         self.assertEqual(classes, {ea.CausalClass.MIXED})
 
     def test_foliated_carries_both_definite_classes(self):
         host = ea.build_cobordism_host(HOST, ea.DECLARED_HOST_SEED,
                                        ea.EdgeDisposition.FOLIATED,
                                        epsilon=0.0)
-        classes = {ea.causal_class(e) for e in host.getEdgeList().toVector()}
+        classes = {ea.causal_class(e) for e in host.get_edge_list().to_vector()}
         self.assertIn(ea.CausalClass.SPACELIKE, classes)
         self.assertIn(ea.CausalClass.TIMELIKE, classes)
         self.assertNotIn(ea.CausalClass.MIXED, classes)
@@ -388,7 +388,7 @@ class DualCurvatureTest(unittest.TestCase):
         frame = _frames()[-1]
         self.assertNotIsInstance(frame.dual, ea.Absent)
         self.assertEqual(len(frame.dual["cells"]),
-                         len(frame.spacetime.getTopSimplices()))
+                         len(frame.spacetime.get_top_simplices()))
 
     def test_both_channels_are_signed_and_kept_apart(self):
         """The Lorentzian deficit is complex and the two parts are different

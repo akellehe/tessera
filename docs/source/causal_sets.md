@@ -21,7 +21,7 @@ time-dependent variational principle (TDVP) quench run.
 | Spacetime → 1D causet adapter | `tessera.quantum.Causet`             | `include/quantum/CausetChain.hpp`  |
 | Causet-as-data                | `tessera.quantum.CausetChain`        | `include/quantum/CausetChain.hpp`  |
 | Pairwise order agreement      | `tessera.OrderAgreement`             | `include/Poset.h`                   |
-| `compareOrders(a, b, nLabels)`| free fn in `tessera`                 | `include/Poset.h`                   |
+| `compare_orders(a, b, n_labels)`| free fn in `tessera`                | `include/Poset.h`                   |
 | (cut, time) label             | `tessera.quantum.LabelSpacetime`     | `include/quantum/CausalCompare.hpp`|
 | Three orders bundle           | `tessera.quantum.CausalOrders`       | `include/quantum/CausalCompare.hpp`|
 | End-to-end comparison report  | `tessera.quantum.CausalComparisonReport` | `include/quantum/CausalCompare.hpp` |
@@ -36,7 +36,7 @@ relation. `a → b` in the cover graph means "$a$ strictly precedes $b$
 with no intermediate", and the full order is the transitive closure of
 the covers.
 
-`Poset`, `OrderAgreement` and `compareOrders` are declared in the top-level
+`Poset`, `OrderAgreement` and `compare_orders` are declared in the top-level
 `include/Poset.h` and live in the root namespace: `from tessera import Poset`.
 The causet adapters and the causal-comparison harness are declared under
 `include/quantum/` and live in `tessera.quantum`.
@@ -47,17 +47,17 @@ The causet adapters and the causal-comparison harness are declared under
 from tessera import Poset
 
 p = Poset(4)              # 4 nodes: 0, 1, 2, 3
-p.addCover(0, 1)
-p.addCover(1, 2)
-p.addCover(1, 3)
+p.add_cover(0, 1)
+p.add_cover(1, 2)
+p.add_cover(1, 3)
 # 0 → 1 → 2
 #         ↘ 3
 
-print(p.getNodeCount, p.getCoverCount)   # 4, 3
+print(p.get_node_count, p.get_cover_count)   # 4, 3
 print(sorted(p.covers))                  # [(0, 1), (1, 2), (1, 3)]
 ```
 
-`addCover(a, b)` adds the cover edge $a \to b$ without validation —
+`add_cover(a, b)` adds the cover edge $a \to b$ without validation —
 callers are responsible for transitivity and acyclicity. The usual
 usage is to feed covers from a transitive-reduction algorithm where
 duplicates cannot arise. To replace the full cover list at once, use
@@ -66,7 +66,7 @@ duplicates cannot arise. To replace the full cover list at once, use
 ### Exporting a Hasse diagram
 
 ```python
-dot = p.toDot()           # Graphviz DOT
+dot = p.to_dot()           # Graphviz DOT
 with open("/tmp/p.dot", "w") as f:
     f.write(dot)
 # render with: dot -Tsvg /tmp/p.dot -o /tmp/p.svg
@@ -78,23 +78,23 @@ cover. Suitable for visual checks at $\lvert V \rvert \lesssim 100$.
 ### Comparing two posets on a shared label set
 
 ```python
-from tessera import Poset, compareOrders
+from tessera import Poset, compare_orders
 
-a = Poset(4); a.addCover(0, 1); a.addCover(1, 2); a.addCover(2, 3)
-b = Poset(4); b.addCover(0, 2); b.addCover(2, 1); b.addCover(1, 3)
+a = Poset(4); a.add_cover(0, 1); a.add_cover(1, 2); a.add_cover(2, 3)
+b = Poset(4); b.add_cover(0, 2); b.add_cover(2, 1); b.add_cover(1, 3)
 
-stats = compareOrders(a, b, 4)
-print(stats.kendallTau)         # in [-1, 1]
-print(stats.discordantFraction) # in [0, 1]
-print(stats.hasseEditDistance)  # in [0, 1]
-print(stats.nConcordant, stats.nDiscordant, stats.nOnlyA, stats.nOnlyB)
+stats = compare_orders(a, b, 4)
+print(stats.kendall_tau)         # in [-1, 1]
+print(stats.discordant_fraction) # in [0, 1]
+print(stats.hasse_edit_distance)  # in [0, 1]
+print(stats.n_concordant, stats.n_discordant, stats.n_only_a, stats.n_only_b)
 ```
 
-The five counts (`nConcordant`, `nDiscordant`, `nOnlyA`, `nOnlyB`,
+The five counts (`n_concordant`, `n_discordant`, `n_only_a`, `n_only_b`,
 `neither`) partition the $\binom{N}{2}$ unordered label pairs, and
 underpin the causal-comparison harness below.
 
-`compareOrders` is $O(N^3)$ via Floyd–Warshall transitive closure, then
+`compare_orders` is $O(N^3)$ via Floyd–Warshall transitive closure, then
 $O(N^2)$ counting. Practical up to a few thousand nodes.
 
 ## The `Spacetime`-to-`CausetChain` adapter
@@ -113,19 +113,19 @@ from tessera.quantum import Causet
 # Build or load a Spacetime (any of tessera's standard topologies):
 st = Spacetime.fromGraphML("path/to/triangulation.graphml")
 
-chain = Causet.chainFrom(st)
-print(chain.nSites)              # total vertices across all slices
+chain = Causet.chain_from(st)
+print(chain.n_sites)              # total vertices across all slices
 print(len(chain.antichains))     # number of time slices
 print(chain.times[0],            # first slice's integer time
       chain.antichains[0])       # vertex IDs in the first slice
-print(chain.vertexIds[:5])       # flat-lattice → Spacetime vertex ID
-print(chain.hoppingPairs[:5])    # (i, j) timelike-edge couplings
+print(chain.vertex_ids[:5])       # flat-lattice → Spacetime vertex ID
+print(chain.hopping_pairs[:5])    # (i, j) timelike-edge couplings
 ```
 
 ### Algorithm
 
-`Causet.chainFrom(st)` walks the Spacetime's vertices, groups them by
-integer time slice (truncating `Vertex.getTime()`), and produces:
+`Causet.chain_from(st)` walks the Spacetime's vertices, groups them by
+integer time slice (truncating `Vertex.get_time()`), and produces:
 
 * **`antichains[s]`** — the sorted list of vertex IDs at `times[s]`.
   The slice order is ascending in `times`.
@@ -133,31 +133,31 @@ integer time slice (truncating `Vertex.getTime()`), and produces:
   Spacetime vertex ID. `flat_idx` enumerates the antichain list in
   order, so `flat_idx(s, p) = Σ_{r<s} |antichains[r]| + p` where `p` is
   the position within `antichains[s]`.
-* **`hoppingPairs`** — the $(i, j)$ flat-site pairs coupled by
+* **`hopping_pairs`** — the $(i, j)$ flat-site pairs coupled by
   adjacent-time-slice timelike edges. Stored once per pair with $i < j$;
   the MPO builder applies $\sigma^+\sigma^-_+ \sigma^-\sigma^+$
   symmetrically.
-* **`partialOrder`** — the Hasse-cover Poset on flat-lattice IDs,
-  inherited from `Poset.fromSpacetime(st)` (transitive reduction of the
+* **`partial_order`** — the Hasse-cover Poset on flat-lattice IDs,
+  inherited from `Poset.from_spacetime(st)` (transitive reduction of the
   directed-edge graph).
 
 Edges with spacelike or null squared length are ignored, as are any
 timelike edges with `src.time == tgt.time` (no propagation across the
 same slice). Edges spanning non-adjacent slices are skipped: they are
-transitively reduced out by `Poset.fromSpacetime` and would not
+transitively reduced out by `Poset.from_spacetime` and would not
 contribute a physical hopping term.
 
 ### Reduced 1D chain
 
 When every antichain has exactly one vertex, the chain of antichains
-coincides with the standard 1D lattice and `hoppingPairs` reduces to
+coincides with the standard 1D lattice and `hopping_pairs` reduces to
 `[(0, 1), (1, 2), ..., (N-2, N-1)]`. `SchwingerHamiltonian.mpoChain(...)`
-then runs unchanged with `params.N = chain.nSites` and
-`chain.hoppingPairs` as the hopping graph.
+then runs unchanged with `params.N = chain.n_sites` and
+`chain.hopping_pairs` as the hopping graph.
 
 ### Threading the chain into the Schwinger pipeline
 
-`TDVPConfig.hoppingPairs` is the connection point. If empty (the
+`TDVPConfig.hopping_pairs` is the connection point. If empty (the
 default), the Schwinger TDVP runs on the standard 1D chain with
 nearest-neighbour hopping; non-empty selects the causet hopping graph
 instead.
@@ -166,19 +166,19 @@ instead.
 from tessera.quantum import TDVPConfig, SchwingerQuench
 
 cfg = TDVPConfig()
-cfg.N = chain.nSites
+cfg.N = chain.n_sites
 cfg.a = 1.0
 cfg.g = 1.0
 cfg.m = 0.5
 cfg.L0 = 0.0
-cfg.dmrgMaxBondDim = 64
-cfg.dmrgNSweeps    = 12
+cfg.dmrg_max_bond_dim = 64
+cfg.dmrg_n_sweeps    = 12
 cfg.i0 = 0
 cfg.d  = 1
 cfg.dt = 0.1
 cfg.T  = 0.5
-cfg.snapshotEvery = 1
-cfg.hoppingPairs = chain.hoppingPairs    # ← the causet rewiring
+cfg.snapshot_every = 1
+cfg.hopping_pairs = chain.hopping_pairs    # ← the causet rewiring
 
 r = SchwingerQuench(cfg).evolve()
 ```
@@ -189,7 +189,7 @@ rather than the regular 1D chain.
 
 ## The causal-comparison harness
 
-`SchwingerQuench.compareCausalOrders(vLr)` runs the full DMRG → quench →
+`SchwingerQuench.compare_causal_orders(vLr)` runs the full DMRG → quench →
 TDVP pipeline and compares three partial orders on the (cut, time) label
 set:
 
@@ -198,42 +198,42 @@ set:
 2. **$\preceq_{\rm LR}$** — Lieb-Robinson cone: $(A, s) \preceq_{\rm LR}
    (B, t)$ iff $s < t$ and $\mathrm{dist}(A, B) \leq v_{LR} \cdot (t-s)$.
 3. **$\preceq_{\rm cs}$** — causet order: on a regular chain this is
-   time-only; on a Spacetime-derived chain it reads off `partialOrder`.
+   time-only; on a Spacetime-derived chain it reads off `partial_order`.
 
-Each pair returns an `OrderAgreement` with `kendallTau`,
-`discordantFraction`, and `hasseEditDistance`.
+Each pair returns an `OrderAgreement` with `kendall_tau`,
+`discordant_fraction`, and `hasse_edit_distance`.
 
 ```python
-report = SchwingerQuench(cfg).compareCausalOrders(vLr=1.0)
-print(f"maj vs LR: tau = {report.majVsLr.kendallTau:.3f}")
-print(f"maj vs cs: tau = {report.majVsCs.kendallTau:.3f}")
-print(f"LR  vs cs: tau = {report.lrVsCs.kendallTau:.3f}")
+report = SchwingerQuench(cfg).compare_causal_orders(v_lr=1.0)
+print(f"maj vs LR: tau = {report.maj_vs_lr.kendall_tau:.3f}")
+print(f"maj vs cs: tau = {report.maj_vs_cs.kendall_tau:.3f}")
+print(f"LR  vs cs: tau = {report.lr_vs_cs.kendall_tau:.3f}")
 ```
 
 The strongest invariant is $\preceq_{\rm LR} \subset \preceq_{\rm cs}$:
 every Lieb-Robinson pair is a causet pair in the same direction on a
-regular chain, so `report.lrVsCs.kendallTau == 1.0` checks that the order
+regular chain, so `report.lr_vs_cs.kendall_tau == 1.0` checks that the order
 extraction is consistent.
 
 ### Reading `OrderAgreement`
 
-* `nConcordant` — pairs related the same way in both orders.
-* `nDiscordant` — pairs related opposite ways in both orders.
-* `nOnlyA` / `nOnlyB` — pairs related in only one of the two orders.
+* `n_concordant` — pairs related the same way in both orders.
+* `n_discordant` — pairs related opposite ways in both orders.
+* `n_only_a` / `n_only_b` — pairs related in only one of the two orders.
 * `kendallTau = (nConcordant - nDiscordant) / nComparableBoth` ∈ [-1, 1].
 * `discordantFraction = nDiscordant / nComparableBoth` ∈ [0, 1].
 * `hasseEditDistance = |E_a △ E_b| / |E_a ∪ E_b|` ∈ [0, 1], the
   symmetric-difference fraction of cover edges.
 
 For the falsification test of the claim that entanglement generates
-spacetime, `nOnlyA` with $(A, B) = (\preceq_{\rm maj}, \preceq_{\rm LR})$
+spacetime, `n_only_a` with $(A, B) = (\preceq_{\rm maj}, \preceq_{\rm LR})$
 counts majorization-related pairs lying outside the Lieb-Robinson cone; a
 non-zero count falsifies the strong form of the claim.
 
 ## Using `LabelSpacetime` and `CausalOrders` directly
 
 To skip `SchwingerQuench` and stitch the orders yourself, call
-`CausalOrders.fromSnapshots`:
+`CausalOrders.from_snapshots`:
 
 ```python
 from tessera.quantum import (
@@ -242,20 +242,20 @@ from tessera.quantum import (
 
 cfg = TDVPConfig()
 # ... fill in ...
-cfg.recordSpectra = True   # required for CausalOrders.fromSnapshots
+cfg.record_spectra = True   # required for CausalOrders.from_snapshots
 
 r = SchwingerQuench(cfg).evolve()
 
-orders = CausalOrders.fromSnapshots(
+orders = CausalOrders.from_snapshots(
     r.snapshots,
-    vLr=1.0,
+    v_lr=1.0,
     predicate=StandardMajorization())
 
 print(len(orders.labels))      # = (number of cuts) × (number of snapshots)
 print(orders.labels[0])         # LabelSpacetime(cutIdx, tIdx, intervalI, intervalJ, time)
-print(orders.maj.getCoverCount)
-print(orders.lr.getCoverCount)
-print(orders.cs.getCoverCount)
+print(orders.maj.get_cover_count)
+print(orders.lr.get_cover_count)
+print(orders.cs.get_cover_count)
 ```
 
 The three returned `Poset` objects share a node-id scheme: node `k`

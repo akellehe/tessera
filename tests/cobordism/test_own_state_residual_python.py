@@ -54,12 +54,12 @@ TAU_A, TAU_B = whole.TAU_A, whole.TAU_B
 
 @pytest.fixture
 def whitney_default():
-    previous = HL.defaultMetricSource()
-    HL.setDefaultMetricSource(cob.HodgeMetricSource.WhitneyPencil)
+    previous = HL.default_metric_source()
+    HL.set_default_metric_source(cob.HodgeMetricSource.WhitneyPencil)
     try:
         yield
     finally:
-        HL.setDefaultMetricSource(previous)
+        HL.set_default_metric_source(previous)
 
 
 def marked_collar(weight=1e4, **kwargs):
@@ -70,9 +70,9 @@ def marked_collar(weight=1e4, **kwargs):
 
 def region_masks(node, seed):
     """Boolean masks over the host's EdgeList: on torus A, on torus B, bulk."""
-    edges = node.spacetime().getEdgeList().toVector()
+    edges = node.spacetime().get_edge_list().to_vector()
     tori = [set(seed.vertex_ids[i].values()) for i in range(2)]
-    ends = [{e.getSource().getId(), e.getTarget().getId()} for e in edges]
+    ends = [{e.get_source().get_id(), e.get_target().get_id()} for e in edges]
     on_a = np.array([vs <= tori[0] for vs in ends])
     on_b = np.array([vs <= tori[1] for vs in ends])
     return on_a, on_b, ~(on_a | on_b)
@@ -81,20 +81,20 @@ def region_masks(node, seed):
 def jitter_tori(node, seed, amplitude=0.05, seed_value=3):
     rng = np.random.default_rng(seed_value)
     on_a, on_b, _ = region_masks(node, seed)
-    for k, edge in enumerate(node.spacetime().getEdgeList().toVector()):
+    for k, edge in enumerate(node.spacetime().get_edge_list().to_vector()):
         if on_a[k] or on_b[k]:
-            edge.setLength(complex(edge.getLength()) * (1.0 + amplitude * rng.uniform(-1, 1)))
+            edge.set_length(complex(edge.get_length()) * (1.0 + amplitude * rng.uniform(-1, 1)))
 
 
 def squared_lengths(node):
-    return np.array([complex(e.getLength()) ** 2 for e in node.spacetime().getEdgeList().toVector()])
+    return np.array([complex(e.get_length()) ** 2 for e in node.spacetime().get_edge_list().to_vector()])
 
 
 def central_difference(node, index, edge, h=1e-6):
     """(d/dRe z, d/dIm z) of own_state_residual(index) in one host edge's
     squared length, packed as a complex number (the engine's convention); an
     approximation of order h^2, about 1e-8 here, for this test only."""
-    l0 = complex(edge.getLength())
+    l0 = complex(edge.get_length())
     z0 = l0 * l0
     out = []
     for dz in (h, 1j * h):
@@ -102,10 +102,10 @@ def central_difference(node, index, edge, h=1e-6):
         for sign in (+1, -1):
             root = np.sqrt(z0 + sign * dz)
             root = root if abs(root - l0) <= abs(-root - l0) else -root
-            edge.setLength(complex(root))
+            edge.set_length(complex(root))
             values.append(node.own_state_residual(index))
         out.append((values[0] - values[1]) / (2 * h))
-    edge.setLength(l0)
+    edge.set_length(l0)
     return complex(out[0], out[1])
 
 
@@ -142,7 +142,7 @@ def test_the_gradient_is_analytic_supported_on_the_torus_and_scale_free(whitney_
     qa, qb, seed, node = marked_collar(weight=1e4)
     jitter_tori(node, seed)
     on_a, on_b, bulk = region_masks(node, seed)
-    edges = node.spacetime().getEdgeList().toVector()
+    edges = node.spacetime().get_edge_list().to_vector()
     z = squared_lengths(node)
     rng = np.random.default_rng(0)
     for index, own in enumerate((on_a, on_b)):
@@ -173,9 +173,9 @@ def test_the_residual_and_its_gradient_are_gauge_invariant(whitney_default):
         jitter_tori(node, seed)
     rng = np.random.default_rng(11)
     st = gauged[3].spacetime()
-    gauge = {int(v.getId()): rng.uniform(-np.pi, np.pi) for v in st.getVertexList().toVector()}
-    for edge in st.getEdgeList().toVector():
-        edge.setPhase(gauge[int(edge.getTarget().getId())] - gauge[int(edge.getSource().getId())])
+    gauge = {int(v.get_id()): rng.uniform(-np.pi, np.pi) for v in st.get_vertex_list().to_vector()}
+    for edge in st.get_edge_list().to_vector():
+        edge.set_phase(gauge[int(edge.get_target().get_id())] - gauge[int(edge.get_source().get_id())])
     for index in range(2):
         a, b = plain[3].block_qubit(index), gauged[3].block_qubit(index)
         assert a.trivial_connection() and not b.trivial_connection()

@@ -34,7 +34,7 @@ def curved_torus(N, epsilon=0.0, lorentz=True, amp=0.3, jitter=0.15, seed=0, Lt=
     integrals (dt, dx)."""
     rng = np.random.default_rng(seed)
     cells, vid = torus_cells(N)
-    K = cob.ChainComplex.fromTopCells(cells)
+    K = cob.ChainComplex.from_top_cells(cells)
     period = np.array([Lt, Lx])
     coords = {vid(i, j): np.array([(i + jitter * rng.uniform(-1, 1)) * Lt / N,
                                    (j + jitter * rng.uniform(-1, 1)) * Lx / N])
@@ -72,12 +72,12 @@ def _sweep(K, s, tau, epsilons):
 def _stacked(hodge):
     B1 = hodge.boundary(1).toarray()
     B2 = hodge.boundary(2).toarray()
-    return np.vstack([B2.T, B1 @ hodge.Minv(1).toarray()])
+    return np.vstack([B2.T, B1 @ hodge.m_inv(1).toarray()])
 
 
 def _products(hodge, k=1):
     """The four products of (R1)-(R4) for the Whitney preset, formed densely."""
-    M = [hodge.Minv(j).toarray() for j in range(3)]
+    M = [hodge.m_inv(j).toarray() for j in range(3)]
     B1 = hodge.boundary(1).toarray()
     B2 = hodge.boundary(2).toarray()
     return [B2.T @ np.linalg.solve(M[1], B2), B1 @ M[1] @ B1.T,
@@ -101,39 +101,39 @@ class TestDenseAndSparsePathsAgree:
     def test_rank_conditions(self, name):
         K, s, branch = _instances()[name]
         hodge = ch.ChainHodge(K, s, ch.Preset.L2, branch)
-        dense = hodge.rankConditions(1)
-        sparse = hodge.rankConditions(1, 10.0, True)
+        dense = hodge.rank_conditions(1)
+        sparse = hodge.rank_conditions(1, 10.0, True)
         assert dense.dense and not sparse.dense
         assert list(dense.measured) == list(sparse.measured) == list(dense.expected)
-        assert dense.kernelIsHarmonic and sparse.kernelIsHarmonic
+        assert dense.kernel_is_harmonic and sparse.kernel_is_harmonic
         for d, sp_ in zip(dense.splits, sparse.splits):
             assert d.at == sp_.at
             assert sp_.largest == pytest.approx(d.largest, rel=1e-9)
-            assert sp_.sigmaAt == pytest.approx(d.sigmaAt, rel=1e-8)
-            assert sp_.sigmaNext < 1e-12 * sp_.largest and d.sigmaNext < 1e-12 * d.largest
+            assert sp_.sigma_at == pytest.approx(d.sigma_at, rel=1e-8)
+            assert sp_.sigma_next < 1e-12 * sp_.largest and d.sigma_next < 1e-12 * d.largest
             assert sp_.gap > 1e10 and d.gap > 1e10
 
     @pytest.mark.parametrize("name", list(_instances()))
     def test_harmonic_chains(self, name):
         K, s, branch = _instances()[name]
         hodge = ch.ChainHodge(K, s, ch.Preset.L2, branch)
-        dense = hodge.harmonicChains(1)
-        sparse = hodge.harmonicChains(1, 10.0, True)
+        dense = hodge.harmonic_chains(1)
+        sparse = hodge.harmonic_chains(1, 10.0, True)
         assert dense.nullity == sparse.nullity == 2
         assert np.max(np.degrees(subspace_angles(dense.images, sparse.images))) < 1e-8
-        assert sparse.largestSingular == pytest.approx(dense.largestSingular, rel=1e-9)
-        assert sparse.lastKept == pytest.approx(dense.lastKept, rel=1e-8)
+        assert sparse.largest_singular == pytest.approx(dense.largest_singular, rel=1e-9)
+        assert sparse.last_kept == pytest.approx(dense.last_kept, rel=1e-8)
         assert math.isfinite(sparse.gap) and sparse.gap > 1e10 and dense.gap > 1e10
 
     def test_grassmann_preset(self):
         K, s = torus33()
         hodge = ch.ChainHodge(K, s, ch.Preset.GRASSMANN_ALL)
-        dense = hodge.rankConditions(1)
-        sparse = hodge.rankConditions(1, 10.0, True)
+        dense = hodge.rank_conditions(1)
+        sparse = hodge.rank_conditions(1, 10.0, True)
         assert list(dense.measured) == list(sparse.measured) == list(dense.expected)
         for d, sp_ in zip(dense.splits, sparse.splits):
-            assert sp_.sigmaAt == pytest.approx(d.sigmaAt, rel=1e-8)
-        read = hodge.harmonicChains(1, 10.0, True)
+            assert sp_.sigma_at == pytest.approx(d.sigma_at, rel=1e-8)
+        read = hodge.harmonic_chains(1, 10.0, True)
         assert read.nullity == 2 and read.gap > 1e10
 
     def test_every_degree(self):
@@ -142,14 +142,14 @@ class TestDenseAndSparsePathsAgree:
         K, s = torus33()
         hodge = ch.ChainHodge(K, s, ch.Preset.L2, KS)
         for k in (0, 2):
-            dense = hodge.rankConditions(k)
-            sparse = hodge.rankConditions(k, 10.0, True)
+            dense = hodge.rank_conditions(k)
+            sparse = hodge.rank_conditions(k, 10.0, True)
             assert list(dense.measured) == list(sparse.measured) == list(dense.expected)
             for i, (d, sp_) in enumerate(zip(dense.splits, sparse.splits)):
                 if dense.expected[i] == 0:
-                    assert math.isinf(sp_.sigmaAt) and sp_.sigmaNext == 0.0 and math.isinf(sp_.gap)
+                    assert math.isinf(sp_.sigma_at) and sp_.sigma_next == 0.0 and math.isinf(sp_.gap)
                 else:
-                    assert sp_.sigmaAt == pytest.approx(d.sigmaAt, rel=1e-8)
+                    assert sp_.sigma_at == pytest.approx(d.sigma_at, rel=1e-8)
 
 
 @pytest.fixture(scope="module")
@@ -164,24 +164,24 @@ class TestAboveTheCrossover:
     test, as the oracle for the sparse path."""
 
     def test_rank_conditions_are_measured(self, instance):
-        rep = instance.rankConditions(1)
+        rep = instance.rank_conditions(1)
         assert not rep.dense
-        assert rep.kernelIsHarmonic and list(rep.measured) == list(rep.expected)
+        assert rep.kernel_is_harmonic and list(rep.measured) == list(rep.expected)
         for split, P, rho in zip(rep.splits, _products(instance), rep.expected):
             sv = np.linalg.svd(P, compute_uv=False)
             assert split.at == rho
             assert split.largest == pytest.approx(sv[0], rel=1e-9)
-            assert split.sigmaAt == pytest.approx(sv[rho - 1], rel=1e-7)
-            assert split.sigmaNext < 1e-11 * sv[0]
+            assert split.sigma_at == pytest.approx(sv[rho - 1], rel=1e-7)
+            assert split.sigma_next < 1e-11 * sv[0]
             assert split.gap > 1e8
 
     def test_harmonic_gap_is_measured(self, instance):
-        read = instance.harmonicChains(1)
+        read = instance.harmonic_chains(1)
         assert not read.dense and read.nullity == 2
         sv = np.linalg.svd(_stacked(instance), compute_uv=False)
-        assert read.largestSingular == pytest.approx(sv[0], rel=1e-9)
-        assert read.lastKept == pytest.approx(sv[-3], rel=1e-8)
-        assert read.firstDiscarded < 1e-13 * sv[0]
+        assert read.largest_singular == pytest.approx(sv[0], rel=1e-9)
+        assert read.last_kept == pytest.approx(sv[-3], rel=1e-8)
+        assert read.first_discarded < 1e-13 * sv[0]
         assert math.isfinite(read.gap) and read.gap > 1e10
 
     def test_lorentzian_sweep_carries_the_gap_of_every_read(self):
@@ -193,7 +193,7 @@ class TestAboveTheCrossover:
         for r in reads:
             assert not r.harmonic.dense and r.harmonic.nullity == 2
             assert math.isfinite(r.harmonic.gap) and r.harmonic.gap > 1e8
-            assert 0.0 < r.harmonic.lastKept < r.harmonic.largestSingular
+            assert 0.0 < r.harmonic.last_kept < r.harmonic.largest_singular
 
 
 def _trend(Ns, **kw):
@@ -203,12 +203,12 @@ def _trend(Ns, **kw):
     for N in Ns:
         K, s, _ = curved_torus(N, **kw)
         hodge = ch.ChainHodge(K, s, ch.Preset.L2, KS)
-        read = hodge.harmonicChains(1)
-        rep = hodge.rankConditions(1)
+        read = hodge.harmonic_chains(1)
+        rep = hodge.rank_conditions(1)
         rows.append({"N": N, "dense": read.dense, "nullity": read.nullity,
-                     "S": read.lastKept / read.largestSingular, "S_gap": read.gap,
-                     "R": [sp_.sigmaAt / sp_.largest for sp_ in rep.splits],
-                     "R_gap": [sp_.gap for sp_ in rep.splits], "holds": rep.kernelIsHarmonic})
+                     "S": read.last_kept / read.largest_singular, "S_gap": read.gap,
+                     "R": [sp_.sigma_at / sp_.largest for sp_ in rep.splits],
+                     "R_gap": [sp_.gap for sp_ in rep.splits], "holds": rep.kernel_is_harmonic})
     return rows
 
 

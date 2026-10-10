@@ -69,14 +69,14 @@ def test_it_is_one_connected_manifold_with_four_boundary_tori(joined):
     which is the 3x3 grid torus.
     """
     spacetime = joined.host
-    assert len(spacetime.getBoundary()) == 4 * 18
-    betti = CC.fromSpacetime(spacetime).bettiNumbers()
+    assert len(spacetime.get_boundary()) == 4 * 18
+    betti = CC.from_spacetime(spacetime).betti_numbers()
     assert betti[0] == 1, "one component: the collars are joined, not merely present"
 
 
 def test_the_first_betti_number_is_four(joined):
     """The whole point. A connected sum along a sphere adds no first homology."""
-    assert CC.fromSpacetime(joined.host).bettiNumbers()[1] == 4
+    assert CC.from_spacetime(joined.host).betti_numbers()[1] == 4
 
 
 def test_every_surface_keeps_its_own_vertex_map(joined):

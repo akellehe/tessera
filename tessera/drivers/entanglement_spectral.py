@@ -24,7 +24,7 @@ Definitions
   probability that a walker started on a uniformly random vertex is found
   there again after diffusion time sigma; it is computed exactly, as the
   full trace, with a Krylov space as large as the graph (the default depth
-  of 30 of ``EmergentGraph.returnProbability`` is far off at large sigma on
+  of 30 of ``EmergentGraph.return_probability`` is far off at large sigma on
   these graphs). The spectral dimension is
   D_S(sigma) = -2 d ln P / d ln sigma: on a flat d-dimensional space
   P ~ sigma^(-d/2) and D_S = d. On a graph P -> 1 as sigma -> 0, so D_S
@@ -106,7 +106,7 @@ def skeleton_edges(MI, S, floor, mode, scale):
 
 def graph(n, edges):
     """The ``EmergentGraph`` on n vertices with the weighted edges."""
-    return holography().EmergentGraph.fromWeightedEdges(int(n), [(int(i), int(j), float(w))
+    return holography().EmergentGraph.from_weighted_edges(int(n), [(int(i), int(j), float(w))
                                                                   for i, j, w in edges])
 
 
@@ -117,7 +117,7 @@ def return_probability(n, edges, sigmas):
     if not edges:
         return np.ones(len(sigmas))
     g = graph(n, edges)
-    return np.asarray(g.returnProbability(sigmas, int(n) + 1, int(n), 0), dtype=float)
+    return np.asarray(g.return_probability(sigmas, int(n) + 1, int(n), 0), dtype=float)
 
 
 def readings(n, sigmas, P):
@@ -129,9 +129,9 @@ def readings(n, sigmas, P):
     holo = holography()
     sigmas = np.asarray(sigmas, dtype=float)
     P = np.asarray(P, dtype=float)
-    dS = np.asarray(holo.EmergentGraph.spectralDimension(list(sigmas), list(P)), dtype=float)
+    dS = np.asarray(holo.EmergentGraph.spectral_dimension(list(sigmas), list(P)), dtype=float)
     if len(sigmas) >= 5:
-        smooth = np.asarray(holo.EmergentGraph.spectralDimensionSmoothed(
+        smooth = np.asarray(holo.EmergentGraph.spectral_dimension_smoothed(
             list(sigmas), list(P), 5, 2), dtype=float)
     else:
         smooth = dS.copy()
@@ -154,9 +154,9 @@ def readings(n, sigmas, P):
         window = sigmas <= sigma_peak
         if window.sum() >= 4:
             f = holo.AmbjornLollFit.fit(list(sigmas[window]), list(dS[window]))
-            fit = {"D_inf": float(f.dInfinity), "C": float(f.C), "B": float(f.B),
-                   "chi2": float(f.chiSquared),
-                   "D_short": (float(f.dInfinity - f.C / f.B) if f.B != 0 else float("nan"))}
+            fit = {"D_inf": float(f.d_infinity), "C": float(f.C), "B": float(f.B),
+                   "chi2": float(f.chi_squared),
+                   "D_short": (float(f.d_infinity - f.C / f.B) if f.B != 0 else float("nan"))}
     return {"sigmas": sigmas, "P": P, "dS": dS, "dS_smooth": smooth, "fit": fit,
             "peak": peak, "sigma_peak": sigma_peak, "D_half": d_half, "sigma_half": sigma_half}
 

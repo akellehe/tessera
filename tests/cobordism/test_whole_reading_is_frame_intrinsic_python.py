@@ -72,7 +72,7 @@ def seeded():
 
 def periods_of(connection, images, cycles):
     images = np.asarray(images)
-    return np.array([[connection.transportedPeriod(images[:, a], cycle)
+    return np.array([[connection.transported_period(images[:, a], cycle)
                       for a in range(images.shape[1])] for cycle in cycles])
 
 
@@ -90,7 +90,7 @@ def reading(seeded, images):
 
 def test_the_engine_reads_what_the_period_frame_says(seeded):
     """The replication is faithful, so the tests below are about the engine."""
-    band = seeded["op"].harmonicBand(1)
+    band = seeded["op"].harmonic_band(1)
     engine = seeded["node"].whole_harmonic_residual(np.eye(2, dtype=complex))
     assert seeded["node"].whole_harmonic_obstruction == ""
     assert abs(engine - reading(seeded, band.images)) < 1e-12
@@ -105,7 +105,7 @@ def test_the_reading_does_not_depend_on_which_band_produced_it(seeded):
     """
     contour = seeded["op"].band(
         1, PencilLayer.harmonic_contour(seeded["assembled"], 1))
-    harmonic = seeded["op"].harmonicBand(1)
+    harmonic = seeded["op"].harmonic_band(1)
     assert abs(reading(seeded, contour.images) - reading(seeded, harmonic.images)) < 1e-12
 
 
@@ -113,7 +113,7 @@ def test_the_bands_really_do_return_different_bases(seeded):
     """Otherwise the test above would hold for an uninteresting reason."""
     contour = np.asarray(seeded["op"].band(
         1, PencilLayer.harmonic_contour(seeded["assembled"], 1)).images)
-    harmonic = np.asarray(seeded["op"].harmonicBand(1).images)
+    harmonic = np.asarray(seeded["op"].harmonic_band(1).images)
     transform, *_ = np.linalg.lstsq(contour, harmonic, rcond=None)
     rank = transform.shape[0]
     scalar = np.trace(transform) / rank * np.eye(rank)
@@ -123,7 +123,7 @@ def test_the_bands_really_do_return_different_bases(seeded):
 def test_every_marking_group_gives_the_same_frame(seeded):
     """The monodromy of spec S6, as the condition that makes the frame the
     whole's rather than a chosen block's."""
-    periods = periods_of(seeded["connection"], seeded["op"].harmonicBand(1).images,
+    periods = periods_of(seeded["connection"], seeded["op"].harmonic_band(1).images,
                          seeded["cycles"])
     rank = periods.shape[1]
     blocks = [periods[low:high, :] for low, high in seeded["spans"]
@@ -136,7 +136,7 @@ def test_every_marking_group_gives_the_same_frame(seeded):
 
 def test_the_reading_is_the_same_through_either_marking_group(seeded):
     """What the monodromy buys: the residual itself does not move."""
-    band = seeded["op"].harmonicBand(1)
+    band = seeded["op"].harmonic_band(1)
     periods = periods_of(seeded["connection"], band.images, seeded["cycles"])
     rank = periods.shape[1]
     state, *_ = np.linalg.lstsq(periods, seeded["inputs"], rcond=None)

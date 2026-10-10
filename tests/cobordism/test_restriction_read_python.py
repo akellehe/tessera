@@ -82,7 +82,7 @@ def test_the_periods_are_the_periods_of_the_returned_basis():
             rotations = [walk[k:] + walk[:k] for k in range(len(walk))]
             matched = False
             for rotated in rotations:
-                periods = np.array([connection.transportedPeriod(images[:, a], rotated)
+                periods = np.array([connection.transported_period(images[:, a], rotated)
                                     for a in range(images.shape[1])])
                 if np.abs(periods - reported[c]).max() < 1e-12:
                     matched = True

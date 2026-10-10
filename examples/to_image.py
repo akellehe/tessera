@@ -55,7 +55,7 @@ def main():
     st = tessera.Spacetime(metric, tessera.CDT, 1.0, 1.0, tessera.PREFERRED, tessera.Toroid())
     st.build(args.n_simplices)
 
-    target = args.targetN41 if args.targetN41 is not None else st.getN41()
+    target = args.targetN41 if args.targetN41 is not None else st.get_n41()
     eps = args.epsilon if args.epsilon is not None else 1.0 / max(target, 1)
     cdt = tessera.CDTSimulation(st, args.k0, args.k4, args.delta, eps,
                               target, args.quadraticVolume)

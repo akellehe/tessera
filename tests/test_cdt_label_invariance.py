@@ -32,34 +32,34 @@ class TestLabelInvariance(unittest.TestCase):
         sig = tessera.Signature(4, tessera.Lorentzian)
         st = tessera.Spacetime(tessera.Metric(True, sig), tessera.CDT,
                                1.0, 1.0, tessera.PREFERRED, tessera.Toroid())
-        st.setSeed(self.SEED)
+        st.set_seed(self.SEED)
         st.build(1600)
         cdt = tessera.CDTSimulation(st, 2.2, 0.5, 0.6, 1.0 / 2000, 2000)
-        cdt.setSeed(self.SEED)
-        cdt.setRelabelVertices(relabel)
+        cdt.set_seed(self.SEED)
+        cdt.set_relabel_vertices(relabel)
         cdt.sweep(sweeps)
         return st, cdt
 
     @staticmethod
     def _state(st, cdt):
         """Everything the sweep reads: the counts it prices and the action."""
-        return (st.getVertexCount(), st.getN41(), st.getN32(),
-                round(cdt.computeAction(), 9))
+        return (st.get_vertex_count(), st.get_n41(), st.get_n32(),
+                round(cdt.compute_action(), 9))
 
     @staticmethod
     def _cells(st):
         """Top cells as vertex-id sets, which a relabeling permutes."""
-        return [frozenset(v.getId() for v in s.getVertices())
-                for s in st.getSimplices() if len(s.getVertices()) == 5]
+        return [frozenset(v.get_id() for v in s.get_vertices())
+                for s in st.get_simplices() if len(s.get_vertices()) == 5]
 
     def test_relabeling_leaves_the_action_and_counts_alone(self):
         """The action is a function of the counts, and a permutation of labels
         moves no vertex between them."""
         st, cdt = self._thermalized()
         before = self._state(st, cdt)
-        verts = st.getVertexList().toVector()
+        verts = st.get_vertex_list().to_vector()
         for i in range(0, len(verts) - 1, 2):
-            st.swapVertexLabels(verts[i], verts[i + 1])
+            st.swap_vertex_labels(verts[i], verts[i + 1])
         self.assertEqual(self._state(st, cdt), before)
 
     def test_relabeling_permutes_the_cells_without_changing_them(self):
@@ -67,9 +67,9 @@ class TestLabelInvariance(unittest.TestCase):
         cell, so the number of distinct top cells is preserved."""
         st, cdt = self._thermalized()
         before = self._cells(st)
-        verts = st.getVertexList().toVector()
+        verts = st.get_vertex_list().to_vector()
         for i in range(0, len(verts) - 1, 2):
-            st.swapVertexLabels(verts[i], verts[i + 1])
+            st.swap_vertex_labels(verts[i], verts[i + 1])
         after = self._cells(st)
         self.assertEqual(len(after), len(before))
         self.assertEqual(len(set(after)), len(set(before)))
@@ -78,18 +78,18 @@ class TestLabelInvariance(unittest.TestCase):
         """(4,1) and (3,2) are decided by how many vertices sit at each time,
         so relabeling cannot move a cell between the two populations."""
         st, cdt = self._thermalized()
-        n41, n32 = st.getN41(), st.getN32()
-        verts = st.getVertexList().toVector()
+        n41, n32 = st.get_n41(), st.get_n32()
+        verts = st.get_vertex_list().to_vector()
         for i in range(0, len(verts) - 1, 2):
-            st.swapVertexLabels(verts[i], verts[i + 1])
-        self.assertEqual((st.getN41(), st.getN32()), (n41, n32))
+            st.swap_vertex_labels(verts[i], verts[i + 1])
+        self.assertEqual((st.get_n41(), st.get_n32()), (n41, n32))
 
     def test_a_chain_runs_the_same_invariants_without_relabeling(self):
         """With the swap disabled the chain still moves, and still holds every
         invariant above: the counts stay consistent with the cells it carries."""
         st, cdt = self._thermalized(relabel=False, sweeps=120)
         cells = self._cells(st)
-        self.assertEqual(len(cells), st.getN41() + st.getN32())
+        self.assertEqual(len(cells), st.get_n41() + st.get_n32())
         self.assertEqual(len(set(cells)), len(cells), "duplicate top cells")
 
 

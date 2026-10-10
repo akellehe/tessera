@@ -64,9 +64,9 @@ void register_observables_spectral_gap_wilson(py::module_ &m) {
       "Result of evaluating a Wilson loop.")
       .def_readonly("value", &WilsonResult::value,
                     "Primary scalar value. In U1_CONNECTION mode this is a "
-                    "derived view of connectionAccumulation (its "
-                    "residualPhase()), not a second datum.")
-      .def_readonly("connectionAccumulation",
+                    "derived view of connection_accumulation (its "
+                    "residual_phase()), not a second datum.")
+      .def_readonly("connection_accumulation",
                     &WilsonResult::connectionAccumulation,
                     "U1_CONNECTION mode: the complete gauge-invariant datum -- "
                     "the unreduced complex accumulation of the oriented edge "
@@ -79,21 +79,21 @@ void register_observables_spectral_gap_wilson(py::module_ &m) {
                     "unmeasured, never zero.")
       .def("holonomy", &WilsonResult::holonomy,
            "Derived: the holonomy exp(i * connectionAccumulation).")
-      .def("holonomyModulus", &WilsonResult::holonomyModulus,
+      .def("holonomy_modulus", &WilsonResult::holonomyModulus,
            "Derived: |H| = exp(-Im accumulation). Exactly 1 for a purely "
            "compact connection -- a cancellation to be observed, not imposed.")
-      .def("residualPhase", &WilsonResult::residualPhase,
+      .def("residual_phase", &WilsonResult::residualPhase,
            "Derived: Re(accumulation) mod 2*pi, in (-pi, pi].")
-      .def("windingNumber", &WilsonResult::windingNumber,
+      .def("winding_number", &WilsonResult::windingNumber,
            "Derived: whole 2*pi turns in Re(accumulation). Recoverable only "
            "because the accumulation is stored unreduced.")
-      .def_readonly("loopSize", &WilsonResult::loopSize,
+      .def_readonly("loop_size", &WilsonResult::loopSize,
                     "Number of simplices in the loop.")
-      .def_readonly("enclosedHinges", &WilsonResult::enclosedHinges,
+      .def_readonly("enclosed_hinges", &WilsonResult::enclosedHinges,
                     "Hinges enclosed by the loop.")
       .def_readonly("contractible", &WilsonResult::contractible,
                     "Whether the loop is contractible.")
-      .def_readonly("causalWindingNumber", &WilsonResult::causalWindingNumber,
+      .def_readonly("causal_winding_number", &WilsonResult::causalWindingNumber,
                     "Net time-orientation changes (causal mode).");
 
   py::class_<WilsonLoop, std::shared_ptr<WilsonLoop>>(m, "WilsonLoop",
@@ -108,7 +108,7 @@ angles of the enclosed hinges.
 Evaluation modes:
 
 * ``COMBINATORIAL`` — dual-graph topology only. ``value`` is the loop
-  length; ``enclosedHinges`` counts hinges contained in every loop
+  length; ``enclosed_hinges`` counts hinges contained in every loop
   simplex; ``contractible`` is True iff ``enclosedHinges == 0``.
 * ``DEFICIT_ANGLE`` — Regge-curvature holonomy. For a hinge loop
   enclosing one hinge h:
@@ -116,7 +116,7 @@ Evaluation modes:
   For multi-hinge loops the U(1) approximation:
       W = product_{h in enclosed} cos(eps_h).
   W = 1 is a flat loop; deviation from 1 measures local curvature.
-* ``CAUSAL`` — causal-orientation winding. ``causalWindingNumber`` is the
+* ``CAUSAL`` — causal-orientation winding. ``causal_winding_number`` is the
   signed net change in foliation index around the loop; nonzero values
   mark loops that cross a causal dynamical triangulation (CDT) slice
   boundary.
@@ -124,12 +124,12 @@ Evaluation modes:
   ``Edge.phase`` carried on the primal 1-skeleton around a closed vertex
   cycle (``+phase`` along the stored source->target orientation,
   ``-phase`` reversed), reduced mod 2*pi. Evaluated via
-  ``evaluateU1Connection(cycle)``; the connection is a primal-edge, not a
+  ``evaluate_u1_connection(cycle)``; the connection is a primal-edge, not a
   dual-graph, quantity. ``value`` carries the holonomy.
 
-Loops come from ``hingeLoop``, ``dualLatticeLoop`` or ``geodesicLoop``.
-``measure()`` and ``measureAllHinges()`` append ``WilsonResult`` entries to
-an internal list; ``getMeasurements()`` returns it, ``getAverageBySize()``
+Loops come from ``hinge_loop``, ``dual_lattice_loop`` or ``geodesic_loop``.
+``measure()`` and ``measure_all_hinges()`` append ``WilsonResult`` entries to
+an internal list; ``get_measurements()`` returns it, ``get_average_by_size()``
 aggregates by loop length, and ``reset()`` clears it.
 
 See ``docs/source/wilson_loops.md`` for a tutorial.
@@ -140,18 +140,18 @@ See ``docs/source/wilson_loops.md`` for a tutorial.
            py::arg("loop"), py::arg("mode"),
            R"doc(Evaluate the Wilson loop in the given mode.
 
-Dispatches to ``evaluateCombinatorial``, ``evaluateDeficitAngle``, or
-``evaluateCausal`` depending on ``mode``.
+Dispatches to ``evaluate_combinatorial``, ``evaluate_deficit_angle``, or
+``evaluate_causal`` depending on ``mode``.
 )doc")
-      .def("evaluateCombinatorial", &WilsonLoop::evaluateCombinatorial,
+      .def("evaluate_combinatorial", &WilsonLoop::evaluateCombinatorial,
            py::arg("loop"),
            R"doc(Evaluate using dual-graph topology only.
 
-Returns a ``WilsonResult`` with ``value = loopSize``,
-``enclosedHinges`` = count of hinges shared by every loop simplex, and
+Returns a ``WilsonResult`` with ``value = loop_size``,
+``enclosed_hinges`` = count of hinges shared by every loop simplex, and
 ``contractible`` = True iff no hinge is enclosed.
 )doc")
-      .def("evaluateDeficitAngle", &WilsonLoop::evaluateDeficitAngle,
+      .def("evaluate_deficit_angle", &WilsonLoop::evaluateDeficitAngle,
            py::arg("loop"),
            R"doc(Evaluate using Regge deficit angles.
 
@@ -159,17 +159,17 @@ For a hinge loop (exactly one enclosed hinge h):
     W = ((d - 2) + 2 cos(eps_h)) / d.
 For multi-hinge loops the U(1) approximation:
     W = product_{h in enclosed} cos(eps_h).
-``value`` carries W; ``enclosedHinges`` carries the count.
+``value`` carries W; ``enclosed_hinges`` carries the count.
 )doc")
-      .def("evaluateCausal", &WilsonLoop::evaluateCausal,
+      .def("evaluate_causal", &WilsonLoop::evaluateCausal,
            py::arg("loop"),
            R"doc(Evaluate using CDT causal-orientation changes.
 
 Walks the loop and accumulates a signed winding count from the
-final-time stamps of consecutive simplices. ``causalWindingNumber`` is
+final-time stamps of consecutive simplices. ``causal_winding_number`` is
 the net winding; ``value`` carries the same number as a double.
 )doc")
-      .def("evaluateU1Connection", &WilsonLoop::evaluateU1Connection,
+      .def("evaluate_u1_connection", &WilsonLoop::evaluateU1Connection,
            py::arg("cycle"),
            R"doc(U(1) connection holonomy around a closed vertex cycle.
 
@@ -177,7 +177,7 @@ the net winding; ``value`` carries the same number as a double.
 consecutive pairs (with wrap-around) are joined by edges. Each edge's
 ``phase`` is accumulated along its stored source->target orientation
 (``+phase`` forward, ``-phase`` reversed); ``value`` is the total reduced
-into ``(-pi, pi]`` and ``loopSize`` is the number of edges. Returns an empty
+into ``(-pi, pi]`` and ``loop_size`` is the number of edges. Returns an empty
 result (``loopSize == 0``) for a degenerate (fewer than two vertices) or
 open (a consecutive pair with no joining edge) cycle.
 
@@ -185,24 +185,24 @@ This is the same oriented phase sum as the cycle flux of the
 Hermitian-weighted ``cobordism.HodgeLaplacian``. Restricted to phases in
 ``{0, pi}`` the holonomy lands in ``{0, pi}`` and reproduces the Z2 flux.
 )doc")
-      .def("hingeLoop", &WilsonLoop::hingeLoop,
+      .def("hinge_loop", &WilsonLoop::hingeLoop,
            py::arg("hinge"),
            R"doc(Loop of top-simplices around a hinge, ordered cyclically.
 
 Encloses exactly one hinge (the input). This is the natural loop for
-``DEFICIT_ANGLE`` mode and is what ``measureAllHinges`` uses internally.
+``DEFICIT_ANGLE`` mode and is what ``measure_all_hinges`` uses internally.
 )doc")
-      .def("dualLatticeLoop", &WilsonLoop::dualLatticeLoop,
-           py::arg("start"), py::arg("targetLength"),
-           R"doc(Breadth-first-search loop of approximately ``targetLength``
+      .def("dual_lattice_loop", &WilsonLoop::dualLatticeLoop,
+           py::arg("start"), py::arg("target_length"),
+           R"doc(Breadth-first-search loop of approximately ``target_length``
 simplices.
 
-Not guaranteed to be exactly ``targetLength``: the search may overshoot or
+Not guaranteed to be exactly ``target_length``: the search may overshoot or
 return a shorter loop if local connectivity does not permit closing at the
 target size. Suitable for population-level scans at a fixed loop scale
 (the analogue of a Wilson-loop side length in lattice gauge theory).
 )doc")
-      .def("geodesicLoop", &WilsonLoop::geodesicLoop,
+      .def("geodesic_loop", &WilsonLoop::geodesicLoop,
            py::arg("start"),
            R"doc(Shortest cycle through ``start`` in the dual graph.
 
@@ -214,7 +214,7 @@ target size.
            py::arg("loop"), py::arg("mode"),
            "Evaluate ``loop`` in ``mode`` and append the result to the "
            "internal measurement list.")
-      .def("measureAllHinges", &WilsonLoop::measureAllHinges,
+      .def("measure_all_hinges", &WilsonLoop::measureAllHinges,
            py::arg("mode"),
            R"doc(Walk every (d-2)-simplex of the spacetime, generate its hinge
 loop, and record the evaluation in ``mode``. Skips degenerate hinges whose
@@ -222,9 +222,9 @@ loop has fewer than 2 distinct simplices.
 )doc")
       .def("reset", &WilsonLoop::reset,
            "Clear all accumulated measurements.")
-      .def("getMeasurements", &WilsonLoop::getMeasurements,
+      .def("get_measurements", &WilsonLoop::getMeasurements,
            "Return the full list of accumulated ``WilsonResult`` entries.")
-      .def("getAverageBySize", &WilsonLoop::getAverageBySize,
+      .def("get_average_by_size", &WilsonLoop::getAverageBySize,
            R"doc(Mean ``value`` grouped by loop size, as a ``{size: mean}`` dict.
 
 The standard form for Creutz-ratio analyses: fix loop size L, read off the

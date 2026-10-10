@@ -25,17 +25,17 @@ def _complex_sphere4():
                      T.CDT, 1.0, 1.0, T.PREFERRED,
                      T.SimplexBoundarySphere(4))
     st.build()
-    for index, edge in enumerate(st.getEdgeList().toVector()):
+    for index, edge in enumerate(st.get_edge_list().to_vector()):
         z = complex(1.0 + 0.019 * (index % 5),
                     0.011 * (1 + index % 4))
-        edge.setLength(cmath.sqrt(z))
+        edge.set_length(cmath.sqrt(z))
     return st
 
 
 def _first_vertices(st, count=3):
     """A small vertex set to declare a region over."""
-    return {vertex.getId()
-            for vertex in st.getVertexList().toVector()[:count]}
+    return {vertex.get_id()
+            for vertex in st.get_vertex_list().to_vector()[:count]}
 
 
 def _node(st, degree=3, gamma=0.0):
@@ -109,7 +109,7 @@ class ExactnessTest(unittest.TestCase):
         node.set_hodge_degrees([3])
         terms = node.objective_terms()
         reference = (node.hodge_entropy_weight *
-                     cob.HodgeLaplacian(st).spectralEntropyGradientNorm(
+                     cob.HodgeLaplacian(st).spectral_entropy_gradient_norm(
                          3, node.hodge_entropy_phase_mode))
         # Bit-identical, not merely close: the objective computes this from the
         # same primitive the engine used before it became injectable.

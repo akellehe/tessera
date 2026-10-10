@@ -51,16 +51,16 @@ def _seed_rotated(host, seeds, epsilon=_EPSILON):
     edge index to (s, tau); every other edge keeps its length and has no
     timelike part. Returns the host's Kontsevich-Segal margin, the minimum
     over top simplices of pi - sum_i |arg lambda_i|."""
-    edges = host.getEdgeList().toVector()
-    squared = [complex(e.getLength()) ** 2 for e in edges]
+    edges = host.get_edge_list().to_vector()
+    squared = [complex(e.get_length()) ** 2 for e in edges]
     timelike = [0j] * len(edges)
     for index, (value, part) in seeds.items():
         squared[index] = complex(value)
         timelike[index] = complex(part)
     rotated = T.chainhodge.LorentzianFamily.rotate(squared, timelike, epsilon)
     for edge, value in zip(edges, rotated):
-        edge.setLength(cmath.sqrt(complex(value)))
-    return cob.HodgeLaplacian.kontsevichSegalMargin(host)
+        edge.set_length(cmath.sqrt(complex(value)))
+    return cob.HodgeLaplacian.kontsevich_segal_margin(host)
 
 
 def _sphere4(jitter=True):
@@ -70,17 +70,17 @@ def _sphere4(jitter=True):
     st = T.Spacetime(T.Metric(True, sig), T.CDT, 1.0, 1.0, T.PREFERRED,
                      T.SimplexBoundarySphere(4))
     st.build()
-    for i, e in enumerate(st.getEdgeList().toVector()):
-        e.setLength(cmath.sqrt(complex(1.0 + (0.013 * (i % 5) if jitter else 0.0))))
+    for i, e in enumerate(st.get_edge_list().to_vector()):
+        e.set_length(cmath.sqrt(complex(1.0 + (0.013 * (i % 5) if jitter else 0.0))))
     return st
 
 
 def _hinges(st):
     """The (d-2)-simplices, exactly as ``ReggeSolver::collectHinges``: top simplices
     have d+1 vertices, so a hinge has (top_verts - 2) vertices (triangles in 4D)."""
-    sims = list(st.getSimplices())
-    hinge_nverts = max(len(s.getVertices()) for s in sims) - 2
-    return [s for s in sims if len(s.getVertices()) == hinge_nverts]
+    sims = list(st.get_simplices())
+    hinge_nverts = max(len(s.get_vertices()) for s in sims) - 2
+    return [s for s in sims if len(s.get_vertices()) == hinge_nverts]
 
 
 class SignatureChangeReadersTest(unittest.TestCase):
@@ -91,23 +91,23 @@ class SignatureChangeReadersTest(unittest.TestCase):
         w = cmath.exp(2j * math.pi / 3)
         st = _sphere4()
         rs = T.ReggeSolver(st, T.MatterConfiguration())
-        action_before = complex(rs.dualReggeAction())
+        action_before = complex(rs.dual_regge_action())
         self.assertTrue(cmath.isfinite(action_before))
 
         # Hand-set ONE edge timelike — a reader verification, not initialization.
-        st.getEdgeList().toVector()[3].setLength(cmath.sqrt(complex(complex(-0.8, 0.0))))
+        st.get_edge_list().to_vector()[3].set_length(cmath.sqrt(complex(complex(-0.8, 0.0))))
 
         # (a) The complex Sorkin/Asante–Dittrich deficit is sane on EVERY hinge.
         for h in _hinges(st):
-            eps = complex(h.deficitAngle())
+            eps = complex(h.deficit_angle())
             self.assertTrue(cmath.isfinite(eps),
                             f"non-finite deficit {eps} on hinge "
-                            f"{[v.getId() for v in h.getVertices()]}")
+                            f"{[v.get_id() for v in h.get_vertices()]}")
 
         # (b) The dual Regge action is finite and its Im part RESPONDS to the
         # signature change (the boost branch wakes up; Lorentzian action is complex —
         # never Re-only).
-        action_after = complex(rs.dualReggeAction())
+        action_after = complex(rs.dual_regge_action())
         self.assertTrue(cmath.isfinite(action_after))
         self.assertGreater(abs(action_after.imag - action_before.imag), 1e-9,
                            "Im(dual Regge action) did not respond to the "
@@ -118,7 +118,7 @@ class SignatureChangeReadersTest(unittest.TestCase):
         self.assertTrue(math.isfinite(grad_sq))
         opt = cob.MultiCobordism(st, [[1, w, w * w], [1, w * w, w]], [[1, w, w * w]],
                                  degrees=[3], gamma=1.0, seed=0)
-        opt.seed_inputs([v.getId() for v in st.getVertexList().toVector()][:2])
+        opt.seed_inputs([v.get_id() for v in st.get_vertex_list().to_vector()][:2])
         self.assertTrue(math.isfinite(opt.objective()))
 
 
@@ -134,7 +134,7 @@ class Stage2UnclampedTest(unittest.TestCase):
         opt = cob.MultiCobordism(host, [[1, w, w * w], [1, w * w, w]],
                                  [[1, w, w * w]], degrees=[3], gamma=1.0, seed=seed,
                                  **source)
-        opt.seed_inputs([v.getId() for v in host.getVertexList().toVector()][:2])
+        opt.seed_inputs([v.get_id() for v in host.get_vertex_list().to_vector()][:2])
         return opt
 
     def test_projection_api_is_gone(self):
@@ -171,9 +171,9 @@ class Stage2UnclampedTest(unittest.TestCase):
         # Measured on the default Whitney metric: three accepted steps,
         # 1745.9421 -> 143.1963 -> 111.9970 -> 97.2480, ending inside the
         # domain (margin 1.27e-4).
-        self.assertGreater(cob.HodgeLaplacian.kontsevichSegalMargin(opt.st), 0.0)
-        for e in opt.st.getEdgeList().toVector():
-            sq = complex(e.getLength()**2)
+        self.assertGreater(cob.HodgeLaplacian.kontsevich_segal_margin(opt.st), 0.0)
+        for e in opt.st.get_edge_list().to_vector():
+            sq = complex(e.get_length()**2)
             self.assertTrue(cmath.isfinite(sq))
             for pin in (_OLD_FLOOR, _OLD_CAP, -_OLD_CAP):
                 self.assertGreater(abs(sq.real - pin), 1e-12,
@@ -184,11 +184,11 @@ class Stage2UnclampedTest(unittest.TestCase):
         # run it as-is — no push-out, no floor, no exception. Whether descent moves it
         # is dynamics; snapping it to a pin would be a projection.
         host = _closed_s4(n_refine=8, seed=3)
-        host.getEdgeList().toVector()[3].setLength(cmath.sqrt(complex(complex(1e-6, 0.0))))
+        host.get_edge_list().to_vector()[3].set_length(cmath.sqrt(complex(complex(1e-6, 0.0))))
         opt = self._node(host)
         trace = opt.run_stage2(beta=1.0, max_iters=2, alpha0=0.05, tolerance=1e-9)
         self.assertTrue(all(math.isfinite(f) for f in trace))
-        sq = complex(opt.st.getEdgeList().toVector()[3].getLength()**2)
+        sq = complex(opt.st.get_edge_list().to_vector()[3].get_length()**2)
         self.assertTrue(cmath.isfinite(sq))
         self.assertGreater(abs(sq.real - _OLD_FLOOR), 1e-12,
                            "the lightlike-band edge was snapped to the old floor")
@@ -204,8 +204,8 @@ class Stage2UnclampedTest(unittest.TestCase):
         opt = self._node(host)
         trace = opt.run_stage2(beta=1.0, max_iters=3, alpha0=0.05, tolerance=1e-9)
         self.assertTrue(all(math.isfinite(f) for f in trace))
-        for e in opt.st.getEdgeList().toVector():
-            self.assertTrue(cmath.isfinite(complex(e.getLength()**2)))
+        for e in opt.st.get_edge_list().to_vector():
+            self.assertTrue(cmath.isfinite(complex(e.get_length()**2)))
 
 
 if __name__ == "__main__":

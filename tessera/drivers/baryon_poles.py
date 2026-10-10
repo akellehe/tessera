@@ -86,12 +86,12 @@ quarks in each of the three lowest bands of the covariant operator h_1, see
    constructed lift (`SharpSpin.read` under the aligned SU(2) action of item
    4) and labelled by the types of the binary tetrahedral group each sector
    restricts to;
-6. builds the three-particle operator, both quasi-free (dGamma(h-bar_1)) and
+6. builds the three-particle operator, both quasi-free (d_gamma(h-bar_1)) and
    with the paper's Section 7 geometric quartic about the self-consistent
    point (`DressedFluctuation.effectiveAction`), and reads the poles of every
    (doublet content, spin) sector with `BoundStatePole`, each pole with its
    own spinor certificate, the isotypic projector equations of WP v18 §11.1
-   and §14 for the sector's 2T types (`SharpSpin.isotypicRead`), its
+   and §14 for the sector's 2T types (`SharpSpin.isotypic_read`), its
    spin-lift read (the J^2 eigen-equations, `SharpSpin.read`) and its colour
    certificate.
 
@@ -409,38 +409,38 @@ def build_host(edge_squared=DECLARED_EDGE_SQUARED, cell=None):
     orientation. The declared connection values have unit modulus, so their
     phases are their arguments; that is the declaration of the host's data, not
     a readout, and the monopole number is read back from the face holonomies of
-    the built host (`MonopoleSupport.monopoleNumber`).
+    the built host (`MonopoleSupport.monopole_number`).
     """
     cells = [[4 * t + k for k in range(4)] for t in range(SHEETS)]
-    spacetime = T.Spacetime.fromVertexTuples(3, cells, 1.0, 0.0)
+    spacetime = T.Spacetime.from_vertex_tuples(3, cells, 1.0, 0.0)
     support = monopole_support()
     length = cmath.sqrt(complex(edge_squared))
     pairs = [tuple(e) for e in support.edges]
-    for edge in spacetime.getEdgeList().toVector():
-        source = int(edge.getSource().getId())
-        target = int(edge.getTarget().getId())
+    for edge in spacetime.get_edge_list().to_vector():
+        source = int(edge.get_source().get_id())
+        target = int(edge.get_target().get_id())
         sheet = source // 4
         if cell is None:
             link = support.transport(source - 4 * sheet, target - 4 * sheet)
-            edge.setLength(length)
-            edge.setPhase(complex(cmath.phase(link)))
+            edge.set_length(length)
+            edge.set_phase(complex(cmath.phase(link)))
             continue
         a, b = source - 4 * sheet, target - 4 * sheet
         m = pairs.index((min(a, b), max(a, b)))
         link = complex(cell["links"][m])
         if a > b:
             link = 1.0 / link
-        edge.setLength(cmath.sqrt(complex(cell["squared_lengths"][m])))
+        edge.set_length(cmath.sqrt(complex(cell["squared_lengths"][m])))
         # U = exp(i phi); the principal logarithm is a coordinate on the
         # stored field and returns U exactly
-        edge.setPhase(complex(-1j * cmath.log(link)))
+        edge.set_phase(complex(-1j * cmath.log(link)))
     return spacetime
 
 
 def edge_records(spacetime):
-    """(source, target) vertex ids of every edge in `getEdgeList()` order."""
-    return [(int(edge.getSource().getId()), int(edge.getTarget().getId()))
-            for edge in spacetime.getEdgeList().toVector()]
+    """(source, target) vertex ids of every edge in `get_edge_list()` order."""
+    return [(int(edge.get_source().get_id()), int(edge.get_target().get_id()))
+            for edge in spacetime.get_edge_list().to_vector()]
 
 
 def canonical_edges():
@@ -458,10 +458,10 @@ def sheet_links(spacetime, sheet):
     """U_e on the ascending orientation of each edge of one sheet, in the
     order of `MonopoleSupport.edges`."""
     stored = {}
-    for edge in spacetime.getEdgeList().toVector():
-        source = int(edge.getSource().getId())
-        target = int(edge.getTarget().getId())
-        link = cmath.exp(1j * complex(edge.getPhase()))
+    for edge in spacetime.get_edge_list().to_vector():
+        source = int(edge.get_source().get_id())
+        target = int(edge.get_target().get_id())
+        link = cmath.exp(1j * complex(edge.get_phase()))
         stored[(source, target)] = link
         stored[(target, source)] = 1.0 / link
     return [stored[(4 * sheet + a, 4 * sheet + b)]
@@ -471,10 +471,10 @@ def sheet_links(spacetime, sheet):
 def sheet_squared_lengths(spacetime, sheet):
     """z_e of one sheet's edges in the same order."""
     stored = {}
-    for edge in spacetime.getEdgeList().toVector():
-        source = int(edge.getSource().getId())
-        target = int(edge.getTarget().getId())
-        z = complex(edge.getLength()) ** 2
+    for edge in spacetime.get_edge_list().to_vector():
+        source = int(edge.get_source().get_id())
+        target = int(edge.get_target().get_id())
+        z = complex(edge.get_length()) ** 2
         stored[(source, target)] = stored[(target, source)] = z
     return [stored[(4 * sheet + a, 4 * sheet + b)]
             for a, b in itertools.combinations(range(4), 2)]
@@ -530,7 +530,7 @@ def relaxation_declaration(config):
 def sheet_edge_classes(spacetime):
     """The shared base field of the sheeted host (WP v17 §8, "Sheet convention
     (adopted)": equal squared lengths and equal connection values on
-    corresponding edges). For every edge in `getEdgeList()` order, the index
+    corresponding edges). For every edge in `get_edge_list()` order, the index
     of its base edge in the order of `MonopoleSupport.edges`, and the sign
     that relates its stored orientation to the base edge's ascending one:
     +1 when the stored edge runs from the lower to the higher local vertex,
@@ -620,12 +620,12 @@ def matrix(flat):
 
 def rotation_group():
     """The twelve rotations of the tetrahedron, T = A_4."""
-    return obs.MonopoleSupport.tetrahedralRotations()
+    return obs.MonopoleSupport.tetrahedral_rotations()
 
 
 def rotation_action(supports):
     """D_1(g) on the 18 microscopic edge cells, one 6 x 6 block per sheet from
-    that sheet's `MonopoleSupport.edgeRepresentation`, for the twelve
+    that sheet's `MonopoleSupport.edge_representation`, for the twelve
     rotations of `rotation_group()`. The canonical cell order is sheet-major
     and each sheet's edges are in the order of `MonopoleSupport.edges`."""
     actions = []
@@ -634,7 +634,7 @@ def rotation_action(supports):
                      dtype=complex)
         for t, support in enumerate(supports):
             sl = slice(t * BASE_EDGES, (t + 1) * BASE_EDGES)
-            d[sl, sl] = np.asarray(support.edgeRepresentation(g))
+            d[sl, sl] = np.asarray(support.edge_representation(g))
         actions.append(d)
     return actions
 
@@ -650,12 +650,12 @@ def sheet_support(spacetime, sheet):
     """The `MonopoleSupport` of one sheet of the relaxed host, with its faces
     in the outward orientation of the library fixture. `MonopoleSupport`
     refuses a connection off the unit circle; the U(1) part is taken
-    explicitly (`MonopoleSupport.u1Part`) and the departure is reported."""
+    explicitly (`MonopoleSupport.u1_part`) and the departure is reported."""
     fixture = monopole_support()
     links = sheet_links(spacetime, sheet)
     departure = max(abs(abs(u) - 1.0) for u in links)
     support = obs.MonopoleSupport(4, fixture.edges, fixture.faces,
-                                  obs.MonopoleSupport.u1Part(links))
+                                  obs.MonopoleSupport.u1_part(links))
     return support, departure
 
 
@@ -663,7 +663,7 @@ def cell_symmetry(spacetime, supports, tolerance=DECLARED_CERTIFICATE_TOLERANCE)
     """The rotation group of the relaxed cell itself: the rotations of the
     tetrahedron (`rotation_group()`) under which, on every sheet, the squared
     lengths are invariant and the connection is symmetric up to gauge
-    (`MonopoleSupport.gaugeCompensation` on the sheet's support), each within
+    (`MonopoleSupport.gauge_compensation` on the sheet's support), each within
     ``tolerance``.
 
     The whitepaper's spin read is made on a symmetric cluster: "the
@@ -692,7 +692,7 @@ def cell_symmetry(spacetime, supports, tolerance=DECLARED_CERTIFICATE_TOLERANCE)
         image = [index[tuple(sorted((g[a], g[b])))] for a, b in edges]
         length_departure = max(float(np.max(np.abs(z[image] - z)))
                                for z in lengths) / scale
-        reads = [support.gaugeCompensation(g, tolerance)
+        reads = [support.gauge_compensation(g, tolerance)
                  for support, _ in supports]
         rotations.append({
             "rotation": [int(v) for v in g],
@@ -726,28 +726,28 @@ def aligned_doublet_frame(support, group,
     SU(2) action, each up to its own Z_3 character.
 
     The three doublets are the eigenspaces of the rotation-averaged edge
-    operator (`MonopoleSupport.rotationAveragedEdgeOperator`); each appears
+    operator (`MonopoleSupport.rotation_averaged_edge_operator`); each appears
     once in the edge cochains, so they are the isotypic components of the
     projective action D_1(g) and do not depend on the operator averaged. With
     R(g) the action on the reference doublet (the coexact j = 1/2 doublet
-    `spinRead` names) and M_d(g) the action on doublet d, the character is
+    `spin_read` names) and M_d(g) the action on doublet d, the character is
     chi_d(g) = tr M_d(g) / tr R(g) where tr R(g) != 0 and one otherwise (the
     Klein four-group, which is the kernel of the Z_3 character), and the
     intertwiner T_d = sum_g chi_d(g)^{-1} M_d(g) X R(g)^{-1} carries R to
     chi_d^{-1} M_d (Schur averaging from a fixed seed X). Columns 2 c + s of
     the returned frame are spin state s of carrier c, the order
-    `SharpSpin.doubletSpinMatrices` uses. The carriers are ordered by the
+    `SharpSpin.doublet_spin_matrices` uses. The carriers are ordered by the
     eigenvalue of the averaged operator, ascending, which is the reading the
-    `spinRead` bands are listed in.
+    `spin_read` bands are listed in.
     """
-    read = support.spinRead(group, degeneracy_tolerance, tolerance)
-    averaged = support.rotationAveragedEdgeOperator(support.edgeLaplacian(),
+    read = support.spin_read(group, degeneracy_tolerance, tolerance)
+    averaged = support.rotation_averaged_edge_operator(support.edge_laplacian(),
                                                     group)
     values, vectors = np.linalg.eigh(np.asarray(averaged))
     order = np.argsort(values)
     values, vectors = values[order], vectors[:, order]
     blocks = [vectors[:, 2 * c:2 * c + 2] for c in range(3)]
-    representations = [np.asarray(support.edgeRepresentation(g))
+    representations = [np.asarray(support.edge_representation(g))
                        for g in group]
     reference = int(read.doublet_index)
     if reference >= 3:
@@ -806,9 +806,9 @@ def aligned_doublet_frame(support, group,
 
 def edge_spin_matrices():
     """J_a on the 18 microscopic-frame modes: the three doublets as three
-    spin-1/2 carriers (`SharpSpin.doubletSpinMatrices(3)`), times the identity
+    spin-1/2 carriers (`SharpSpin.doublet_spin_matrices(3)`), times the identity
     on the sheets, in the mode order b * 3 + t (base mode b, sheet t)."""
-    base = obs.SharpSpin.doubletSpinMatrices(3)
+    base = obs.SharpSpin.doublet_spin_matrices(3)
     return [np.kron(np.asarray(j), np.eye(SHEETS)) for j in base]
 
 
@@ -828,8 +828,8 @@ def sheet_generators():
 
 
 def colour_casimir(state):
-    """The quadratic Casimir sum_a dGamma(lambda_a / 2)^2 of the sheet algebra
-    applied to a Fock vector, as three `SharpSpin.applyTotalSpinSquared` calls.
+    """The quadratic Casimir sum_a d_gamma(lambda_a / 2)^2 of the sheet algebra
+    applied to a Fock vector, as three `SharpSpin.apply_total_spin_squared` calls.
     A colour singlet is annihilated by it."""
     generators = sheet_generators()
     zero = np.zeros_like(generators[0])
@@ -837,7 +837,7 @@ def colour_casimir(state):
                                                    generators[7], zero]]
     out = np.zeros_like(state)
     for group in groups:
-        out = out + np.asarray(obs.SharpSpin.applyTotalSpinSquared(group,
+        out = out + np.asarray(obs.SharpSpin.apply_total_spin_squared(group,
                                                                    state))
     return out
 
@@ -933,14 +933,14 @@ def left_inverse(columns):
 
 def spin_sectors(states):
     """Split a colour-singlet space by total spin: J^2 applied to each basis
-    state with `SharpSpin.applyTotalSpinSquared`, the block in the basis, and
+    state with `SharpSpin.apply_total_spin_squared`, the block in the basis, and
     its eigenvectors grouped by eigenvalue (3/4 or 15/4)."""
     basis = occupation_basis()
     spins = edge_spin_matrices()
     images = []
     for k in range(states.shape[1]):
         fock = to_fock(states[:, k], basis)
-        image = np.asarray(obs.SharpSpin.applyTotalSpinSquared(spins, fock))
+        image = np.asarray(obs.SharpSpin.apply_total_spin_squared(spins, fock))
         images.append(image)
     # J^2 is real symmetric in the occupation basis, so the block is read by
     # the bilinear pairing on the Fock vectors.
@@ -966,7 +966,7 @@ def lifted_rotation_maps(alignment, actions, frame, dual):
 
     Each declared rotation's D_1(g) on the microscopic cells is carried to
     the frame modes, dual @ D_1(g) @ frame, and scaled to determinant one on
-    the reference doublet (the coexact j = 1/2 doublet of `spinRead`, on
+    the reference doublet (the coexact j = 1/2 doublet of `spin_read`, on
     sheet 0). With both signs the 24 scaled maps form a linear representation
     of the double cover 2T, on which the element covering the 2 pi rotation
     acts as -1 (the cocycle of D_1(g) has the nontrivial class). The character
@@ -994,13 +994,13 @@ def isotypic_projectors(alignment, actions, frame, dual):
     tetrahedral group on the three-particle sector of the 18 microscopic-frame
     modes, over the occupation basis (`occupation_basis`):
     P_rho = (2 / 24) sum over 2T of conj(chi_rho) Lambda^3 D
-    (`SharpSpin.isotypicProjector`, WP v18 §11.1). They are formed from the
+    (`SharpSpin.isotypic_projector`, WP v18 §11.1). They are formed from the
     relaxed cell's own actions and aligned frame; the record of each carries
     its rank and its idempotency residual."""
     maps, characters = lifted_rotation_maps(alignment, actions, frame, dual)
     projectors, record = {}, {}
     for name, chi in characters.items():
-        projector = np.asarray(obs.SharpSpin.isotypicProjector(
+        projector = np.asarray(obs.SharpSpin.isotypic_projector(
             maps, chi, 2, 3))
         projectors[name] = projector
         record[name] = {
@@ -1028,17 +1028,17 @@ def fluctuation_couplings(spacetime, phases):
     """O_a = dh_1/df_a for the retained fluctuations, in the order: the 18
     squared lengths z_e, then (when ``phases``) the 18 link phases phi_e of
     U_e = exp(i phi_e) on each edge's stored orientation, both in
-    `getEdgeList()` order. `HodgeLaplacian.laplacianPhaseGradient` is the
+    `get_edge_list()` order. `HodgeLaplacian.laplacian_phase_gradient` is the
     derivative in the canonical (ascending) phase, so the stored one carries
     the orientation sign."""
     hodge = cob.HodgeLaplacian(spacetime,
-                               cob.HodgeLaplacian.defaultWeightConvention(),
+                               cob.HodgeLaplacian.default_weight_convention(),
                                cob.HodgeMetricSource.WhitneyPencil)
     records = edge_records(spacetime)
-    couplings = [matrix(hodge.laplacianGradient(1, a, b)) for a, b in records]
+    couplings = [matrix(hodge.laplacian_gradient(1, a, b)) for a, b in records]
     if phases:
         couplings += [(1.0 if a < b else -1.0)
-                      * matrix(hodge.laplacianPhaseGradient(1, a, b))
+                      * matrix(hodge.laplacian_phase_gradient(1, a, b))
                       for a, b in records]
     return couplings
 
@@ -1083,7 +1083,7 @@ def bare_stiffness(spacetime, kappa, beta, config, phases):
     count = solve.variable_count()
     jacobian = np.asarray(solve.jacobian()).reshape(solve.equation_count(),
                                                     count)
-    n = len(spacetime.getEdgeList().toVector())
+    n = len(spacetime.get_edge_list().to_vector())
     if not phases:
         return jacobian, {}
     analytic = -np.asarray(geometric.holonomy_hessian()).reshape(n, n)
@@ -1121,18 +1121,18 @@ def drazin_elimination(stiffness, directions, radius):
     read = T.chainhodge.PencilSchur.feshbach(
         stiffness, np.zeros_like(stiffness), 0j, [], 1e-12, radius)
     record = {"coordinates": int(size),
-              "resonance_radius": float(read.resonanceRadius),
-              "resonance_enclosure": float(read.resonanceEnclosure),
-              "resonance_separation": float(read.resonanceSeparation)}
-    if not read.interiorSingular:
+              "resonance_radius": float(read.resonance_radius),
+              "resonance_enclosure": float(read.resonance_enclosure),
+              "resonance_separation": float(read.resonance_separation)}
+    if not read.interior_singular:
         drazin = np.linalg.inv(stiffness)
         basis = np.eye(size, dtype=complex)
         null = np.zeros_like(stiffness)
     else:
-        drazin = np.asarray(read.interiorInverse)
-        null = np.asarray(read.nullProjector)
-        left, _, _ = np.linalg.svd(np.asarray(read.rangeProjector))
-        basis = left[:, :int(read.interiorRank)]
+        drazin = np.asarray(read.interior_inverse)
+        null = np.asarray(read.null_projector)
+        left, _, _ = np.linalg.svd(np.asarray(read.range_projector))
+        basis = left[:, :int(read.interior_rank)]
     if basis.shape[1] == 0:
         raise ValueError(
             "drazin_elimination: the bare stiffness of the retained "
@@ -1212,8 +1212,8 @@ def ward_read(spacetime, carrier, couplings, directions, config):
         return {"directions": int(directions.shape[1]),
                 "unmeasured": str(error)}
     projector = occupied_projector(carrier, 3)
-    edges = spacetime.getEdgeList().toVector()
-    saved = [complex(edge.getPhase()) for edge in edges]
+    edges = spacetime.get_edge_list().to_vector()
+    saved = [complex(edge.get_phase()) for edge in edges]
     radius = config["ward_contour_radius"]
     nodes = config["ward_contour_nodes"]
     residuals, paramagnetic_parts = [], []
@@ -1225,12 +1225,12 @@ def ward_read(spacetime, carrier, couplings, directions, config):
             for k in range(nodes):
                 root = cmath.exp(2j * math.pi * k / nodes)
                 for edge, phase, step in zip(edges, saved, shift):
-                    edge.setPhase(phase + radius * root * step)
+                    edge.set_phase(phase + radius * root * step)
                 weight = root.conjugate() / (nodes * radius)
                 for a, o in enumerate(fluctuation_couplings(spacetime, True)):
                     derivative[a] += weight * o
             for edge, phase in zip(edges, saved):
-                edge.setPhase(phase)
+                edge.set_phase(phase)
             diamagnetic = np.array([np.sum(projector * d.T)
                                     for d in derivative])
             polarization = paramagnetic @ g
@@ -1241,7 +1241,7 @@ def ward_read(spacetime, carrier, couplings, directions, config):
                                             / scale))
     finally:
         for edge, phase in zip(edges, saved):
-            edge.setPhase(phase)
+            edge.set_phase(phase)
     return {"directions": int(directions.shape[1]),
             "contour_radius": radius, "contour_nodes": nodes,
             "residual": max(residuals),
@@ -1260,10 +1260,10 @@ def truncation_certificates(spacetime, kappa, beta, config, couplings,
     reaches a zero of W, or a W not resolved above its rounding), the value
     is unavailable, and the action remainder is then reported as unmeasured
     with the reason."""
-    edges = spacetime.getEdgeList().toVector()
+    edges = spacetime.get_edge_list().to_vector()
     n = len(edges)
-    saved_lengths = [complex(edge.getLength()) for edge in edges]
-    saved_phases = [complex(edge.getPhase()) for edge in edges]
+    saved_lengths = [complex(edge.get_length()) for edge in edges]
+    saved_phases = [complex(edge.get_phase()) for edge in edges]
     phases = len(induced) == 2 * n
 
     before = _geometric_action(spacetime, kappa, beta, config)
@@ -1277,10 +1277,10 @@ def truncation_certificates(spacetime, kappa, beta, config, couplings,
     s1, unmeasured = None, None
     try:
         for edge, length, df in zip(edges, saved_lengths, induced[:n]):
-            edge.setLength(cmath.sqrt(length * length + df))
+            edge.set_length(cmath.sqrt(length * length + df))
         if phases:
             for edge, phase, dp in zip(edges, saved_phases, induced[n:]):
-                edge.setPhase(phase + dp)
+                edge.set_phase(phase + dp)
         after = _geometric_action(spacetime, kappa, beta, config)
         h1 = matrix(after.carrier_operator())
         if s0 is None:
@@ -1292,8 +1292,8 @@ def truncation_certificates(spacetime, kappa, beta, config, couplings,
                 unmeasured = str(error)
     finally:
         for edge, length, phase in zip(edges, saved_lengths, saved_phases):
-            edge.setLength(length)
-            edge.setPhase(phase)
+            edge.set_length(length)
+            edge.set_phase(phase)
     quadratic = 0.5 * induced @ stiffness @ induced
     linear_h = sum(f * o for f, o in zip(induced, couplings))
     out = {
@@ -1320,9 +1320,9 @@ def truncation_certificates(spacetime, kappa, beta, config, couplings,
 
 
 def second_quantized(one_particle, basis=None):
-    """dGamma(X) on the three-particle space, in the occupation basis: the
+    """d_gamma(X) on the three-particle space, in the occupation basis: the
     linear coefficient of the exact cubic polynomial
-    t -> Lambda^3(I + t X) = I + t dGamma(X) + t^2 (...) + t^3 (...), read off
+    t -> Lambda^3(I + t X) = I + t d_gamma(X) + t^2 (...) + t^3 (...), read off
     by the combination (8 f(1/2) - 8 f(-1/2) - f(1) + f(-1)) / 6."""
     identity = np.eye(one_particle.shape[0], dtype=complex)
 
@@ -1334,7 +1334,7 @@ def second_quantized(one_particle, basis=None):
 def dense_quartic_reference(couplings, drazin, frame, dual):
     """-1/2 sum_ab (A^D)_ab J_a J_b on the three-particle space of the fiber,
     assembled densely from A^D itself rather than through the reduced
-    coordinates, with J_a = dGamma(Phi~^T O_a Phi). The sum over b is taken
+    coordinates, with J_a = d_gamma(Phi~^T O_a Phi). The sum over b is taken
     inside dGamma, which is linear, so only two dense three-particle matrices
     are held at a time."""
     in_frame = [dual @ o @ frame for o in couplings]
@@ -1367,7 +1367,7 @@ def eliminate_fluctuations(spacetime, action, carrier, kappa, beta, config):
         stiffness, directions, config["gauge_resonance_radius"])
     covariance = matrix(action.declaration.covariance)
     expectation = np.array([np.sum(covariance * o.T) for o in couplings])
-    n = len(spacetime.getEdgeList().toVector())
+    n = len(spacetime.get_edge_list().to_vector())
     force_check = float(np.linalg.norm(
         expectation[:n] - np.asarray(action.hellmann_feynman_length_force())))
     if phases:
@@ -1465,7 +1465,7 @@ def third_exterior_power(one_particle, basis=None):
 def rotation_averaged_many_body(operator, actions, frame, dual):
     """The three-particle operator averaged over the diagonal rotation action,
     (1/|T|) sum_g Lambda^3(D_g)^{-1} H Lambda^3(D_g), with D_g the rotation in
-    the fibre frame. For H = dGamma(X) this is dGamma of the T-averaged X, and
+    the fibre frame. For H = d_gamma(X) this is dGamma of the T-averaged X, and
     for the eliminated quartic it is the elimination with every coupling
     rotated, so it is the T-average of WP line 497 applied to the whole
     operator the poles are read on."""
@@ -1826,7 +1826,7 @@ def pole_certificates(target, j2, sector, dual, eigen, basis, spins,
 
     * the spinor certificate of WP v18 §11.1 and §14: the isotypic projector
       equations (I - P)|Psi_R> = 0 and <Psi_L|(I - P) = 0 with ``projector``
-      the projector onto the sector's 2T types (`SharpSpin.isotypicRead`),
+      the projector onto the sector's 2T types (`SharpSpin.isotypic_read`),
       named ``spinor_type``; unmeasured when no projector is supplied;
     * the spin-lift read: `SharpSpin.read` of the sector's j(j+1) under the
       constructed SU(2) action, which states the continuum spin value an
@@ -1860,7 +1860,7 @@ def pole_certificates(target, j2, sector, dual, eigen, basis, spins,
         "colour_casimir_residual": float(casimir),
     }
     if projector is not None:
-        spinor = obs.SharpSpin.isotypicRead(projector, right_sector,
+        spinor = obs.SharpSpin.isotypic_read(projector, right_sector,
                                             left_sector, spinor_type or "",
                                             tolerance)
         out.update({
@@ -2094,8 +2094,8 @@ def evaluate_content(content, kappa, beta, config):
                       for name in ("regge", "holonomy", "matter",
                                    "spectral")},
             "regge_hinge_count": int(action.regge_hinge_count()),
-            "edge_lengths": [complex(e.getLength()) for e in
-                             spacetime.getEdgeList().toVector()],
+            "edge_lengths": [complex(e.get_length()) for e in
+                             spacetime.get_edge_list().to_vector()],
             "face_holonomies": [complex(f) for f in
                                 action.face_holonomies()],
             "holonomy_truncation": {
@@ -2120,7 +2120,7 @@ def evaluate_content(content, kappa, beta, config):
                 "averaged_eigenvalues": a["averaged_eigenvalues"],
                 "intertwining_residual": a["intertwining_residual"],
             } for a in alignments],
-            "monopole_numbers": [int(sp.monopoleNumber().monopole_number)
+            "monopole_numbers": [int(sp.monopole_number().monopole_number)
                                  for sp, _ in supports],
             "link_force_norm": float(np.linalg.norm(
                 action.link_stationarity())),
@@ -2186,7 +2186,7 @@ def recursion_read(spacetime, config):
     declaration.tolerance = declared_tolerance(config, "recursion_tolerance")
     recursion = None
     try:
-        recursion = cob.LevelRecursion.overSpacetime(
+        recursion = cob.LevelRecursion.over_spacetime(
             spacetime, 1, cob.HodgeMetricSource.WhitneyPencil, declaration)
         recursion.advance()
     except ValueError as refusal:
@@ -2238,18 +2238,18 @@ def anchor_atlas_read(spacetime, alignments,
     the determinant-line transition cocycle residual, the named refusals,
     and the invariant coordinates alpha_tau of the faces from the sheet's
     Whitney chain Hodge operator and the band's geometric images
-    (`withInvariantCoordinates`), or why they were not attached. The summary
+    (`with_invariant_coordinates`), or why they were not attached. The summary
     takes the worst sheet: the read is anchored only when every sheet
     anchors, and carries the largest residuals."""
     fixture = monopole_support()
-    complex_ = cob.ChainComplex.fromTopCells([[0, 1, 2, 3]])
+    complex_ = cob.ChainComplex.from_top_cells([[0, 1, 2, 3]])
     canonical = [tuple(int(v) for v in e)
-                 for e in complex_.kSimplexVertices(1)]
+                 for e in complex_.k_simplex_vertices(1)]
     fixture_edges = [tuple(int(v) for v in e) for e in fixture.edges]
     # the fixture's edge order carried to the complex's canonical one
     order = [fixture_edges.index(e) for e in canonical]
-    faces = list(range(complex_.numSimplices(2)))
-    paths = ch.DeclaredPaths.breadthFirst(complex_, ANCHOR_BASE_POINT)
+    faces = list(range(complex_.num_simplices(2)))
+    paths = ch.DeclaredPaths.breadth_first(complex_, ANCHOR_BASE_POINT)
     sheets = []
     for t in range(SHEETS):
         reference = int(alignments[t]["reference_carrier"])
@@ -2266,25 +2266,25 @@ def anchor_atlas_read(spacetime, alignments,
             base = ch.ChainHodge(complex_, [squared[k] for k in order],
                                  ch.Preset.L2)
             covariant = ch.CovariantChainHodge(base, connection)
-            images = np.asarray(covariant.applyG(1, phi))
-            dual_images = np.asarray(covariant.dual().applyG(1, phi))
-            read = ch.DressedAnchor.withInvariantCoordinates(
+            images = np.asarray(covariant.apply_g(1, phi))
+            dual_images = np.asarray(covariant.dual().apply_g(1, phi))
+            read = ch.DressedAnchor.with_invariant_coordinates(
                 read, covariant, dual_images, images)
         except (ValueError, RuntimeError) as error:
             unattached = str(error)
         sheets.append({
             "anchored": bool(read.anchored),
-            "anchoring_faces": int(read.anchoringFaces),
+            "anchoring_faces": int(read.anchoring_faces),
             "coordinates": [[complex(c) for c in row]
                             for row in read.coordinates],
             "invariant_coordinates": [complex(a) for a in
-                                      read.invariantCoordinates],
+                                      read.invariant_coordinates],
             "invariant_coordinates_unattached": unattached,
-            "coordinate_scale": float(read.coordinateScale),
-            "covariance_residual": float(read.covarianceResidual),
+            "coordinate_scale": float(read.coordinate_scale),
+            "covariance_residual": float(read.covariance_residual),
             "transition_cocycle_residual": float(
-                read.transitionCocycleResidual),
-            "failed_certificates": list(read.failedCertificates),
+                read.transition_cocycle_residual),
+            "failed_certificates": list(read.failed_certificates),
         })
     return {
         "band": ("the reference doublet of the aligned frame, the j = 1/2 "
@@ -2292,7 +2292,7 @@ def anchor_atlas_read(spacetime, alignments,
         "base_point": ANCHOR_BASE_POINT,
         "path_rule": "breadth-first walks from the base point inside the "
                      "cell",
-        "faces": [[int(v) for v in f] for f in complex_.kSimplexVertices(2)],
+        "faces": [[int(v) for v in f] for f in complex_.k_simplex_vertices(2)],
         "tolerance": tolerance,
         "anchored": all(s["anchored"] for s in sheets),
         "anchoring_faces": min(s["anchoring_faces"] for s in sheets),
@@ -2424,10 +2424,10 @@ def refined_host(spacetime):
             u[(i, REFINED_CENTRE)] = 1.0 + 0j
         data.append({"squared_lengths": [z[e] for e in REFINED_EDGES],
                      "links": [u[e] for e in REFINED_EDGES]})
-    refined = T.Spacetime.fromVertexTuples(3, cells, 1.0, 0.0)
-    for edge in refined.getEdgeList().toVector():
-        source = int(edge.getSource().getId())
-        target = int(edge.getTarget().getId())
+    refined = T.Spacetime.from_vertex_tuples(3, cells, 1.0, 0.0)
+    for edge in refined.get_edge_list().to_vector():
+        source = int(edge.get_source().get_id())
+        target = int(edge.get_target().get_id())
         if source >= 4 * SHEETS or target >= 4 * SHEETS:
             t = (source if source >= 4 * SHEETS else target) - 4 * SHEETS
         else:
@@ -2439,8 +2439,8 @@ def refined_host(spacetime):
         link = data[t]["links"][REFINED_EDGES.index(key)]
         if local[0] > local[1]:
             link = 1.0 / link
-        edge.setLength(cmath.sqrt(value))
-        edge.setPhase(complex(-1j * cmath.log(link)))
+        edge.set_length(cmath.sqrt(value))
+        edge.set_phase(complex(-1j * cmath.log(link)))
     return refined, data
 
 
@@ -2452,7 +2452,7 @@ def refined_support(sheet_data):
     fixture = monopole_support()
     return obs.MonopoleSupport(
         5, [list(e) for e in REFINED_EDGES], [list(f) for f in fixture.faces],
-        obs.MonopoleSupport.u1Part([complex(u) for u in sheet_data["links"]]))
+        obs.MonopoleSupport.u1_part([complex(u) for u in sheet_data["links"]]))
 
 
 def refined_rotation_group():
@@ -2464,7 +2464,7 @@ def refined_rotation_group():
 def relabeled_host(spacetime, permutation):
     """The host with every sheet's vertices relabeled by ``permutation``."""
     cells = [[4 * t + k for k in range(4)] for t in range(SHEETS)]
-    host = T.Spacetime.fromVertexTuples(3, cells, 1.0, 0.0)
+    host = T.Spacetime.from_vertex_tuples(3, cells, 1.0, 0.0)
     data = []
     for t in range(SHEETS):
         z, u = {}, {}
@@ -2477,17 +2477,17 @@ def relabeled_host(spacetime, permutation):
             u[key] = (complex(link) if image[0] < image[1]
                       else 1.0 / complex(link))
         data.append((z, u))
-    for edge in host.getEdgeList().toVector():
-        source = int(edge.getSource().getId())
-        target = int(edge.getTarget().getId())
+    for edge in host.get_edge_list().to_vector():
+        source = int(edge.get_source().get_id())
+        target = int(edge.get_target().get_id())
         t = source // 4
         a, b = source - 4 * t, target - 4 * t
         z, u = data[t]
         link = u[(min(a, b), max(a, b))]
         if a > b:
             link = 1.0 / link
-        edge.setLength(cmath.sqrt(z[(min(a, b), max(a, b))]))
-        edge.setPhase(complex(-1j * cmath.log(link)))
+        edge.set_length(cmath.sqrt(z[(min(a, b), max(a, b))]))
+        edge.set_phase(complex(-1j * cmath.log(link)))
     return host
 
 
@@ -2506,8 +2506,8 @@ def conjugated_group(group, permutation):
 def _bands_of(support, group, tolerance=DECLARED_TOLERANCE):
     """The bands of the rotation-averaged edge Laplacian of a support, as
     orthonormal blocks in ascending order of eigenvalue."""
-    averaged = np.asarray(support.rotationAveragedEdgeOperator(
-        support.edgeLaplacian(), group))
+    averaged = np.asarray(support.rotation_averaged_edge_operator(
+        support.edge_laplacian(), group))
     values, vectors = np.linalg.eigh(averaged)
     order = np.argsort(values)
     values, vectors = values[order], vectors[:, order]
@@ -2544,11 +2544,11 @@ def _fiber_fingerprint(host, support, group, edges, kappa, beta, config):
     band the aligned frame's reference carrier is) with its energy on the
     averaged h_1 and its weight on every edge."""
     degeneracy_tolerance = declared_tolerance(config, "degeneracy_tolerance")
-    read = support.spinRead(group, degeneracy_tolerance,
+    read = support.spin_read(group, degeneracy_tolerance,
                             declared_tolerance(config, "certificate_tolerance"))
     carrier = _carrier(host, kappa, beta, config)
     block = carrier[:edges, :edges]
-    actions = [np.asarray(support.edgeRepresentation(g)) for g in group]
+    actions = [np.asarray(support.edge_representation(g)) for g in group]
     averaged = rotation_averaged(block, actions)
     bands = _bands_of(support, group, degeneracy_tolerance)
     index = int(read.doublet_index)
@@ -2599,7 +2599,7 @@ def spectral_fingerprint_read(spacetime, kappa, beta, config,
       relaxed geometry and averaged with the refined support's projective
       action; the doublet's type is re-extracted as the band of the averaged
       operator, inside the isotypic component of that type in the refined
-      action (`SharpSpin.isotypicProjector`), whose column span overlaps the
+      action (`SharpSpin.isotypic_projector`), whose column span overlaps the
       original doublet most on the six shared edges, the refinement
       continuation. The overlap must reach ``overlap_floor`` with the rank
       preserved, and the refined support must carry a spinor doublet; the
@@ -2682,7 +2682,7 @@ def spectral_fingerprint_read(spacetime, kappa, beta, config,
                 maps.append(sign * lifted)
                 characters.append(sign * complex(
                     np.trace(block.conj().T @ lifted @ block)))
-        isotypic = np.asarray(obs.SharpSpin.isotypicProjector(
+        isotypic = np.asarray(obs.SharpSpin.isotypic_projector(
             maps, characters, 2, 1))
         values, vectors = np.linalg.eig(isotypic)
         span = vectors[:, np.abs(values - 1.0) < 1e-6]
@@ -2798,13 +2798,13 @@ def quark_conditions(spacetime, alignments, recursion, symmetry_residual,
     E = obs.QuarkConditionEvidence
     spins = [a["spin_read"] for a in alignments]
     supports = [sheet_support(spacetime, t) for t in range(SHEETS)]
-    monopoles = [s.monopoleNumber() for s, _ in supports]
+    monopoles = [s.monopole_number() for s, _ in supports]
     sheeting = obs.SheetedSupport(SHEETS, BASE_EDGES)
-    isomorphism = sheeting.certifyIsomorphism(
+    isomorphism = sheeting.certify_isomorphism(
         [np.array(sheet_squared_lengths(spacetime, t)) for t in range(SHEETS)],
         [np.array(sheet_links(spacetime, t)) for t in range(SHEETS)],
         tolerance)
-    attachment = obs.SheetAttachment.attachmentMatrix(
+    attachment = obs.SheetAttachment.attachment_matrix(
         SHEETS, [obs.ConnectingSimplex(t, t, 1.0) for t in range(SHEETS)])
     doublets = [spin.bands[spin.doublet_index] if spin.half_integer_doublet
                 else None for spin in spins]

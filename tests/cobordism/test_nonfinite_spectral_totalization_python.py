@@ -33,30 +33,30 @@ def _overflowed_holed_surface():
     """The holed surface (b_1 = 2) with one edge pushed far enough that the
     SquaredContent weights of its cofaces leave double range."""
     st, _es, _holes, _periods = _hs.holed_surface(degree=1)
-    edges = st.getEdgeList().toVector()
-    edges[0].setLength(edges[0].getLength() * 1e80)
-    st.materializeFacets()
+    edges = st.get_edge_list().to_vector()
+    edges[0].set_length(edges[0].get_length() * 1e80)
+    st.materialize_facets()
     return st
 
 
 class NonfiniteSpectralTotalizationTest(unittest.TestCase):
 
     def setUp(self):
-        self._prior_convention = cob.HodgeLaplacian.defaultWeightConvention()
-        cob.HodgeLaplacian.setDefaultWeightConvention(
+        self._prior_convention = cob.HodgeLaplacian.default_weight_convention()
+        cob.HodgeLaplacian.set_default_weight_convention(
             cob.HodgeWeightConvention.SquaredContent)
 
     def tearDown(self):
-        cob.HodgeLaplacian.setDefaultWeightConvention(self._prior_convention)
+        cob.HodgeLaplacian.set_default_weight_convention(self._prior_convention)
 
     def test_near_kernel_residual_totalizes(self):
         st = _overflowed_holed_surface()
-        r = cob.MultiCobordism.nearKernelResidual(st, 1, 3)
+        r = cob.MultiCobordism.near_kernel_residual(st, 1, 3)
         self.assertEqual(r, math.inf)
 
     def test_half_sum_ratio_totalizes(self):
         st = _overflowed_holed_surface()
-        r = cob.MultiCobordism.singularValueHalfSumRatio(st, 1)
+        r = cob.MultiCobordism.singular_value_half_sum_ratio(st, 1)
         self.assertEqual(r, math.inf)
 
     def test_r_state_survives_the_crash_geometry(self):
@@ -73,12 +73,12 @@ class NonfiniteSpectralTotalizationTest(unittest.TestCase):
     def test_finite_geometry_unchanged(self):
         # A clean fixture still evaluates finite and sane through every term.
         st, _es, _holes, _periods = _hs.holed_surface(degree=1)
-        near = cob.MultiCobordism.nearKernelResidual(st, 1, 3)
-        ratio = cob.MultiCobordism.singularValueHalfSumRatio(st, 1)
+        near = cob.MultiCobordism.near_kernel_residual(st, 1, 3)
+        ratio = cob.MultiCobordism.singular_value_half_sum_ratio(st, 1)
         r_state = cob.MultiCobordism.r_state(st, 1, [1 + 0j, -1 + 0j])
         for value in (near, ratio, r_state):
             self.assertTrue(math.isfinite(value))
-        self.assertEqual(cob.MultiCobordism.nearKernelResidual(st, 1, 1), 0.0)
+        self.assertEqual(cob.MultiCobordism.near_kernel_residual(st, 1, 1), 0.0)
 
 
 if __name__ == "__main__":

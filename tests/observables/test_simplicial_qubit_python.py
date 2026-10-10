@@ -41,8 +41,8 @@ def rebuilt(q, lengths=None, faces=None, cycle_A=None, cycle_B=None, edges=None,
             list(q.edges()) if edges is None else edges,
             list(q.faces()) if faces is None else faces,
             list(q.lengths()) if lengths is None else lengths,
-            list(q.cycle_A()) if cycle_A is None else cycle_A,
-            list(q.cycle_B()) if cycle_B is None else cycle_B,
+            list(q.cycle_a()) if cycle_A is None else cycle_A,
+            list(q.cycle_b()) if cycle_B is None else cycle_B,
             **kwargs)
 
 
@@ -107,13 +107,13 @@ def test_tau_is_invariant_under_uniform_scaling():
 def test_modular_transformations():
     tau = 0.35 + 1.1j
     q = flat(tau)
-    A, B = list(q.cycle_A()), list(q.cycle_B())
+    A, B = list(q.cycle_a()), list(q.cycle_b())
     minus_A = [(e, -s) for (e, s) in A]
     # A' = B, B' = -A  ->  -1/tau
-    q_s = rebuilt(q, cycle_A=B, cycle_B=minus_A)
+    q_s = rebuilt(q, cycle_a=B, cycle_b=minus_A)
     assert abs(q_s.tau() - (-1.0 / tau)) < 1e-9
     # B' = A + B  ->  tau + 1
-    q_t = rebuilt(q, cycle_A=A, cycle_B=A + B)
+    q_t = rebuilt(q, cycle_a=A, cycle_b=A + B)
     assert abs(q_t.tau() - (tau + 1.0)) < 1e-9
 
 
@@ -163,8 +163,8 @@ def test_incidence_matrices_and_per_face_geometry():
     # Angles sum to pi; Heron areas agree with the container's own Simplex.area().
     assert np.allclose(q.angles().sum(axis=1), math.pi)
     by_set = {}
-    for s in q.spacetime().getSimplices():
-        ids = tuple(sorted(v.getId() for v in s.getVertices()))
+    for s in q.spacetime().get_simplices():
+        ids = tuple(sorted(v.get_id() for v in s.get_vertices()))
         if len(ids) == 3:
             by_set[ids] = s.area().real
     for face, area in zip(q.faces(), q.areas()):
@@ -206,7 +206,7 @@ def test_intrinsic_delaunay_pass_repairs_the_hexagonal_torus():
     assert np.allclose(d.angles(), math.pi / 3)
     assert abs(d.tau() - tau) < 1e-10                # the intrinsic geometry is unchanged
     assert abs(h.tau() - tau) < 1e-10
-    assert len(d.cycle_A()) >= len(h.cycle_A()) and len(d.edges()) == len(h.edges())
+    assert len(d.cycle_a()) >= len(h.cycle_a()) and len(d.edges()) == len(h.edges())
     # Already Delaunay: nothing to do.
     s = flat(1j)
     assert s.intrinsic_delaunay().delaunay_flip_count() == 0
@@ -228,9 +228,9 @@ def test_validation_on_load():
     with pytest.raises(ValueError, match="real and positive"):
         rebuilt(q, lengths=[-1.0] + list(q.lengths())[1:])
     with pytest.raises(ValueError, match="not closed"):
-        rebuilt(q, cycle_A=list(q.cycle_A())[:-1])
+        rebuilt(q, cycle_a=list(q.cycle_a())[:-1])
     with pytest.raises(ValueError, match="not independent"):
-        rebuilt(q, cycle_B=list(q.cycle_A()))
+        rebuilt(q, cycle_b=list(q.cycle_a()))
     with pytest.raises(ValueError, match="0 .. nV-1"):
         rebuilt(q, vertices=list(q.vertices())[1:] + [99])
     with pytest.raises(ValueError, match="not in E"):
@@ -255,7 +255,7 @@ def test_pinching_cycle_warns_and_moves_the_state_to_a_pole():
     thin = flat(0.05j)
     with pytest.warns(UserWarning, match="near-degenerate"):
         p = SimplicialQubit(list(thin.vertices()), list(thin.edges()), list(thin.faces()),
-                            list(thin.lengths()), list(thin.cycle_A()), list(thin.cycle_B()),
+                            list(thin.lengths()), list(thin.cycle_a()), list(thin.cycle_b()),
                             degeneracy_threshold=10.0)
     assert p.near_degenerate() and p.condition_m1() > 10.0
     assert abs(p.tau() - 0.05j) < 1e-9
@@ -288,8 +288,8 @@ def test_reading_the_spacetime_directly_gives_the_same_state():
     st = q.spacetime()
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        direct = SimplicialQubit(st, list(q.cycle_A()), list(q.cycle_B()))
-        flipped = SimplicialQubit(st, list(q.cycle_A()), list(q.cycle_B()), reversed=True)
+        direct = SimplicialQubit(st, list(q.cycle_a()), list(q.cycle_b()))
+        flipped = SimplicialQubit(st, list(q.cycle_a()), list(q.cycle_b()), reversed=True)
     assert list(direct.edges()) == list(q.edges())
     assert abs(direct.tau() - tau) < 1e-10 and abs(flipped.tau() - tau) < 1e-10
     # Exactly one of the two orientations agrees with the marking's A.B = +1;
@@ -297,17 +297,17 @@ def test_reading_the_spacetime_directly_gives_the_same_state():
     assert sum(any("conjugate" in w for w in x.warnings()) for x in (direct, flipped)) == 1
     # A complex length is read (section 16, test_simplicial_qubit_complex_python.py);
     # a real non-positive one is still refused by section 2.
-    edges = list(st.getEdgeList().toVector())
-    original = edges[0].getLength()
-    edges[0].setLength(complex(original) * (1 + 0.1j))
+    edges = list(st.get_edge_list().to_vector())
+    original = edges[0].get_length()
+    edges[0].set_length(complex(original) * (1 + 0.1j))
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        off = SimplicialQubit(st, list(q.cycle_A()), list(q.cycle_B()))
+        off = SimplicialQubit(st, list(q.cycle_a()), list(q.cycle_b()))
     assert not off.on_real_locus() and direct.on_real_locus()
-    edges[0].setLength(-abs(complex(original)))
+    edges[0].set_length(-abs(complex(original)))
     with pytest.raises(ValueError, match="real and positive"):
-        SimplicialQubit(st, list(q.cycle_A()), list(q.cycle_B()))
-    edges[0].setLength(original)
+        SimplicialQubit(st, list(q.cycle_a()), list(q.cycle_b()))
+    edges[0].set_length(original)
 
 
 # ---------------------------------------------------------------------------
@@ -407,12 +407,12 @@ def test_tau_derivative_is_gauge_invariant():
     plain = np.asarray(q.tau_derivative())
     spacetime = q.spacetime()
     rng = np.random.default_rng(5)
-    gauge = {int(v.getId()): rng.uniform(-np.pi, np.pi) for v in spacetime.getVertexList().toVector()}
-    for edge in spacetime.getEdgeList().toVector():
-        edge.setPhase(gauge[int(edge.getTarget().getId())] - gauge[int(edge.getSource().getId())])
+    gauge = {int(v.get_id()): rng.uniform(-np.pi, np.pi) for v in spacetime.get_vertex_list().to_vector()}
+    for edge in spacetime.get_edge_list().to_vector():
+        edge.set_phase(gauge[int(edge.get_target().get_id())] - gauge[int(edge.get_source().get_id())])
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        gauged = SimplicialQubit(spacetime, list(q.cycle_A()), list(q.cycle_B()), q.intersection_number() < 0)
+        gauged = SimplicialQubit(spacetime, list(q.cycle_a()), list(q.cycle_b()), q.intersection_number() < 0)
     assert not gauged.trivial_connection()
     assert abs(gauged.tau() - q.tau()) < 1e-12
     assert np.abs(np.asarray(gauged.tau_derivative()) - plain).max() < 1e-11 * np.abs(plain).max()
@@ -425,7 +425,7 @@ def test_intersection_number_fixes_the_orientation():
     q = flat(0.3 + 1.1j, 3, 3)
     assert abs(q.intersection_number() - 1.0) < 1e-12
     spacetime = q.spacetime()
-    A, B = list(q.cycle_A()), list(q.cycle_B())
+    A, B = list(q.cycle_a()), list(q.cycle_b())
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         signs = [SimplicialQubit(spacetime, A, B, reversed).intersection_number() for reversed in (False, True)]

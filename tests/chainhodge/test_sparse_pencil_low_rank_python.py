@@ -15,7 +15,7 @@ KAPPA = (0.3, -0.2, 0.1)
 
 def _problem(kappa=KAPPA, n=4, rank=5, seed=2):
     _, _, cov = covariant_torus(cubic_grid(n), kappa)
-    pencil = cov.sparsePencil()
+    pencil = cov.sparse_pencil()
     rng = np.random.default_rng(seed)
     size = pencil.A.shape[0]
     functions = rng.normal(size=(size, rank)) + 1j * rng.normal(size=(size, rank))
@@ -29,10 +29,10 @@ def test_levels_vectors_and_certificate_against_the_dense_pencil():
     pencil, P, D, dense = _problem()
     reference = scipy.linalg.eigh(dense, pencil.M.toarray(), eigvals_only=True)
     sigma = reference[0] - 1.0
-    read = ch.SparsePencilSolver.lowestWithLowRank(pencil.A, pencil.M, P, D, 10, sigma)
+    read = ch.SparsePencilSolver.lowest_with_low_rank(pencil.A, pencil.M, P, D, 10, sigma)
     values = np.array(read.eigenvalues.values).real
     assert values == pytest.approx(reference[:10], abs=1e-8 * abs(reference).max())
-    assert read.eigenvalues.certificate.holds() and read.shiftBelowSpectrum
+    assert read.eigenvalues.certificate.holds() and read.shift_below_spectrum
     Z = read.vectors
     assert np.abs(Z.conj().T @ (pencil.M @ Z) - np.eye(10)).max() < 1e-9
     assert np.abs(dense @ Z - (pencil.M @ Z) * values).max() < 1e-7 * abs(reference).max()
@@ -46,8 +46,8 @@ def test_the_inertia_certificate_counts_levels_below_the_shift():
     # Between the two lowest levels: A - sigma M alone may well be positive
     # definite, but the pencil with the term has one level below the shift.
     sigma = 0.5 * (reference[0] + reference[1])
-    read = ch.SparsePencilSolver.lowestWithLowRank(pencil.A, pencil.M, P, D, 4, sigma)
-    assert not read.shiftBelowSpectrum
+    read = ch.SparsePencilSolver.lowest_with_low_rank(pencil.A, pencil.M, P, D, 4, sigma)
+    assert not read.shift_below_spectrum
     assert np.array(read.eigenvalues.values).real == pytest.approx(reference[1:5], abs=1e-8 * abs(reference).max())
 
 
@@ -55,13 +55,13 @@ def test_degenerate_levels_keep_every_copy():
     """At the zone centre with a term that leaves the first shell's sine triplet
     untouched, the solver still returns whole multiplets."""
     _, _, cov = covariant_torus(cubic_grid(5))
-    pencil = cov.sparsePencil()
+    pencil = cov.sparse_pencil()
     size = pencil.A.shape[0]
     P = pencil.M @ np.ones((size, 1), dtype=complex)                  # couples to the constant only
     D = np.array([[0.7 + 0j]])
     dense = pencil.A.toarray() + P @ D @ P.conj().T
     reference = scipy.linalg.eigh(dense, pencil.M.toarray(), eigvals_only=True)[:7]
-    read = ch.SparsePencilSolver.lowestWithLowRank(pencil.A, pencil.M, P, D, 7, -1.0)
+    read = ch.SparsePencilSolver.lowest_with_low_rank(pencil.A, pencil.M, P, D, 7, -1.0)
     assert np.array(read.eigenvalues.values).real == pytest.approx(reference, abs=1e-8 * reference.max())
     assert np.ptp(reference[1:7]) < 1e-9 * reference[1]             # the six-fold shell, all copies found
 
@@ -69,6 +69,6 @@ def test_degenerate_levels_keep_every_copy():
 def test_refusals():
     pencil, P, D, _ = _problem()
     with pytest.raises(ValueError, match="n x r"):
-        ch.SparsePencilSolver.lowestWithLowRank(pencil.A, pencil.M, P[:-1], D, 3, -50.0)
+        ch.SparsePencilSolver.lowest_with_low_rank(pencil.A, pencil.M, P[:-1], D, 3, -50.0)
     with pytest.raises(ValueError, match="not Hermitian"):
-        ch.SparsePencilSolver.lowestWithLowRank(pencil.A, pencil.M, P, D + 1j * np.eye(5), 3, -50.0)
+        ch.SparsePencilSolver.lowest_with_low_rank(pencil.A, pencil.M, P, D + 1j * np.eye(5), 3, -50.0)

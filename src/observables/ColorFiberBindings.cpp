@@ -72,7 +72,7 @@ margin, and the pre-declared convex weighting that produced the score.)doc")
       "The triangle-anchor gate required before any colour-specific "
       "kernel runs. A default-constructed gate is closed, so a caller "
       "that supplies nothing is refused rather than admitted; the "
-      "only way to open one is ColorAnchor.gateFor, which applies "
+      "only way to open one is ColorAnchor.gate_for, which applies "
       "the same acceptance predicate the quark verdict uses.")
       .def(py::init<>())
       .def_readonly("accepted", &AnchorGate::accepted)
@@ -114,68 +114,68 @@ traceless, Tr(lambda_a lambda_b) = 2 delta_ab; [E_ij, E_kl] = delta_jk E_il
 - delta_il E_kj on both representations; det(gC) = det(C) for g in SU(3);
 ||v1 ^ v2 ^ v3||^2 = det[<v_i, v_j>].  Pure constants and reads -- no
 solver call, no mutation, nothing enters the emergence objective.)doc")
-      .def_static("sectorProjector", &ColorFiber::sectorProjector,
+      .def_static("sector_projector", &ColorFiber::sectorProjector,
                   py::arg("occupation"),
                   "The 8x8 projector onto total occupation N (0..3; zero "
                   "matrix above 3).  Delegates to "
-                  "quantum.ExteriorAlgebra.sectorProjector on three modes.")
-      .def_static("vacuumProjector", &ColorFiber::vacuumProjector,
+                  "quantum.ExteriorAlgebra.sector_projector on three modes.")
+      .def_static("vacuum_projector", &ColorFiber::vacuumProjector,
                   "Lambda^0: the even vacuum singlet (N=0).")
-      .def_static("tripletProjector", &ColorFiber::tripletProjector,
+      .def_static("triplet_projector", &ColorFiber::tripletProjector,
                   "Lambda^1: the odd fundamental color triplet 3 (N=1).")
-      .def_static("antiTripletProjector", &ColorFiber::antiTripletProjector,
+      .def_static("anti_triplet_projector", &ColorFiber::antiTripletProjector,
                   "Lambda^2: the even antisymmetric anti-triplet 3bar (N=2).")
-      .def_static("singletProjector", &ColorFiber::singletProjector,
+      .def_static("singlet_projector", &ColorFiber::singletProjector,
                   "Lambda^3: the odd top-wedge color singlet (N=3).")
-      .def_static("creationMatrix", &ColorFiber::creationMatrix,
+      .def_static("creation_matrix", &ColorFiber::creationMatrix,
                   py::arg("mode"), "The 8x8 creation matrix a_i^dag.")
-      .def_static("annihilationMatrix", &ColorFiber::annihilationMatrix,
+      .def_static("annihilation_matrix", &ColorFiber::annihilationMatrix,
                   py::arg("mode"), "The 8x8 annihilation matrix a_i.")
-      .def_static("hoppingMatrix", &ColorFiber::hoppingMatrix,
+      .def_static("hopping_matrix", &ColorFiber::hoppingMatrix,
                   py::arg("i"), py::arg("j"),
                   "The 8x8 bilinear E_ij = a_i^dag a_j (exact gl(3) "
                   "commutation relations on the whole Fock space).")
-      .def_static("tripletBasisIndices", &ColorFiber::tripletBasisIndices,
+      .def_static("triplet_basis_indices", &ColorFiber::tripletBasisIndices,
                   "The Fock indices (1, 2, 4) identifying the N=1 sector "
                   "with C^3.")
-      .def_static("restrictToTriplet", &ColorFiber::restrictToTriplet,
+      .def_static("restrict_to_triplet", &ColorFiber::restrictToTriplet,
                   py::arg("op"),
                   "Restrict an 8x8 Fock operator to the one-occupation "
-                  "sector as a 3x3 matrix; restrictToTriplet(dGamma(M)) = M "
+                  "sector as a 3x3 matrix; restrict_to_triplet(d_gamma(M)) = M "
                   "exactly.")
-      .def_static("matrixUnit", &ColorFiber::matrixUnit,
+      .def_static("matrix_unit", &ColorFiber::matrixUnit,
                   py::arg("i"), py::arg("j"),
                   "The 3x3 matrix unit E_ij on the one-occupation sector.")
-      .def_static("dGamma", &ColorFiber::dGamma, py::arg("m"),
-                  "Second quantization dGamma(M) = sum_ij M_ij a_i^dag a_j "
+      .def_static("d_gamma", &ColorFiber::dGamma, py::arg("m"),
+                  "Second quantization d_gamma(M) = sum_ij M_ij a_i^dag a_j "
                   "of a 3x3 one-particle matrix (8x8).")
-      .def_static("gellMann", &ColorFiber::gellMann, py::arg("a"),
+      .def_static("gell_mann", &ColorFiber::gellMann, py::arg("a"),
                   "lambda_a for a in 1..8, assembled from the matrix units "
                   "(lambda_3 = E11-E22, lambda_8 = (E11+E22-2E33)/sqrt(3)).")
-      .def_static("adjointOctetProjector", &ColorFiber::adjointOctetProjector,
+      .def_static("adjoint_octet_projector", &ColorFiber::adjointOctetProjector,
                   "The 9x9 orthogonal projector onto the traceless "
                   "(adjoint-octet) part of a 3x3 bilinear, acting on "
                   "column-major vec(M).")
-      .def_static("tracelessPart", &ColorFiber::tracelessPart, py::arg("m"),
+      .def_static("traceless_part", &ColorFiber::tracelessPart, py::arg("m"),
                   "M - (tr M / 3) I: the octet component of a bilinear.")
-      .def_static("adjointSingletProjector",
+      .def_static("adjoint_singlet_projector",
                   &ColorFiber::adjointSingletProjector,
                   "The 9x9 projector vec(I)vec(I)^dag/3 onto the trace "
                   "(singlet) part -- implemented literally as I9 - "
-                  "adjointOctetProjector(), so P1 + P8 = I9 resolves "
+                  "adjoint_octet_projector(), so P1 + P8 = I9 resolves "
                   "3 x 3bar = 1 + 8 exactly.")
-      .def_static("octetBilinear", &ColorFiber::octetBilinear,
+      .def_static("octet_bilinear", &ColorFiber::octetBilinear,
                   py::arg("i"), py::arg("j"),
                   "The 8x8 traceless even bilinear T_ij = "
                   "a_i^dag a_j - (delta_ij/3) N on Fock space "
-                  "(= dGamma(tracelessPart(matrixUnit(i, j)))): "
+                  "(= d_gamma(traceless_part(matrix_unit(i, j)))): "
                   "conserves N (even fermion parity), and "
                   "the nine T_ij span the octet.")
-      .def_static("adjointCasimirMatrix", &ColorFiber::adjointCasimirMatrix,
+      .def_static("adjoint_casimir_matrix", &ColorFiber::adjointCasimirMatrix,
                   "The 9x9 quadratic Casimir of the adjoint action, "
                   "C = sum_a K_a^2 with K_a vec(M) = vec([lambda_a/2, M]); "
                   "exactly C = 3 P8.")
-      .def_static("adjointCasimir", &ColorFiber::adjointCasimir,
+      .def_static("adjoint_casimir", &ColorFiber::adjointCasimir,
                   py::arg("m"),
                   "The adjoint-Casimir Rayleigh quotient in [0, 3]: exactly "
                   "3 for traceless M, 0 for M ~ I, NaN for M = 0.")
@@ -183,68 +183,68 @@ solver call, no mutation, nothing enters the emergence objective.)doc")
                   "The primitive cube root of unity as its algebraic value "
                   "(-1 + i sqrt(3))/2 (never exp), so 1 + omega + omega^2 "
                   "cancels exactly in floating point.")
-      .def_static("fourierFrame", &ColorFiber::fourierFrame,
+      .def_static("fourier_frame", &ColorFiber::fourierFrame,
                   "The exact unitary Fourier frame F3 with entries "
                   "omega^{jk}/sqrt(3), assembled from the algebraic table "
                   "{1, omega, omega^2} by exponent jk mod 3.")
-      .def_static("fourierBasisVector", &ColorFiber::fourierBasisVector,
+      .def_static("fourier_basis_vector", &ColorFiber::fourierBasisVector,
                   py::arg("k"),
                   "Column k of F3: the Z3 character vector "
                   "(1, omega^k, omega^{2k})/sqrt(3).")
-      .def_static("omegaPhaseState", &ColorFiber::omegaPhaseState,
+      .def_static("omega_phase_state", &ColorFiber::omegaPhaseState,
                   "The phase pattern (1, omega, omega^2)/sqrt(3), "
                   "identified as one color basis vector "
-                  "(fourierBasisVector(1)); its cyclic orbit under pointwise "
+                  "(fourier_basis_vector(1)); its cyclic orbit under pointwise "
                   "Z3 powers is the exact orthonormal triad = the columns of "
                   "F3.")
       .def_static("perimeter", &ColorFiber::perimeter, py::arg("z"),
                   "The triangle perimeter sum_i |z_i|^{1/2} of three stored "
                   "complex squared lengths (the L1 geometric datum).")
-      .def_static("perimeterNormalized", &ColorFiber::perimeterNormalized,
+      .def_static("perimeter_normalized", &ColorFiber::perimeterNormalized,
                   py::arg("z"),
                   "Rescale the squared lengths so the perimeter is one -- a "
                   "geometric scale gauge (L1), never a state normalization.")
-      .def_static("hilbertNorm", &ColorFiber::hilbertNorm, py::arg("z"),
+      .def_static("hilbert_norm", &ColorFiber::hilbertNorm, py::arg("z"),
                   "The Hilbert L2 norm ||z||_2.")
-      .def_static("hilbertNormalized", &ColorFiber::hilbertNormalized,
+      .def_static("hilbert_normalized", &ColorFiber::hilbertNormalized,
                   py::arg("z"),
                   "z / ||z||_2 with <c|c> = 1 -- the state normalization, "
                   "distinct from the perimeter gauge.")
-      .def_static("colorVector", &ColorFiber::colorVector, py::arg("z"),
+      .def_static("color_vector", &ColorFiber::colorVector, py::arg("z"),
                   "The color vector from the stored complex squared "
                   "lengths: c = z / ||z||_2.")
-      .def_static("colorWedge",
+      .def_static("color_wedge",
                   py::overload_cast<const Eigen::Matrix3cd&>(
                       &ColorFiber::colorWedge),
                   py::arg("c"),
                   "The color-wedge (singlet) amplitude det C = eps_ijk C_i1 "
                   "C_j2 C_k3; det(gC) = det(C) for g in SU(3).")
-      .def_static("colorWedgeColumns",
+      .def_static("color_wedge_columns",
                   py::overload_cast<const Eigen::Vector3cd&,
                                     const Eigen::Vector3cd&,
                                     const Eigen::Vector3cd&>(
                       &ColorFiber::colorWedge),
                   py::arg("a"), py::arg("b"), py::arg("c"),
                   "colorWedge of three explicit color columns.")
-      .def_static("singletGram", &ColorFiber::singletGram, py::arg("c"),
+      .def_static("singlet_gram", &ColorFiber::singletGram, py::arg("c"),
                   "det(C^dag C) = |det C|^2 = ||c1 ^ c2 ^ c3||^2: exactly "
                   "zero for duplicate color modes, exactly one for an "
                   "orthonormal triad.")
-      .def_static("isSpecialUnitary", &ColorFiber::isSpecialUnitary,
+      .def_static("is_special_unitary", &ColorFiber::isSpecialUnitary,
                   py::arg("g"), py::arg("tol") = 1e-12,
                   "Certify g in SU(3): ||g^dag g - I||_max <= tol and "
                   "|det g - 1| <= tol.")
-      .def_static("sectorWeights", &ColorFiber::sectorWeights,
+      .def_static("sector_weights", &ColorFiber::sectorWeights,
                   py::arg("state"),
                   "The four occupation-sector weights of an 8-dimensional "
                   "Fock vector (their sum is ||psi||^2 exactly).")
-      .def_static("octetRead", &ColorFiber::octetRead, py::arg("m"),
+      .def_static("octet_read", &ColorFiber::octetRead, py::arg("m"),
                   "The octet/singlet Frobenius weights of a 3x3 bilinear.")
-      .def_static("verifyConstantAlgebra", &ColorFiber::verifyConstantAlgebra,
+      .def_static("verify_constant_algebra", &ColorFiber::verifyConstantAlgebra,
                   "Re-derive every constant-algebra identity and return the "
                   "maximum absolute residual (run at startup in debug "
                   "builds; callable in every build).")
-      .def_static("constantAlgebraCertificate",
+      .def_static("constant_algebra_certificate",
                   &ColorFiber::constantAlgebraCertificate,
                   "The AlgebraicallyExact certificate of the constant "
                   "algebra (measured verifyConstantAlgebra residual against "
@@ -280,18 +280,18 @@ the emergence objective; contains no transport code.)doc")
       .def("triangles", &ColorAnchor::triangles,
            "The declared oriented triangles (immutable).")
       .def("weights", &ColorAnchor::weights, "The declared convex weights.")
-      .def("weightingId", &ColorAnchor::weightingId,
+      .def("weighting_id", &ColorAnchor::weightingId,
            "'uniform' or 'declared'.")
-      .def("overlapsAnother", &ColorAnchor::overlapsAnother, py::arg("index"),
+      .def("overlaps_another", &ColorAnchor::overlapsAnother, py::arg("index"),
            "Whether declared triangle `index` shares a boundary edge with "
            "another declared triangle: the overlap relation the "
            "determinant-phase coherence is recorded on.")
-      .def("overlappingTriangleCount", &ColorAnchor::overlappingTriangleCount,
+      .def("overlapping_triangle_count", &ColorAnchor::overlappingTriangleCount,
            "How many declared triangles overlap another (0 on a disjoint "
            "atlas, where the coherence is unknown).")
       .def("sealed", &ColorAnchor::sealed,
            "True once any data have been evaluated (weighting sealed).")
-      .def("declareWeights", &ColorAnchor::declareWeights, py::arg("weights"),
+      .def("declare_weights", &ColorAnchor::declareWeights, py::arg("weights"),
            "Replace the declared convex weighting; allowed only before the "
            "first evaluate().  Afterwards post-hoc weight selection is "
            "rejected (raises).")
@@ -306,7 +306,7 @@ the emergence objective; contains no transport code.)doc")
                   "not a zero score), its calibration certificate holds, "
                   "and both the atlas score and the determinant-phase "
                   "coherence meet their floors.")
-      .def_static("gateFor", &ColorAnchor::gateFor, py::arg("profile"),
+      .def_static("gate_for", &ColorAnchor::gateFor, py::arg("profile"),
                   py::arg("min_score") = ColorAnchor::kDefaultMinScore,
                   py::arg("min_phase_coherence") =
                       ColorAnchor::kDefaultMinPhaseCoherence,
@@ -321,7 +321,7 @@ the emergence objective; contains no transport code.)doc")
            "vector, the domain where the [0,1] calibration bound is "
            "exact.  The frame must be |W|-orthonormal within "
            "gram_tolerance (use orthonormalizeFrame).")
-      .def("evaluateMatrix",
+      .def("evaluate_matrix",
            py::overload_cast<const Eigen::MatrixXcd&, const Eigen::MatrixXcd&,
                              double>(&ColorAnchor::evaluate),
            py::arg("frame"), py::arg("weight"),
@@ -329,23 +329,23 @@ the emergence objective; contains no transport code.)doc")
            "Evaluate against a general Hermitian ExE weight matrix; the "
            "calibration bound is checked (calibration_margin), not "
            "assumed.")
-      .def_static("anchorMatrix", &ColorAnchor::anchorMatrix,
+      .def_static("anchor_matrix", &ColorAnchor::anchorMatrix,
                   py::arg("frame"), py::arg("edge_weights"), py::arg("tri"),
                   "The raw 3x3 weighted anchor matrix A_tau = |W_tau|^{1/2} "
                   "R_tau Phi of one triangle (diagonal weights; no "
                   "normalization check).")
-      .def_static("orthonormalizeFrame",
+      .def_static("orthonormalize_frame",
                   py::overload_cast<const Eigen::MatrixXcd&,
                                     const Eigen::VectorXd&>(
                       &ColorAnchor::orthonormalizeFrame),
                   py::arg("frame"), py::arg("edge_weights"),
-                  "The |W|-orthonormalized frame Phi (Phi^dag |W| "
+                  "The |W|-orthonormalized frame phi (Phi^dag |W| "
                   "Phi)^{-1/2} for a diagonal per-edge weight vector.")
-      .def_static("orthonormalizeFrameMatrix",
+      .def_static("orthonormalize_frame_matrix",
                   py::overload_cast<const Eigen::MatrixXcd&,
                                     const Eigen::MatrixXcd&>(
                       &ColorAnchor::orthonormalizeFrame),
                   py::arg("frame"), py::arg("weight"),
-                  "Matrix-weight overload of orthonormalizeFrame (Hermitian "
+                  "Matrix-weight overload of orthonormalize_frame (Hermitian "
                   "W; uses the eigen-modulus |W|).");
 }

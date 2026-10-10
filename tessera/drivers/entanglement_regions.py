@@ -5,8 +5,8 @@ network: the co-information ledger and monogamy of mutual information.
 
 Every subset A of the qubits gets its von Neumann entropy S(A) in nats
 (2^n - 1 numbers; the whole set has S_global), from
-``tessera.quantum.partialTrace`` and
-``tessera.quantum.MutualInformation.vonNeumannEntropy``. The mutual
+``tessera.quantum.partial_trace`` and
+``tessera.quantum.MutualInformation.von_neumann_entropy``. The mutual
 information between two disjoint subsets is I(A:B) = S(A) + S(B) - S(AB), so
 these numbers carry all (3^n - 2^(n+1) + 1)/2 block mutual informations.
 Only mutual information is used: adding sum_{i in A} c_i to every S(A)

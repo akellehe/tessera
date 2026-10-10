@@ -25,12 +25,12 @@ BASE = [[0, 1], [1, 2], [0, 2]]
 
 @pytest.fixture
 def whitney_default():
-    previous = HL.defaultMetricSource()
-    HL.setDefaultMetricSource(Whitney)
+    previous = HL.default_metric_source()
+    HL.set_default_metric_source(Whitney)
     try:
         yield
     finally:
-        HL.setDefaultMetricSource(previous)
+        HL.set_default_metric_source(previous)
 
 
 def _edge_length(a, b):
@@ -43,15 +43,15 @@ def _edge_length(a, b):
 def tube(layers):
     """A tube over the triangle whose i-th circle is layers[i] (three vertex ids)."""
     n = len(layers) - 1
-    cells = tessera.Spacetime.prismCells(BASE, n, {})
+    cells = tessera.Spacetime.prism_cells(BASE, n, {})
     relabel = {i * 3 + j: layers[i][j] for i in range(n + 1) for j in range(3)}
     cells = [[relabel[v] for v in c] for c in cells]
-    st = tessera.Spacetime.fromVertexTuples(2, cells, 1.0, 0.0)
-    for e in st.getEdgeList().toVector():
-        a, b = e.getSource().getId(), e.getTarget().getId()
-        e.setLength(math.sqrt(_edge_length(a, b)))
-        e.setPhase(0.0)
-    st.materializeFacets()
+    st = tessera.Spacetime.from_vertex_tuples(2, cells, 1.0, 0.0)
+    for e in st.get_edge_list().to_vector():
+        a, b = e.get_source().get_id(), e.get_target().get_id()
+        e.set_length(math.sqrt(_edge_length(a, b)))
+        e.set_phase(0.0)
+    st.materialize_facets()
     return st
 
 
@@ -77,9 +77,9 @@ class TestAssembly:
     def test_assembly_is_exact_on_shared_cells(self, whitney_default):
         a = PL.assemble([W0(), W1()])
         assert a.dimension() == 2
-        assert sorted(map(tuple, a.sharedCells[0])) == [(6,), (7,), (8,)]
-        assert sorted(map(tuple, a.sharedCells[1])) == [(6, 7), (6, 8), (7, 8)]
-        assert a.sharedCells[2] == []
+        assert sorted(map(tuple, a.shared_cells[0])) == [(6,), (7,), (8,)]
+        assert sorted(map(tuple, a.shared_cells[1])) == [(6, 7), (6, 8), (7, 8)]
+        assert a.shared_cells[2] == []
         for k in range(3):
             assert PL.assembly_residual(a, k) <= 1e-14
         assert math.isnan(a.epsilon)
@@ -89,9 +89,9 @@ class TestAssembly:
         with pytest.raises(ValueError, match="epsilon"):
             PL.assemble([W0(), W1()], [0.1, 0.2])
         w1 = W1()
-        for e in w1.getEdgeList().toVector():
-            if {e.getSource().getId(), e.getTarget().getId()} == {6, 7}:
-                e.setLength(math.sqrt(2.5))
+        for e in w1.get_edge_list().to_vector():
+            if {e.get_source().get_id(), e.get_target().get_id()} == {6, 7}:
+                e.set_length(math.sqrt(2.5))
         with pytest.raises(ValueError, match="shared edge"):
             PL.assemble([W0(), w1])
 
@@ -114,15 +114,15 @@ class TestBoundaryResponse:
             return PL.bordered_response(a, 1, up, low, lam)
 
         def union_coordinates(a, res):
-            n = a.complex.numSimplices(1)
-            edges = a.complex.kSimplexVertices(1)
-            verts = a.complex.kSimplexVertices(0)
+            n = a.complex.num_simplices(1)
+            edges = a.complex.k_simplex_vertices(1)
+            verts = a.complex.k_simplex_vertices(0)
             out = []
             for i in res.interface:
                 if i < n:
                     out.append(whole.cell_index(1, edges[i]))
                 else:
-                    out.append(whole.complex.numSimplices(1) + whole.cell_index(0, verts[i - n]))
+                    out.append(whole.complex.num_simplices(1) + whole.cell_index(0, verts[i - n]))
             return out
 
         full = bordered(whole, [{0, 1, 2}, {12, 13, 14}])
@@ -135,14 +135,14 @@ class TestBoundaryResponse:
         # eliminating the boundary vertices gives -F_B(lambda) on the boundary edges
         outer_edges = PL.indices_of(whole, 1, circle_cells({0, 1, 2}) + circle_cells({12, 13, 14}))
         edge_level = PL.boundary_response(whole, 1, outer_edges, lam)
-        upper = PL.upper_response(full, whole.complex.numSimplices(1))
+        upper = PL.upper_response(full, whole.complex.num_simplices(1))
         np.testing.assert_allclose(upper, -edge_level.response, atol=1e-10 * np.abs(edge_level.response).max())
 
     def test_bordered_pencil_schur_complement_is_the_pencil(self, whitney_default):
         a = PL.assemble([W0()])
         lam = 0.21
         B = PL.bordered_pencil(a, 1, lam)
-        n = B.upperCount
+        n = B.upper_count
         S = B.matrix[:n, :n] - B.matrix[:n, n:] @ np.linalg.solve(B.matrix[n:, n:], B.matrix[n:, :n])
         P = PL.pencil(a, 1)
         np.testing.assert_allclose(S, lam * P.B - P.A, atol=1e-11 * np.abs(P.A).max())
@@ -156,21 +156,21 @@ class TestLevels:
         assert fA.certificate.rank == 1
         c = PL.assemble([WC()])
         level = PL.level(c, 1, [fA, fB], 0.0)
-        assert level.fibersDisjoint
-        assert level.blockRanks == [1, 1] and level.blockOffsets == [0, 1]
+        assert level.fibers_disjoint
+        assert level.block_ranks == [1, 1] and level.block_offsets == [0, 1]
         G = level.restriction.gram
         assert G.shape == (2, 2)
         assert G[0, 1] == 0 and G[1, 0] == 0                      # exactly, no shared top simplex
         assert abs(G[0, 0]) > 0 and abs(G[1, 1]) > 0
-        assert np.abs(level.constraintGram[0, 1]) > 1e-12            # coupled through the eliminated bulk
-        assert level.J.shape == (6, 2) and level.Jdual.shape == (6, 2)
+        assert np.abs(level.constraint_gram[0, 1]) > 1e-12            # coupled through the eliminated bulk
+        assert level.J.shape == (6, 2) and level.j_dual.shape == (6, 2)
         assert level.restriction.A.shape == (2, 2)
         # A glued interface: W_A's output fiber and W_C's own fiber on the SAME
         # circle overlap on their cells, so the level is the labeled sum with the
         # off-diagonal Gram block carried exactly (never a direct sum).
         fC_in = PL.read_boundary_fiber(c, 1, PL.harmonic_contour(c, 1), circle_cells({0, 1, 2}))
         glued = PL.level(c, 1, [fA, fC_in], 0.0)
-        assert not glued.fibersDisjoint
+        assert not glued.fibers_disjoint
         assert np.abs(glued.restriction.gram[0, 1]) > 1e-12
         np.testing.assert_allclose(glued.restriction.gram, glued.restriction.gram.T, atol=1e-12)
 
@@ -178,7 +178,7 @@ class TestLevels:
         _, fA = harmonic_fiber(WA(), {0, 1, 2})
         _, fB = harmonic_fiber(WB(), {6, 7, 8})
         t = PL.transfer(PL.assemble([WC()]), 1, fA, fB)
-        assert t.reversalResidual <= 1e-8
+        assert t.reversal_residual <= 1e-8
         assert t.forward.shape == (1, 1) and t.reverse.shape == (1, 1)
         np.testing.assert_allclose(t.reverse, t.forward.T, atol=1e-10 * max(1.0, np.abs(t.forward).max()))
 
@@ -192,16 +192,16 @@ class TestLevels:
         d = PL.assemble([WD()])
         level2 = PL.level(d, 1, [f_out], 0.0)
         assert level2.J.shape == (3, 1) and level2.restriction.A.shape == (1, 1)
-        assert level2.interfaceCells == PL.indices_of(d, 1, circle_cells({6, 7, 8}))
-        assert set(level2.interiorCells).isdisjoint(level2.interfaceCells)
-        assert len(level2.interiorCells) + len(level2.interfaceCells) == d.complex.numSimplices(1)
+        assert level2.interface_cells == PL.indices_of(d, 1, circle_cells({6, 7, 8}))
+        assert set(level2.interior_cells).isdisjoint(level2.interface_cells)
+        assert len(level2.interior_cells) + len(level2.interface_cells) == d.complex.num_simplices(1)
         for lv in (level1, level2):
             # at the fiber's own eigenvalue the response is singular by construction,
             # so the determinant identity is checked off-resonance; the solve is exact
-            assert not lv.response.interiorSingular and lv.response.solveResidual < 1e-10
+            assert not lv.response.interior_singular and lv.response.solve_residual < 1e-10
             assert math.isfinite(lv.restriction.gram[0, 0].real)
         off = PL.level(d, 1, [f_out], 0.3)
-        assert off.response.determinantResidual < 1e-8
+        assert off.response.determinant_residual < 1e-8
 
     def test_level_refuses_foreign_cells(self, whitney_default):
         _, fA = harmonic_fiber(WA(), {0, 1, 2})
@@ -225,7 +225,7 @@ class TestMultiCobordismSurface:
         # a short-budget pin of the two fibers reports its fit (convergence is #911's gate)
         result = node.pin_input_fibers(1, 1e-8, 1, 0, 0, 5)
         assert math.isfinite(result.residual) and result.degree == 1
-        assert len(result.support_cells) == 6 and len(result.state) == PL.assemble([WC()]).complex.numSimplices(1)
+        assert len(result.support_cells) == 6 and len(result.state) == PL.assemble([WC()]).complex.num_simplices(1)
         pinned = {tuple(c) for c in result.support_cells}
         assert pinned == {tuple(sorted(c)) for c in circle_cells({0, 1, 2}) + circle_cells({6, 7, 8})}
         with pytest.raises(ValueError, match="rank"):
@@ -273,7 +273,7 @@ class TestBipartiteAtLevelOne:
         assert result.converged, f"level-1 fit not converged: residual {result.residual:.3e}"
         c = PL.assemble([node.st])
         t = PL.transfer(c, 1, fA, fB)
-        assert t.reversalResidual <= 1e-8
+        assert t.reversal_residual <= 1e-8
 
 
 class TestDagPiping:

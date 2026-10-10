@@ -45,9 +45,9 @@ def _from_simplices(num_vertices, simplices):
     metric = tessera.Metric(True, sig)
     st = tessera.Spacetime(metric, tessera.HERMITIAN_WEIGHTED, 1.0, 1.0,
                            tessera.PREFERRED, tessera.Toroid())
-    verts = [st.createVertex(i) for i in range(num_vertices)]
+    verts = [st.create_vertex(i) for i in range(num_vertices)]
     for simplex in simplices:
-        st.createSimplex([verts[i] for i in simplex])
+        st.create_simplex([verts[i] for i in simplex])
     return st
 
 
@@ -62,12 +62,12 @@ def _testbed():
 
 
 def _vertices_by_id(st):
-    return {v.getId(): v for v in st.getVertexList().toVector()}
+    return {v.get_id(): v for v in st.get_vertex_list().to_vector()}
 
 
 def _edge(st, a, b):
-    for e in st.getEdgeList().toVector():
-        if {e.getSource().getId(), e.getTarget().getId()} == {a, b}:
+    for e in st.get_edge_list().to_vector():
+        if {e.get_source().get_id(), e.get_target().get_id()} == {a, b}:
             return e
     raise KeyError((a, b))
 
@@ -75,10 +75,10 @@ def _edge(st, a, b):
 def _set_phases(st, phases):
     """Assign edge phases from a {frozenset({a, b}): phi} map; unit positive
     weights everywhere, phase 0 on edges not in the map."""
-    for e in st.getEdgeList().toVector():
-        key = frozenset({e.getSource().getId(), e.getTarget().getId()})
-        e.setLength(cmath.sqrt(complex(1.0)))
-        e.setPhase(phases.get(key, 0.0))
+    for e in st.get_edge_list().to_vector():
+        key = frozenset({e.get_source().get_id(), e.get_target().get_id()})
+        e.set_length(cmath.sqrt(complex(1.0)))
+        e.set_phase(phases.get(key, 0.0))
 
 
 # --------------------------------------------------------------------------- #
@@ -97,10 +97,10 @@ def _cycle_flux(st, cycle):
     for k in range(n):
         a, b = cycle[k], cycle[(k + 1) % n]
         e = _edge(st, a, b)
-        if e.getSource().getId() == a and e.getTarget().getId() == b:
-            total += e.getPhase().real
+        if e.get_source().get_id() == a and e.get_target().get_id() == b:
+            total += e.get_phase().real
         else:
-            total -= e.getPhase().real
+            total -= e.get_phase().real
     return total
 
 
@@ -109,7 +109,7 @@ def _hodge_flux(st, cycle):
     adjacency: arg(A[i,j]) is +phase along source->target and -phase reversed
     (unit weights), so the directed sum around the cycle is the same oriented
     holonomy the operator encodes in L = D - A."""
-    ids = sorted(v.getId() for v in st.getVertexList().toVector())
+    ids = sorted(v.get_id() for v in st.get_vertex_list().to_vector())
     idx = {vid: i for i, vid in enumerate(ids)}
     n = len(ids)
     A = np.array(cob.HodgeLaplacian(st).adjacency(), dtype=complex).reshape(n, n)
@@ -137,20 +137,20 @@ def _close_mod_2pi(a, b, tol=1e-9):
 def _holonomy(st, cycle):
     wl = tessera.WilsonLoop(st)
     by_id = _vertices_by_id(st)
-    r = wl.evaluateU1Connection([by_id[c] for c in cycle])
-    if not hasattr(r, "loopSize"):  # degenerate/open cycles return {} unchanged
+    r = wl.evaluate_u1_connection([by_id[c] for c in cycle])
+    if not hasattr(r, "loop_size"):  # degenerate/open cycles return {} unchanged
         return r
     # WilsonResult.value is complex-typed for the deficit-angle mode's sake and
-    # in this mode holds the DERIVED residualPhase(), a real angle; this asserts
+    # in this mode holds the DERIVED residual_phase(), a real angle; this asserts
     # that rather than assuming it. The datum itself -- the unreduced complex
     # accumulation -- is passed through untouched for the tests that read it.
     v = complex(r.value)
     assert v.imag == 0.0, f"derived residual phase grew an imaginary part: {v}"
-    return types.SimpleNamespace(value=v.real, loopSize=r.loopSize, read=r)
+    return types.SimpleNamespace(value=v.real, loopSize=r.loop_size, read=r)
 
 
 # --------------------------------------------------------------------------- #
-# Holonomy vs the hand oracle, and total flux Phi (mod 2*pi)
+# Holonomy vs the hand oracle, and total flux phi (mod 2*pi)
 # --------------------------------------------------------------------------- #
 class TestHolonomyVsOracle(unittest.TestCase):
 
@@ -158,7 +158,7 @@ class TestHolonomyVsOracle(unittest.TestCase):
         st = _triangle()
         _set_phases(st, {})
         r = _holonomy(st, [0, 1, 2])
-        self.assertEqual(r.loopSize, 3)
+        self.assertEqual(r.loop_size, 3)
         self.assertAlmostEqual(r.value, 0.0, places=12)
 
     def test_matches_hand_oracle_single_edge(self):
@@ -169,7 +169,7 @@ class TestHolonomyVsOracle(unittest.TestCase):
                 st = _triangle()
                 _set_phases(st, {frozenset({0, 1}): phi})
                 r = _holonomy(st, [0, 1, 2])
-                self.assertEqual(r.loopSize, 3)
+                self.assertEqual(r.loop_size, 3)
                 self.assertTrue(_close_mod_2pi(r.value, _cycle_flux(st, [0, 1, 2])))
 
     def test_the_non_compact_part_carries_no_winding_but_is_still_measured(self):
@@ -189,12 +189,12 @@ class TestHolonomyVsOracle(unittest.TestCase):
                 t = _holonomy(twisted, [0, 1, 2])
                 # The winding is untouched -- the true half of the old claim.
                 self.assertTrue(_close_mod_2pi(t.value, c.value))
-                self.assertEqual(t.read.windingNumber(), c.read.windingNumber())
+                self.assertEqual(t.read.winding_number(), c.read.winding_number())
                 # And the modulus is NOT: the scale is measured, not discarded.
-                self.assertAlmostEqual(c.read.holonomyModulus(), 1.0, places=12)
-                self.assertAlmostEqual(t.read.holonomyModulus(),
+                self.assertAlmostEqual(c.read.holonomy_modulus(), 1.0, places=12)
+                self.assertAlmostEqual(t.read.holonomy_modulus(),
                                        math.exp(-scale), places=12)
-                self.assertNotAlmostEqual(t.read.holonomyModulus(), 1.0,
+                self.assertNotAlmostEqual(t.read.holonomy_modulus(), 1.0,
                                           places=6)
 
     def test_a_purely_non_compact_connection_is_measured_not_trivial(self):
@@ -205,26 +205,26 @@ class TestHolonomyVsOracle(unittest.TestCase):
         _set_phases(st, {frozenset({0, 1}): complex(0.0, 1.7),
                          frozenset({1, 2}): complex(0.0, -0.4)})
         r = _holonomy(st, [0, 1, 2])
-        sigma = complex(r.read.connectionAccumulation)
+        sigma = complex(r.read.connection_accumulation)
         self.assertAlmostEqual(r.value, 0.0, places=12)   # no winding
-        self.assertEqual(r.read.windingNumber(), 0)
+        self.assertEqual(r.read.winding_number(), 0)
         self.assertAlmostEqual(sigma.real, 0.0, places=12)
         # The whole content of this connection lives in the part that used to
         # be thrown away.
         self.assertNotAlmostEqual(sigma.imag, 0.0, places=6)
-        self.assertAlmostEqual(r.read.holonomyModulus(),
+        self.assertAlmostEqual(r.read.holonomy_modulus(),
                                math.exp(-sigma.imag), places=12)
 
     def test_equals_total_flux_mod_2pi(self):
         # Orient the cycle to hit the phased edge forward, so the holonomy is
-        # exactly +Phi (mod 2*pi). Covers Phi outside (-pi, pi] to exercise the
+        # exactly +phi (mod 2*pi). Covers Phi outside (-pi, pi] to exercise the
         # mod-2*pi reduction.
         for phi in (0.0, 1.0, math.pi, 4.0, 2 * math.pi, -5.0, 3 * math.pi):
             with self.subTest(phi=phi):
                 st = _triangle()
                 _set_phases(st, {frozenset({0, 1}): phi})
                 e01 = _edge(st, 0, 1)
-                s, t = e01.getSource().getId(), e01.getTarget().getId()
+                s, t = e01.get_source().get_id(), e01.get_target().get_id()
                 third = ({0, 1, 2} - {s, t}).pop()
                 r = _holonomy(st, [s, t, third])
                 self.assertTrue(_close_mod_2pi(r.value, phi),
@@ -243,7 +243,7 @@ class TestHolonomyVsOracle(unittest.TestCase):
             frozenset({0, 2}): 0.9,   # the (2, 0) leg of the cycle
         })
         r = _holonomy(st, [0, 1, 2])
-        self.assertEqual(r.loopSize, 3)
+        self.assertEqual(r.loop_size, 3)
         self.assertTrue(_close_mod_2pi(r.value, _cycle_flux(st, [0, 1, 2])))
 
     def test_orientation_reversal_negates(self):
@@ -337,8 +337,8 @@ class TestDegenerateCycles(unittest.TestCase):
         _set_phases(st, {})
         by_id = _vertices_by_id(st)
         wl = tessera.WilsonLoop(st)
-        self.assertEqual(wl.evaluateU1Connection([]).loopSize, 0)
-        self.assertEqual(wl.evaluateU1Connection([by_id[0]]).loopSize, 0)
+        self.assertEqual(wl.evaluate_u1_connection([]).loop_size, 0)
+        self.assertEqual(wl.evaluate_u1_connection([by_id[0]]).loop_size, 0)
 
     def test_open_path_is_empty(self):
         # On the testbed, vertices 1 and 3 are not adjacent (no edge 1-3), so a
@@ -348,7 +348,7 @@ class TestDegenerateCycles(unittest.TestCase):
         with self.assertRaises(KeyError):
             _edge(st, 1, 3)  # confirm the gap exists
         r = _holonomy(st, [0, 1, 3])
-        self.assertEqual(r.loopSize, 0)
+        self.assertEqual(r.loop_size, 0)
         self.assertEqual(r.value, 0.0)
 
 
@@ -356,7 +356,7 @@ class TestDegenerateCycles(unittest.TestCase):
 # The datum: the unreduced complex accumulation, and its derived views
 # --------------------------------------------------------------------------- #
 class TestConnectionAccumulation(unittest.TestCase):
-    """`connectionAccumulation` is the complete gauge-invariant datum; the
+    """`connection_accumulation` is the complete gauge-invariant datum; the
     holonomy, its modulus, the residual phase and the winding are derived from
     it. Reducing mod 2*pi at accumulation time -- what the code used to do --
     destroys the winding irrecoverably, so that is what these pin (#872)."""
@@ -366,23 +366,23 @@ class TestConnectionAccumulation(unittest.TestCase):
         st = _triangle()
         _set_phases(st, phases)
         by_id = _vertices_by_id(st)
-        return tessera.WilsonLoop(st).evaluateU1Connection(
+        return tessera.WilsonLoop(st).evaluate_u1_connection(
             [by_id[c] for c in cycle])
 
     def test_both_components_accumulate(self):
         r = self._read({frozenset({0, 1}): complex(0.4, 0.2),
                         frozenset({1, 2}): complex(0.5, -0.1),
                         frozenset({2, 0}): complex(0.3, 0.05)})
-        sigma = complex(r.connectionAccumulation)
+        sigma = complex(r.connection_accumulation)
         self.assertAlmostEqual(sigma.real, 1.2, places=12)
         self.assertAlmostEqual(sigma.imag, 0.15, places=12)
 
     def test_the_holonomy_reconstructs_from_the_datum(self):
         r = self._read({frozenset({0, 1}): complex(0.4, 0.2),
                         frozenset({1, 2}): complex(0.5, -0.1)})
-        sigma = complex(r.connectionAccumulation)
+        sigma = complex(r.connection_accumulation)
         self.assertEqual(complex(r.holonomy()), cmath.exp(1j * sigma))
-        self.assertEqual(r.holonomyModulus(), math.exp(-sigma.imag))
+        self.assertEqual(r.holonomy_modulus(), math.exp(-sigma.imag))
 
     def test_winding_beyond_two_pi_is_recoverable(self):
         """The test the defect would have failed. `principalAngle` at
@@ -393,11 +393,11 @@ class TestConnectionAccumulation(unittest.TestCase):
                 r = self._read({frozenset({0, 1}): complex(per, 0.0),
                                 frozenset({1, 2}): complex(per, 0.0),
                                 frozenset({2, 0}): complex(per, 0.0)})
-                self.assertEqual(r.windingNumber(), turns)
-                self.assertAlmostEqual(r.residualPhase(), 0.25, places=9)
+                self.assertEqual(r.winding_number(), turns)
+                self.assertAlmostEqual(r.residual_phase(), 0.25, places=9)
                 # The full value is present, not the folded one.
                 self.assertAlmostEqual(
-                    complex(r.connectionAccumulation).real,
+                    complex(r.connection_accumulation).real,
                     TWO_PI * turns + 0.25, places=9)
 
     def test_a_real_connection_has_modulus_exactly_one(self):
@@ -405,8 +405,8 @@ class TestConnectionAccumulation(unittest.TestCase):
         connection gives |H| = 1 exactly -- observed, not imposed."""
         r = self._read({frozenset({0, 1}): complex(0.4, 0.0),
                         frozenset({1, 2}): complex(0.5, 0.0)})
-        self.assertEqual(complex(r.connectionAccumulation).imag, 0.0)
-        self.assertEqual(r.holonomyModulus(), 1.0)
+        self.assertEqual(complex(r.connection_accumulation).imag, 0.0)
+        self.assertEqual(r.holonomy_modulus(), 1.0)
 
     def test_the_derived_angle_is_bit_identical_to_the_hand_oracle(self):
         """`value` is now derived from the complex datum. Re is linear over the
@@ -419,9 +419,9 @@ class TestConnectionAccumulation(unittest.TestCase):
                 st = _triangle()
                 _set_phases(st, phases)
                 by_id = _vertices_by_id(st)
-                r = tessera.WilsonLoop(st).evaluateU1Connection(
+                r = tessera.WilsonLoop(st).evaluate_u1_connection(
                     [by_id[c] for c in (0, 1, 2)])
-                self.assertEqual(complex(r.connectionAccumulation).real,
+                self.assertEqual(complex(r.connection_accumulation).real,
                                  _cycle_flux(st, [0, 1, 2]))
                 self.assertEqual(complex(r.value).real,
                                  _wrap(_cycle_flux(st, [0, 1, 2])))
@@ -440,24 +440,24 @@ class TestConnectionAccumulation(unittest.TestCase):
 
         st = _triangle()
         _set_phases(st, base)
-        for e in st.getEdgeList().toVector():
-            u, v = e.getSource().getId(), e.getTarget().getId()
-            e.setPhase(complex(e.getPhase()) + chi[v] - chi[u])
+        for e in st.get_edge_list().to_vector():
+            u, v = e.get_source().get_id(), e.get_target().get_id()
+            e.set_phase(complex(e.get_phase()) + chi[v] - chi[u])
         by_id = _vertices_by_id(st)
-        after = tessera.WilsonLoop(st).evaluateU1Connection(
+        after = tessera.WilsonLoop(st).evaluate_u1_connection(
             [by_id[c] for c in (0, 1, 2)])
 
-        drift = abs(complex(after.connectionAccumulation)
-                    - complex(before.connectionAccumulation))
+        drift = abs(complex(after.connection_accumulation)
+                    - complex(before.connection_accumulation))
         self.assertLess(drift, 1e-12, f"gauge drift {drift}")
-        self.assertEqual(after.windingNumber(), before.windingNumber())
-        self.assertAlmostEqual(after.holonomyModulus(),
-                               before.holonomyModulus(), places=12)
+        self.assertEqual(after.winding_number(), before.winding_number())
+        self.assertAlmostEqual(after.holonomy_modulus(),
+                               before.holonomy_modulus(), places=12)
         # Guard against a vacuous pass: the phases really did change.
         self.assertGreater(
-            max(abs(complex(e.getPhase()) - base[frozenset(
-                {e.getSource().getId(), e.getTarget().getId()})])
-                for e in st.getEdgeList().toVector()), 0.5)
+            max(abs(complex(e.get_phase()) - base[frozenset(
+                {e.get_source().get_id(), e.get_target().get_id()})])
+                for e in st.get_edge_list().to_vector()), 0.5)
 
     def test_an_unread_cycle_leaves_the_datum_unmeasured(self):
         """NaN, never zero. A zero accumulation would read as a MEASURED
@@ -473,7 +473,7 @@ class TestConnectionAccumulation(unittest.TestCase):
                            ([by_id[0], by_id[1], by_id[3]], "open path")):
             with self.subTest(why=why):
                 sigma = complex(
-                    wl.evaluateU1Connection(cycle).connectionAccumulation)
+                    wl.evaluate_u1_connection(cycle).connection_accumulation)
                 self.assertTrue(math.isnan(sigma.real), f"{why}: {sigma}")
                 self.assertTrue(math.isnan(sigma.imag), f"{why}: {sigma}")
 

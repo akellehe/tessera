@@ -25,7 +25,7 @@ def _make_cdt(n):
     st = tessera.Spacetime(metric, tessera.CDT, 1.0, 1.0, tessera.PREFERRED,
                            tessera.Toroid())
     st.build(n)
-    st.materializeFacets()
+    st.materialize_facets()
     return st
 
 
@@ -41,33 +41,33 @@ class ExactActionGradientTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.st = _make_cdt(80)
-        cls.edges = cls.st.getEdgeList().toVector()
+        cls.edges = cls.st.get_edge_list().to_vector()
         cls.emap, cls.eidx = {}, {}
         for i, e in enumerate(cls.edges):
-            a, b = e.getSource().getId(), e.getTarget().getId()
+            a, b = e.get_source().get_id(), e.get_target().get_id()
             key = (min(a, b), max(a, b))
             cls.emap[key] = e
             cls.eidx[key] = i
         # In 4D the hinges (codim-2) are triangles.
-        cls.hinges = {tuple(sorted(int(v.getId()) for v in s.getVertices())): s
-                      for s in cls.st.getSimplices()
-                      if len(s.getVertices()) == 3}
+        cls.hinges = {tuple(sorted(int(v.get_id()) for v in s.get_vertices())): s
+                      for s in cls.st.get_simplices()
+                      if len(s.get_vertices()) == 3}
 
     def _action(self):
         return complex(tessera.ReggeSolver(
-            self.st, tessera.MatterConfiguration()).dualReggeAction())
+            self.st, tessera.MatterConfiguration()).dual_regge_action())
 
     def _set(self, edge):
         def setter(val):
             if val is None:
-                return (edge.getLength() * edge.getLength()).real
-            edge.setLength(cmath.sqrt(complex(float(val)))); self.st.materializeFacets()
+                return (edge.get_length() * edge.get_length()).real
+            edge.set_length(cmath.sqrt(complex(float(val)))); self.st.materialize_facets()
             return None
         return setter
 
     def test_action_gradient_exact_matches_fd(self):
         rs = tessera.ReggeSolver(self.st, tessera.MatterConfiguration())
-        g = [complex(z) for z in rs.actionGradientExact()]
+        g = [complex(z) for z in rs.action_gradient_exact()]
         self.assertEqual(len(g), len(self.edges))
         worst = 0.0
         saw_complex = False
@@ -82,24 +82,24 @@ class ExactActionGradientTest(unittest.TestCase):
     def test_deficit_gradient_matches_fd_complex_hinge(self):
         # the most-complex-deficit hinge: exercises the boost branch of d(eps)/dl^2
         hk = max(self.hinges, key=lambda k: abs(
-            complex(self.hinges[k].deficitAngle()).imag))
+            complex(self.hinges[k].deficit_angle()).imag))
         hs = self.hinges[hk]
-        grad = hs.deficitAngleGradient()
+        grad = hs.deficit_angle_gradient()
         worst = 0.0
         for e in list(grad)[:8]:
             fd = _central(self._set(self.emap[e]),
-                          lambda: complex(hs.deficitAngle()))
+                          lambda: complex(hs.deficit_angle()))
             worst = max(worst, abs(complex(grad[e]) - fd))
         self.assertLess(worst, _TOL)
 
     def test_dualvolume_gradient_matches_fd(self):
         hk = next(iter(self.hinges))
         hs = self.hinges[hk]
-        grad = hs.dualVolumeGradient()
+        grad = hs.dual_volume_gradient()
         self.assertGreater(len(grad), 0)
         worst = 0.0
         for e in list(grad)[:8]:
-            fd = _central(self._set(self.emap[e]), hs.dualVolume)
+            fd = _central(self._set(self.emap[e]), hs.dual_volume)
             worst = max(worst, abs(complex(grad[e]) - complex(fd)))
         self.assertLess(worst, _TOL)
 
@@ -122,7 +122,7 @@ class ExactActionGradientTest(unittest.TestCase):
 
     def test_stationarity_residual_requires_imaginary_part(self):
         rs = tessera.ReggeSolver(self.st, tessera.MatterConfiguration())
-        g = [complex(z) for z in rs.actionGradientExact()]
+        g = [complex(z) for z in rs.action_gradient_exact()]
         reN = sum(z.real * z.real for z in g)   # ||d Re S||^2
         imN = sum(z.imag * z.imag for z in g)   # ||d Im S||^2
         # A Re-only stationary-action objective would use reN and miss imN entirely.

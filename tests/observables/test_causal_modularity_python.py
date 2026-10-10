@@ -80,18 +80,18 @@ def _from_simplices(num_vertices, simplices):
     metric = tessera.Metric(True, sig)
     st = tessera.Spacetime(metric, tessera.HERMITIAN_WEIGHTED, 1.0, 1.0,
                            tessera.PREFERRED, tessera.Toroid())
-    verts = [st.createVertex(i) for i in range(num_vertices)]
+    verts = [st.create_vertex(i) for i in range(num_vertices)]
     for simplex in simplices:
-        st.createSimplex([verts[i] for i in simplex])
-    for e in st.getEdgeList().toVector():
-        e.setLength(SPACELIKE_UNIT)
-        e.setPhase(0.0)
+        st.create_simplex([verts[i] for i in simplex])
+    for e in st.get_edge_list().to_vector():
+        e.set_length(SPACELIKE_UNIT)
+        e.set_phase(0.0)
     return st
 
 
 def _edge(st, a, b):
-    for e in st.getEdgeList().toVector():
-        if {e.getSource().getId(), e.getTarget().getId()} == {a, b}:
+    for e in st.get_edge_list().to_vector():
+        if {e.get_source().get_id(), e.get_target().get_id()} == {a, b}:
             return e
     raise KeyError((a, b))
 
@@ -107,10 +107,10 @@ def causal_k6(intra=SPACELIKE_UNIT, inter=TIMELIKE_UNIT):
     st = _from_simplices(6, _complete_pairs(list(TRIPLE_A + TRIPLE_B)))
     for a, b in (_complete_pairs(list(TRIPLE_A)) +
                  _complete_pairs(list(TRIPLE_B))):
-        _edge(st, a, b).setLength(intra)
+        _edge(st, a, b).set_length(intra)
     for a in TRIPLE_A:
         for b in TRIPLE_B:
-            _edge(st, a, b).setLength(inter)
+            _edge(st, a, b).set_length(inter)
     return st
 
 
@@ -143,7 +143,7 @@ def generic_argument_k6(seed=20260825):
     for a, b in _complete_pairs(list(range(6))):
         # arg(l) in (0.17, 1.37) rad, so arg(l^2) = 2 arg(l) is generic too:
         # it clears 0, pi/2 and pi by more than the causal tolerance.
-        _edge(st, a, b).setLength(cmath.rect(1.0, 0.17 + 1.2 * nxt()))
+        _edge(st, a, b).set_length(cmath.rect(1.0, 0.17 + 1.2 * nxt()))
     return st
 
 
@@ -163,7 +163,7 @@ def clique_chain(sizes, bridge=0.05):
         src.append(a)
         tgt.append(b)
         weight.append(bridge)
-    return PM.fromWeightedEdges(src, tgt, weight)
+    return PM.from_weighted_edges(src, tgt, weight)
 
 
 def config(**overrides):
@@ -182,8 +182,8 @@ def partition_of(slice_):
 
 
 def labels_for(graph, groups):
-    position = {cell: i for i, cell in enumerate(graph.cellIds())}
-    labels = [0] * graph.nCells()
+    position = {cell: i for i, cell in enumerate(graph.cell_ids())}
+    labels = [0] * graph.n_cells()
     for index, group in enumerate(groups):
         for cell in group:
             labels[position[cell]] = index
@@ -247,21 +247,21 @@ class WeightMapDomainTest(unittest.TestCase):
 
     def test_the_default_map_is_the_incumbent(self):
         st = causal_k6()
-        default = PM.fromSpacetime(st)
-        blind = PM.fromSpacetime(st, WEIGHT.ExpNegAbsLength)
-        self.assertEqual(default.totalWeight2(), blind.totalWeight2())
-        self.assertFalse(default.isComplex())
+        default = PM.from_spacetime(st)
+        blind = PM.from_spacetime(st, WEIGHT.ExpNegAbsLength)
+        self.assertEqual(default.total_weight2(), blind.total_weight2())
+        self.assertFalse(default.is_complex())
 
     def test_the_branch_is_decided_by_the_graph_not_a_flag(self):
         self.assertFalse(hasattr(PM, "setComplex"))
-        self.assertFalse(clique_chain([4, 4]).isComplex())
+        self.assertFalse(clique_chain([4, 4]).is_complex())
         self.assertTrue(
-            PM.fromComplexWeightedEdges([0], [1], [1 + 1j]).isComplex())
+            PM.from_complex_weighted_edges([0], [1], [1 + 1j]).is_complex())
 
     def test_a_complex_edge_list_is_accepted_directly(self):
-        graph = PM.fromComplexWeightedEdges([0, 1], [1, 2], [1 + 0j, 0 + 1j])
-        self.assertEqual(graph.nEdges(), 2)
-        self.assertTrue(graph.isComplex())
+        graph = PM.from_complex_weighted_edges([0, 1], [1, 2], [1 + 0j, 0 + 1j])
+        self.assertEqual(graph.n_edges(), 2)
+        self.assertTrue(graph.is_complex())
 
 
 class CausalDiscriminationTest(unittest.TestCase):
@@ -269,18 +269,18 @@ class CausalDiscriminationTest(unittest.TestCase):
 
     def _two_vertices(self, length):
         st = _from_simplices(2, [(0, 1)])
-        _edge(st, 0, 1).setLength(length)
+        _edge(st, 0, 1).set_length(length)
         return st
 
     def test_equal_magnitude_edges_are_blind_map_identical(self):
         """The defect itself: the incumbent map cannot tell them apart."""
         self.assertEqual(abs(SPACELIKE_UNIT), abs(TIMELIKE_UNIT))
-        spacelike = PM.fromSpacetime(self._two_vertices(SPACELIKE_UNIT),
+        spacelike = PM.from_spacetime(self._two_vertices(SPACELIKE_UNIT),
                                      WEIGHT.ExpNegAbsLength)
-        timelike = PM.fromSpacetime(self._two_vertices(TIMELIKE_UNIT),
+        timelike = PM.from_spacetime(self._two_vertices(TIMELIKE_UNIT),
                                     WEIGHT.ExpNegAbsLength)
-        self.assertEqual(spacelike.totalWeight2(), timelike.totalWeight2())
-        self.assertEqual(spacelike.totalWeightSum(), timelike.totalWeightSum())
+        self.assertEqual(spacelike.total_weight2(), timelike.total_weight2())
+        self.assertEqual(spacelike.total_weight_sum(), timelike.total_weight_sum())
 
     def test_equal_magnitude_edges_give_different_operators(self):
         """The fix: same magnitude, different causal character, different
@@ -294,13 +294,13 @@ class CausalDiscriminationTest(unittest.TestCase):
         }
         seen = []
         for length, want in expected.items():
-            graph = PM.fromSpacetime(self._two_vertices(length),
+            graph = PM.from_spacetime(self._two_vertices(length),
                                      WEIGHT.CausalPhaseExpNegAbsLength)
-            got = graph.totalWeightSum()
+            got = graph.total_weight_sum()
             self.assertAlmostEqual(got.real, want.real, delta=MACHINE)
             self.assertAlmostEqual(got.imag, want.imag, delta=MACHINE)
             # the MAGNITUDE is the same in all three: only the argument moved
-            self.assertAlmostEqual(graph.totalWeight2(), magnitude,
+            self.assertAlmostEqual(graph.total_weight2(), magnitude,
                                    delta=MACHINE)
             seen.append(complex(round(got.real, 9), round(got.imag, 9)))
         self.assertEqual(len(set(seen)), 3)
@@ -310,8 +310,8 @@ class CausalDiscriminationTest(unittest.TestCase):
         the blocks: every edge has magnitude one, so the blind map sees a
         homogeneous complete graph and finds nothing to split."""
         st = causal_k6()
-        blind = PM.fromSpacetime(st, WEIGHT.ExpNegAbsLength)
-        causal = PM.fromSpacetime(st, WEIGHT.CausalPhaseExpNegAbsLength)
+        blind = PM.from_spacetime(st, WEIGHT.ExpNegAbsLength)
+        causal = PM.from_spacetime(st, WEIGHT.CausalPhaseExpNegAbsLength)
 
         blind_slice = blind.discover(1.0, config())
         causal_slice = causal.discover(1.0, config())
@@ -326,24 +326,24 @@ class CausalDiscriminationTest(unittest.TestCase):
         """The closed-form anchor: +1/2 under the causal map against -1/10
         under the blind one, on ONE complex and ONE partition."""
         st = causal_k6()
-        blind = PM.fromSpacetime(st, WEIGHT.ExpNegAbsLength)
-        causal = PM.fromSpacetime(st, WEIGHT.CausalPhaseExpNegAbsLength)
+        blind = PM.from_spacetime(st, WEIGHT.ExpNegAbsLength)
+        causal = PM.from_spacetime(st, WEIGHT.CausalPhaseExpNegAbsLength)
         groups = (TRIPLE_A, TRIPLE_B)
 
         self.assertAlmostEqual(
-            blind.modularityGamma(labels_for(blind, groups), 1.0).real, -0.1,
+            blind.modularity_gamma(labels_for(blind, groups), 1.0).real, -0.1,
             delta=MACHINE)
         self.assertAlmostEqual(
-            causal.modularityGamma(labels_for(causal, groups), 1.0).real, 0.5,
+            causal.modularity_gamma(labels_for(causal, groups), 1.0).real, 0.5,
             delta=MACHINE)
 
     def test_the_closed_form_is_independent_of_the_common_magnitude(self):
         st = causal_k6()
-        for e in st.getEdgeList().toVector():
-            e.setLength(e.getLength() * 3.0)
-        causal = PM.fromSpacetime(st, WEIGHT.CausalPhaseExpNegAbsLength)
+        for e in st.get_edge_list().to_vector():
+            e.set_length(e.get_length() * 3.0)
+        causal = PM.from_spacetime(st, WEIGHT.CausalPhaseExpNegAbsLength)
         self.assertAlmostEqual(
-            causal.modularityGamma(labels_for(causal, (TRIPLE_A, TRIPLE_B)),
+            causal.modularity_gamma(labels_for(causal, (TRIPLE_A, TRIPLE_B)),
                                    1.0).real,
             0.5, delta=MACHINE)
 
@@ -354,8 +354,8 @@ class AntiCommunityTest(unittest.TestCase):
     than merely scoring differently."""
 
     def _q(self, build, groups=(TRIPLE_A, TRIPLE_B)):
-        graph = PM.fromSpacetime(build(), WEIGHT.CausalPhaseExpNegAbsLength)
-        return graph.modularityGamma(labels_for(graph, groups), 1.0)
+        graph = PM.from_spacetime(build(), WEIGHT.CausalPhaseExpNegAbsLength)
+        return graph.modularity_gamma(labels_for(graph, groups), 1.0)
 
     def test_the_anti_community_scores_the_negative_of_the_community(self):
         """Mirror fixtures: swap spacelike for timelike everywhere and the
@@ -385,7 +385,7 @@ class AntiCommunityTest(unittest.TestCase):
     def test_the_magnitude_objective_finds_the_anti_community(self):
         """Maximizing Q passes an anti-community over -- the one-community
         partition scores 0, which beats -1/2.  Maximizing |Q| finds it."""
-        graph = PM.fromSpacetime(anti_community_k6(),
+        graph = PM.from_spacetime(anti_community_k6(),
                                  WEIGHT.CausalPhaseExpNegAbsLength)
         found = graph.discover(1.0, config(objective=OBJECTIVE.Magnitude))
         self.assertEqual(partition_of(found),
@@ -396,7 +396,7 @@ class AntiCommunityTest(unittest.TestCase):
     def test_the_score_objective_passes_the_anti_community_over(self):
         """Both readings exist and they differ -- which is why the objective
         is a choice that gets reported, not an assumption."""
-        graph = PM.fromSpacetime(anti_community_k6(),
+        graph = PM.from_spacetime(anti_community_k6(),
                                  WEIGHT.CausalPhaseExpNegAbsLength)
         by_score = graph.discover(1.0, config(objective=OBJECTIVE.Score))
         by_magnitude = graph.discover(
@@ -416,12 +416,12 @@ class AntiCommunityTest(unittest.TestCase):
     def test_a_complex_graph_reports_the_objective_it_actually_used(self):
         """Score is not an ordering on a complex Q, so it is not silently
         honoured -- the slice says which functional ran."""
-        graph = PM.fromSpacetime(lightlike_cohesion_k6(),
+        graph = PM.from_spacetime(lightlike_cohesion_k6(),
                                  WEIGHT.CausalPhaseExpNegAbsLength)
         slice_ = graph.discover(1.0, config(objective=OBJECTIVE.Score))
-        self.assertTrue(graph.isComplex())
+        self.assertTrue(graph.is_complex())
         self.assertEqual(slice_.objective, OBJECTIVE.Magnitude)
-        self.assertAlmostEqual(slice_.objectiveValue, abs(slice_.q),
+        self.assertAlmostEqual(slice_.objective_value, abs(slice_.q),
                                delta=MACHINE)
 
 
@@ -431,25 +431,25 @@ class GenericArgumentTest(unittest.TestCase):
     without classifying it -- so there is nothing to refuse."""
 
     def test_the_fixture_really_has_no_definite_edge(self):
-        read = PM.causalWeightAvailability(generic_argument_k6())
+        read = PM.causal_weight_availability(generic_argument_k6())
         self.assertEqual(read.spacelike, 0)
         self.assertEqual(read.timelike, 0)
         self.assertEqual(read.lightlike, 0)
         self.assertEqual(read.mixed, 15)
 
     def test_a_wholly_generic_complex_is_available(self):
-        read = PM.causalWeightAvailability(generic_argument_k6())
+        read = PM.causal_weight_availability(generic_argument_k6())
         self.assertTrue(read.available)
         self.assertEqual(read.reason, "")
 
     def test_a_wholly_generic_complex_scores_and_discovers(self):
-        graph = PM.fromSpacetime(generic_argument_k6(),
+        graph = PM.from_spacetime(generic_argument_k6(),
                                  WEIGHT.CausalPhaseExpNegAbsLength)
-        self.assertEqual(graph.nEdges(), 15)
-        self.assertTrue(graph.isComplex())
+        self.assertEqual(graph.n_edges(), 15)
+        self.assertTrue(graph.is_complex())
         for cfg in (config(), spectral_config()):
             slice_ = graph.discover(1.0, cfg)
-            self.assertTrue(math.isfinite(slice_.objectiveValue))
+            self.assertTrue(math.isfinite(slice_.objective_value))
             self.assertTrue(math.isfinite(abs(slice_.q)))
             self.assertGreaterEqual(len(slice_.components), 1)
 
@@ -458,20 +458,20 @@ class GenericArgumentTest(unittest.TestCase):
         makes |Q| mean 'how much structure' rather than an offset."""
         for build in (causal_k6, anti_community_k6, lightlike_cohesion_k6,
                       generic_argument_k6):
-            graph = PM.fromSpacetime(build(),
+            graph = PM.from_spacetime(build(),
                                      WEIGHT.CausalPhaseExpNegAbsLength)
             whole = labels_for(graph, [TRIPLE_A + TRIPLE_B])
-            self.assertAlmostEqual(abs(graph.modularityGamma(whole, 1.0)), 0.0,
+            self.assertAlmostEqual(abs(graph.modularity_gamma(whole, 1.0)), 0.0,
                                    delta=MACHINE)
 
     def test_a_single_mixed_edge_no_longer_refuses(self):
         st = causal_k6()
-        _edge(st, 0, 1).setLength(MIXED_LENGTH)
-        read = PM.causalWeightAvailability(st)
+        _edge(st, 0, 1).set_length(MIXED_LENGTH)
+        read = PM.causal_weight_availability(st)
         self.assertEqual(read.mixed, 1)
         self.assertTrue(read.available)
-        graph = PM.fromSpacetime(st, WEIGHT.CausalPhaseExpNegAbsLength)
-        self.assertEqual(graph.nEdges(), 15)
+        graph = PM.from_spacetime(st, WEIGHT.CausalPhaseExpNegAbsLength)
+        self.assertEqual(graph.n_edges(), 15)
 
 
 class ExactReductionTest(unittest.TestCase):
@@ -482,32 +482,32 @@ class ExactReductionTest(unittest.TestCase):
         """The causal map differs from the blind one only by an argument that
         is everywhere zero, so not a bit of the score may move."""
         st = causal_k6(intra=SPACELIKE_UNIT, inter=SPACELIKE_UNIT)
-        blind = PM.fromSpacetime(st, WEIGHT.ExpNegAbsLength)
-        causal = PM.fromSpacetime(st, WEIGHT.CausalPhaseExpNegAbsLength)
-        self.assertFalse(causal.isComplex())
-        self.assertFalse(causal.isSigned())
-        self.assertEqual(blind.totalWeight2(), causal.totalWeight2())
+        blind = PM.from_spacetime(st, WEIGHT.ExpNegAbsLength)
+        causal = PM.from_spacetime(st, WEIGHT.CausalPhaseExpNegAbsLength)
+        self.assertFalse(causal.is_complex())
+        self.assertFalse(causal.is_signed())
+        self.assertEqual(blind.total_weight2(), causal.total_weight2())
         for groups in ((TRIPLE_A, TRIPLE_B),
                        (TRIPLE_A + TRIPLE_B,),
                        ((0, 3), (1, 4), (2, 5))):
             for gamma in (0.5, 1.0, 2.0):
                 self.assertEqual(
-                    blind.modularityGamma(labels_for(blind, groups), gamma),
-                    causal.modularityGamma(labels_for(causal, groups), gamma))
+                    blind.modularity_gamma(labels_for(blind, groups), gamma),
+                    causal.modularity_gamma(labels_for(causal, groups), gamma))
 
     def test_discovery_is_identical_under_both_maps_when_all_spacelike(self):
         """Bit-identity through the full search, on both strategies."""
         st = causal_k6(intra=SPACELIKE_UNIT, inter=SPACELIKE_UNIT)
-        blind = PM.fromSpacetime(st, WEIGHT.ExpNegAbsLength)
-        causal = PM.fromSpacetime(st, WEIGHT.CausalPhaseExpNegAbsLength)
+        blind = PM.from_spacetime(st, WEIGHT.ExpNegAbsLength)
+        causal = PM.from_spacetime(st, WEIGHT.CausalPhaseExpNegAbsLength)
         for cfg in (config(), spectral_config()):
             blind_slice = blind.discover(1.0, cfg)
             causal_slice = causal.discover(1.0, cfg)
             self.assertEqual(partition_of(blind_slice),
                              partition_of(causal_slice))
             self.assertEqual(blind_slice.q, causal_slice.q)
-            self.assertEqual(blind_slice.objectiveValue,
-                             causal_slice.objectiveValue)
+            self.assertEqual(blind_slice.objective_value,
+                             causal_slice.objective_value)
 
     def test_the_closed_form_matches_an_independent_reference_bitwise(self):
         """The score against Q_gamma computed from the definition outside the
@@ -516,16 +516,16 @@ class ExactReductionTest(unittest.TestCase):
         edges = [(0, 1, 1.0), (1, 2, 1.0), (0, 2, 1.0),
                  (3, 4, 1.0), (4, 5, 1.0), (3, 5, 1.0),
                  (0, 3, 0.25)]
-        graph = PM.fromWeightedEdges([a for a, _, _ in edges],
+        graph = PM.from_weighted_edges([a for a, _, _ in edges],
                                      [b for _, b, _ in edges],
                                      [w for _, _, w in edges])
-        self.assertFalse(graph.isComplex())
+        self.assertFalse(graph.is_complex())
         for groups in ((TRIPLE_A, TRIPLE_B), (TRIPLE_A + TRIPLE_B,)):
             by_cell = {}
             for index, group in enumerate(groups):
                 for cell in group:
                     by_cell[cell] = index
-            got = graph.modularityGamma(labels_for(graph, groups), gamma)
+            got = graph.modularity_gamma(labels_for(graph, groups), gamma)
             self.assertEqual(got.imag, 0.0)
             self.assertEqual(got.real,
                              reference_real_q(edges, by_cell, gamma))
@@ -535,15 +535,15 @@ class ExactReductionTest(unittest.TestCase):
         graph = clique_chain([4, 5, 6])
         slice_ = graph.discover(1.0, config())
         self.assertEqual(slice_.q.imag, 0.0)
-        self.assertEqual(slice_.qIncremental.imag, 0.0)
+        self.assertEqual(slice_.q_incremental.imag, 0.0)
         for comp in slice_.components:
-            self.assertEqual(comp.modularityContribution.imag, 0.0)
+            self.assertEqual(comp.modularity_contribution.imag, 0.0)
 
     def test_the_incumbent_fixture_is_untouched(self):
         graph = clique_chain([4, 5, 6])
-        self.assertFalse(graph.isComplex())
-        self.assertFalse(graph.isSigned())
-        self.assertEqual(graph.totalWeightSum(), graph.totalWeight2())
+        self.assertFalse(graph.is_complex())
+        self.assertFalse(graph.is_signed())
+        self.assertEqual(graph.total_weight_sum(), graph.total_weight2())
         slice_ = graph.discover(1.0, config())
         self.assertEqual(len(slice_.components), 3)
 
@@ -554,25 +554,25 @@ class RefusalTest(unittest.TestCase):
 
     def test_a_degenerate_edge_has_no_argument_to_carry(self):
         st = causal_k6()
-        _edge(st, 0, 1).setLength(0.0 + 0j)
-        read = PM.causalWeightAvailability(st)
+        _edge(st, 0, 1).set_length(0.0 + 0j)
+        read = PM.causal_weight_availability(st)
         self.assertEqual(read.degenerate, 1)
         self.assertFalse(read.available)
         self.assertEqual(read.reason, "degenerate-edge-length")
 
     def test_a_degenerate_edge_raises_by_name(self):
         st = causal_k6()
-        _edge(st, 0, 1).setLength(0.0 + 0j)
+        _edge(st, 0, 1).set_length(0.0 + 0j)
         with self.assertRaises(ValueError) as caught:
-            PM.fromSpacetime(st, WEIGHT.CausalPhaseExpNegAbsLength)
+            PM.from_spacetime(st, WEIGHT.CausalPhaseExpNegAbsLength)
         self.assertIn("degenerate-edge-length", str(caught.exception))
         # The BLIND map still reads it: the refusal belongs to the causal
         # map, not to the complex.
         self.assertGreater(
-            PM.fromSpacetime(st, WEIGHT.ExpNegAbsLength).nEdges(), 0)
+            PM.from_spacetime(st, WEIGHT.ExpNegAbsLength).n_edges(), 0)
 
     def test_an_available_census_names_no_reason(self):
-        read = PM.causalWeightAvailability(causal_k6())
+        read = PM.causal_weight_availability(causal_k6())
         self.assertTrue(read.available)
         self.assertEqual(read.reason, "")
         self.assertEqual(read.spacelike, 6)   # three inside each triple
@@ -581,29 +581,29 @@ class RefusalTest(unittest.TestCase):
 
     def test_the_census_totals_the_edges(self):
         st = causal_k6()
-        _edge(st, 0, 1).setLength(MIXED_LENGTH)
-        _edge(st, 0, 2).setLength(LIGHTLIKE_UNIT)
-        read = PM.causalWeightAvailability(st)
+        _edge(st, 0, 1).set_length(MIXED_LENGTH)
+        _edge(st, 0, 2).set_length(LIGHTLIKE_UNIT)
+        read = PM.causal_weight_availability(st)
         total = (read.spacelike + read.timelike + read.lightlike +
                  read.mixed + read.degenerate)
-        self.assertEqual(total, len(st.getEdgeList().toVector()))
+        self.assertEqual(total, len(st.get_edge_list().to_vector()))
 
     def test_non_finite_weights_are_refused(self):
         for bad in (float("nan"), float("inf"), float("-inf")):
             with self.assertRaises(ValueError):
-                PM.fromWeightedEdges([0], [1], [bad])
+                PM.from_weighted_edges([0], [1], [bad])
             with self.assertRaises(ValueError):
-                PM.fromComplexWeightedEdges([0], [1], [complex(1.0, bad)])
+                PM.from_complex_weighted_edges([0], [1], [complex(1.0, bad)])
 
     def test_a_vanishing_total_weight_is_refused_by_name(self):
         """SA = 0 leaves the configuration null model with no weight to
         redistribute, so Q is undefined -- a property of the GRAPH, not of the
         partition, and named rather than silently treated as a zero null."""
-        graph = PM.fromWeightedEdges([0, 2], [1, 3], [1.0, -1.0])
-        self.assertEqual(graph.totalWeightSum(), 0.0)
-        self.assertEqual(graph.totalWeight2(), 4.0)
+        graph = PM.from_weighted_edges([0, 2], [1, 3], [1.0, -1.0])
+        self.assertEqual(graph.total_weight_sum(), 0.0)
+        self.assertEqual(graph.total_weight2(), 4.0)
         with self.assertRaises(ValueError) as caught:
-            graph.modularityGamma([0, 0, 1, 1], 1.0)
+            graph.modularity_gamma([0, 0, 1, 1], 1.0)
         self.assertIn("vanishes", str(caught.exception))
 
 
@@ -613,46 +613,46 @@ class DegenerateCaseTest(unittest.TestCase):
     def test_the_scale_is_the_absolute_total_not_the_signed_sum(self):
         """T cannot vanish while any edge exists, which is what the signed
         sum could do -- that is why it, and not 2m, is what Q divides by."""
-        graph = PM.fromWeightedEdges([0, 2], [1, 3], [1.0, -1.0])
-        self.assertEqual(graph.totalWeight2(), 4.0)
-        self.assertEqual(graph.totalWeightSum(), 0.0)
+        graph = PM.from_weighted_edges([0, 2], [1, 3], [1.0, -1.0])
+        self.assertEqual(graph.total_weight2(), 4.0)
+        self.assertEqual(graph.total_weight_sum(), 0.0)
 
     def test_a_wholly_timelike_complex_scores(self):
         st = causal_k6(intra=TIMELIKE_UNIT, inter=TIMELIKE_UNIT)
-        graph = PM.fromSpacetime(st, WEIGHT.CausalPhaseExpNegAbsLength)
-        self.assertTrue(graph.isSigned())
-        self.assertLess(graph.totalWeightSum().real, 0.0)
-        score = graph.modularityGamma(
+        graph = PM.from_spacetime(st, WEIGHT.CausalPhaseExpNegAbsLength)
+        self.assertTrue(graph.is_signed())
+        self.assertLess(graph.total_weight_sum().real, 0.0)
+        score = graph.modularity_gamma(
             labels_for(graph, (TRIPLE_A, TRIPLE_B)), 1.0)
         self.assertTrue(math.isfinite(abs(score)))
 
     def test_cancelling_parallel_edges_drop_out(self):
-        graph = PM.fromWeightedEdges([0, 0, 1], [1, 1, 2], [1.0, -1.0, 1.0])
-        self.assertEqual(graph.nEdges(), 1)
-        self.assertFalse(graph.isSigned())
+        graph = PM.from_weighted_edges([0, 0, 1], [1, 1, 2], [1.0, -1.0, 1.0])
+        self.assertEqual(graph.n_edges(), 1)
+        self.assertFalse(graph.is_signed())
 
     def test_cancelling_complex_parallel_edges_drop_out(self):
-        graph = PM.fromComplexWeightedEdges(
+        graph = PM.from_complex_weighted_edges(
             [0, 0, 1], [1, 1, 2], [1 + 1j, -1 - 1j, 1 + 0j])
-        self.assertEqual(graph.nEdges(), 1)
+        self.assertEqual(graph.n_edges(), 1)
 
     def test_a_disconnected_complex_graph_scores_and_splits(self):
-        graph = PM.fromComplexWeightedEdges(
+        graph = PM.from_complex_weighted_edges(
             [0, 1, 0, 3, 4, 3], [1, 2, 2, 4, 5, 5],
             [1 + 0j, 1 + 0j, 0.3j, 1 + 0j, 1 + 0j, 0.3j])
-        self.assertTrue(graph.isComplex())
+        self.assertTrue(graph.is_complex())
         slice_ = graph.discover(1.0, config())
         self.assertTrue(math.isfinite(abs(slice_.q)))
         self.assertGreaterEqual(len(slice_.components), 2)
 
     def test_an_empty_edge_list_scores_zero(self):
-        graph = PM.fromWeightedEdges([], [], [], [7, 8, 9])
-        self.assertEqual(graph.nEdges(), 0)
-        self.assertEqual(graph.modularityGamma([0, 0, 0], 1.0), 0.0)
+        graph = PM.from_weighted_edges([], [], [], [7, 8, 9])
+        self.assertEqual(graph.n_edges(), 0)
+        self.assertEqual(graph.modularity_gamma([0, 0, 0], 1.0), 0.0)
 
     def test_a_complex_with_no_edges_is_refused_by_name(self):
         st = _from_simplices(2, [])
-        read = PM.causalWeightAvailability(st)
+        read = PM.causal_weight_availability(st)
         self.assertFalse(read.available)
         self.assertEqual(read.reason, "no-scorable-edges")
 
@@ -662,7 +662,7 @@ class BothStrategiesTest(unittest.TestCase):
     they interact with it differently -- so both are exercised on it."""
 
     def _causal_graph(self):
-        return PM.fromSpacetime(causal_k6(),
+        return PM.from_spacetime(causal_k6(),
                                 WEIGHT.CausalPhaseExpNegAbsLength)
 
     def test_multilevel_aggregation_recovers_the_causal_blocks(self):
@@ -689,7 +689,7 @@ class BothStrategiesTest(unittest.TestCase):
         """The spectral search needs a candidate the most POSITIVE eigenvector
         cannot supply, so the most negative one is proposed too -- and, like
         every candidate, accepted only on an exact improvement."""
-        graph = PM.fromSpacetime(anti_community_k6(),
+        graph = PM.from_spacetime(anti_community_k6(),
                                  WEIGHT.CausalPhaseExpNegAbsLength)
         for cfg in (config(objective=OBJECTIVE.Magnitude),
                     spectral_config(objective=OBJECTIVE.Magnitude)):
@@ -710,19 +710,19 @@ class BothStrategiesTest(unittest.TestCase):
         levels rather than recomputed from the coarse adjacency.
         """
         for build in (causal_k6, lightlike_cohesion_k6, generic_argument_k6):
-            graph = PM.fromSpacetime(build(),
+            graph = PM.from_spacetime(build(),
                                      WEIGHT.CausalPhaseExpNegAbsLength)
             for gamma in (0.5, 1.0, 2.0):
                 slice_ = graph.discover(gamma, config())
-                self.assertAlmostEqual(slice_.qIncremental.real,
+                self.assertAlmostEqual(slice_.q_incremental.real,
                                        slice_.q.real, delta=MACHINE)
-                self.assertAlmostEqual(slice_.qIncremental.imag,
+                self.assertAlmostEqual(slice_.q_incremental.imag,
                                        slice_.q.imag, delta=MACHINE)
 
     def test_the_unsigned_ledger_is_unaffected(self):
         graph = clique_chain([4, 5, 6])
         slice_ = graph.discover(1.0, config())
-        self.assertAlmostEqual(slice_.qIncremental.real, slice_.q.real,
+        self.assertAlmostEqual(slice_.q_incremental.real, slice_.q.real,
                                delta=MACHINE)
 
     def test_the_power_iteration_path_agrees_with_the_exact_one(self):
@@ -734,15 +734,15 @@ class BothStrategiesTest(unittest.TestCase):
         which is why the incumbent's bound was correct for its graphs.)"""
         graph = self._causal_graph()
         exact = graph.discover(
-            1.0, spectral_config(denseEigenSolveMaxGroup=1024))
+            1.0, spectral_config(dense_eigen_solve_max_group=1024))
         iterative = graph.discover(
-            1.0, spectral_config(denseEigenSolveMaxGroup=0))
+            1.0, spectral_config(dense_eigen_solve_max_group=0))
         self.assertEqual(partition_of(exact), partition_of(iterative))
 
     def test_the_spectral_search_still_carries_no_seed(self):
         graph = self._causal_graph()
-        first = graph.discover(1.0, spectral_config(baseSeed=1))
-        second = graph.discover(1.0, spectral_config(baseSeed=99999))
+        first = graph.discover(1.0, spectral_config(base_seed=1))
+        second = graph.discover(1.0, spectral_config(base_seed=99999))
         self.assertEqual(partition_of(first), partition_of(second))
 
 
@@ -751,14 +751,14 @@ class PerComponentReadTest(unittest.TestCase):
     on the complex operator as much as on the real one."""
 
     def test_the_contributions_sum_to_the_score(self):
-        for graph in (PM.fromSpacetime(causal_k6(),
+        for graph in (PM.from_spacetime(causal_k6(),
                                        WEIGHT.CausalPhaseExpNegAbsLength),
-                      PM.fromSpacetime(generic_argument_k6(),
+                      PM.from_spacetime(generic_argument_k6(),
                                        WEIGHT.CausalPhaseExpNegAbsLength),
                       clique_chain([4, 5, 6])):
             for cfg in (config(), spectral_config()):
                 slice_ = graph.discover(1.0, cfg)
-                total = sum((c.modularityContribution
+                total = sum((c.modularity_contribution
                              for c in slice_.components), 0j)
                 self.assertAlmostEqual(total.real, slice_.q.real,
                                        delta=MACHINE)
@@ -769,7 +769,7 @@ class PerComponentReadTest(unittest.TestCase):
         """A community's strength is then a complex sum, so there is no volume
         for the cut to be a fraction of.  Reported NaN, never zero -- zero
         would read as a perfectly isolated community."""
-        graph = PM.fromSpacetime(causal_k6(),
+        graph = PM.from_spacetime(causal_k6(),
                                  WEIGHT.CausalPhaseExpNegAbsLength)
         slice_ = graph.discover(1.0, config())
         for comp in slice_.components:

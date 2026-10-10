@@ -6,7 +6,7 @@
 The #562 campaign worker dumps every attempt's final complex
 (``worker.dump_geometry``, schema 1): top cells in intrinsic vertex order,
 edges as ``[src, tgt, Re l^2, Im l^2]`` (Im is 0 in every specimen), and
-per-vertex times — enough for ``Spacetime.fromVertexTuples`` to rebuild the state
+per-vertex times — enough for ``Spacetime.from_vertex_tuples`` to rebuild the state
 without re-running anything. ``tests/fixtures/causal_specimens/`` carries the
 campaign's first causal specimens (seeds 14001000, 11001000, 13001000 reached
 ``re_min < 0``) plus two all-spacelike ones, copied out of the campaign run.
@@ -55,19 +55,19 @@ def rebuild_spacetime(dump):
     """A Spacetime carrying the dumped final state: fromVertexTuples on the top
     cells, then the recorded per-vertex times and per-edge complex squared
     lengths (the analyze_attempt.py rebuild path, verbatim)."""
-    st = tessera.spacetime.Spacetime.fromVertexTuples(dump["dimensions"],
+    st = tessera.spacetime.Spacetime.from_vertex_tuples(dump["dimensions"],
                                                dump["cells"])
-    vertices = st.getVertexList()
+    vertices = st.get_vertex_list()
     for vid, t in dump["vertex_times"]:
-        vertices.get(int(vid)).setTime(float(t))
+        vertices.get(int(vid)).set_time(float(t))
     by_pair = {}
-    for e in st.getEdgeList().toVector():
-        a, b = e.getSource().getId(), e.getTarget().getId()
+    for e in st.get_edge_list().to_vector():
+        a, b = e.get_source().get_id(), e.get_target().get_id()
         by_pair[(min(a, b), max(a, b))] = e
     for u, v, re_l2, im_l2 in dump["edges"]:
         key = (min(int(u), int(v)), max(int(u), int(v)))
-        by_pair[key].setLength(cmath.sqrt(complex(complex(re_l2, im_l2))))
-    st.materializeFacets()
+        by_pair[key].set_length(cmath.sqrt(complex(complex(re_l2, im_l2))))
+    st.materialize_facets()
     return st
 
 

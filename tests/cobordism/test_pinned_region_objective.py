@@ -46,8 +46,8 @@ def _perturbed_delta4():
     st = tessera.Spacetime(tessera.Metric(True, sig), tessera.CDT, 1.0, 1.0,
                            tessera.PREFERRED, tessera.SolidSimplex(_DIM))
     st.build()
-    for index, edge in enumerate(st.getEdgeList().toVector()):
-        edge.setLength(cmath.sqrt(complex(0.8 + 0.13 * (index % 5))))
+    for index, edge in enumerate(st.get_edge_list().to_vector()):
+        edge.set_length(cmath.sqrt(complex(0.8 + 0.13 * (index % 5))))
     return st
 
 
@@ -57,21 +57,21 @@ def _node(host=None):
 
 
 def _vertex_ids(st):
-    return sorted({v.getId() for s in st.getTopSimplices()
-                   for v in s.getVertices()})
+    return sorted({v.get_id() for s in st.get_top_simplices()
+                   for v in s.get_vertices()})
 
 
 def _edge_lengths(st):
     lengths = {}
-    for edge in st.getEdgeList().toVector():
-        a, b = edge.getSource().getId(), edge.getTarget().getId()
-        lengths[(min(a, b), max(a, b))] = edge.getLength()
+    for edge in st.get_edge_list().to_vector():
+        a, b = edge.get_source().get_id(), edge.get_target().get_id()
+        lengths[(min(a, b), max(a, b))] = edge.get_length()
     return lengths
 
 
 def _cells(st):
-    return sorted(tuple(sorted(v.getId() for v in s.getVertices()))
-                  for s in st.getTopSimplices())
+    return sorted(tuple(sorted(v.get_id() for v in s.get_vertices()))
+                  for s in st.get_top_simplices())
 
 
 def _scope_for(node, region_name, straddling):
@@ -109,9 +109,9 @@ class RegionEdgePartitionTest(unittest.TestCase):
         node = _node()
         region = _half_region(node)
         interior, straddling = 0, 0
-        for edge in node.st.getEdgeList().toVector():
-            inside = ((edge.getSource().getId() in region) +
-                      (edge.getTarget().getId() in region))
+        for edge in node.st.get_edge_list().to_vector():
+            inside = ((edge.get_source().get_id() in region) +
+                      (edge.get_target().get_id() in region))
             if inside == 2:
                 interior += 1
             elif inside == 1:
@@ -298,13 +298,13 @@ class HoldToUnitObjective(cob.CobordismObjective):
 
     def terms(self, context):
         terms = cob.ObjectiveTerms()
-        edges = context.spacetime.getEdgeList().toVector()
+        edges = context.spacetime.get_edge_list().to_vector()
         # None means the whole cobordism; a list — even an empty one — means
         # exactly those coordinates.
         indices = (range(len(edges)) if context.scored_edges is None
                    else context.scored_edges)
         terms.regge_stationarity = sum(
-            abs(edges[index].getLength() ** 2 - 1.0) ** 2 for index in indices)
+            abs(edges[index].get_length() ** 2 - 1.0) ** 2 for index in indices)
         return terms
 
     def direction(self, context):

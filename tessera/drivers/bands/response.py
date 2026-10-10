@@ -11,7 +11,7 @@ For an M-normalized eigenpair (E, z) of the pencil
 
 with x = d_1^T z the edge differences of the mode. Every term is a contraction
 of a Whitney mass derivative, evaluated per top simplex without forming a
-derivative matrix (`WhitneyMass.derivativeContraction`). The boundary maps and
+derivative matrix (`WhitneyMass.derivative_contraction`). The boundary maps and
 the Bloch phases do not depend on the lengths.
 
 The Whitney Hodge Laplacian is homogeneous of degree -1 in the squared lengths,
@@ -36,8 +36,8 @@ def length_derivative(cell, read, band, potential=None):
     x = boundary.T @ u
     s = cell.squared_lengths
     K = cell.complex
-    kinetic = np.array(ch.WhitneyMass.derivativeContraction(K, s, 1, x.conj(), x))
-    overlap = np.array(ch.WhitneyMass.derivativeContraction(K, s, 0, u.conj(), u))
+    kinetic = np.array(ch.WhitneyMass.derivative_contraction(K, s, 1, x.conj(), x))
+    overlap = np.array(ch.WhitneyMass.derivative_contraction(K, s, 0, u.conj(), u))
     out = cell.kinetic_scale * kinetic - energy * overlap
     if potential is not None:
         # M_0[V] depends on the lengths through the volumes only, exactly as M_0
@@ -54,12 +54,12 @@ def _weighted_mass_derivative(cell, u, potential):
     dM_0[V]|_T / ds_e = M_0[V]|_T * (d|T|/ds_e) / |T|, and the logarithmic
     derivative of the volume is read off the degree-zero block and its derivative."""
     K, s = cell.complex, cell.squared_lengths
-    blocks = ch.WhitneyMass.topSimplexBlocks(K, s, 0, ch.Branch.Continuation, True)
-    out = np.zeros(K.numSimplices(1), dtype=complex)
+    blocks = ch.WhitneyMass.top_simplex_blocks(K, s, 0, ch.Branch.Continuation, True)
+    out = np.zeros(K.num_simplices(1), dtype=complex)
     d = K.dimension()
     scale = float(np.prod(np.arange(1, d + 1))) / float(np.prod(np.arange(1, d + 4)))
     for block in blocks:
-        vertices = np.array(block.cellIndices)
+        vertices = np.array(block.cell_indices)
         volume = block.block[0, 0] * (d + 1) * (d + 2) / 2.0
         local_u = u[vertices, 0]
         local_v = potential[vertices]
@@ -68,7 +68,7 @@ def _weighted_mass_derivative(cell, u, potential):
         value = (np.conj(su) * su * sv + np.vdot(local_u, local_u) * sv
                  + np.conj(su) * np.dot(local_u, local_v) + np.vdot(local_u, local_v) * su
                  + 2.0 * np.sum(np.abs(local_u) ** 2 * local_v))
-        for m, edge in enumerate(block.edgeIndices):
+        for m, edge in enumerate(block.edge_indices):
             dlog = block.derivative[m][0, 0] / block.block[0, 0]
             out[edge] += scale * volume * dlog * value
     return out

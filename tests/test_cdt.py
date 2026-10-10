@@ -33,15 +33,15 @@ class TestCDTAction(unittest.TestCase):
         """
         st = self._make_spacetime(n_simplices=5)
         k0, k4, delta, epsilon = 2.0, 0.5, 0.6, 0.02
-        target = st.getN41()
+        target = st.get_n41()
 
         cdt = tessera.CDTSimulation(st, k0, k4, delta, epsilon, target)
-        action = cdt.computeAction()
+        action = cdt.compute_action()
 
         # Compute expected action from counts
-        n0 = st.getVertexCount()
-        n41 = st.getN41()
-        n32 = st.getN32()
+        n0 = st.get_vertex_count()
+        n41 = st.get_n41()
+        n32 = st.get_n32()
 
         expected = -(k0 + 6 * delta) * n0 + (k4 + 2 * delta) * n41 + (k4 + delta) * n32
         expected += epsilon * (n41 - target) ** 2
@@ -54,7 +54,7 @@ class TestCDTAction(unittest.TestCase):
         st = self._make_spacetime(n_simplices=5)
         cdt1 = tessera.CDTSimulation(st, 1.0, 0.5, 0.3, 0.01, 50)
         cdt2 = tessera.CDTSimulation(st, 5.0, 0.5, 0.3, 0.01, 50)
-        self.assertNotAlmostEqual(cdt1.computeAction(), cdt2.computeAction())
+        self.assertNotAlmostEqual(cdt1.compute_action(), cdt2.compute_action())
 
 
 class TestCDTMoves(unittest.TestCase):
@@ -71,8 +71,8 @@ class TestCDTMoves(unittest.TestCase):
     def test_add_move_changes_counts(self):
         """The add move should increase simplex and vertex counts."""
         cdt, st = self._make_cdt(n_simplices=30)
-        initial_n4 = st.getTopSimplexCount()
-        initial_n0 = st.getVertexCount()
+        initial_n4 = st.get_top_simplex_count()
+        initial_n0 = st.get_vertex_count()
 
         # Try add moves until one succeeds (may take several attempts)
         accepted = False
@@ -82,21 +82,21 @@ class TestCDTMoves(unittest.TestCase):
                 break
 
         if accepted:
-            self.assertGreater(st.getTopSimplexCount(), initial_n4,
+            self.assertGreater(st.get_top_simplex_count(), initial_n4,
                                "Add move should increase simplex count")
-            self.assertGreater(st.getVertexCount(), initial_n0,
+            self.assertGreater(st.get_vertex_count(), initial_n0,
                                "Add move should increase vertex count")
 
     def test_flip_move_preserves_vertex_count(self):
         """The flip move should not change the vertex count."""
         cdt, st = self._make_cdt(n_simplices=30)
-        initial_n0 = st.getVertexCount()
+        initial_n0 = st.get_vertex_count()
 
         for _ in range(200):
             if cdt.flip():
                 break
 
-        self.assertEqual(st.getVertexCount(), initial_n0,
+        self.assertEqual(st.get_vertex_count(), initial_n0,
                          "Flip move should preserve vertex count")
 
     def test_sweep_runs_without_error(self):
@@ -123,8 +123,8 @@ class TestCDTTopologies(unittest.TestCase):
         metric = tessera.Metric(True, sig)
         st = tessera.Spacetime(metric, tessera.CDT, 1.0, 1.0, tessera.PREFERRED, topology)
         st.build(10)
-        self.assertGreater(st.getTopSimplexCount(), 0, "Topology should produce simplices")
-        self.assertGreater(st.getVertexCount(), 0, "Topology should produce vertices")
+        self.assertGreater(st.get_top_simplex_count(), 0, "Topology should produce simplices")
+        self.assertGreater(st.get_vertex_count(), 0, "Topology should produce vertices")
 
         # Run a sweep
         cdt = tessera.CDTSimulation(st, 2.0, 0.5, 0.6, 1.0 / max(100, 1), 100)
@@ -152,7 +152,7 @@ class TestCDTVolumeProfile(unittest.TestCase):
         st.build(15)
 
         cdt = tessera.CDTSimulation(st, 2.0, 0.5, 0.6, 1.0 / max(100, 1), 100)
-        profile = cdt.getVolumeProfile()
+        profile = cdt.get_volume_profile()
         self.assertGreater(len(profile), 0, "Volume profile should not be empty")
         self.assertGreater(sum(profile), 0, "Total volume should be positive")
 
@@ -164,8 +164,8 @@ class TestCDTVolumeProfile(unittest.TestCase):
         st.build(15)
 
         cdt = tessera.CDTSimulation(st, 2.0, 0.5, 0.6, 1.0 / max(100, 1), 100)
-        profile = cdt.getVolumeProfile()
-        self.assertEqual(sum(profile), st.getTopSimplexCount(),
+        profile = cdt.get_volume_profile()
+        self.assertEqual(sum(profile), st.get_top_simplex_count(),
                          "Volume profile should sum to total simplex count")
 
 
@@ -181,7 +181,7 @@ class TestCDTAcceptanceRates(unittest.TestCase):
 
         cdt = tessera.CDTSimulation(st, 2.0, 0.5, 0.6, 1.0 / max(100, 1), 100)
         cdt.sweep()
-        rates = cdt.getAcceptanceRates()
+        rates = cdt.get_acceptance_rates()
 
         for move_type in [tessera.AddMove.MOVE_TYPE, tessera.RemoveMove.MOVE_TYPE,
                           tessera.FlipMove.MOVE_TYPE, tessera.ShiftMove.MOVE_TYPE,
@@ -200,10 +200,10 @@ class TestSpacetimeCounting(unittest.TestCase):
         st = tessera.Spacetime(metric, tessera.CDT, 1.0, 1.0, tessera.PREFERRED, tessera.Toroid())
         st.build(10)
 
-        self.assertGreater(st.getTopSimplexCount(), 0)
-        self.assertGreater(st.getVertexCount(), 0)
+        self.assertGreater(st.get_top_simplex_count(), 0)
+        self.assertGreater(st.get_vertex_count(), 0)
         # N41 and N32 are subsets of the total simplex count
-        self.assertEqual(st.getTopSimplexCount(), st.getN41() + st.getN32(),
+        self.assertEqual(st.get_top_simplex_count(), st.get_n41() + st.get_n32(),
                          "N4 should equal N41 + N32")
 
     def test_random_simplex(self):
@@ -212,5 +212,5 @@ class TestSpacetimeCounting(unittest.TestCase):
         st = tessera.Spacetime(metric, tessera.CDT, 1.0, 1.0, tessera.PREFERRED, tessera.Toroid())
         st.build(10)
 
-        simplex = st.getRandomSimplex()
+        simplex = st.get_random_simplex()
         self.assertIsNotNone(simplex, "getRandomSimplex should return a simplex")

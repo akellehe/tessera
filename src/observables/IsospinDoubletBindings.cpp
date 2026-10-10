@@ -179,7 +179,7 @@ group, read on the operators a caller supplies, with the three conditions
 (emergence, coherent transport, agreement with the Ward flux) each reported as
 Passed, Failed or NotEvaluable.  The third is not evaluable: Section 13.4 is
 deferred.)doc")
-      .def_property_readonly_static("kConditionCount",
+      .def_property_readonly_static("k_condition_count",
                                     [](py::object) { return IsospinDoublet::kConditionCount; })
       .def_static("condition_names", &IsospinDoublet::conditionNames)
       .def_static("statement", &IsospinDoublet::statement, py::arg("number"))

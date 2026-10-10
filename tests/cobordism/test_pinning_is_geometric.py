@@ -1,6 +1,6 @@
 # Copyright (c) 2026 Twin Vector Labs LLC.
 # All rights reserved.
-"""Pinning constrains the geometry; `dualComplexValid` gates the topology (#835).
+"""Pinning constrains the geometry; `dual_complex_valid` gates the topology (#835).
 
 The engine used to conflate the two: `strandsPinned` rejected any surgery that
 removed a pinned vertex, layered on top of the manifold check that already
@@ -17,7 +17,7 @@ What these tests pin, along the axis that actually separates the two concerns:
     does — pinning constrains the geometry, and that is its whole effect;
   * a surgery that removes a pinned vertex is ACCEPTED when the result is a
     valid manifold, and REJECTED (naming the manifold verdict) when it is not —
-    `dualComplexValid` is the whole gate;
+    `dual_complex_valid` is the whole gate;
   * a region declared against a node with targets behaves identically to one
     declared against a node without them — pinning is target-free;
   * a region is a declared thing with an identity, so re-declaring a name
@@ -45,8 +45,8 @@ def _single_delta4():
     st = tessera.Spacetime(tessera.Metric(True, sig), tessera.CDT, 1.0, 1.0,
                            tessera.PREFERRED, tessera.SolidSimplex(_DIM))
     st.build()
-    for edge in st.getEdgeList().toVector():
-        edge.setLength(cmath.sqrt(complex(1.0)))
+    for edge in st.get_edge_list().to_vector():
+        edge.set_length(cmath.sqrt(complex(1.0)))
     return st
 
 
@@ -59,8 +59,8 @@ def _perturbed_delta4():
     pinned/unpinned contrast meaningful. Measured: 10 of 10 edges move.
     """
     st = _single_delta4()
-    for index, edge in enumerate(st.getEdgeList().toVector()):
-        edge.setLength(cmath.sqrt(complex(0.8 + 0.13 * (index % 5))))
+    for index, edge in enumerate(st.get_edge_list().to_vector()):
+        edge.set_length(cmath.sqrt(complex(0.8 + 0.13 * (index % 5))))
     return st
 
 
@@ -77,8 +77,8 @@ def _relaxing_node(inputs=_IN, outputs=_OUT):
 
 def _cells(st):
     """Top cells as sorted vertex-id tuples."""
-    return [tuple(sorted(v.getId() for v in s.getVertices()))
-            for s in st.getTopSimplices()]
+    return [tuple(sorted(v.get_id() for v in s.get_vertices()))
+            for s in st.get_top_simplices()]
 
 
 def _vertex_ids(st):
@@ -88,9 +88,9 @@ def _vertex_ids(st):
 def _edge_lengths(st):
     """Map an edge's canonical endpoint pair to its complex length."""
     lengths = {}
-    for edge in st.getEdgeList().toVector():
-        a, b = edge.getSource().getId(), edge.getTarget().getId()
-        lengths[(min(a, b), max(a, b))] = edge.getLength()
+    for edge in st.get_edge_list().to_vector():
+        a, b = edge.get_source().get_id(), edge.get_target().get_id()
+        lengths[(min(a, b), max(a, b))] = edge.get_length()
     return lengths
 
 
@@ -239,7 +239,7 @@ class PinningIsTargetFreeTest(unittest.TestCase):
 
 
 class ManifoldValidityIsTheOnlyGateTest(unittest.TestCase):
-    """Surgery is decided by `dualComplexValid`, not by whether a pin was removed."""
+    """Surgery is decided by `dual_complex_valid`, not by whether a pin was removed."""
 
     def _cell_whose_removal_is_valid(self, node):
         """A top cell whose cone-out the manifold gate accepts, and the vertex that
@@ -252,7 +252,7 @@ class ManifoldValidityIsTheOnlyGateTest(unittest.TestCase):
         for cell in _cells(node.st):
             before = set(_vertex_ids(node.st))
             cone = cob.SurgicalCone(node.st)
-            accepted, _ = cone.coneOut(list(cell))
+            accepted, _ = cone.cone_out(list(cell))
             if accepted:
                 removed = before - set(_vertex_ids(node.st))
                 cone.rollback()
@@ -274,20 +274,20 @@ class ManifoldValidityIsTheOnlyGateTest(unittest.TestCase):
         node.declare_pinned_region("doomed", set(removed))
         self.assertTrue(node.pinned_vertices() & removed)
 
-        accepted, why = cob.SurgicalCone(node.st).coneOut(cell)
+        accepted, why = cob.SurgicalCone(node.st).cone_out(cell)
         self.assertTrue(accepted,
                         f"a valid cone-out must be accepted even though it removes a "
                         f"pinned vertex; got: {why}")
         self.assertFalse(set(_vertex_ids(node.st)) & removed,
                          "the pinned vertex really was removed")
-        ok, _ = cob.EigenstateSynthesis(node.st, 3).dualComplexValid()
+        ok, _ = cob.EigenstateSynthesis(node.st, 3).dual_complex_valid()
         self.assertTrue(ok, "and what it left is a valid manifold")
 
     def test_stage_one_commits_vertex_removing_moves_with_everything_pinned(self):
         """The move gate no longer consults pinning — this is the path that had it.
 
         `applyMoveSpecification` used to reject any move that left a pinned vertex
-        no longer live, BEFORE consulting `dualComplexValid`. Two identical drives,
+        no longer live, BEFORE consulting `dual_complex_valid`. Two identical drives,
         one with every vertex pinned, must now reach the same topology: pinning is
         not an input to the gate.
         """
@@ -315,11 +315,11 @@ class ManifoldValidityIsTheOnlyGateTest(unittest.TestCase):
         unpinned = _node(precone=5, seed=2)
         cell, removed = self._cell_whose_removal_is_valid(unpinned)
         self.assertIsNotNone(cell)
-        verdict_unpinned, _ = cob.SurgicalCone(unpinned.st).coneOut(cell)
+        verdict_unpinned, _ = cob.SurgicalCone(unpinned.st).cone_out(cell)
 
         pinned = _node(precone=5, seed=2)
         pinned.declare_pinned_region("doomed", set(removed))
-        verdict_pinned, _ = cob.SurgicalCone(pinned.st).coneOut(cell)
+        verdict_pinned, _ = cob.SurgicalCone(pinned.st).cone_out(cell)
 
         self.assertEqual(verdict_unpinned, verdict_pinned)
 
@@ -332,7 +332,7 @@ class ManifoldValidityIsTheOnlyGateTest(unittest.TestCase):
         node.declare_pinned_region("all", set(_vertex_ids(node.st)))
 
         cone = cob.SurgicalCone(node.st)
-        accepted, why = cone.coneOut(list(cells[0]))
+        accepted, why = cone.cone_out(list(cells[0]))
         self.assertFalse(accepted)
         self.assertTrue(why and why != "ok", "a rejection must name its reason")
         self.assertNotIn("pinned", why.lower(),
@@ -342,8 +342,8 @@ class ManifoldValidityIsTheOnlyGateTest(unittest.TestCase):
         node = _node()
         node.declare_pinned_region("all", set(_vertex_ids(node.st)))
         cells = _cells(node.st)
-        cob.SurgicalCone(node.st).coneOut(list(cells[0]))
-        ok, _ = cob.EigenstateSynthesis(node.st, 3).dualComplexValid()
+        cob.SurgicalCone(node.st).cone_out(list(cells[0]))
+        ok, _ = cob.EigenstateSynthesis(node.st, 3).dual_complex_valid()
         self.assertTrue(ok, "a rejected move must roll back to a valid complex")
 
 

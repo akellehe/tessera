@@ -15,8 +15,8 @@ from tessera import cobordism as cob
 GCR = ch.GrownCellRule
 WM = ch.WhitneyMass
 
-TETRAHEDRON = cob.ChainComplex.fromTopCells([[0, 1, 2, 3]])
-TRIANGLE = cob.ChainComplex.fromTopCells([[0, 1, 2]])
+TETRAHEDRON = cob.ChainComplex.from_top_cells([[0, 1, 2, 3]])
+TRIANGLE = cob.ChainComplex.from_top_cells([[0, 1, 2]])
 
 
 def _squared_lengths(points, metric):
@@ -27,9 +27,9 @@ def _squared_lengths(points, metric):
 
 
 def _local_block(K, s, k=1):
-    blocks = WM.topSimplexBlocks(K, s, k)
+    blocks = WM.top_simplex_blocks(K, s, k)
     assert len(blocks) == 1
-    return np.asarray(blocks[0].block), list(blocks[0].edgeIndices)
+    return np.asarray(blocks[0].block), list(blocks[0].edge_indices)
 
 
 def _tetrahedra():
@@ -48,13 +48,13 @@ def _tetrahedra():
 @pytest.mark.parametrize("name,s", list(_tetrahedra()))
 def test_level_zero_lengths_returned_exactly(name, s):
     block, edges = _local_block(TETRAHEDRON, s)
-    inversion = GCR.invertWhitneyBlock(block)
+    inversion = GCR.invert_whitney_block(block)
     assert inversion.dimension == 3
-    assert inversion.scaleDetermined
+    assert inversion.scale_determined
     expected = np.array([s[e] for e in edges])
-    np.testing.assert_allclose(np.array(inversion.squaredLengths), expected,
+    np.testing.assert_allclose(np.array(inversion.squared_lengths), expected,
                                rtol=1e-12, atol=0.0)
-    assert inversion.relativeResidual < 1e-14
+    assert inversion.relative_residual < 1e-14
     assert inversion.asymmetry < 1e-14
     volume = WM.certificate(TETRAHEDRON, s).volumes[0]
     np.testing.assert_allclose(inversion.volume, volume, rtol=1e-12)
@@ -63,15 +63,15 @@ def test_level_zero_lengths_returned_exactly(name, s):
 @pytest.mark.parametrize("name,s", list(_tetrahedra()))
 def test_forward_map_reproduces_block(name, s):
     block, _ = _local_block(TETRAHEDRON, s)
-    inversion = GCR.invertWhitneyBlock(block)
-    rebuilt = np.asarray(GCR.whitneyBlock(inversion.scaledGradientGram))
+    inversion = GCR.invert_whitney_block(block)
+    rebuilt = np.asarray(GCR.whitney_block(inversion.scaled_gradient_gram))
     np.testing.assert_allclose(rebuilt, block, rtol=0.0, atol=1e-14 * np.abs(block).max())
 
 
 def test_gradient_gram_annihilates_constants_at_level_zero():
     s = list(_tetrahedra())[0][1]
     block, _ = _local_block(TETRAHEDRON, s)
-    gram = np.asarray(GCR.invertWhitneyBlock(block).scaledGradientGram)
+    gram = np.asarray(GCR.invert_whitney_block(block).scaled_gradient_gram)
     assert np.abs(gram @ np.ones(4)).max() < 1e-13 * np.abs(gram).max()
 
 
@@ -82,7 +82,7 @@ def test_block_off_the_whitney_family_reports_its_residual():
     perturbation = rng.normal(size=(6, 6))
     perturbation = 0.5 * (perturbation + perturbation.T)
     # Remove the component inside the Whitney family so that the residual is known.
-    design = np.array([np.asarray(GCR.whitneyBlock(_unit(a, b)))[np.triu_indices(6)]
+    design = np.array([np.asarray(GCR.whitney_block(_unit(a, b)))[np.triu_indices(6)]
                        for a in range(4) for b in range(a, 4)]).T.real
     upper = perturbation[np.triu_indices(6)]
     orthogonal = upper - design @ np.linalg.lstsq(design, upper, rcond=None)[0]
@@ -90,11 +90,11 @@ def test_block_off_the_whitney_family_reports_its_residual():
     off[np.triu_indices(6)] = orthogonal
     off = off + np.triu(off, 1).T
     scaled = 1e-3 * np.abs(block).max() / np.abs(off).max() * off
-    inversion = GCR.invertWhitneyBlock(block + scaled)
+    inversion = GCR.invert_whitney_block(block + scaled)
     np.testing.assert_allclose(inversion.residual,
                                np.linalg.norm(scaled[np.triu_indices(6)]), rtol=1e-9)
-    np.testing.assert_allclose(np.array(inversion.squaredLengths),
-                               np.array(GCR.invertWhitneyBlock(block).squaredLengths),
+    np.testing.assert_allclose(np.array(inversion.squared_lengths),
+                               np.array(GCR.invert_whitney_block(block).squared_lengths),
                                rtol=1e-9)
 
 
@@ -107,12 +107,12 @@ def _unit(a, b):
 def test_two_dimensional_scale_is_undetermined():
     s = [1.0 + 0.0j, 2.0 + 0.0j, 1.5 + 0.0j]
     block, edges = _local_block(TRIANGLE, s)
-    inversion = GCR.invertWhitneyBlock(block)
+    inversion = GCR.invert_whitney_block(block)
     assert inversion.dimension == 2
-    assert not inversion.scaleDetermined
-    assert inversion.squaredLengths == []
+    assert not inversion.scale_determined
+    assert inversion.squared_lengths == []
     assert np.isnan(inversion.scale.real)
-    scaled = np.array(inversion.scaledSquaredLengths)
+    scaled = np.array(inversion.scaled_squared_lengths)
     expected = np.array([s[e] for e in edges])
     ratio = scaled / expected
     np.testing.assert_allclose(ratio, ratio[0], rtol=1e-12)
@@ -123,29 +123,29 @@ def test_two_dimensional_scale_is_undetermined():
 
 def test_higher_dimension_and_bad_shapes_refused():
     with pytest.raises(ValueError, match="root"):
-        GCR.invertWhitneyBlock(np.eye(10, dtype=complex))
+        GCR.invert_whitney_block(np.eye(10, dtype=complex))
     with pytest.raises(ValueError, match="square"):
-        GCR.invertWhitneyBlock(np.zeros((6, 5), dtype=complex))
+        GCR.invert_whitney_block(np.zeros((6, 5), dtype=complex))
 
 
 def test_phase_rule_rank_one_returns_the_edge_connection():
     for phi in [0.3, -1.2 + 0.4j, 2.9 - 0.1j]:
         U = np.exp(1j * phi)
-        np.testing.assert_allclose(GCR.transportConnection(np.array([[U]])), U, rtol=1e-15)
+        np.testing.assert_allclose(GCR.transport_connection(np.array([[U]])), U, rtol=1e-15)
 
 
 def test_phase_rule_is_the_full_determinant():
     rng = np.random.default_rng(11)
     M = rng.normal(size=(3, 3)) + 1j * rng.normal(size=(3, 3))
-    np.testing.assert_allclose(GCR.transportConnection(M), np.linalg.det(M), rtol=1e-13)
+    np.testing.assert_allclose(GCR.transport_connection(M), np.linalg.det(M), rtol=1e-13)
     # Frame changes at the two ends multiply it by det(g_v)^-1 det(g_w).
     gv = rng.normal(size=(3, 3)) + 1j * rng.normal(size=(3, 3))
     gw = rng.normal(size=(3, 3)) + 1j * rng.normal(size=(3, 3))
-    np.testing.assert_allclose(GCR.transportConnection(np.linalg.inv(gv) @ M @ gw),
+    np.testing.assert_allclose(GCR.transport_connection(np.linalg.inv(gv) @ M @ gw),
                                np.linalg.det(M) * np.linalg.det(gw) / np.linalg.det(gv),
                                rtol=1e-12)
     with pytest.raises(ValueError, match="common-rank"):
-        GCR.transportConnection(np.ones((2, 3), dtype=complex))
+        GCR.transport_connection(np.ones((2, 3), dtype=complex))
 
 
 # ------------------------------------------------ the identification (A)
@@ -172,16 +172,16 @@ def _single_tetrahedron_pairing(s, links=None):
     Y = dressed @ Z
     images = np.linalg.solve(dressed, Y)
     frames = [Y[:, [v]] for v in range(4)]
-    return np.asarray(GCR.determinantPairing(frames, [images[:, [v]] for v in range(4)]))
+    return np.asarray(GCR.determinant_pairing(frames, [images[:, [v]] for v in range(4)]))
 
 
 @pytest.mark.parametrize("name,s", list(_tetrahedra()))
 def test_identification_returns_level_zero_lengths(name, s):
     pairing = _single_tetrahedron_pairing(s)
-    inversion = GCR.invertVertexPairing(pairing)
-    np.testing.assert_allclose(np.array(inversion.squaredLengths), np.array(s),
+    inversion = GCR.invert_vertex_pairing(pairing)
+    np.testing.assert_allclose(np.array(inversion.squared_lengths), np.array(s),
                                rtol=1e-11, atol=0.0)
-    assert inversion.rowSumDefect < 1e-13
+    assert inversion.row_sum_defect < 1e-13
     assert inversion.asymmetry < 1e-13
     volume = WM.certificate(TETRAHEDRON, s).volumes[0]
     np.testing.assert_allclose(inversion.volume, volume, rtol=1e-11)
@@ -191,9 +191,9 @@ def test_identification_with_curvature_reports_its_row_sum_defect():
     s = list(_tetrahedra())[0][1]
     rng = np.random.default_rng(5)
     links = list(np.exp(1j * rng.normal(size=6)))
-    inversion = GCR.invertVertexPairing(_single_tetrahedron_pairing(s, links))
-    assert inversion.rowSumDefect > 1e-3
-    assert inversion.scaleDetermined
+    inversion = GCR.invert_vertex_pairing(_single_tetrahedron_pairing(s, links))
+    assert inversion.row_sum_defect > 1e-3
+    assert inversion.scale_determined
 
 
 def test_the_frame_invariant_ratios_of_the_inversion():
@@ -202,15 +202,15 @@ def test_the_frame_invariant_ratios_of_the_inversion():
     rescaled by det g_v det g_w."""
     s = list(_tetrahedra())[0][1]
     pairing = _single_tetrahedron_pairing(s)
-    read = GCR.invertVertexPairing(pairing)
-    ratios = np.asarray(read.frameInvariantRatios)
+    read = GCR.invert_vertex_pairing(pairing)
+    ratios = np.asarray(read.frame_invariant_ratios)
     np.testing.assert_allclose(
         ratios, pairing ** 2 / np.outer(np.diag(pairing), np.diag(pairing)),
         rtol=1e-12)
     np.testing.assert_allclose(np.diag(ratios), 1.0, rtol=1e-14)
     dets = np.array([2.0, 0.5j, -1.5, 3.0 + 1.0j])
-    moved = GCR.invertVertexPairing(pairing * np.outer(dets, dets))
-    np.testing.assert_allclose(np.asarray(moved.frameInvariantRatios), ratios,
+    moved = GCR.invert_vertex_pairing(pairing * np.outer(dets, dets))
+    np.testing.assert_allclose(np.asarray(moved.frame_invariant_ratios), ratios,
                                rtol=1e-10)
 
 
@@ -220,17 +220,17 @@ def test_determinant_pairing_rank_two_and_frame_law():
     G = rng.normal(size=(n, n)) + 1j * rng.normal(size=(n, n))
     frames = [rng.normal(size=(n, 2)) + 1j * rng.normal(size=(n, 2)) for _ in range(3)]
     images = [G @ Y for Y in frames]
-    pairing = np.asarray(GCR.determinantPairing(frames, images))
+    pairing = np.asarray(GCR.determinant_pairing(frames, images))
     np.testing.assert_allclose(pairing[0, 2], np.linalg.det(frames[0].T @ G @ frames[2]),
                                rtol=1e-12)
     g = [rng.normal(size=(2, 2)) + 1j * rng.normal(size=(2, 2)) for _ in range(3)]
     moved = [Y @ gv for Y, gv in zip(frames, g)]
-    moved_pairing = np.asarray(GCR.determinantPairing(moved, [G @ Y for Y in moved]))
+    moved_pairing = np.asarray(GCR.determinant_pairing(moved, [G @ Y for Y in moved]))
     dets = np.array([np.linalg.det(gv) for gv in g])
     np.testing.assert_allclose(moved_pairing, np.outer(dets, dets) * pairing, rtol=1e-10)
     ratios = lambda p: p ** 2 / np.outer(np.diag(p), np.diag(p))
     np.testing.assert_allclose(ratios(moved_pairing), ratios(pairing), rtol=1e-9)
-    mixed = np.asarray(GCR.determinantPairing(
+    mixed = np.asarray(GCR.determinant_pairing(
         [frames[0], frames[1][:, :1]], [images[0], images[1][:, :1]]))
     assert np.isnan(mixed[0, 1].real) and not np.isnan(mixed[1, 1].real)
 
@@ -238,18 +238,18 @@ def test_determinant_pairing_rank_two_and_frame_law():
 def test_vertex_pairing_two_dimensions_and_refusals():
     s = [1.0 + 0.0j, 2.0 + 0.0j, 1.5 + 0.0j]
     # a triangle's |T| Gamma from its Whitney block's C*Gamma (C = |T|/12)
-    inversion = GCR.invertWhitneyBlock(_local_block(TRIANGLE, s)[0])
-    pairing = 12.0 * np.asarray(inversion.scaledGradientGram)
-    read = GCR.invertVertexPairing(pairing)
-    assert not read.scaleDetermined and read.squaredLengths == []
-    ratio = np.array(read.scaledSquaredLengths) / np.array(s)
+    inversion = GCR.invert_whitney_block(_local_block(TRIANGLE, s)[0])
+    pairing = 12.0 * np.asarray(inversion.scaled_gradient_gram)
+    read = GCR.invert_vertex_pairing(pairing)
+    assert not read.scale_determined and read.squared_lengths == []
+    ratio = np.array(read.scaled_squared_lengths) / np.array(s)
     np.testing.assert_allclose(ratio, ratio[0], rtol=1e-12)
     with pytest.raises(ValueError, match="3x3"):
-        GCR.invertVertexPairing(np.eye(5, dtype=complex))
+        GCR.invert_vertex_pairing(np.eye(5, dtype=complex))
     bad = np.eye(4, dtype=complex)
     bad[0, 1] = np.nan
     with pytest.raises(ValueError, match="undefined"):
-        GCR.invertVertexPairing(bad)
+        GCR.invert_vertex_pairing(bad)
 
 
 # ------------------------------------- the gauge-invariant pairing (§10 pattern)
@@ -282,7 +282,7 @@ def _level_zero_invariant_pairing(s, links):
     Yd = dressed(inverse) @ coboundary(inverse)
     images = np.linalg.solve(dressed(U), Y)
     connection = np.array([[U[(v, w)] for w in range(4)] for v in range(4)])
-    return np.asarray(GCR.gaugeInvariantPairing(
+    return np.asarray(GCR.gauge_invariant_pairing(
         [Yd[:, [v]] for v in range(4)], [images[:, [v]] for v in range(4)],
         connection))
 
@@ -298,25 +298,25 @@ def _pure_gauge(rng, unitary):
 def test_invariant_pairing_returns_level_zero_at_any_pure_gauge(name, s, unitary):
     rng = np.random.default_rng(21)
     for _ in range(3):
-        inversion = GCR.invertVertexPairing(
+        inversion = GCR.invert_vertex_pairing(
             _level_zero_invariant_pairing(s, _pure_gauge(rng, unitary)))
-        np.testing.assert_allclose(np.array(inversion.squaredLengths), np.array(s),
+        np.testing.assert_allclose(np.array(inversion.squared_lengths), np.array(s),
                                    rtol=1e-10, atol=0.0)
-        assert inversion.rowSumDefect < 1e-12
+        assert inversion.row_sum_defect < 1e-12
 
 
 def test_invariant_pairing_is_gauge_invariant_with_curvature():
     s = list(_tetrahedra())[0][1]
     rng = np.random.default_rng(8)
     links = np.exp(1j * rng.normal(size=6))
-    reference = GCR.invertVertexPairing(_level_zero_invariant_pairing(s, links))
+    reference = GCR.invert_vertex_pairing(_level_zero_invariant_pairing(s, links))
     for unitary in (True, False):
         gauge = _pure_gauge(rng, unitary)
-        moved = GCR.invertVertexPairing(
+        moved = GCR.invert_vertex_pairing(
             _level_zero_invariant_pairing(s, list(np.array(links) * np.array(gauge))))
-        np.testing.assert_allclose(np.array(moved.squaredLengths),
-                                   np.array(reference.squaredLengths), rtol=1e-10)
-    shift = np.max(np.abs(np.array(reference.squaredLengths) / np.array(s) - 1.0))
+        np.testing.assert_allclose(np.array(moved.squared_lengths),
+                                   np.array(reference.squared_lengths), rtol=1e-10)
+    shift = np.max(np.abs(np.array(reference.squared_lengths) / np.array(s) - 1.0))
     assert shift > 1e-3   # the curvature-induced shift of the rule
 
 
@@ -329,10 +329,10 @@ def test_normalized_dual_frames_make_the_pairing_frame_invariant():
     connection = rng.normal(size=(4, 4)) + 1j * rng.normal(size=(4, 4))
 
     def pairing(frames, duals, connection):
-        normalized = [np.asarray(GCR.normalizeDualFrame(Y, D)) for Y, D in zip(frames, duals)]
+        normalized = [np.asarray(GCR.normalize_dual_frame(Y, D)) for Y, D in zip(frames, duals)]
         for Y, D in zip(frames, normalized):
             np.testing.assert_allclose(np.linalg.det(D.T @ Y), 1.0, rtol=1e-12)
-        return np.asarray(GCR.gaugeInvariantPairing(normalized, [G @ Y for Y in frames],
+        return np.asarray(GCR.gauge_invariant_pairing(normalized, [G @ Y for Y in frames],
                                                     connection))
 
     base = pairing(frames, duals, connection)
@@ -345,4 +345,4 @@ def test_normalized_dual_frames_make_the_pairing_frame_invariant():
                     moved_connection)
     np.testing.assert_allclose(moved, base, rtol=1e-9)
     with pytest.raises(ValueError, match="same shape"):
-        GCR.normalizeDualFrame(frames[0], duals[0][:, :1])
+        GCR.normalize_dual_frame(frames[0], duals[0][:, :1])

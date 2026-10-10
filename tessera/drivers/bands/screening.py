@@ -595,22 +595,22 @@ class GaugeResponse:
     def __init__(self, cov, k, occupied):
         pencil = cov.pencil(k)
         self.metric = np.linalg.inv(pencil.B)                 # G_k = M_k^{-1}
-        h = cov.covariantOperator(k)
+        h = cov.covariant_operator(k)
         symmetric = self.metric @ h
         values, vectors = scipy.linalg.eigh(0.5 * (symmetric + symmetric.conj().T),
                                             0.5 * (self.metric + self.metric.conj().T))
         self.levels, self.modes = values, vectors
         self.occupied = list(occupied)
         self.empty = [n for n in range(len(values)) if n not in self.occupied]
-        edges = cov.base().complex().numSimplices(1)
+        edges = cov.base().complex().num_simplices(1)
         self.edges = edges
         bra = self.modes.conj().T @ self.metric
-        self.currents = np.array([bra @ cov.covariantOperatorPhaseDerivative(k, a) @ self.modes
+        self.currents = np.array([bra @ cov.covariant_operator_phase_derivative(k, a) @ self.modes
                                   for a in range(edges)])
         self.diamagnetic = np.zeros((edges, edges), dtype=complex)
         for a in range(edges):
             for b in range(a, edges):
-                second = bra @ cov.covariantOperatorPhaseHessian(k, a, b) @ self.modes
+                second = bra @ cov.covariant_operator_phase_hessian(k, a, b) @ self.modes
                 value = sum(second[m, m] for m in self.occupied)
                 self.diamagnetic[a, b] = self.diamagnetic[b, a] = value
 

@@ -15,8 +15,8 @@ from tessera.drivers.bands.crystal import CrystalCell, solve_pencil
 
 def _energy(cell, squared, potential, sigma):
     base = ch.ChainHodge(cell.complex, squared, ch.Preset.L2, ch.Branch.Continuation, 8)
-    pencil = ch.CovariantChainHodge(base, ch.Connection.trivial(cell.complex), 7, False).sparsePencil()
-    weighted = ch.WhitneyMass.assembleVertexPotential(cell.complex, squared, list(potential.astype(complex)))
+    pencil = ch.CovariantChainHodge(base, ch.Connection.trivial(cell.complex), 7, False).sparse_pencil()
+    weighted = ch.WhitneyMass.assemble_vertex_potential(cell.complex, squared, list(potential.astype(complex)))
     return solve_pencil(sp.csc_matrix(pencil.A) + weighted, pencil.M, 1, sigma).energies[0]
 
 

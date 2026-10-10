@@ -40,7 +40,7 @@ def _make_st_with_addgrowth(d=4, n_simplices=200,
     st = tessera.Spacetime(metric, tessera.CDT, 1.0, 1.0,
                            tessera.PREFERRED, tessera.Toroid())
     st.build(n_simplices)
-    cdt = tessera.CDTSimulation(st, 2.2, 0.5, 0.6, 0.02, st.getN41())
+    cdt = tessera.CDTSimulation(st, 2.2, 0.5, 0.6, 0.02, st.get_n41())
 
     for _ in range(max_batches):
         for _ in range(batch_size):
@@ -60,30 +60,30 @@ def _make_st_with_addgrowth(d=4, n_simplices=200,
 
 def _top_size(st):
     # CDT top simplices are (d+1)-vertex; d is the spacetime's declared
-    # (signature) dimension. getTopVertexCount() == signature.dimensions + 1,
+    # (signature) dimension. get_top_vertex_count() == signature.dimensions + 1,
     # the engine's single source of truth for top-cell membership -- O(1) and
     # immune to the lazily-materialized lower-dimensional facets that
-    # propose()/getFacets() register into getSimplices() (where the first
+    # propose()/get_facets() register into get_simplices() (where the first
     # scanned simplex may be a lower-dimensional face).
-    return st.getTopVertexCount()
+    return st.get_top_vertex_count()
 
 
 def _full_snapshot(st):
     dPlus1 = _top_size(st)
     return {
-        "n0": st.getVertexCount(),
-        "n41": st.getN41(),
-        "n32": st.getN32(),
-        "n4": st.getTopSimplexCount(),
+        "n0": st.get_vertex_count(),
+        "n41": st.get_n41(),
+        "n32": st.get_n32(),
+        "n4": st.get_top_simplex_count(),
         "top_fps": frozenset(
-            hash(s) for s in st.getSimplices()
-            if len(s.getVertices()) == dPlus1
+            hash(s) for s in st.get_simplices()
+            if len(s.get_vertices()) == dPlus1
         ),
         "edge_fps": frozenset(
-            hash(e) for e in st.getEdgeList().toVector()
+            hash(e) for e in st.get_edge_list().to_vector()
         ),
         "vertex_ids": frozenset(
-            v.getId() for v in st.getVertexList().toVector()
+            v.get_id() for v in st.get_vertex_list().to_vector()
         ),
     }
 
@@ -119,38 +119,38 @@ class TestRemovePropose(unittest.TestCase):
 
     def test_movetype(self):
         m = tessera.RemoveMove(_make_st_with_addgrowth(), 0)
-        self.assertEqual(m.moveType(), "remove")
+        self.assertEqual(m.move_type(), "remove")
 
     def test_dN0_is_minus_one(self):
         st = _make_st_with_addgrowth()
         m = _try_propose(st, range(2000))
         self.assertIsNotNone(m)
-        self.assertEqual(m.dN0(), -1)
+        self.assertEqual(m.d_n0(), -1)
 
     def test_dN41_is_minus_2d_minus_2(self):
         """In 4D: dN41 = -(2*4 - 2) = -6."""
         st = _make_st_with_addgrowth(d=4)
         m = _try_propose(st, range(2000))
         self.assertIsNotNone(m)
-        self.assertEqual(m.dN41(), -6)
+        self.assertEqual(m.d_n41(), -6)
 
     def test_dN32_is_zero(self):
         st = _make_st_with_addgrowth()
         m = _try_propose(st, range(2000))
         self.assertIsNotNone(m)
-        self.assertEqual(m.dN32(), 0)
+        self.assertEqual(m.d_n32(), 0)
 
     def test_log_prefactor_matches_formula(self):
         st = _make_st_with_addgrowth()
         m = _try_propose(st, range(2000))
         self.assertIsNotNone(m)
         # log(N0 / N41after) where N41after = N41 - (2d-2)
-        n41 = st.getN41()
-        n0 = st.getVertexCount()
+        n41 = st.get_n41()
+        n0 = st.get_vertex_count()
         d = 4
         n41_after = n41 - (2 * d - 2)
         self.assertAlmostEqual(
-            m.metropolisLogPrefactor(),
+            m.metropolis_log_prefactor(),
             math.log(n0) - math.log(n41_after),
             places=8
         )
@@ -160,7 +160,7 @@ class TestRemovePropose(unittest.TestCase):
         st = _make_st_with_addgrowth(d=4)
         m = _try_propose(st, range(2000))
         self.assertIsNotNone(m)
-        ids = m.touchedVertexIds()
+        ids = m.touched_vertex_ids()
         self.assertEqual(len(ids), 7)
         self.assertEqual(len(set(ids)), 7)
 
@@ -176,28 +176,28 @@ class TestRemoveApply(unittest.TestCase):
         st = _make_st_with_addgrowth()
         m = _try_propose(st, range(2000))
         self.assertIsNotNone(m)
-        n0_b, n41_b, n32_b = (st.getVertexCount(), st.getN41(),
-                              st.getN32())
+        n0_b, n41_b, n32_b = (st.get_vertex_count(), st.get_n41(),
+                              st.get_n32())
         m.apply()
-        self.assertEqual(st.getVertexCount(), n0_b - 1)
-        self.assertEqual(st.getN41(), n41_b - 6)
-        self.assertEqual(st.getN32(), n32_b)
+        self.assertEqual(st.get_vertex_count(), n0_b - 1)
+        self.assertEqual(st.get_n41(), n41_b - 6)
+        self.assertEqual(st.get_n32(), n32_b)
 
     def test_apply_removes_target_vertex_id_from_list(self):
-        """The vertex ID in touchedVertexIds()[0] (= the v being
+        """The vertex ID in touched_vertex_ids()[0] (= the v being
         removed) is no longer present after apply."""
         st = _make_st_with_addgrowth()
         m = _try_propose(st, range(2000))
         self.assertIsNotNone(m)
-        target_id = m.touchedVertexIds()[0]
+        target_id = m.touched_vertex_ids()[0]
         self.assertIn(
             target_id,
-            {v.getId() for v in st.getVertexList().toVector()}
+            {v.get_id() for v in st.get_vertex_list().to_vector()}
         )
         m.apply()
         self.assertNotIn(
             target_id,
-            {v.getId() for v in st.getVertexList().toVector()}
+            {v.get_id() for v in st.get_vertex_list().to_vector()}
         )
 
     def test_double_apply_returns_false(self):
@@ -241,16 +241,16 @@ class TestRemoveRollback(unittest.TestCase):
         st = _make_st_with_addgrowth()
         m = _try_propose(st, range(2000))
         self.assertIsNotNone(m)
-        target_id = m.touchedVertexIds()[0]
+        target_id = m.touched_vertex_ids()[0]
         m.apply()
         self.assertNotIn(
             target_id,
-            {v.getId() for v in st.getVertexList().toVector()}
+            {v.get_id() for v in st.get_vertex_list().to_vector()}
         )
         m.rollback()
         self.assertIn(
             target_id,
-            {v.getId() for v in st.getVertexList().toVector()}
+            {v.get_id() for v in st.get_vertex_list().to_vector()}
         )
 
     def test_rollback_without_apply_is_noop(self):

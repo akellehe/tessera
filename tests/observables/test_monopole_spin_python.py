@@ -152,7 +152,7 @@ class TestMonopoleNumber(unittest.TestCase):
 
     def test_every_outward_face_carries_the_declared_holonomy(self) -> None:
         for mu in (-2, -1, 0, 1, 2, 3):
-            read = MonopoleSupport.tetrahedron(mu).monopoleNumber()
+            read = MonopoleSupport.tetrahedron(mu).monopole_number()
             expected = np.exp(2j * math.pi * mu / 4.0)
             for holonomy in read.face_holonomies:
                 self.assertLessEqual(abs(holonomy - expected), 1e-14)
@@ -164,7 +164,7 @@ class TestMonopoleNumber(unittest.TestCase):
         expected = {-2: (2, False), -1: (-1, True), 0: (0, False),
                     1: (1, True), 2: (2, False), 3: (-1, True)}
         for mu, (number, odd) in expected.items():
-            read = MonopoleSupport.tetrahedron(mu).monopoleNumber()
+            read = MonopoleSupport.tetrahedron(mu).monopole_number()
             self.assertEqual(read.monopole_number, number, msg=f"mu={mu}")
             self.assertEqual(read.odd, odd, msg=f"mu={mu}")
             self.assertTrue(read.bundle)
@@ -174,7 +174,7 @@ class TestMonopoleNumber(unittest.TestCase):
 
     def test_the_total_flux_is_two_pi_times_the_number(self) -> None:
         for mu in (-1, 0, 1, 2):
-            read = MonopoleSupport.tetrahedron(mu).monopoleNumber()
+            read = MonopoleSupport.tetrahedron(mu).monopole_number()
             self.assertLessEqual(
                 abs(read.total_flux - 2.0 * math.pi * read.monopole_number),
                 1e-12)
@@ -183,10 +183,10 @@ class TestMonopoleNumber(unittest.TestCase):
         """At even monopole number every face holonomy is exactly -1, so
         every face flux sits at the end of the principal interval.  At odd
         monopole number the fluxes are +-pi/2 and stay well inside it."""
-        even = MonopoleSupport.tetrahedron(2).monopoleNumber()
+        even = MonopoleSupport.tetrahedron(2).monopole_number()
         self.assertTrue(even.on_branch_cut)
         self.assertLessEqual(even.branch_margin, 1e-14)
-        odd = MonopoleSupport.tetrahedron(1).monopoleNumber()
+        odd = MonopoleSupport.tetrahedron(1).monopole_number()
         self.assertFalse(odd.on_branch_cut)
         self.assertAlmostEqual(odd.branch_margin, math.pi / 2.0, places=12)
 
@@ -199,12 +199,12 @@ class TestMonopoleNumber(unittest.TestCase):
 
     def test_u1_part_is_the_explicit_way_into_the_domain(self) -> None:
         scaled = [3.0 * value for value in reference_connection(1)]
-        restored = MonopoleSupport.u1Part(scaled)
+        restored = MonopoleSupport.u1_part(scaled)
         support = MonopoleSupport(4, [list(e) for e in EDGES],
                                   [list(f) for f in OUTWARD_FACES], restored)
-        self.assertEqual(support.monopoleNumber().monopole_number, 1)
+        self.assertEqual(support.monopole_number().monopole_number, 1)
         with self.assertRaises(ValueError):
-            MonopoleSupport.u1Part([0.0 + 0.0j])
+            MonopoleSupport.u1_part([0.0 + 0.0j])
 
     def test_a_face_whose_boundary_is_not_an_edge_is_refused(self) -> None:
         with self.assertRaises(ValueError):
@@ -225,7 +225,7 @@ class TestTwistedOperators(unittest.TestCase):
         for mu in (0, 1, 2):
             support = MonopoleSupport.tetrahedron(mu)
             self.assertLessEqual(
-                np.max(np.abs(support.twistedCoboundary()
+                np.max(np.abs(support.twisted_coboundary()
                               - reference_coboundary(
                                   reference_connection(mu)))), 1e-14)
 
@@ -240,22 +240,22 @@ class TestTwistedOperators(unittest.TestCase):
                     if x != y:
                         expected[x, y] -= reference_transport(connection, x, y)
             self.assertLessEqual(
-                np.max(np.abs(support.vertexLaplacian() - expected)), 1e-13)
+                np.max(np.abs(support.vertex_laplacian() - expected)), 1e-13)
 
     def test_vertex_spectrum_at_even_monopole_number(self) -> None:
         """The 1 + 3 decomposition the whitepaper names."""
         flat = sorted_spectrum(
-            MonopoleSupport.tetrahedron(0).vertexLaplacian())
+            MonopoleSupport.tetrahedron(0).vertex_laplacian())
         np.testing.assert_allclose(flat, [0.0, 4.0, 4.0, 4.0], atol=1e-10)
         two = sorted_spectrum(
-            MonopoleSupport.tetrahedron(2).vertexLaplacian())
+            MonopoleSupport.tetrahedron(2).vertex_laplacian())
         np.testing.assert_allclose(two, [2.0, 2.0, 2.0, 6.0], atol=1e-10)
 
     def test_vertex_spectrum_at_odd_monopole_number_is_two_doublets(
             self) -> None:
         for mu in (1, -1, 3):
             values = sorted_spectrum(
-                MonopoleSupport.tetrahedron(mu).vertexLaplacian())
+                MonopoleSupport.tetrahedron(mu).vertex_laplacian())
             np.testing.assert_allclose(
                 values,
                 [3.0 - SQRT3, 3.0 - SQRT3, 3.0 + SQRT3, 3.0 + SQRT3],
@@ -263,7 +263,7 @@ class TestTwistedOperators(unittest.TestCase):
             # The same pair from the two traces alone: tr L = 3 * 4 = 12 and
             # tr L^2 = 9 * 4 + 12, since the off-diagonal entries all have
             # unit modulus.  Two doublets at 3 -+ s then force s^2 = 3.
-            matrix = MonopoleSupport.tetrahedron(mu).vertexLaplacian()
+            matrix = MonopoleSupport.tetrahedron(mu).vertex_laplacian()
             self.assertLessEqual(abs(np.trace(matrix) - 12.0), 1e-12)
             self.assertLessEqual(
                 abs(np.trace(matrix @ matrix) - (36.0 + 12.0)), 1e-12)
@@ -272,7 +272,7 @@ class TestTwistedOperators(unittest.TestCase):
             self) -> None:
         support = MonopoleSupport.tetrahedron(0)
         self.assertLessEqual(
-            np.max(np.abs(support.edgeLaplacian() - 4.0 * np.eye(6))), 1e-12)
+            np.max(np.abs(support.edge_laplacian() - 4.0 * np.eye(6))), 1e-12)
 
     def test_the_coexact_sector_is_a_projector_of_the_expected_rank(
             self) -> None:
@@ -280,7 +280,7 @@ class TestTwistedOperators(unittest.TestCase):
         triplet; with flux the zero mode is lifted, the exact sector fills
         out to rank four and the coexact sector drops to rank two."""
         for mu, rank in ((0, 3), (1, 2), (2, 2), (-1, 2)):
-            projector = MonopoleSupport.tetrahedron(mu).coexactProjector()
+            projector = MonopoleSupport.tetrahedron(mu).coexact_projector()
             self.assertLessEqual(
                 np.max(np.abs(projector @ projector - projector)), 1e-10,
                 msg=f"mu={mu}")
@@ -296,7 +296,7 @@ class TestProjectiveRepresentation(unittest.TestCase):
     """D_k(g) = rho_k(u_g) P_g, its intertwining, and the cocycle varpi."""
 
     def test_the_rotation_group_is_the_twelve_even_permutations(self) -> None:
-        rotations = [list(r) for r in MonopoleSupport.tetrahedralRotations()]
+        rotations = [list(r) for r in MonopoleSupport.tetrahedral_rotations()]
         self.assertEqual(len(rotations), 12)
         self.assertEqual(rotations[0], [0, 1, 2, 3])
         self.assertEqual(sorted(rotations), sorted(even_permutations()))
@@ -304,8 +304,8 @@ class TestProjectiveRepresentation(unittest.TestCase):
     def test_the_configuration_is_symmetric_up_to_gauge(self) -> None:
         for mu in (0, 1, 2, 3):
             support = MonopoleSupport.tetrahedron(mu)
-            for rotation in MonopoleSupport.tetrahedralRotations():
-                read = support.gaugeCompensation(rotation)
+            for rotation in MonopoleSupport.tetrahedral_rotations():
+                read = support.gauge_compensation(rotation)
                 self.assertTrue(read.symmetric, msg=f"mu={mu} g={rotation}")
                 self.assertLessEqual(read.residual, 1e-13)
                 self.assertLessEqual(abs(read.gauge[0] - 1.0), 0.0)
@@ -320,40 +320,40 @@ class TestProjectiveRepresentation(unittest.TestCase):
         the edge set."""
         support = MonopoleSupport.tetrahedron(1)
         with self.assertRaises(ValueError):
-            support.gaugeCompensation([0, 0, 1, 2])
+            support.gauge_compensation([0, 0, 1, 2])
         path = MonopoleSupport(4, [[0, 1], [1, 2], [2, 3]], [],
                                [1.0 + 0j] * 3)
         with self.assertRaises(ValueError):
-            path.gaugeCompensation([1, 0, 2, 3])
+            path.gauge_compensation([1, 0, 2, 3])
 
     def test_the_vertex_action_is_the_permutation_dressed_by_the_gauge(
             self) -> None:
         support = MonopoleSupport.tetrahedron(1)
-        for rotation in MonopoleSupport.tetrahedralRotations():
-            gauge = np.asarray(support.gaugeCompensation(rotation).gauge)
+        for rotation in MonopoleSupport.tetrahedral_rotations():
+            gauge = np.asarray(support.gauge_compensation(rotation).gauge)
             expected = np.zeros((4, 4), dtype=complex)
             for x in range(4):
                 expected[rotation[x], x] = 1.0 / gauge[rotation[x]]
             self.assertLessEqual(
-                np.max(np.abs(support.vertexRepresentation(rotation)
+                np.max(np.abs(support.vertex_representation(rotation)
                               - expected)), 1e-13)
 
     def test_the_edge_action_dresses_the_signed_permutation(self) -> None:
         """At zero flux the gauge is trivial and D_1(g) is exactly the
         geometric signed permutation."""
         support = MonopoleSupport.tetrahedron(0)
-        for rotation in MonopoleSupport.tetrahedralRotations():
+        for rotation in MonopoleSupport.tetrahedral_rotations():
             self.assertLessEqual(
-                np.max(np.abs(support.edgeRepresentation(rotation)
+                np.max(np.abs(support.edge_representation(rotation)
                               - reference_signed_permutation(rotation))),
                 1e-13)
 
     def test_both_actions_are_unitary(self) -> None:
         for mu in (0, 1, 2, 3):
             support = MonopoleSupport.tetrahedron(mu)
-            for rotation in MonopoleSupport.tetrahedralRotations():
-                for action in (support.vertexRepresentation(rotation),
-                               support.edgeRepresentation(rotation)):
+            for rotation in MonopoleSupport.tetrahedral_rotations():
+                for action in (support.vertex_representation(rotation),
+                               support.edge_representation(rotation)):
                     identity = np.eye(action.shape[0])
                     self.assertLessEqual(
                         np.max(np.abs(action.conj().T @ action - identity)),
@@ -362,13 +362,13 @@ class TestProjectiveRepresentation(unittest.TestCase):
     def test_d1_intertwines_the_twisted_coboundary(self) -> None:
         for mu in (0, 1, 2, 3):
             support = MonopoleSupport.tetrahedron(mu)
-            for rotation in MonopoleSupport.tetrahedralRotations():
+            for rotation in MonopoleSupport.tetrahedral_rotations():
                 self.assertLessEqual(
-                    support.intertwiningResidual(rotation), 1e-13,
+                    support.intertwining_residual(rotation), 1e-13,
                     msg=f"mu={mu} g={rotation}")
 
     def test_the_cocycle_class_is_nontrivial_exactly_at_odd_flux(self) -> None:
-        group = MonopoleSupport.tetrahedralRotations()
+        group = MonopoleSupport.tetrahedral_rotations()
         for mu, nontrivial in ((0, False), (1, True), (2, False), (3, True),
                                (-1, True), (-2, False)):
             support = MonopoleSupport.tetrahedron(mu)
@@ -385,7 +385,7 @@ class TestProjectiveRepresentation(unittest.TestCase):
         """Two commuting order-two rotations anticommute as operators at odd
         monopole number -- D(a)D(b)D(a)^-1 D(b)^-1 = -1 -- and commute at
         even."""
-        group = MonopoleSupport.tetrahedralRotations()
+        group = MonopoleSupport.tetrahedral_rotations()
         for mu, phase in ((0, 1.0), (1, -1.0), (2, 1.0), (3, -1.0)):
             read = MonopoleSupport.tetrahedron(mu).cocycle(group, 1)
             self.assertLessEqual(abs(read.commutator_phase - phase), 1e-13,
@@ -397,7 +397,7 @@ class TestProjectiveRepresentation(unittest.TestCase):
                              msg="the witnessing pair must commute")
 
     def test_the_cocycle_values_are_roots_of_unity(self) -> None:
-        group = MonopoleSupport.tetrahedralRotations()
+        group = MonopoleSupport.tetrahedral_rotations()
         trivial = MonopoleSupport.tetrahedron(0).cocycle(group, 1)
         self.assertEqual(len(trivial.values), 1)
         self.assertLessEqual(abs(trivial.values[0] - 1.0), 1e-13)
@@ -423,9 +423,9 @@ class TestSpinorBands(unittest.TestCase):
 
     def averaged(self, mu):
         support = MonopoleSupport.tetrahedron(mu)
-        group = MonopoleSupport.tetrahedralRotations()
-        return support, group, support.rotationAveragedEdgeOperator(
-            support.edgeLaplacian(), group)
+        group = MonopoleSupport.tetrahedral_rotations()
+        return support, group, support.rotation_averaged_edge_operator(
+            support.edge_laplacian(), group)
 
     def test_the_average_is_four_times_the_identity_at_zero_flux(self) -> None:
         _, _, averaged = self.averaged(0)
@@ -446,7 +446,7 @@ class TestSpinorBands(unittest.TestCase):
         for mu in (0, 1, 2):
             support, group, averaged = self.averaged(mu)
             for rotation in group:
-                action = support.edgeRepresentation(rotation)
+                action = support.edge_representation(rotation)
                 self.assertLessEqual(
                     np.max(np.abs(action @ averaged
                                   - averaged @ action)), 1e-11,
@@ -456,7 +456,7 @@ class TestSpinorBands(unittest.TestCase):
             self) -> None:
         for mu in (1, -1, 3):
             support = MonopoleSupport.tetrahedron(mu)
-            read = support.spinRead(MonopoleSupport.tetrahedralRotations())
+            read = support.spin_read(MonopoleSupport.tetrahedral_rotations())
             self.assertTrue(read.monopole.odd, msg=f"mu={mu}")
             self.assertTrue(read.cocycle.nontrivial, msg=f"mu={mu}")
             self.assertTrue(read.half_integer_doublet, msg=f"mu={mu}")
@@ -481,7 +481,7 @@ class TestSpinorBands(unittest.TestCase):
     def test_an_even_monopole_support_does_not(self) -> None:
         for mu in (0, 2, -2):
             support = MonopoleSupport.tetrahedron(mu)
-            read = support.spinRead(MonopoleSupport.tetrahedralRotations())
+            read = support.spin_read(MonopoleSupport.tetrahedral_rotations())
             self.assertFalse(read.monopole.odd, msg=f"mu={mu}")
             self.assertFalse(read.cocycle.nontrivial, msg=f"mu={mu}")
             self.assertFalse(read.half_integer_doublet, msg=f"mu={mu}")
@@ -495,7 +495,7 @@ class TestSpinorBands(unittest.TestCase):
         projective representation (score two, not one), which is what a
         trivial class produces."""
         support = MonopoleSupport.tetrahedron(2)
-        read = support.spinRead(MonopoleSupport.tetrahedralRotations())
+        read = support.spin_read(MonopoleSupport.tetrahedral_rotations())
         coexact = [b for b in read.bands if b.coexact]
         self.assertEqual(len(coexact), 1)
         self.assertEqual(coexact[0].dimension, 2)
@@ -503,11 +503,11 @@ class TestSpinorBands(unittest.TestCase):
 
     def test_a_non_hermitian_operator_is_refused(self) -> None:
         support = MonopoleSupport.tetrahedron(1)
-        group = MonopoleSupport.tetrahedralRotations()
+        group = MonopoleSupport.tetrahedral_rotations()
         skewed = np.eye(6, dtype=complex)
         skewed[0, 1] = 1.0
         with self.assertRaises(ValueError):
-            support.spinorBands(skewed, group, True)
+            support.spinor_bands(skewed, group, True)
 
 
 # ─── the sharp-spin eigen-equations ────────────────────────────────────────
@@ -536,7 +536,7 @@ class TestSharpSpin(unittest.TestCase):
     MODES = 6
 
     def spin_matrices(self):
-        return SharpSpin.doubletSpinMatrices(self.CARRIERS)
+        return SharpSpin.doublet_spin_matrices(self.CARRIERS)
 
     def test_the_spin_matrices_match_the_reference(self) -> None:
         produced = self.spin_matrices()
@@ -546,12 +546,12 @@ class TestSharpSpin(unittest.TestCase):
 
     def test_the_applied_action_equals_the_dense_operator(self) -> None:
         matrices = self.spin_matrices()
-        dense = SharpSpin.totalSpinSquaredMatrix(matrices)
+        dense = SharpSpin.total_spin_squared_matrix(matrices)
         self.assertEqual(dense.shape, (64, 64))
         self.assertLessEqual(np.max(np.abs(dense - dense.conj().T)), 1e-14)
         generator = np.random.default_rng(20261196)
         state = (generator.normal(size=64) + 1j * generator.normal(size=64))
-        applied = SharpSpin.applyTotalSpinSquared(matrices, state)
+        applied = SharpSpin.apply_total_spin_squared(matrices, state)
         self.assertLessEqual(np.max(np.abs(applied - dense @ state)), 1e-12)
 
     def test_determinants_are_wedges_with_the_permutation_sign(self) -> None:
@@ -570,21 +570,21 @@ class TestSharpSpin(unittest.TestCase):
     def test_the_superposition_is_linear_in_its_amplitudes(self) -> None:
         occupations = [[0, 2, 4], [1, 3, 5]]
         amplitudes = [0.6 + 0.2j, -0.3 + 0.9j]
-        state = SharpSpin.determinantSuperposition(occupations, amplitudes,
+        state = SharpSpin.determinant_superposition(occupations, amplitudes,
                                                    self.MODES)
         expected = sum(
             a * SharpSpin.determinant(o, self.MODES)
             for a, o in zip(amplitudes, occupations))
         self.assertLessEqual(np.max(np.abs(state - expected)), 0.0)
         with self.assertRaises(ValueError):
-            SharpSpin.determinantSuperposition(occupations, amplitudes[:1],
+            SharpSpin.determinant_superposition(occupations, amplitudes[:1],
                                                self.MODES)
 
     def sector(self):
         """The 8-dimensional one-per-carrier sector and the J^2 block on
         it."""
         matrices = self.spin_matrices()
-        dense = SharpSpin.totalSpinSquaredMatrix(matrices)
+        dense = SharpSpin.total_spin_squared_matrix(matrices)
         basis = np.column_stack([
             SharpSpin.determinant(modes, self.MODES)
             for modes in one_per_carrier_basis(self.CARRIERS)])
@@ -646,7 +646,7 @@ class TestSharpSpin(unittest.TestCase):
         self.assertFalse(read.variance_would_accept)
         # It IS sharp against its own eigenvalue.
         at_own = SharpSpin.read(matrices, state, state.conj(),
-                                targetEigenvalue=3.75)
+                                target_eigenvalue=3.75)
         self.assertTrue(at_own.sharp)
 
     def test_the_verdict_does_not_move_when_a_state_is_rescaled(self) -> None:
@@ -669,7 +669,7 @@ class TestSharpSpin(unittest.TestCase):
         with self.assertRaises(ValueError):
             SharpSpin.read(matrices, state, np.zeros(32, dtype=complex))
         with self.assertRaises(ValueError):
-            SharpSpin.applyTotalSpinSquared(matrices,
+            SharpSpin.apply_total_spin_squared(matrices,
                                             np.zeros(63, dtype=complex))
 
     def test_a_single_determinant_reports_one_determinant(self) -> None:
@@ -687,7 +687,7 @@ class TestTheRemainingReads(unittest.TestCase):
 
     def test_every_face_carries_a_quarter_of_the_total_flux(self) -> None:
         for mu, flux in ((0, 0.0), (1, math.pi / 2), (-1, -math.pi / 2)):
-            read = MonopoleSupport.tetrahedron(mu).monopoleNumber()
+            read = MonopoleSupport.tetrahedron(mu).monopole_number()
             np.testing.assert_allclose(read.face_fluxes, [flux] * 4,
                                        atol=1e-12, err_msg=f"mu={mu}")
             self.assertAlmostEqual(sum(read.face_fluxes), read.total_flux,
@@ -700,12 +700,12 @@ class TestTheRemainingReads(unittest.TestCase):
         for mu in (0, 1, 2):
             support = MonopoleSupport.tetrahedron(mu)
             self.assertEqual(support.vertex_count, 4)
-            d0 = np.asarray(support.twistedCoboundary())
-            d1 = np.asarray(support.twistedFaceCoboundary())
+            d0 = np.asarray(support.twisted_coboundary())
+            d1 = np.asarray(support.twisted_face_coboundary())
             self.assertEqual(d1.shape, (4, 6))
             laplacian = d0 @ d0.conj().T + d1.conj().T @ d1
             self.assertLessEqual(
-                np.max(np.abs(support.edgeLaplacian() - laplacian)), 1e-12)
+                np.max(np.abs(support.edge_laplacian() - laplacian)), 1e-12)
             curvature = np.linalg.norm(d1 @ d0)
             if mu == 0:
                 self.assertLessEqual(curvature, 1e-14)
@@ -715,14 +715,14 @@ class TestTheRemainingReads(unittest.TestCase):
     def test_the_worst_commutator_deviation_is_two_at_odd_flux(self) -> None:
         """|varpi(g,h)/varpi(h,g) - 1| is |-1 - 1| = 2 for the anticommuting
         pair at odd flux and zero at even flux."""
-        group = MonopoleSupport.tetrahedralRotations()
+        group = MonopoleSupport.tetrahedral_rotations()
         for mu, deviation in ((0, 0.0), (1, 2.0), (2, 0.0)):
             read = MonopoleSupport.tetrahedron(mu).cocycle(group, 1)
             self.assertAlmostEqual(read.max_commutator_deviation, deviation,
                                    places=12, msg=f"mu={mu}")
 
     def test_the_spin_read_records_its_target(self) -> None:
-        matrices = SharpSpin.doubletSpinMatrices(3)
+        matrices = SharpSpin.doublet_spin_matrices(3)
         state = SharpSpin.determinant([0, 2, 4], 6)
         for target in (0.75, 3.75):
             read = SharpSpin.read(matrices, state, state.conj(), target)
@@ -744,10 +744,10 @@ class TestIsotypicProjector(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.support = MonopoleSupport.tetrahedron(1)
-        cls.group = MonopoleSupport.tetrahedralRotations()
-        cls.read = cls.support.spinRead(cls.group)
-        averaged = np.asarray(cls.support.rotationAveragedEdgeOperator(
-            cls.support.edgeLaplacian(), cls.group))
+        cls.group = MonopoleSupport.tetrahedral_rotations()
+        cls.read = cls.support.spin_read(cls.group)
+        averaged = np.asarray(cls.support.rotation_averaged_edge_operator(
+            cls.support.edge_laplacian(), cls.group))
         values, vectors = np.linalg.eigh(averaged)
         order = np.argsort(values)
         vectors = vectors[:, order]
@@ -759,7 +759,7 @@ class TestIsotypicProjector(unittest.TestCase):
         # with both signs, is a linear representation of the double cover
         cls.maps, cls.characters = [], {c: [] for c in range(3)}
         for g in cls.group:
-            d = np.asarray(cls.support.edgeRepresentation(g))
+            d = np.asarray(cls.support.edge_representation(g))
             block = cls.blocks[cls.reference]
             scale = 1.0 / np.sqrt(np.linalg.det(block.conj().T @ d @ block))
             lifted = scale * d
@@ -771,25 +771,25 @@ class TestIsotypicProjector(unittest.TestCase):
                         sign * np.trace(b.conj().T @ lifted @ b))
 
     def projector(self, carrier, particles):
-        return np.asarray(SharpSpin.isotypicProjector(
+        return np.asarray(SharpSpin.isotypic_projector(
             self.maps, self.characters[carrier], 2, particles))
 
     def test_the_patterns_are_the_ascending_tuples_in_order(self) -> None:
-        patterns = SharpSpin.sectorPatterns(4, 2)
+        patterns = SharpSpin.sector_patterns(4, 2)
         self.assertEqual([list(p) for p in patterns],
                          [list(c) for c in itertools.combinations(range(4),
                                                                    2)])
-        self.assertEqual(len(SharpSpin.sectorPatterns(18, 3)), 816)
+        self.assertEqual(len(SharpSpin.sector_patterns(18, 3)), 816)
         with self.assertRaises(ValueError):
-            SharpSpin.sectorPatterns(3, 4)
+            SharpSpin.sector_patterns(3, 4)
         with self.assertRaises(ValueError):
-            SharpSpin.sectorPatterns(24, 12)
+            SharpSpin.sector_patterns(24, 12)
 
     def test_the_exterior_power_is_the_matrix_of_minors(self) -> None:
         generator = np.random.default_rng(2026)
         d = generator.normal(size=(5, 5)) + 1j * generator.normal(size=(5, 5))
-        power = np.asarray(SharpSpin.exteriorPowerMatrix(d, 2))
-        patterns = SharpSpin.sectorPatterns(5, 2)
+        power = np.asarray(SharpSpin.exterior_power_matrix(d, 2))
+        patterns = SharpSpin.sector_patterns(5, 2)
         for row, rows in enumerate(patterns):
             for column, columns in enumerate(patterns):
                 minor = np.linalg.det(d[np.ix_(list(rows), list(columns))])
@@ -798,35 +798,35 @@ class TestIsotypicProjector(unittest.TestCase):
         # multiplicative, the identity is the identity, and the top power is
         # the determinant
         e = generator.normal(size=(5, 5)) + 1j * generator.normal(size=(5, 5))
-        product = np.asarray(SharpSpin.exteriorPowerMatrix(d @ e, 3))
-        separate = np.asarray(SharpSpin.exteriorPowerMatrix(d, 3)) @ \
-            np.asarray(SharpSpin.exteriorPowerMatrix(e, 3))
+        product = np.asarray(SharpSpin.exterior_power_matrix(d @ e, 3))
+        separate = np.asarray(SharpSpin.exterior_power_matrix(d, 3)) @ \
+            np.asarray(SharpSpin.exterior_power_matrix(e, 3))
         self.assertLess(np.max(np.abs(product - separate)), 1e-10)
         self.assertLess(np.max(np.abs(
-            np.asarray(SharpSpin.exteriorPowerMatrix(np.eye(5), 2))
+            np.asarray(SharpSpin.exterior_power_matrix(np.eye(5), 2))
             - np.eye(10))), 0.0 + 1e-15)
-        top = np.asarray(SharpSpin.exteriorPowerMatrix(d, 5))
+        top = np.asarray(SharpSpin.exterior_power_matrix(d, 5))
         self.assertEqual(top.shape, (1, 1))
         self.assertAlmostEqual(abs(top[0, 0] - np.linalg.det(d)), 0.0,
                                places=10)
         with self.assertRaises(ValueError):
-            SharpSpin.exteriorPowerMatrix(d[:, :3], 2)
+            SharpSpin.exterior_power_matrix(d[:, :3], 2)
 
     def test_the_sector_basis_is_the_determinants_of_the_patterns(self):
-        patterns = SharpSpin.sectorPatterns(self.MODES, 3)
+        patterns = SharpSpin.sector_patterns(self.MODES, 3)
         for k, pattern in enumerate(patterns):
             unit = np.zeros(len(patterns), dtype=complex)
             unit[k] = 1.0
-            fock = np.asarray(SharpSpin.fockVector(unit, self.MODES, 3))
+            fock = np.asarray(SharpSpin.fock_vector(unit, self.MODES, 3))
             expected = np.asarray(SharpSpin.determinant(list(pattern),
                                                         self.MODES))
             self.assertLess(np.max(np.abs(fock - expected)), 0.0 + 1e-15)
-            back = np.asarray(SharpSpin.sectorComponent(fock, 3))
+            back = np.asarray(SharpSpin.sector_component(fock, 3))
             self.assertLess(np.max(np.abs(back - unit)), 0.0 + 1e-15)
         with self.assertRaises(ValueError):
-            SharpSpin.fockVector(np.ones(3, dtype=complex), self.MODES, 3)
+            SharpSpin.fock_vector(np.ones(3, dtype=complex), self.MODES, 3)
         with self.assertRaises(ValueError):
-            SharpSpin.sectorComponent(np.ones(48, dtype=complex), 3)
+            SharpSpin.sector_component(np.ones(48, dtype=complex), 3)
 
     def test_the_lift_is_a_representation_of_the_double_cover(self) -> None:
         # closure up to the two lifts: every product is one of the maps
@@ -874,7 +874,7 @@ class TestIsotypicProjector(unittest.TestCase):
         random = generator.normal(size=20) + 1j * generator.normal(size=20)
         state = projectors[0] @ random
         left = projectors[0].T @ random.conj()
-        read = SharpSpin.isotypicRead(projectors[0], state, left, "2")
+        read = SharpSpin.isotypic_read(projectors[0], state, left, "2")
         self.assertEqual(read.type, "2")
         self.assertTrue(read.sharp)
         self.assertLess(read.right_residual, 1e-12)
@@ -885,34 +885,34 @@ class TestIsotypicProjector(unittest.TestCase):
         self.assertTrue(read.certificate.holds())
         # the same state is not of another type, and the matrix element alone
         # says so only through the weight
-        other = SharpSpin.isotypicRead(projectors[1], state, left, "2'")
+        other = SharpSpin.isotypic_read(projectors[1], state, left, "2'")
         self.assertFalse(other.sharp)
         self.assertAlmostEqual(other.right_residual, 1.0, places=10)
         self.assertLess(abs(other.weight), 1e-10)
         # a sum of types certifies a state in either
-        pair = SharpSpin.isotypicRead(projectors[0] + projectors[1], state,
+        pair = SharpSpin.isotypic_read(projectors[0] + projectors[1], state,
                                       left, "2 + 2'")
         self.assertTrue(pair.sharp)
         self.assertEqual(pair.rank, read.rank
                          + int(round(np.trace(projectors[1]).real)))
         with self.assertRaises(ValueError):
-            SharpSpin.isotypicRead(projectors[0], np.zeros(20, dtype=complex),
+            SharpSpin.isotypic_read(projectors[0], np.zeros(20, dtype=complex),
                                    left, "2")
         with self.assertRaises(ValueError):
-            SharpSpin.isotypicRead(projectors[0], state, left, "2", 0.0)
+            SharpSpin.isotypic_read(projectors[0], state, left, "2", 0.0)
         with self.assertRaises(ValueError):
-            SharpSpin.isotypicRead(projectors[0][:10, :10], state, left, "2")
+            SharpSpin.isotypic_read(projectors[0][:10, :10], state, left, "2")
 
     def test_the_projector_refuses_mismatched_declarations(self) -> None:
         with self.assertRaises(ValueError):
-            SharpSpin.isotypicProjector([], [], 2, 1)
+            SharpSpin.isotypic_projector([], [], 2, 1)
         with self.assertRaises(ValueError):
-            SharpSpin.isotypicProjector(self.maps, self.characters[0][:3], 2,
+            SharpSpin.isotypic_projector(self.maps, self.characters[0][:3], 2,
                                         1)
         with self.assertRaises(ValueError):
-            SharpSpin.isotypicProjector(self.maps, self.characters[0], 0, 1)
+            SharpSpin.isotypic_projector(self.maps, self.characters[0], 0, 1)
         with self.assertRaises(ValueError):
-            SharpSpin.isotypicProjector(
+            SharpSpin.isotypic_projector(
                 self.maps[:1] + [np.eye(5, dtype=complex)],
                 self.characters[0][:2], 2, 1)
 

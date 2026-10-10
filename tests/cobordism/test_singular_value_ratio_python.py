@@ -33,7 +33,7 @@ _SINGLET = [1 + 0j, _OMEGA, _OMEGA * _OMEGA]
 
 
 def _seed():
-    return tessera.Spacetime.fromVertexTuples(4, [[0, 1, 2, 3, 4]], 1.0, 0.0)
+    return tessera.Spacetime.from_vertex_tuples(4, [[0, 1, 2, 3, 4]], 1.0, 0.0)
 
 
 class SingularValueHalfSumRatioTest(unittest.TestCase):
@@ -42,10 +42,10 @@ class SingularValueHalfSumRatioTest(unittest.TestCase):
         # A generic spectrum has a strictly positive, strictly dominated lower
         # half: the ratio is inside (0, 1).
         st, _es, _holes, _periods = _hs.holed_surface(degree=1)
-        r = cob.MultiCobordism.singularValueHalfSumRatio(st, 1)
+        r = cob.MultiCobordism.singular_value_half_sum_ratio(st, 1)
         self.assertGreater(r, 0.0)
         self.assertLess(r, 1.0)
-        seed_ratio = cob.MultiCobordism.singularValueHalfSumRatio(_seed(), 3)
+        seed_ratio = cob.MultiCobordism.singular_value_half_sum_ratio(_seed(), 3)
         self.assertGreater(seed_ratio, 0.0)
         self.assertLessEqual(seed_ratio, 1.0)
 
@@ -54,13 +54,13 @@ class SingularValueHalfSumRatioTest(unittest.TestCase):
         # every singular value by the same factor and the half-sum ratio
         # cancels exactly (up to SVD round-off).
         st, _es, _holes, _periods = _hs.holed_surface(degree=1)
-        r0 = cob.MultiCobordism.singularValueHalfSumRatio(st, 1)
-        edges = st.getEdgeList().toVector()
-        base = [e.getLength() for e in edges]
+        r0 = cob.MultiCobordism.singular_value_half_sum_ratio(st, 1)
+        edges = st.get_edge_list().to_vector()
+        base = [e.get_length() for e in edges]
         for e, l in zip(edges, base):
-            e.setLength(l * cmath.sqrt(2.0))
-        st.materializeFacets()
-        r1 = cob.MultiCobordism.singularValueHalfSumRatio(st, 1)
+            e.set_length(l * cmath.sqrt(2.0))
+        st.materialize_facets()
+        r1 = cob.MultiCobordism.singular_value_half_sum_ratio(st, 1)
         self.assertAlmostEqual(r0, r1, places=9)
 
     def test_edge_counts(self):
@@ -69,8 +69,8 @@ class SingularValueHalfSumRatioTest(unittest.TestCase):
         # k-cells at all: the worst case 1 (an empty degree must never score
         # as a collapsed spectrum, else deleting cells beats collapsing).
         st = _seed()
-        self.assertEqual(cob.MultiCobordism.singularValueHalfSumRatio(st, 4), 0.0)
-        self.assertEqual(cob.MultiCobordism.singularValueHalfSumRatio(st, 5), 1.0)
+        self.assertEqual(cob.MultiCobordism.singular_value_half_sum_ratio(st, 4), 0.0)
+        self.assertEqual(cob.MultiCobordism.singular_value_half_sum_ratio(st, 5), 1.0)
 
     def test_mode_swaps_the_whole_complex_term_in_ru(self):
         # Before any input block is seeded, r_U is the whole-complex term
@@ -86,7 +86,7 @@ class SingularValueHalfSumRatioTest(unittest.TestCase):
                                           degrees=[3], gamma=1.0, seed=7)
         st = _seed()
         self.assertEqual(ratio_node.r_u(st),
-                         cob.MultiCobordism.singularValueHalfSumRatio(st, 3))
+                         cob.MultiCobordism.singular_value_half_sum_ratio(st, 3))
         self.assertNotEqual(ratio_node.r_u(st), default_node.r_u(st))
 
     def test_proton_forwards_the_flag(self):

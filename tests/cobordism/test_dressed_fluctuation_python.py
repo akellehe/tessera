@@ -9,7 +9,7 @@ reference built independently in this file.
 
 THE DRESSED STIFFNESS IS COMPLEX BILINEAR. ``A_eff(w) = A + D - Pi(w)`` is
 assembled from matrix elements taken between the left and right modes of the
-carrier, ``PhiTilde^T O Phi``, with no conjugation anywhere. The carrier of the
+carrier, ``PhiTilde^T O phi``, with no conjugation anywhere. The carrier of the
 tests below is complex and non-normal, so a construction that took an adjoint
 would give different numbers; the dense reference takes the same transpose
 pairing and the two agree to rounding.
@@ -74,8 +74,8 @@ def _covariant(seed=3, complex_data=True):
     makes the transpose pairing distinguishable from an adjoint one.
     """
     rng = np.random.default_rng(seed)
-    K = cob.ChainComplex.fromTopCells(TETRAHEDRON)
-    edges = K.numSimplices(1)
+    K = cob.ChainComplex.from_top_cells(TETRAHEDRON)
+    edges = K.num_simplices(1)
     if complex_data:
         squared = [complex(1.0 + 0.1 * rng.normal(), 0.1 * rng.normal())
                    for _ in range(edges)]
@@ -223,12 +223,12 @@ class TheDressedStiffnessIsTheWhitepapersFormulaTest(unittest.TestCase):
         than their conjugate transposes.
         """
         K, cov, _, _ = _covariant()
-        edges = K.numSimplices(1)
-        carrier = cov.covariantOperator(1)
-        couplings = [cov.covariantOperatorPhaseDerivative(1, a)
+        edges = K.num_simplices(1)
+        carrier = cov.covariant_operator(1)
+        couplings = [cov.covariant_operator_phase_derivative(1, a)
                      for a in range(edges)]
         second = _upper_triangle(
-            edges, lambda a, b: cov.covariantOperatorPhaseHessian(1, a, b))
+            edges, lambda a, b: cov.covariant_operator_phase_hessian(1, a, b))
         stiffness = np.eye(edges, dtype=complex) * 0.25
         fluctuation = cob.DressedFluctuation(
             _declaration(carrier, couplings, second, stiffness, occupied=3))
@@ -249,10 +249,10 @@ class TheDressedStiffnessIsTheWhitepapersFormulaTest(unittest.TestCase):
     def test_the_polarization_is_complex_symmetric(self):
         """Both orders of the matrix elements enter, so Pi(w) = Pi(w)^T."""
         K, cov, _, _ = _covariant()
-        edges = K.numSimplices(1)
+        edges = K.num_simplices(1)
         fluctuation = cob.DressedFluctuation(_declaration(
-            cov.covariantOperator(1),
-            [cov.covariantOperatorPhaseDerivative(1, a) for a in range(edges)],
+            cov.covariant_operator(1),
+            [cov.covariant_operator_phase_derivative(1, a) for a in range(edges)],
             occupied=3))
         polarization = _square(fluctuation.paramagnetic(0.4), edges)
         self.assertLess(np.abs(polarization - polarization.T).max(),
@@ -281,20 +281,20 @@ class TheInducedStiffnessIsTheHessianOfTheOccupiedEnergyTest(unittest.TestCase):
         the tolerance here are the ones a four-point second difference supports.
         """
         K, cov, links, base = _covariant(seed=11, complex_data=False)
-        edges = K.numSimplices(1)
-        couplings = [cov.covariantOperatorPhaseDerivative(1, a)
+        edges = K.num_simplices(1)
+        couplings = [cov.covariant_operator_phase_derivative(1, a)
                      for a in range(edges)]
         second = _upper_triangle(
-            edges, lambda a, b: cov.covariantOperatorPhaseHessian(1, a, b))
+            edges, lambda a, b: cov.covariant_operator_phase_hessian(1, a, b))
         fluctuation = cob.DressedFluctuation(_declaration(
-            cov.covariantOperator(1), couplings, second, occupied=3))
+            cov.covariant_operator(1), couplings, second, occupied=3))
         induced = _square(fluctuation.induced_stiffness(), edges)
 
         def energy(shifts):
             moved = [link * np.exp(1j * shift)
                      for link, shift in zip(links, shifts)]
             operator = ch.CovariantChainHodge(
-                base, ch.Connection(K, moved), 7, False).covariantOperator(1)
+                base, ch.Connection(K, moved), 7, False).covariant_operator(1)
             values = np.linalg.eigvals(operator)
             return sum(sorted(values, key=lambda v: (v.real, v.imag))[:3])
 
@@ -327,20 +327,20 @@ class TheInducedStiffnessIsTheHessianOfTheOccupiedEnergyTest(unittest.TestCase):
         term alone is not, which is the whole content of the identity.
         """
         K, cov, _, _ = _covariant(seed=5)
-        edges = K.numSimplices(1)
+        edges = K.num_simplices(1)
         fluctuation = cob.DressedFluctuation(_declaration(
-            cov.covariantOperator(1),
-            [cov.covariantOperatorPhaseDerivative(1, a) for a in range(edges)],
+            cov.covariant_operator(1),
+            [cov.covariant_operator_phase_derivative(1, a) for a in range(edges)],
             _upper_triangle(edges,
-                            lambda a, b: cov.covariantOperatorPhaseHessian(1, a, b)),
+                            lambda a, b: cov.covariant_operator_phase_hessian(1, a, b)),
             occupied=3))
-        vertices = [int(cell[0]) for cell in K.kSimplexVertices(0)]
+        vertices = [int(cell[0]) for cell in K.k_simplex_vertices(0)]
         directions = []
         for chosen in vertices:
             chi = {vertex: (1.0 if vertex == chosen else 0.0)
                    for vertex in vertices}
             directions.append([complex(chi[int(y)] - chi[int(x)])
-                               for x, y in K.kSimplexVertices(1)])
+                               for x, y in K.k_simplex_vertices(1)])
         certificate = fluctuation.ward_certificate(directions)
         self.assertTrue(certificate.holds())
         self.assertLess(certificate.residual, 1e-8)
@@ -420,17 +420,17 @@ class ThePolesAreTheZerosOfTheDressedStiffnessTest(unittest.TestCase):
         stiffness happens to carry.
         """
         K, cov, _, _ = _covariant(seed=9, complex_data=False)
-        edges = K.numSimplices(1)
+        edges = K.num_simplices(1)
         stiffness = np.zeros((edges, edges), dtype=complex)
-        boundary = np.asarray(cob.ChainComplex.fromTopCells(TETRAHEDRON)
-                              .boundaryMatrix(2), dtype=float).reshape(
-                                  edges, K.numSimplices(2))
+        boundary = np.asarray(cob.ChainComplex.from_top_cells(TETRAHEDRON)
+                              .boundary_matrix(2), dtype=float).reshape(
+                                  edges, K.num_simplices(2))
         stiffness += 0.5 * (boundary @ boundary.T).astype(complex)
         fluctuation = cob.DressedFluctuation(_declaration(
-            cov.covariantOperator(1),
-            [cov.covariantOperatorPhaseDerivative(1, a) for a in range(edges)],
+            cov.covariant_operator(1),
+            [cov.covariant_operator_phase_derivative(1, a) for a in range(edges)],
             _upper_triangle(edges,
-                            lambda a, b: cov.covariantOperatorPhaseHessian(1, a, b)),
+                            lambda a, b: cov.covariant_operator_phase_hessian(1, a, b)),
             stiffness, occupied=3))
         modes = fluctuation.collective_modes()
         self.assertGreater(len(modes), 0)
@@ -447,12 +447,12 @@ class ThePolesAreTheZerosOfTheDressedStiffnessTest(unittest.TestCase):
     def test_the_poles_come_in_pairs_because_the_stiffness_is_even(self):
         """A_eff depends on w only through w^2, so -w is a pole with w."""
         K, cov, _, _ = _covariant(seed=9, complex_data=False)
-        edges = K.numSimplices(1)
+        edges = K.num_simplices(1)
         fluctuation = cob.DressedFluctuation(_declaration(
-            cov.covariantOperator(1),
-            [cov.covariantOperatorPhaseDerivative(1, a) for a in range(edges)],
+            cov.covariant_operator(1),
+            [cov.covariant_operator_phase_derivative(1, a) for a in range(edges)],
             _upper_triangle(edges,
-                            lambda a, b: cov.covariantOperatorPhaseHessian(1, a, b)),
+                            lambda a, b: cov.covariant_operator_phase_hessian(1, a, b)),
             np.eye(edges, dtype=complex) * 0.5, occupied=3))
         modes = fluctuation.collective_modes()
         frequencies = [mode.frequency for mode in modes]

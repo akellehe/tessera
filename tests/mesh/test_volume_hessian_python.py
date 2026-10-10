@@ -2,7 +2,7 @@
 # All rights reserved.
 """Exact directional second derivative of a simplex's signed `volume()`.
 
-`Simplex.volumeGradientDirectionalDerivative(v)` returns
+`Simplex.volume_gradient_directional_derivative(v)` returns
 `sum_f v_f d^2V/dl^2_e dl^2_f`, keyed by `e`. It is closed form because the Gram
 matrix is **linear** in the squared lengths, so `d^2G/dl^2 dl^2` vanishes
 identically and Jacobi's formula differentiated twice leaves only
@@ -31,8 +31,8 @@ EXACT = 1e-13
 
 
 def _top_of_dim(st, nverts):
-    return next(s for s in st.getSimplices()
-                if len([v for v in s.getVertices()]) == nverts)
+    return next(s for s in st.get_simplices()
+                if len([v for v in s.get_vertices()]) == nverts)
 
 
 def _key(a, b):
@@ -40,18 +40,18 @@ def _key(a, b):
 
 
 def _squared_lengths(st):
-    return {_key(e.getSource().getId(), e.getTarget().getId()):
-            e.getLength() * e.getLength()
-            for e in st.getEdgeList().toVector()}
+    return {_key(e.get_source().get_id(), e.get_target().get_id()):
+            e.get_length() * e.get_length()
+            for e in st.get_edge_list().to_vector()}
 
 
 def _jittered_simplex(nverts, imaginary=True):
     """One `nverts`-vertex cell with deliberately asymmetric complex l^2, so no
     identity below can pass by symmetry alone."""
-    st = T.Spacetime.fromVertexTuples(nverts - 1, [list(range(nverts))], 1.0, 0.0)
-    for i, e in enumerate(st.getEdgeList().toVector()):
+    st = T.Spacetime.from_vertex_tuples(nverts - 1, [list(range(nverts))], 1.0, 0.0)
+    for i, e in enumerate(st.get_edge_list().to_vector()):
         value = complex(1.0 + 0.031 * (i % 7), 0.011 * (i % 3) if imaginary else 0.0)
-        e.setLength(cmath.sqrt(value))
+        e.set_length(cmath.sqrt(value))
     return st, _top_of_dim(st, nverts)
 
 
@@ -63,8 +63,8 @@ class VolumeHessianEulerIdentityTest(unittest.TestCase):
             with self.subTest(nverts=nverts):
                 st, simplex = _jittered_simplex(nverts)
                 degree = nverts - 1
-                gradient = simplex.volumeGradient()
-                contracted = simplex.volumeGradientDirectionalDerivative(
+                gradient = simplex.volume_gradient()
+                contracted = simplex.volume_gradient_directional_derivative(
                     _squared_lengths(st))
                 self.assertEqual(set(contracted), set(gradient))
                 expected_factor = degree / 2.0 - 1.0
@@ -80,7 +80,7 @@ class VolumeHessianEulerIdentityTest(unittest.TestCase):
         # homogeneous of degree one, so its gradient is degree zero and does
         # not move along the scaling ray at all.
         st, triangle = _jittered_simplex(3)
-        contracted = triangle.volumeGradientDirectionalDerivative(
+        contracted = triangle.volume_gradient_directional_derivative(
             _squared_lengths(st))
         for edge, value in contracted.items():
             self.assertLessEqual(abs(value), EXACT, f"edge {edge}")
@@ -89,8 +89,8 @@ class VolumeHessianEulerIdentityTest(unittest.TestCase):
         # The identity is algebraic, so it must not depend on the l^2 being
         # complex; a purely spacelike cell exercises the real path.
         st, simplex = _jittered_simplex(5, imaginary=False)
-        gradient = simplex.volumeGradient()
-        contracted = simplex.volumeGradientDirectionalDerivative(
+        gradient = simplex.volume_gradient()
+        contracted = simplex.volume_gradient_directional_derivative(
             _squared_lengths(st))
         scale = max(abs(v) for v in gradient.values())
         for edge, value in gradient.items():
@@ -103,13 +103,13 @@ class VolumeHessianSymmetryTest(unittest.TestCase):
 
     def test_mixed_partials_commute(self):
         st, simplex = _jittered_simplex(5)
-        edges = sorted(simplex.volumeGradient())
-        scale = max(abs(v) for v in simplex.volumeGradient().values())
+        edges = sorted(simplex.volume_gradient())
+        scale = max(abs(v) for v in simplex.volume_gradient().values())
         for i, first in enumerate(edges):
             for second in edges[i + 1:]:
-                one = simplex.volumeGradientDirectionalDerivative(
+                one = simplex.volume_gradient_directional_derivative(
                     {second: complex(1.0, 0.0)})[first]
-                other = simplex.volumeGradientDirectionalDerivative(
+                other = simplex.volume_gradient_directional_derivative(
                     {first: complex(1.0, 0.0)})[second]
                 self.assertLessEqual(abs(one - other) / scale, EXACT,
                                      f"{first} vs {second}")
@@ -118,15 +118,15 @@ class VolumeHessianSymmetryTest(unittest.TestCase):
         # Contracting a tensor against v is linear in v: the identity that lets
         # one contraction stand in for the whole Hessian.
         st, simplex = _jittered_simplex(4)
-        first_edge, second_edge = sorted(simplex.volumeGradient())[:2]
+        first_edge, second_edge = sorted(simplex.volume_gradient())[:2]
         alpha, beta = complex(0.37, -0.11), complex(-0.52, 0.23)
-        combined = simplex.volumeGradientDirectionalDerivative(
+        combined = simplex.volume_gradient_directional_derivative(
             {first_edge: alpha, second_edge: beta})
-        separate_a = simplex.volumeGradientDirectionalDerivative(
+        separate_a = simplex.volume_gradient_directional_derivative(
             {first_edge: alpha})
-        separate_b = simplex.volumeGradientDirectionalDerivative(
+        separate_b = simplex.volume_gradient_directional_derivative(
             {second_edge: beta})
-        scale = max(abs(v) for v in simplex.volumeGradient().values())
+        scale = max(abs(v) for v in simplex.volume_gradient().values())
         for edge in combined:
             self.assertLessEqual(
                 abs(combined[edge] - separate_a[edge] - separate_b[edge]) / scale,
@@ -138,7 +138,7 @@ class VolumeHessianDegenerateInputTest(unittest.TestCase):
 
     def test_empty_direction_gives_zero(self):
         st, simplex = _jittered_simplex(4)
-        contracted = simplex.volumeGradientDirectionalDerivative({})
+        contracted = simplex.volume_gradient_directional_derivative({})
         for edge, value in contracted.items():
             self.assertLessEqual(abs(value), EXACT, f"edge {edge}")
 
@@ -146,8 +146,8 @@ class VolumeHessianDegenerateInputTest(unittest.TestCase):
         st, simplex = _jittered_simplex(4)
         direction = _squared_lengths(st)
         direction[(9998, 9999)] = complex(3.0, 1.0)  # not an edge of this cell
-        contracted = simplex.volumeGradientDirectionalDerivative(direction)
-        reference = simplex.volumeGradientDirectionalDerivative(
+        contracted = simplex.volume_gradient_directional_derivative(direction)
+        reference = simplex.volume_gradient_directional_derivative(
             _squared_lengths(st))
         for edge in reference:
             self.assertLessEqual(abs(contracted[edge] - reference[edge]), EXACT)
@@ -164,24 +164,24 @@ class VolumeHessianFiniteDifferenceCrossCheckTest(unittest.TestCase):
 
     def test_matches_a_central_difference_to_finite_difference_accuracy(self):
         st, simplex = _jittered_simplex(4)
-        edges = st.getEdgeList().toVector()
+        edges = st.get_edge_list().to_vector()
         base = _squared_lengths(st)
         direction = {k: complex(0.41, -0.17) * (1 + (i % 3))
                      for i, k in enumerate(sorted(base))}
-        exact = simplex.volumeGradientDirectionalDerivative(direction)
+        exact = simplex.volume_gradient_directional_derivative(direction)
 
         def set_squared(values):
             for edge in edges:
-                key = _key(edge.getSource().getId(), edge.getTarget().getId())
-                edge.setLength(cmath.sqrt(values[key]))
+                key = _key(edge.get_source().get_id(), edge.get_target().get_id())
+                edge.set_length(cmath.sqrt(values[key]))
 
         step = math.pow(2.220446049250313e-16, 1.0 / 3.0)
         plus = {k: base[k] + step * direction[k] for k in base}
         minus = {k: base[k] - step * direction[k] for k in base}
         set_squared(plus)
-        gradient_plus = simplex.volumeGradient()
+        gradient_plus = simplex.volume_gradient()
         set_squared(minus)
-        gradient_minus = simplex.volumeGradient()
+        gradient_minus = simplex.volume_gradient()
         set_squared(base)
 
         scale = max(abs(v) for v in exact.values())

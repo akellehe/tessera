@@ -191,8 +191,8 @@ def test_an_incorrect_representative_with_unchanged_periods_is_rejected():
     marked = {(min(u, v), max(u, v)) for marking in fixture["markings"]
               for cycle in marking for u, v in cycle}
     interior = None
-    for edge in fixture["host"].getEdgeList().toVector():
-        u, v = int(edge.getSource().getId()), int(edge.getTarget().getId())
+    for edge in fixture["host"].get_edge_list().to_vector():
+        u, v = int(edge.get_source().get_id()), int(edge.get_target().get_id())
         if (min(u, v), max(u, v)) not in marked:
             interior = (min(u, v), max(u, v))
             break
@@ -209,7 +209,7 @@ def test_an_incorrect_representative_with_unchanged_periods_is_rejected():
             walk = [(int(u), int(v)) for u, v in cycle]
             rotations = [walk[k:] + walk[:k] for k in range(len(walk))]
             reported = np.asarray(real.periods[index])[c, 0]
-            assert any(abs(connection.transportedPeriod(images[:, 0], rot) - reported) < 1e-12
+            assert any(abs(connection.transported_period(images[:, 0], rot) - reported) < 1e-12
                        for rot in rotations)
     rows = _rows(qa._harmonic_certificates("seed", fake, fixture["op"], TOL)[0])
     assert not rows["H1:seed"]["pass"]
@@ -266,7 +266,7 @@ def _primal_period_gram(op, contour, walks):
     band = op.band(1, contour)
     images = np.asarray(band.images)
     mass = np.asarray(op.dressed(1).toarray())
-    periods = np.array([[op.connection().transportedPeriod(images[:, a], w)
+    periods = np.array([[op.connection().transported_period(images[:, a], w)
                          for a in range(images.shape[1])] for w in walks])
     inverse = np.linalg.inv(periods)
     return inverse.T @ (images.T @ mass @ images) @ inverse
@@ -276,7 +276,7 @@ def test_covariant_gram_equals_the_primal_one_at_zero_phases():
     """The seeded hosts carry no phases: the recorded U1/J3 numbers must be
     reproduced exactly, and here the two formulas coincide."""
     spacetime, op, contour, walks = _torus_operator()
-    assert sum(abs(complex(e.getPhase())) > 0 for e in spacetime.getEdgeList().toVector()) == 0
+    assert sum(abs(complex(e.get_phase())) > 0 for e in spacetime.get_edge_list().to_vector()) == 0
     covariant = qa._covariant_period_gram(op, contour, walks)
     primal = _primal_period_gram(op, contour, walks)
     assert np.linalg.norm(covariant - primal) / np.linalg.norm(primal) <= TOL
@@ -288,7 +288,7 @@ def test_covariant_gram_is_gauge_invariant_and_the_primal_one_is_not(modulus_one
     coordinates is unchanged; the primal-primal one moves by O(1)."""
     spacetime, op, contour, walks = _torus_operator()
     rng = np.random.default_rng(3)
-    vertices = [int(v.getId()) for v in spacetime.getVertexList().toVector()]
+    vertices = [int(v.get_id()) for v in spacetime.get_vertex_list().to_vector()]
     gauge = {v: complex((1.0 if modulus_one else rng.uniform(0.7, 1.4)) * np.exp(1j * rng.uniform(0, 2 * np.pi)))
              for v in vertices}
     gauged = op.gauged(gauge)

@@ -84,15 +84,15 @@ class TestSheetedSupport(unittest.TestCase):
         self.assertEqual(support.cell_count, 12)
         for base in range(4):
             for sheet in range(3):
-                self.assertEqual(support.modeIndex(base, sheet),
+                self.assertEqual(support.mode_index(base, sheet),
                                  base * 3 + sheet)
 
     def test_index_out_of_range_is_refused(self) -> None:
         support = SheetedSupport(3, 4)
         with self.assertRaises(ValueError):
-            support.modeIndex(4, 0)
+            support.mode_index(4, 0)
         with self.assertRaises(ValueError):
-            support.modeIndex(0, 3)
+            support.mode_index(0, 3)
 
     def test_zero_sheets_is_refused(self) -> None:
         with self.assertRaises(ValueError):
@@ -104,13 +104,13 @@ class TestSheetedSupport(unittest.TestCase):
         support = SheetedSupport(3, 4)
         expected = np.kron(base, np.eye(3))
         self.assertLessEqual(
-            np.max(np.abs(support.freeOperator(base) - expected)), 0.0)
+            np.max(np.abs(support.free_operator(base) - expected)), 0.0)
 
     def test_lifted_band_is_the_colour_spin_fibre(self) -> None:
         generator = rng()
         band = random_complex(generator, 4, 2)
         support = SheetedSupport(3, 4)
-        lifted = support.liftBand(band)
+        lifted = support.lift_band(band)
         self.assertEqual(lifted.shape, (12, 6))
         self.assertLessEqual(
             np.max(np.abs(lifted - np.kron(band, np.eye(3)))), 0.0)
@@ -120,7 +120,7 @@ class TestSheetedSupport(unittest.TestCase):
         frame = random_complex(generator, 3, 3)
         support = SheetedSupport(3, 4)
         self.assertLessEqual(
-            np.max(np.abs(support.sheetFrameOperator(frame)
+            np.max(np.abs(support.sheet_frame_operator(frame)
                           - np.kron(np.eye(4), frame))), 0.0)
 
     def test_colour_commutes_with_the_base_dynamics(self) -> None:
@@ -133,7 +133,7 @@ class TestSheetedSupport(unittest.TestCase):
             base = random_complex(generator, 4, 4)
             frame = random_complex(generator, 3, 3)
             self.assertLessEqual(
-                support.sheetCommutatorResidual(base, frame), 1e-12)
+                support.sheet_commutator_residual(base, frame), 1e-12)
 
     def test_colour_commutes_with_a_base_symmetry(self) -> None:
         """The same residual with the base operator a permutation action
@@ -144,16 +144,16 @@ class TestSheetedSupport(unittest.TestCase):
             rotation[j, i] = 1.0
         frame = np.array([[0, 1, 0], [0, 0, 1], [1, 0, 0]], dtype=complex)
         self.assertLessEqual(
-            support.sheetCommutatorResidual(rotation, frame), 0.0)
+            support.sheet_commutator_residual(rotation, frame), 0.0)
 
     def test_shape_mismatches_are_refused(self) -> None:
         support = SheetedSupport(3, 4)
         with self.assertRaises(ValueError):
-            support.freeOperator(np.eye(5, dtype=complex))
+            support.free_operator(np.eye(5, dtype=complex))
         with self.assertRaises(ValueError):
-            support.liftBand(np.zeros((5, 2), dtype=complex))
+            support.lift_band(np.zeros((5, 2), dtype=complex))
         with self.assertRaises(ValueError):
-            support.sheetFrameOperator(np.eye(2, dtype=complex))
+            support.sheet_frame_operator(np.eye(2, dtype=complex))
 
 
 class TestSheetIsomorphism(unittest.TestCase):
@@ -164,7 +164,7 @@ class TestSheetIsomorphism(unittest.TestCase):
         generator = rng()
         lengths = random_complex(generator, 5)
         phases = np.exp(1j * generator.normal(size=5))
-        read = support.certifyIsomorphism([lengths] * 3, [phases] * 3)
+        read = support.certify_isomorphism([lengths] * 3, [phases] * 3)
         self.assertEqual(read.sheet_count, 3)
         self.assertEqual(read.base_cell_count, 5)
         self.assertEqual(read.squared_length_residual, 0.0)
@@ -179,7 +179,7 @@ class TestSheetIsomorphism(unittest.TestCase):
         phases = np.exp(1j * generator.normal(size=5))
         bent = lengths.copy()
         bent[2] += 0.25
-        read = support.certifyIsomorphism([lengths, bent, lengths],
+        read = support.certify_isomorphism([lengths, bent, lengths],
                                           [phases] * 3)
         self.assertAlmostEqual(read.squared_length_residual, 0.25, places=12)
         self.assertEqual(read.connection_residual, 0.0)
@@ -193,7 +193,7 @@ class TestSheetIsomorphism(unittest.TestCase):
         phases = np.exp(1j * generator.normal(size=5))
         turned = phases.copy()
         turned[1] *= -1.0
-        read = support.certifyIsomorphism([lengths] * 3,
+        read = support.certify_isomorphism([lengths] * 3,
                                           [phases, phases, turned])
         self.assertEqual(read.squared_length_residual, 0.0)
         self.assertAlmostEqual(read.connection_residual,
@@ -205,7 +205,7 @@ class TestSheetIsomorphism(unittest.TestCase):
         generator = rng()
         lengths = random_complex(generator, 5)
         empty = np.zeros(0, dtype=complex)
-        read = support.certifyIsomorphism([lengths] * 3, [empty] * 3)
+        read = support.certify_isomorphism([lengths] * 3, [empty] * 3)
         self.assertEqual(read.connection_residual, 0.0)
         self.assertTrue(read.isomorphic)
 
@@ -214,7 +214,7 @@ class TestSheetIsomorphism(unittest.TestCase):
         lengths = np.ones(5, dtype=complex)
         empty = np.zeros(0, dtype=complex)
         with self.assertRaises(ValueError):
-            support.certifyIsomorphism([lengths] * 2, [empty] * 2)
+            support.certify_isomorphism([lengths] * 2, [empty] * 2)
 
 
 # ─── the exterior algebra of the sheet space ───────────────────────────────
@@ -248,19 +248,19 @@ class TestSheetFock(unittest.TestCase):
     def test_sector_projectors_are_identical_to_color_fiber(self) -> None:
         fock = SheetFock(3)
         for occupation in range(4):
-            mine = fock.sectorProjector(occupation)
-            theirs = ColorFiber.sectorProjector(occupation)
+            mine = fock.sector_projector(occupation)
+            theirs = ColorFiber.sector_projector(occupation)
             self.assertLessEqual(np.max(np.abs(mine - theirs)), 0.0)
-        self.assertEqual(fock.sectorAgreementResidual(), 0.0)
+        self.assertEqual(fock.sector_agreement_residual(), 0.0)
 
     def test_sector_agreement_is_defined_only_at_three_sheets(self) -> None:
         with self.assertRaises(RuntimeError):
-            SheetFock(4).sectorAgreementResidual()
+            SheetFock(4).sector_agreement_residual()
 
     def test_creation_and_contraction_are_adjoint(self) -> None:
         fock = SheetFock(3)
         for sheet in range(3):
-            creation = fock.exteriorCreation(sheet)
+            creation = fock.exterior_creation(sheet)
             contraction = fock.contraction(sheet)
             self.assertLessEqual(
                 np.max(np.abs(creation.conj().T - contraction)), 0.0)
@@ -270,7 +270,7 @@ class TestSheetFock(unittest.TestCase):
         eye = np.eye(8)
         for i in range(3):
             for j in range(3):
-                ei, ej = fock.exteriorCreation(i), fock.exteriorCreation(j)
+                ei, ej = fock.exterior_creation(i), fock.exterior_creation(j)
                 ii, ij = fock.contraction(i), fock.contraction(j)
                 self.assertLessEqual(np.max(np.abs(ii @ ij + ij @ ii)), 0.0)
                 self.assertLessEqual(np.max(np.abs(ei @ ej + ej @ ei)), 0.0)
@@ -287,24 +287,24 @@ class TestSheetFock(unittest.TestCase):
             for j in range(3):
                 for k in range(3):
                     for l in range(3):
-                        left = fock.sheetBilinear(i, j)
-                        right = fock.sheetBilinear(k, l)
+                        left = fock.sheet_bilinear(i, j)
+                        right = fock.sheet_bilinear(k, l)
                         expected = np.zeros((8, 8), dtype=complex)
                         if j == k:
-                            expected = expected + fock.sheetBilinear(i, l)
+                            expected = expected + fock.sheet_bilinear(i, l)
                         if i == l:
-                            expected = expected - fock.sheetBilinear(k, j)
+                            expected = expected - fock.sheet_bilinear(k, j)
                         self.assertLessEqual(
                             np.max(np.abs(left @ right - right @ left
                                           - expected)), 1e-15)
-        self.assertLessEqual(fock.commutatorResidual(), 1e-15)
+        self.assertLessEqual(fock.commutator_residual(), 1e-15)
 
     def test_out_of_range_sheet_is_refused(self) -> None:
         fock = SheetFock(3)
         with self.assertRaises(ValueError):
-            fock.exteriorCreation(3)
+            fock.exterior_creation(3)
         with self.assertRaises(ValueError):
-            fock.sheetBilinear(0, 3)
+            fock.sheet_bilinear(0, 3)
 
 
 # ─── the attachment matrix ─────────────────────────────────────────────────
@@ -330,7 +330,7 @@ class TestSheetAttachment(unittest.TestCase):
         return [ConnectingSimplex(a, b, w) for a, b, w in self.SIMPLICES]
 
     def test_entries_accumulate_the_declared_weights(self) -> None:
-        read = SheetAttachment.attachmentMatrix(3, self.declared())
+        read = SheetAttachment.attachment_matrix(3, self.declared())
         expected = reference_attachment(3, self.SIMPLICES)
         self.assertLessEqual(np.max(np.abs(read.matrix - expected)), 1e-15)
         self.assertEqual(read.simplex_count, len(self.SIMPLICES))
@@ -339,12 +339,12 @@ class TestSheetAttachment(unittest.TestCase):
 
     def test_a_sheet_to_sheet_rule_is_diagonal_and_colour_abelian(self) -> None:
         diagonal = [ConnectingSimplex(i, i, 1.0 + 0.0j) for i in range(3)]
-        read = SheetAttachment.attachmentMatrix(3, diagonal)
+        read = SheetAttachment.attachment_matrix(3, diagonal)
         self.assertTrue(read.sheet_diagonal)
         self.assertLessEqual(np.max(np.abs(read.matrix - np.eye(3))), 0.0)
 
     def test_a_cross_sheet_attachment_is_not_diagonal(self) -> None:
-        read = SheetAttachment.attachmentMatrix(3, self.declared())
+        read = SheetAttachment.attachment_matrix(3, self.declared())
         self.assertFalse(read.sheet_diagonal)
 
     def test_a_rank_dropping_attachment_certifies_nothing(self) -> None:
@@ -354,7 +354,7 @@ class TestSheetAttachment(unittest.TestCase):
         collapsed = [ConnectingSimplex(0, 0, 1.0 + 0.0j),
                      ConnectingSimplex(1, 0, 1.0 + 0.0j),
                      ConnectingSimplex(2, 2, 1.0 + 0.0j)]
-        read = SheetAttachment.attachmentMatrix(3, collapsed)
+        read = SheetAttachment.attachment_matrix(3, collapsed)
         self.assertAlmostEqual(abs(read.determinant), 0.0, places=14)
         self.assertLessEqual(read.min_singular_value, 1e-14)
         self.assertGreater(read.conditioning, 1e12)
@@ -362,17 +362,17 @@ class TestSheetAttachment(unittest.TestCase):
 
     def test_a_simplex_outside_the_support_is_refused(self) -> None:
         with self.assertRaises(ValueError):
-            SheetAttachment.attachmentMatrix(
+            SheetAttachment.attachment_matrix(
                 3, [ConnectingSimplex(0, 3, 1.0 + 0.0j)])
 
     def test_frame_law(self) -> None:
         """S_AB -> g_A^-1 S_AB g_B, against an independently formed product."""
         generator = rng()
-        read = SheetAttachment.attachmentMatrix(3, self.declared())
+        read = SheetAttachment.attachment_matrix(3, self.declared())
         for _ in range(4):
             frame_a = invertible(generator, 3)
             frame_b = invertible(generator, 3)
-            changed = SheetAttachment.frameChanged(read.matrix, frame_a,
+            changed = SheetAttachment.frame_changed(read.matrix, frame_a,
                                                    frame_b)
             expected = np.linalg.inv(frame_a) @ read.matrix @ frame_b
             self.assertLessEqual(np.max(np.abs(changed - expected)), 1e-12)
@@ -380,25 +380,25 @@ class TestSheetAttachment(unittest.TestCase):
     def test_the_determinant_line_transforms_by_the_frame_determinants(
             self) -> None:
         generator = rng()
-        read = SheetAttachment.attachmentMatrix(3, self.declared())
+        read = SheetAttachment.attachment_matrix(3, self.declared())
         frame_a = invertible(generator, 3)
         frame_b = invertible(generator, 3)
-        changed = SheetAttachment.frameChanged(read.matrix, frame_a, frame_b)
+        changed = SheetAttachment.frame_changed(read.matrix, frame_a, frame_b)
         expected = (read.determinant * np.linalg.det(frame_b)
                     / np.linalg.det(frame_a))
         self.assertLessEqual(abs(np.linalg.det(changed) - expected), 1e-12)
 
     def test_a_singular_frame_is_not_a_relabeling(self) -> None:
-        read = SheetAttachment.attachmentMatrix(3, self.declared())
+        read = SheetAttachment.attachment_matrix(3, self.declared())
         singular = np.zeros((3, 3), dtype=complex)
         with self.assertRaises(ValueError):
-            SheetAttachment.frameChanged(read.matrix, singular, np.eye(3))
+            SheetAttachment.frame_changed(read.matrix, singular, np.eye(3))
 
     def test_coupling_block_factorizes(self) -> None:
         generator = rng()
         base = random_complex(generator, 2, 3)
-        read = SheetAttachment.attachmentMatrix(3, self.declared())
-        block = SheetAttachment.couplingBlock(base, read.matrix)
+        read = SheetAttachment.attachment_matrix(3, self.declared())
+        block = SheetAttachment.coupling_block(base, read.matrix)
         self.assertEqual(block.shape, (6, 9))
         self.assertLessEqual(
             np.max(np.abs(block - np.kron(base, read.matrix))), 1e-15)
@@ -522,7 +522,7 @@ class TestColorSinglet(unittest.TestCase):
         transports, colors = self.fixture(generator)
         base_frame = invertible(generator, 3)
         frames = [invertible(generator, 3) for _ in range(3)]
-        residual = ColorSinglet.frameCovarianceResidual(
+        residual = ColorSinglet.frame_covariance_residual(
             0.5 + 1.5j, transports, colors, base_frame, frames)
         reference = abs(ColorSinglet.amplitude(0.5 + 1.5j, transports,
                                                colors).amplitude)
@@ -592,7 +592,7 @@ class TestBaseSymmetryAndConnectingSimplices(unittest.TestCase):
         generator = rng()
         support = SheetedSupport(3, 4)
         action = invertible(generator, 4)
-        lifted = np.asarray(support.baseSymmetryOperator(action))
+        lifted = np.asarray(support.base_symmetry_operator(action))
         np.testing.assert_allclose(lifted, np.kron(action, np.eye(3)),
                                    atol=1e-14)
         sheet = np.kron(np.eye(4), invertible(generator, 3))

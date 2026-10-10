@@ -15,10 +15,10 @@ class TestEdge(unittest.TestCase):
         edge = Edge(v1, v2)
 
         self.assertIsInstance(edge, Edge)
-        src = edge.getSource().getId()
-        tgt = edge.getTarget().getId()
-        self.assertIs(src, v1.getId())
-        self.assertIs(tgt, v2.getId())
+        src = edge.get_source().get_id()
+        tgt = edge.get_target().get_id()
+        self.assertIs(src, v1.get_id())
+        self.assertIs(tgt, v2.get_id())
 
     def test_sets_of_edges(self):
         vertices = [Vertex(i, []) for i in range(1, 52)]
@@ -66,21 +66,21 @@ class TestEdgePhase(unittest.TestCase):
         v1 = Vertex(1, [0, 0, 0, 0])
         v2 = Vertex(2, [1, 1, 1, 1])
         edge = Edge(v1, v2)
-        self.assertEqual(edge.getPhase(), 0.0)
+        self.assertEqual(edge.get_phase(), 0.0)
 
     def test_default_phase_is_zero_with_explicit_squared_length(self):
         v1 = Vertex(1, [0, 0, 0, 0])
         v2 = Vertex(2, [1, 1, 1, 1])
         edge = Edge(v1, v2, 1.0)
-        self.assertEqual(edge.getPhase(), 0.0)
+        self.assertEqual(edge.get_phase(), 0.0)
 
     def test_set_phase_round_trip(self):
         v1 = Vertex(1, [0, 0, 0, 0])
         v2 = Vertex(2, [1, 1, 1, 1])
         edge = Edge(v1, v2)
         for value in (0.5, -1.25, 3.14159, 0.0):
-            edge.setPhase(value)
-            self.assertEqual(edge.getPhase(), value)
+            edge.set_phase(value)
+            self.assertEqual(edge.get_phase(), value)
 
     def test_the_phase_is_complex(self):
         # The structure group is C* = U(1) x R+, so the phase carries a
@@ -88,26 +88,26 @@ class TestEdgePhase(unittest.TestCase):
         v1 = Vertex(1, [0, 0, 0, 0])
         v2 = Vertex(2, [1, 1, 1, 1])
         edge = Edge(v1, v2)
-        self.assertIsInstance(edge.getPhase(), complex)
+        self.assertIsInstance(edge.get_phase(), complex)
         for value in (complex(0.5, 1.5), complex(-1.25, -0.75),
                       complex(0.0, 2.0)):
-            edge.setPhase(value)
-            self.assertEqual(edge.getPhase(), value)
-            self.assertEqual(edge.getPhase().imag, value.imag)
+            edge.set_phase(value)
+            self.assertEqual(edge.get_phase(), value)
+            self.assertEqual(edge.get_phase().imag, value.imag)
 
     def test_the_phase_is_independent_of_the_length(self):
         # Two distinct fields: writing one must not disturb the other.
         v1 = Vertex(1, [0, 0, 0, 0])
         v2 = Vertex(2, [1, 1, 1, 1])
         edge = Edge(v1, v2)
-        edge.setLength(complex(2.0, -3.0))
-        edge.setPhase(complex(0.25, 0.75))
-        self.assertEqual(edge.getLength(), complex(2.0, -3.0))
-        self.assertEqual(edge.getPhase(), complex(0.25, 0.75))
-        edge.setLength(complex(-1.0, 0.5))
-        self.assertEqual(edge.getPhase(), complex(0.25, 0.75))
-        edge.setPhase(complex(1.0, 1.0))
-        self.assertEqual(edge.getLength(), complex(-1.0, 0.5))
+        edge.set_length(complex(2.0, -3.0))
+        edge.set_phase(complex(0.25, 0.75))
+        self.assertEqual(edge.get_length(), complex(2.0, -3.0))
+        self.assertEqual(edge.get_phase(), complex(0.25, 0.75))
+        edge.set_length(complex(-1.0, 0.5))
+        self.assertEqual(edge.get_phase(), complex(0.25, 0.75))
+        edge.set_phase(complex(1.0, 1.0))
+        self.assertEqual(edge.get_length(), complex(-1.0, 0.5))
 
 
 class TestHermitianWeightedSpacetimeType(unittest.TestCase):

@@ -37,12 +37,12 @@ def _make_spacetime(d):
 
 def _vids(simplex):
     """Vertex IDs of a simplex as a frozenset."""
-    return frozenset(v.getId() for v in simplex.getVertices())
+    return frozenset(v.get_id() for v in simplex.get_vertices())
 
 
 def _top_simplices(st, d):
     """All top-dimensional simplices (d+1 vertices)."""
-    return [s for s in st.getSimplices() if len(s.getVertices()) == d + 1]
+    return [s for s in st.get_simplices() if len(s.get_vertices()) == d + 1]
 
 
 def _top_vids(st, d):
@@ -53,24 +53,24 @@ def _top_vids(st, d):
 def _edge_pairs(vertex):
     """Set of (min_id, max_id) tuples for all edges incident to vertex."""
     pairs = set()
-    for e in vertex.getEdges():
-        a, b = e.getSource().getId(), e.getTarget().getId()
+    for e in vertex.get_edges():
+        a, b = e.get_source().get_id(), e.get_target().get_id()
         pairs.add((min(a, b), max(a, b)))
     return pairs
 
 
 def _assert_counts(test, st, expected_n41, expected_n32):
     """Assert exact N41, N32, and total counts."""
-    test.assertEqual(st.getN41(), expected_n41,
-                     f"N41: expected {expected_n41}, got {st.getN41()}")
-    test.assertEqual(st.getN32(), expected_n32,
-                     f"N32: expected {expected_n32}, got {st.getN32()}")
-    test.assertEqual(st.getTopSimplexCount(), expected_n41 + expected_n32)
+    test.assertEqual(st.get_n41(), expected_n41,
+                     f"N41: expected {expected_n41}, got {st.get_n41()}")
+    test.assertEqual(st.get_n32(), expected_n32,
+                     f"N32: expected {expected_n32}, got {st.get_n32()}")
+    test.assertEqual(st.get_top_simplex_count(), expected_n41 + expected_n32)
 
 
 def _get_vertex(st, vid):
     """Get a vertex by ID from the vertex list."""
-    return st.getVertexList().get(vid)
+    return st.get_vertex_list().get(vid)
 
 
 # =====================================================================
@@ -88,17 +88,17 @@ class TestConeExact(unittest.TestCase):
 
     def _run_cone_forward(self, d):
         st = _make_spacetime(d)
-        seed, _ = st.createSimplex((1, d))
+        seed, _ = st.create_simplex((1, d))
 
         # Verify seed structure
         seed_ids = set(range(d + 1))
         self.assertEqual(_vids(seed), frozenset(seed_ids))
-        self.assertEqual(seed.getOrientation().numeric(), (1, d))
+        self.assertEqual(seed.get_orientation().numeric(), (1, d))
 
         # Pick first non-spatial facet (spans multiple time slices)
         facet = None
-        for f in seed.getFacets():
-            if not f.isSpatial():
+        for f in seed.get_facets():
+            if not f.is_spatial():
                 facet = f
                 break
         self.assertIsNotNone(facet)
@@ -110,11 +110,11 @@ class TestConeExact(unittest.TestCase):
 
         # Create new vertex and new simplex
         new_vid = d + 1
-        new_v = st.createVertex(new_vid, [0.0])
-        self.assertEqual(new_v.getTime(), 0.0)
+        new_v = st.create_vertex(new_vid, [0.0])
+        self.assertEqual(new_v.get_time(), 0.0)
 
-        new_verts = list(facet.getVertices()) + [new_v]
-        new_simplex, created = st.createSimplex(new_verts)
+        new_verts = list(facet.get_vertices()) + [new_v]
+        new_simplex, created = st.create_simplex(new_verts)
         self.assertTrue(created)
 
         return st, d, seed, new_simplex, new_v, new_vid, facet_ids
@@ -139,10 +139,10 @@ class TestConeExact(unittest.TestCase):
         self.assertEqual(top_sets, {expected_seed_vids, expected_new_vids})
 
         # New simplex orientation: (2, d-1)
-        self.assertEqual(new_simplex.getOrientation().numeric(), (2, d - 1))
+        self.assertEqual(new_simplex.get_orientation().numeric(), (2, d - 1))
 
         # Seed orientation unchanged
-        self.assertEqual(seed.getOrientation().numeric(), (1, d))
+        self.assertEqual(seed.get_orientation().numeric(), (1, d))
 
         # New vertex has exactly d edges (one to each facet vertex)
         new_v_edges = _edge_pairs(new_v)
@@ -153,16 +153,16 @@ class TestConeExact(unittest.TestCase):
 
         # Edge types: v0→new_v is spacelike (same time=0, sqlen>0),
         # all others are timelike (different times, sqlen<0)
-        for e in new_v.getEdges():
-            src_id, tgt_id = e.getSource().getId(), e.getTarget().getId()
+        for e in new_v.get_edges():
+            src_id, tgt_id = e.get_source().get_id(), e.get_target().get_id()
             other_id = tgt_id if src_id == new_vid else src_id
             if other_id == 0:
                 # Both at t=0 → spacelike
-                self.assertGreater((e.getLength()**2).real, 0,
+                self.assertGreater((e.get_length()**2).real, 0,
                                    "v0-new_v edge should be spacelike (sqlen>0)")
             else:
                 # new_v@t=0 to other@t=1 → timelike
-                self.assertLess((e.getLength()**2).real, 0,
+                self.assertLess((e.get_length()**2).real, 0,
                                 f"v{other_id}-new_v edge should be timelike (sqlen<0)")
 
         # Orientation counts
@@ -191,7 +191,7 @@ class TestConeExact(unittest.TestCase):
             self._run_cone_forward(d)
 
         # Remove the new simplex
-        st.removeSimplex(new_simplex)
+        st.remove_simplex(new_simplex)
 
         # Back to 1 top simplex with original vertex set
         tops = _top_simplices(st, d)
@@ -222,18 +222,18 @@ class TestFlipExact(unittest.TestCase):
     def _build_flip_lattice(self, d):
         """Build 2 simplices sharing a (d-1)-face, return all refs."""
         st = _make_spacetime(d)
-        seed, _ = st.createSimplex((1, d))
+        seed, _ = st.create_simplex((1, d))
 
-        facet = [f for f in seed.getFacets() if not f.isSpatial()][0]
+        facet = [f for f in seed.get_facets() if not f.is_spatial()][0]
         facet_ids = _vids(facet)
 
         new_vid = d + 1
-        new_v = st.createVertex(new_vid, [0.0])
-        coned, _ = st.createSimplex(list(facet.getVertices()) + [new_v])
+        new_v = st.create_vertex(new_vid, [0.0])
+        coned, _ = st.create_simplex(list(facet.get_vertices()) + [new_v])
 
         # Shared: facet vertex objects; Unique: v1 and v_{d+1}
-        shared = list(facet.getVertices())  # [v0, v2, ..., vd]
-        shared_ids = sorted([v.getId() for v in shared])
+        shared = list(facet.get_vertices())  # [v0, v2, ..., vd]
+        shared_ids = sorted([v.get_id() for v in shared])
         unique = [_get_vertex(st, 1), new_v]  # [v1, v_{d+1}]
 
         return st, seed, coned, shared, unique, shared_ids
@@ -262,28 +262,28 @@ class TestFlipExact(unittest.TestCase):
         st, seed, coned, shared, unique, shared_ids = \
             self._build_flip_lattice(d)
 
-        unique_ids = [v.getId() for v in unique]
-        before_n0 = st.getVertexCount()
+        unique_ids = [v.get_id() for v in unique]
+        before_n0 = st.get_vertex_count()
 
         # Record vertices of old simplices for reverse
-        seed_verts_list = list(seed.getVertices())
-        coned_verts_list = list(coned.getVertices())
+        seed_verts_list = list(seed.get_vertices())
+        coned_verts_list = list(coned.get_vertices())
 
         # Forward flip: remove 2 old simplices
-        st.removeSimplex(seed)
-        st.removeSimplex(coned)
-        self.assertEqual(st.getTopSimplexCount(), 0)
+        st.remove_simplex(seed)
+        st.remove_simplex(coned)
+        self.assertEqual(st.get_top_simplex_count(), 0)
 
         # Create d new simplices: each skips one shared vertex
         new_simplices = []
         for skip_idx in range(d):
             verts = [shared[i] for i in range(d) if i != skip_idx] + unique
-            ns, created = st.createSimplex(verts)
+            ns, created = st.create_simplex(verts)
             self.assertTrue(created, f"d={d}, skip={skip_idx}: simplex already existed")
             new_simplices.append(ns)
 
         # Exactly d top simplices
-        self.assertEqual(st.getTopSimplexCount(), d)
+        self.assertEqual(st.get_top_simplex_count(), d)
 
         # Vertex sets match expected
         actual_sets = {_vids(s) for s in new_simplices}
@@ -291,7 +291,7 @@ class TestFlipExact(unittest.TestCase):
         self.assertEqual(actual_sets, expected_sets)
 
         # Vertex count unchanged (no vertices added or removed)
-        self.assertEqual(st.getVertexCount(), before_n0)
+        self.assertEqual(st.get_vertex_count(), before_n0)
 
         # New edge: unique[0]-unique[1] (v1-v_{d+1}) now exists
         v1_edges = _edge_pairs(_get_vertex(st, unique_ids[0]))
@@ -304,14 +304,14 @@ class TestFlipExact(unittest.TestCase):
 
         # Verify orientations of all new simplices
         for ns in new_simplices:
-            o = ns.getOrientation().numeric()
+            o = ns.get_orientation().numeric()
             self.assertIn(o, self._valid_orientations(d),
                           f"Invalid orientation {o}")
 
         # Verify counts: compute expected N41/N32 from orientations
         n41, n32 = 0, 0
         for ns in new_simplices:
-            o = ns.getOrientation().numeric()
+            o = ns.get_orientation().numeric()
             if o in ((d, 1), (1, d)):
                 n41 += 1
             elif o in ((d - 1, 2), (2, d - 1)):
@@ -335,30 +335,30 @@ class TestFlipExact(unittest.TestCase):
         st, seed, coned, shared, unique, shared_ids = \
             self._build_flip_lattice(d)
 
-        seed_verts = list(seed.getVertices())
-        coned_verts = list(coned.getVertices())
+        seed_verts = list(seed.get_vertices())
+        coned_verts = list(coned.get_vertices())
         original_vids = _top_vids(st, d)
 
         # Forward flip
-        st.removeSimplex(seed)
-        st.removeSimplex(coned)
+        st.remove_simplex(seed)
+        st.remove_simplex(coned)
         new_simplices = []
         for skip_idx in range(d):
             verts = [shared[i] for i in range(d) if i != skip_idx] + unique
-            ns, _ = st.createSimplex(verts)
+            ns, _ = st.create_simplex(verts)
             new_simplices.append(ns)
-        self.assertEqual(st.getTopSimplexCount(), d)
+        self.assertEqual(st.get_top_simplex_count(), d)
 
         # Reverse flip: remove d new, recreate original 2
         for ns in new_simplices:
-            st.removeSimplex(ns)
-        self.assertEqual(st.getTopSimplexCount(), 0)
+            st.remove_simplex(ns)
+        self.assertEqual(st.get_top_simplex_count(), 0)
 
-        st.createSimplex(seed_verts)
-        st.createSimplex(coned_verts)
+        st.create_simplex(seed_verts)
+        st.create_simplex(coned_verts)
 
         # Back to original 2 simplices
-        self.assertEqual(st.getTopSimplexCount(), 2)
+        self.assertEqual(st.get_top_simplex_count(), 2)
         restored_vids = _top_vids(st, d)
         self.assertEqual(restored_vids, original_vids)
 
@@ -389,16 +389,16 @@ class TestShiftExact(unittest.TestCase):
         d = 4
         st = _make_spacetime(d)
 
-        a = st.createVertex(0, [0.0])
-        b = st.createVertex(1, [0.0])
-        c = st.createVertex(2, [0.0])
-        x = st.createVertex(3, [1.0])
-        y = st.createVertex(4, [1.0])
-        z = st.createVertex(5, [1.0])
+        a = st.create_vertex(0, [0.0])
+        b = st.create_vertex(1, [0.0])
+        c = st.create_vertex(2, [0.0])
+        x = st.create_vertex(3, [1.0])
+        y = st.create_vertex(4, [1.0])
+        z = st.create_vertex(5, [1.0])
 
-        s1, _ = st.createSimplex([a, b, c, x, y])
-        s2, _ = st.createSimplex([a, b, c, x, z])
-        s3, _ = st.createSimplex([a, b, c, y, z])
+        s1, _ = st.create_simplex([a, b, c, x, y])
+        s2, _ = st.create_simplex([a, b, c, x, z])
+        s3, _ = st.create_simplex([a, b, c, y, z])
 
         shared = [a, b, c]
         unique = [x, y, z]
@@ -408,8 +408,8 @@ class TestShiftExact(unittest.TestCase):
         """Verify the manually built shift lattice."""
         st, old, shared, unique = self._build_shift_lattice()
 
-        self.assertEqual(st.getTopSimplexCount(), 3)
-        self.assertEqual(st.getVertexCount(), 6)
+        self.assertEqual(st.get_top_simplex_count(), 3)
+        self.assertEqual(st.get_vertex_count(), 6)
         _assert_counts(self, st, 0, 3)
 
         expected = {
@@ -420,29 +420,29 @@ class TestShiftExact(unittest.TestCase):
         self.assertEqual(_top_vids(st, 4), expected)
 
         for s in old:
-            self.assertEqual(s.getOrientation().numeric(), (3, 2))
+            self.assertEqual(s.get_orientation().numeric(), (3, 2))
 
     def test_shift_forward(self):
         """Remove 3 old, create 3 new: exact vertex sets and orientations."""
         st, old, shared, unique = self._build_shift_lattice()
 
-        old_vert_sets = [list(s.getVertices()) for s in old]
+        old_vert_sets = [list(s.get_vertices()) for s in old]
 
         # Forward shift: remove old
         for s in old:
-            st.removeSimplex(s)
-        self.assertEqual(st.getTopSimplexCount(), 0)
+            st.remove_simplex(s)
+        self.assertEqual(st.get_top_simplex_count(), 0)
 
         # Create new: each skips one shared vertex, includes all unique
         new_simplices = []
         for skip_idx in range(3):
             verts = [shared[i] for i in range(3) if i != skip_idx] + unique
-            ns, created = st.createSimplex(verts)
+            ns, created = st.create_simplex(verts)
             self.assertTrue(created)
             new_simplices.append(ns)
 
         # 3 top simplices
-        self.assertEqual(st.getTopSimplexCount(), 3)
+        self.assertEqual(st.get_top_simplex_count(), 3)
 
         # Exact vertex sets
         expected = {
@@ -454,10 +454,10 @@ class TestShiftExact(unittest.TestCase):
 
         # All new simplices have orientation (2, 3)
         for ns in new_simplices:
-            self.assertEqual(ns.getOrientation().numeric(), (2, 3))
+            self.assertEqual(ns.get_orientation().numeric(), (2, 3))
 
         # Still 6 vertices, no change
-        self.assertEqual(st.getVertexCount(), 6)
+        self.assertEqual(st.get_vertex_count(), 6)
 
         # Counts: all N32 type
         _assert_counts(self, st, 0, 3)
@@ -468,13 +468,13 @@ class TestShiftExact(unittest.TestCase):
         for u in unique:
             u_edges = _edge_pairs(u)
             for s in shared:
-                pair = (min(u.getId(), s.getId()), max(u.getId(), s.getId()))
+                pair = (min(u.get_id(), s.get_id()), max(u.get_id(), s.get_id()))
                 self.assertIn(pair, u_edges,
-                              f"Edge {pair} missing on unique vertex {u.getId()}")
+                              f"Edge {pair} missing on unique vertex {u.get_id()}")
             for u2 in unique:
-                if u2.getId() != u.getId():
-                    pair = (min(u.getId(), u2.getId()),
-                            max(u.getId(), u2.getId()))
+                if u2.get_id() != u.get_id():
+                    pair = (min(u.get_id(), u2.get_id()),
+                            max(u.get_id(), u2.get_id()))
                     self.assertIn(pair, u_edges,
                                   f"Edge {pair} missing between unique vertices")
 
@@ -483,26 +483,26 @@ class TestShiftExact(unittest.TestCase):
         st, old, shared, unique = self._build_shift_lattice()
 
         original_vids = _top_vids(st, 4)
-        old_vert_sets = [list(s.getVertices()) for s in old]
+        old_vert_sets = [list(s.get_vertices()) for s in old]
 
         # Forward shift
         for s in old:
-            st.removeSimplex(s)
+            st.remove_simplex(s)
         new_simplices = []
         for skip_idx in range(3):
             verts = [shared[i] for i in range(3) if i != skip_idx] + unique
-            ns, _ = st.createSimplex(verts)
+            ns, _ = st.create_simplex(verts)
             new_simplices.append(ns)
-        self.assertEqual(st.getTopSimplexCount(), 3)
+        self.assertEqual(st.get_top_simplex_count(), 3)
         self.assertNotEqual(_top_vids(st, 4), original_vids)
 
         # Reverse shift: remove new, recreate old
         for ns in new_simplices:
-            st.removeSimplex(ns)
+            st.remove_simplex(ns)
         for ov in old_vert_sets:
-            st.createSimplex(ov)
+            st.create_simplex(ov)
 
-        self.assertEqual(st.getTopSimplexCount(), 3)
+        self.assertEqual(st.get_top_simplex_count(), 3)
         self.assertEqual(_top_vids(st, 4), original_vids)
         _assert_counts(self, st, 0, 3)
 
@@ -510,26 +510,26 @@ class TestShiftExact(unittest.TestCase):
         """Shift forward, reverse, forward again, reverse again."""
         st, old, shared, unique = self._build_shift_lattice()
         original_vids = _top_vids(st, 4)
-        old_vert_sets = [list(s.getVertices()) for s in old]
+        old_vert_sets = [list(s.get_vertices()) for s in old]
 
         for cycle in range(2):
             # Forward: remove old, create new
             tops = _top_simplices(st, 4)
             for s in tops:
-                st.removeSimplex(s)
+                st.remove_simplex(s)
 
             new_simplices = []
             for skip_idx in range(3):
                 verts = [shared[i] for i in range(3) if i != skip_idx] + unique
-                ns, created = st.createSimplex(verts)
+                ns, created = st.create_simplex(verts)
                 new_simplices.append(ns)
-            self.assertEqual(st.getTopSimplexCount(), 3)
+            self.assertEqual(st.get_top_simplex_count(), 3)
 
             # Reverse: remove new, recreate old
             for ns in new_simplices:
-                st.removeSimplex(ns)
+                st.remove_simplex(ns)
             for ov in old_vert_sets:
-                st.createSimplex(ov)
+                st.create_simplex(ov)
             self.assertEqual(_top_vids(st, 4), original_vids)
             _assert_counts(self, st, 0, 3)
 
@@ -547,27 +547,27 @@ class TestDimensionProperties(unittest.TestCase):
         for d in [2, 3, 4]:
             with self.subTest(d=d):
                 st = _make_spacetime(d)
-                seed, _ = st.createSimplex((1, d))
-                facet = [f for f in seed.getFacets()
-                         if not f.isSpatial()][0]
-                new_v = st.createVertex(d + 1, [0.0])
-                coned, _ = st.createSimplex(
-                    list(facet.getVertices()) + [new_v])
+                seed, _ = st.create_simplex((1, d))
+                facet = [f for f in seed.get_facets()
+                         if not f.is_spatial()][0]
+                new_v = st.create_vertex(d + 1, [0.0])
+                coned, _ = st.create_simplex(
+                    list(facet.get_vertices()) + [new_v])
 
-                self.assertEqual(st.getTopSimplexCount(), 2)
+                self.assertEqual(st.get_top_simplex_count(), 2)
 
-                shared = list(facet.getVertices())
+                shared = list(facet.get_vertices())
                 unique = [_get_vertex(st, 1), new_v]
 
-                st.removeSimplex(seed)
-                st.removeSimplex(coned)
+                st.remove_simplex(seed)
+                st.remove_simplex(coned)
                 for skip in range(d):
                     verts = [shared[i] for i in range(d)
                              if i != skip] + unique
-                    st.createSimplex(verts)
+                    st.create_simplex(verts)
 
                 # d new simplices created, 2 removed → net d - 2
-                self.assertEqual(st.getTopSimplexCount(), d,
+                self.assertEqual(st.get_top_simplex_count(), d,
                                  f"d={d}: flip should produce {d} simplices")
 
     def test_cone_new_vertex_degree(self):
@@ -575,18 +575,18 @@ class TestDimensionProperties(unittest.TestCase):
         for d in [2, 3, 4]:
             with self.subTest(d=d):
                 st = _make_spacetime(d)
-                st.createSimplex((1, d))
+                st.create_simplex((1, d))
                 facet = None
-                for s in st.getSimplices():
-                    if len(s.getVertices()) == d + 1:
-                        for f in s.getFacets():
-                            if not f.isSpatial():
+                for s in st.get_simplices():
+                    if len(s.get_vertices()) == d + 1:
+                        for f in s.get_facets():
+                            if not f.is_spatial():
                                 facet = f
                                 break
                         break
 
-                new_v = st.createVertex(d + 1, [0.0])
-                st.createSimplex(list(facet.getVertices()) + [new_v])
+                new_v = st.create_vertex(d + 1, [0.0])
+                st.create_simplex(list(facet.get_vertices()) + [new_v])
 
                 self.assertEqual(len(_edge_pairs(new_v)), d,
                                  f"d={d}: new vertex should have {d} edges")
@@ -605,11 +605,11 @@ class TestDimensionProperties(unittest.TestCase):
         # First shift: skip from shared, include all unique
         tops = _top_simplices(st, 4)
         for s in tops:
-            st.removeSimplex(s)
+            st.remove_simplex(s)
         for skip_idx in range(3):
             verts = [shared[i] for i in range(3)
                      if i != skip_idx] + unique
-            st.createSimplex(verts)
+            st.create_simplex(verts)
 
         mid_vids = _top_vids(st, 4)
         self.assertNotEqual(mid_vids, original_vids)
@@ -617,11 +617,11 @@ class TestDimensionProperties(unittest.TestCase):
         # Second shift: roles swap — skip from unique, include all shared
         tops = _top_simplices(st, 4)
         for s in tops:
-            st.removeSimplex(s)
+            st.remove_simplex(s)
         for skip_idx in range(3):
             verts = [unique[i] for i in range(3)
                      if i != skip_idx] + shared
-            st.createSimplex(verts)
+            st.create_simplex(verts)
 
         self.assertEqual(_top_vids(st, 4), original_vids)
 

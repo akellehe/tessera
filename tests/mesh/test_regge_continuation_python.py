@@ -54,7 +54,7 @@ pytestmark = pytest.mark.skipif(not _IMPORT_OK, reason="tessera not built")
 
 #: Steps around the loop. Each turns the Gram determinant by about a fifth of a
 #: degree, three orders below the half turn the continuation needs, which
-#: ``maxRadicandTurn`` is asserted against rather than assumed.
+#: ``max_radicand_turn`` is asserted against rather than assumed.
 _STEPS = 2000
 
 #: The centre and radius of the loop in the varying squared length: the circle
@@ -73,8 +73,8 @@ def _spacetime(dim, topology):
 
 def _edge_map(st):
     out = {}
-    for e in st.getEdgeList().toVector():
-        a, b = e.getSource().getId(), e.getTarget().getId()
+    for e in st.get_edge_list().to_vector():
+        a, b = e.get_source().get_id(), e.get_target().get_id()
         out[(min(a, b), max(a, b))] = e
     return out
 
@@ -96,15 +96,15 @@ def _tetrahedron():
     assert len(edges) == 6, f"expected a tetrahedron, got {len(edges)} edges"
     varying = sorted(edges)[-1]
     for key, edge in edges.items():
-        edge.setLength(cmath.sqrt(_squared(0.0)) if key == varying else 1.0 + 0.0j)
-        edge.setPhase(0.0)
+        edge.set_length(cmath.sqrt(_squared(0.0)) if key == varying else 1.0 + 0.0j)
+        edge.set_phase(0.0)
     return st, edges, varying
 
 
 def _cell_key(st):
-    tops = [s for s in st.getSimplices() if len(s.getVertices()) == 4]
+    tops = [s for s in st.get_simplices() if len(s.get_vertices()) == 4]
     assert len(tops) == 1
-    return sorted(v.getId() for v in tops[0].getVertices())
+    return sorted(v.get_id() for v in tops[0].get_vertices())
 
 
 def _walk(steps=_STEPS):
@@ -113,15 +113,15 @@ def _walk(steps=_STEPS):
     st, edges, varying = _tetrahedron()
     continuation = tessera.ReggeContinuation(st)
     declared = [continuation.action()]
-    principal = [continuation.principalAction()]
+    principal = [continuation.principal_action()]
     largest_turn = 0.0
     for k in range(1, steps + 1):
         phi = 2.0 * math.pi * k / steps
-        edges[varying].continueLength(cmath.sqrt(_squared(phi)))
+        edges[varying].continue_length(cmath.sqrt(_squared(phi)))
         continuation.advance()
-        largest_turn = max(largest_turn, continuation.maxRadicandTurn())
+        largest_turn = max(largest_turn, continuation.max_radicand_turn())
         declared.append(continuation.action())
-        principal.append(continuation.principalAction())
+        principal.append(continuation.principal_action())
     return st, continuation, declared, principal, largest_turn
 
 
@@ -138,24 +138,24 @@ def test_a_fresh_continuation_reproduces_the_simplex_values():
     st, _, _ = _tetrahedron()
     continuation = tessera.ReggeContinuation(st)
     cell = _cell_key(st)
-    tops = [s for s in st.getSimplices() if len(s.getVertices()) == 4]
-    hinges = {tuple(sorted(v.getId() for v in s.getVertices())): s
-              for s in st.getSimplices() if len(s.getVertices()) == 2}
+    tops = [s for s in st.get_simplices() if len(s.get_vertices()) == 4]
+    hinges = {tuple(sorted(v.get_id() for v in s.get_vertices())): s
+              for s in st.get_simplices() if len(s.get_vertices()) == 2}
 
     assert continuation.cells() == [cell]
-    assert continuation.volumeSheet(cell) == 0
+    assert continuation.volume_sheet(cell) == 0
     assert abs(continuation.volume(cell) - tops[0].volume()) < 1e-14
 
     assert len(continuation.hinges()) == 6
     for hinge in continuation.hinges():
         simplex = hinges[tuple(hinge)]
-        assert abs(continuation.dihedralAngle(cell, hinge)
-                   - tops[0].dihedralAngle(simplex)) < 1e-14
-        assert abs(continuation.deficitAngle(hinge)
-                   - simplex.deficitAngle()) < 1e-14
-        assert continuation.angleBranchIndex(cell, hinge) == 0
-        assert continuation.angleOrientation(cell, hinge) == 1
-    assert abs(continuation.action() - continuation.principalAction()) < 1e-14
+        assert abs(continuation.dihedral_angle(cell, hinge)
+                   - tops[0].dihedral_angle(simplex)) < 1e-14
+        assert abs(continuation.deficit_angle(hinge)
+                   - simplex.deficit_angle()) < 1e-14
+        assert continuation.angle_branch_index(cell, hinge) == 0
+        assert continuation.angle_orientation(cell, hinge) == 1
+    assert abs(continuation.action() - continuation.principal_action()) < 1e-14
 
 
 # --------------------------------------------------------------------------- #
@@ -169,16 +169,16 @@ def test_the_loop_returns_the_cell_content_on_the_other_sheet():
     # turn that would make the continuation ambiguous, and none landed on a
     # branch point, where there is no continuation to take.
     assert largest_turn < 0.5 * math.pi
-    assert not continuation.touchedBranchPoint()
+    assert not continuation.touched_branch_point()
 
     # The geometry is exactly where it started: s = 5/2, det G = (5/8)(1/2) = 5/16.
-    tops = [s for s in st.getSimplices() if len(s.getVertices()) == 4]
+    tops = [s for s in st.get_simplices() if len(s.get_vertices()) == 4]
     principal_volume = tops[0].volume()
     assert abs(principal_volume - math.sqrt(5.0 / 16.0) / 6.0) < 1e-12
 
     # The root is not.
-    assert continuation.volumeWinding(cell) == 1
-    assert continuation.volumeSheet(cell) == 1
+    assert continuation.volume_winding(cell) == 1
+    assert continuation.volume_sheet(cell) == 1
     assert abs(continuation.volume(cell) + principal_volume) < 1e-12
 
 
@@ -190,12 +190,12 @@ def test_two_loops_return_the_declared_sheet():
     continuation = tessera.ReggeContinuation(st)
     for k in range(1, 2 * _STEPS + 1):
         phi = 4.0 * math.pi * k / (2 * _STEPS)
-        edges[varying].continueLength(cmath.sqrt(_squared(phi)))
+        edges[varying].continue_length(cmath.sqrt(_squared(phi)))
         continuation.advance()
     cell = _cell_key(st)
-    assert continuation.volumeWinding(cell) == 2
-    assert continuation.volumeSheet(cell) == 0
-    tops = [s for s in st.getSimplices() if len(s.getVertices()) == 4]
+    assert continuation.volume_winding(cell) == 2
+    assert continuation.volume_sheet(cell) == 0
+    tops = [s for s in st.get_simplices() if len(s.get_vertices()) == 4]
     assert abs(continuation.volume(cell) - tops[0].volume()) < 1e-12
 
 
@@ -206,15 +206,15 @@ def test_a_loop_that_encloses_no_zero_moves_no_sheet():
     artifact of having moved at all."""
     st, edges, varying = _tetrahedron()
     for key, edge in edges.items():
-        edge.setLength(cmath.sqrt(1.0 + 0.5) if key == varying else 1.0 + 0.0j)
+        edge.set_length(cmath.sqrt(1.0 + 0.5) if key == varying else 1.0 + 0.0j)
     continuation = tessera.ReggeContinuation(st)
     for k in range(1, _STEPS + 1):
         phi = 2.0 * math.pi * k / _STEPS
-        edges[varying].continueLength(cmath.sqrt(1.0 + 0.5 * cmath.exp(1j * phi)))
+        edges[varying].continue_length(cmath.sqrt(1.0 + 0.5 * cmath.exp(1j * phi)))
         continuation.advance()
     cell = _cell_key(st)
-    assert continuation.volumeWinding(cell) == 0
-    assert continuation.volumeSheet(cell) == 0
+    assert continuation.volume_winding(cell) == 0
+    assert continuation.volume_sheet(cell) == 0
 
 
 # --------------------------------------------------------------------------- #
@@ -259,37 +259,37 @@ def test_a_fresh_declaration_labels_every_root_principal():
     st, _, _ = _tetrahedron()
     continuation = tessera.ReggeContinuation(st)
     cell = _cell_key(st)
-    assert continuation.maxAngleStep() == 0.0
+    assert continuation.max_angle_step() == 0.0
     for hinge in continuation.hinges():
-        assert continuation.hingeContentSheet(hinge) == 0
-        assert tuple(continuation.angleCofactorSheets(cell, hinge)) == (0, 0)
+        assert continuation.hinge_content_sheet(hinge) == 0
+        assert tuple(continuation.angle_cofactor_sheets(cell, hinge)) == (0, 0)
 
 
 def test_the_largest_angle_step_is_the_largest_angle_movement():
     st, edges, varying = _tetrahedron()
     continuation = tessera.ReggeContinuation(st)
     cell = _cell_key(st)
-    before = {tuple(h): continuation.dihedralAngle(cell, h)
+    before = {tuple(h): continuation.dihedral_angle(cell, h)
               for h in continuation.hinges()}
-    edges[varying].continueLength(cmath.sqrt(_squared(0.01)))
+    edges[varying].continue_length(cmath.sqrt(_squared(0.01)))
     continuation.advance()
-    moved = max(abs(continuation.dihedralAngle(cell, list(h)) - angle)
+    moved = max(abs(continuation.dihedral_angle(cell, list(h)) - angle)
                 for h, angle in before.items())
     assert moved > 0.0
-    assert continuation.maxAngleStep() == pytest.approx(moved, rel=1e-12)
+    assert continuation.max_angle_step() == pytest.approx(moved, rel=1e-12)
 
 
 def test_the_cofactors_give_the_cosine_of_the_dihedral_angle():
     """cos(theta) = -C_ij / (sqrt(C_ii) sqrt(C_jj)) on the principal roots,
     the single-valued data every branch of the angle is built from."""
     st, _, _ = _tetrahedron()
-    top = [s for s in st.getSimplices() if len(s.getVertices()) == 4][0]
-    hinges = [s for s in st.getSimplices() if len(s.getVertices()) == 2]
+    top = [s for s in st.get_simplices() if len(s.get_vertices()) == 4][0]
+    hinges = [s for s in st.get_simplices() if len(s.get_vertices()) == 2]
     assert len(hinges) == 6
     for hinge in hinges:
-        ok, cij, cii, cjj = top.dihedralCofactors(hinge)
+        ok, cij, cii, cjj = top.dihedral_cofactors(hinge)
         assert ok
-        expected = cmath.cos(top.dihedralAngle(hinge))
+        expected = cmath.cos(top.dihedral_angle(hinge))
         assert abs(-cij / (cmath.sqrt(cii) * cmath.sqrt(cjj)) - expected) \
             < 1e-12
 

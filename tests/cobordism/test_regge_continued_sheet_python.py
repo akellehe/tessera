@@ -51,11 +51,11 @@ TICK_ONE_SQUARED_LENGTHS = {
 
 
 def _complex(cells, squared):
-    spacetime = T.Spacetime.fromVertexTuples(3, cells, 1.0, 0.0)
-    for edge in spacetime.getEdgeList().toVector():
-        a, b = sorted((int(edge.getSource().getId()),
-                       int(edge.getTarget().getId())))
-        edge.setLength(cmath.sqrt(complex(squared[(a, b)])))
+    spacetime = T.Spacetime.from_vertex_tuples(3, cells, 1.0, 0.0)
+    for edge in spacetime.get_edge_list().to_vector():
+        a, b = sorted((int(edge.get_source().get_id()),
+                       int(edge.get_target().get_id())))
+        edge.set_length(cmath.sqrt(complex(squared[(a, b)])))
     return spacetime
 
 
@@ -72,22 +72,22 @@ def _declaration(spacetime, branch, matter=0.0):
     declaration.holonomy_weight = 0.0
     declaration.matter_weight = matter
     if matter:
-        edges = len(spacetime.getEdgeList().toVector())
+        edges = len(spacetime.get_edge_list().to_vector())
         declaration.covariance = list(np.eye(edges, dtype=complex).reshape(-1))
     return declaration
 
 
 def _perturbed_gradient_jumps(spacetime, action, delta):
     """|grad(z + delta e_k) - grad(z)| for every edge k."""
-    edges = spacetime.getEdgeList().toVector()
+    edges = spacetime.get_edge_list().to_vector()
     base = np.array(action.length_stationarity())
     jumps = []
     for edge in edges:
-        length = complex(edge.getLength())
-        edge.setLength(cmath.sqrt(length * length + delta))
+        length = complex(edge.get_length())
+        edge.set_length(cmath.sqrt(length * length + delta))
         jumps.append(np.linalg.norm(np.array(action.length_stationarity())
                                     - base))
-        edge.setLength(length)
+        edge.set_length(length)
     return np.array(jumps)
 
 
@@ -157,11 +157,11 @@ def test_a_path_through_a_degenerate_face_is_refused_by_name():
     continued = cob.JointAction(regular, declaration(cob.ReggeBranch.Continued))
     principal = cob.JointAction(regular, declaration(cob.ReggeBranch.Principal))
     assert continued.regge_term() == pytest.approx(principal.regge_term())
-    for edge in regular.getEdgeList().toVector():
-        pair = sorted((int(edge.getSource().getId()),
-                       int(edge.getTarget().getId())))
+    for edge in regular.get_edge_list().to_vector():
+        pair = sorted((int(edge.get_source().get_id()),
+                       int(edge.get_target().get_id())))
         if pair == [0, 1]:
-            edge.setLength(3.0 + 0j)
+            edge.set_length(3.0 + 0j)
     with pytest.raises(ValueError, match="cannot be followed") as refusal:
         continued.regge_term()
     assert "makes no fine step" in str(refusal.value)
@@ -214,8 +214,8 @@ def test_regge_and_matter_converge_on_the_continued_sheet():
     assert len(report.steps) <= 6
     assert report.regge_hinge_count == 10
     assert not report.regge_structurally_zero
-    for edge in spacetime.getEdgeList().toVector():
-        assert abs(complex(edge.getLength()) ** 2 - z_star) < 1e-6
+    for edge in spacetime.get_edge_list().to_vector():
+        assert abs(complex(edge.get_length()) ** 2 - z_star) < 1e-6
 
     principal_space = _complex(BOUNDARY_OF_FOUR_SIMPLEX, start)
     principal = cob.HolomorphicRelaxation(

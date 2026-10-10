@@ -40,8 +40,8 @@ class TestCertificates:
 
     @pytest.mark.parametrize("kappa", [(0.0, 0.0, 0.0), KAPPA])
     def test_the_declared_fields_on_a_spacetime_give_the_same_pencil(self, kappa):
-        """Squared lengths through Edge.setLength and the momentum through
-        Edge.setPhase, read back by WhitneyMass and Connection.fromSpacetime."""
+        """Squared lengths through Edge.set_length and the momentum through
+        Edge.set_phase, read back by WhitneyMass and Connection.from_spacetime."""
         cell = CrystalCell(FCC, 3, kinetic_scale=2.5)
         A, M = cell.pencil(kappa)
         A_fields, M_fields = cell.pencil_from_spacetime(kappa)
@@ -51,7 +51,7 @@ class TestCertificates:
     def test_a_matrix_off_the_grid_is_refused(self):
         cell = CrystalCell.cubic(1.0, 5, kinetic_scale=1.0)
         far = np.zeros((cell.size, cell.size))
-        far[0, cell.grid.vertexId(2, 0, 0)] = 1.0
+        far[0, cell.grid.vertex_id(2, 0, 0)] = 1.0
         with pytest.raises(ValueError, match="not neighbours"):
             GridMatrix(cell, far)
 
@@ -98,7 +98,7 @@ class TestFreeElectrons:
 class TestDegreesAndGauge:
     def test_degree_zero_is_the_exact_sector_of_degree_one(self):
         cell = CrystalCell.cubic(1.0, 3, kinetic_scale=1.0, crossover=512)
-        links = cell.grid.blochLinks(cell.edges, list(KAPPA))
+        links = cell.grid.bloch_links(cell.edges, list(KAPPA))
         cov = ch.CovariantChainHodge(cell.base, ch.Connection(cell.complex, links), 7, False)
         zero = np.sort(np.array(cov.spectrum(0).eigenvalues).real)
         one = np.sort(np.array(cov.spectrum(1).eigenvalues).real)
@@ -108,7 +108,7 @@ class TestDegreesAndGauge:
 
     def test_the_spectrum_is_gauge_invariant(self):
         cell = CrystalCell.cubic(1.0, 3, kinetic_scale=1.0, crossover=512)
-        links = cell.grid.blochLinks(cell.edges, list(KAPPA))
+        links = cell.grid.bloch_links(cell.edges, list(KAPPA))
         cov = ch.CovariantChainHodge(cell.base, ch.Connection(cell.complex, links), 7, False)
         rng = np.random.default_rng(3)
         gauge = {v: complex(np.exp(1j * rng.uniform(-np.pi, np.pi))) for v in range(cell.size)}

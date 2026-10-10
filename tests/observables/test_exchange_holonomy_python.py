@@ -116,8 +116,8 @@ def _reference_frames(frames, steps=None):
 def _loop(frames, n=None, omega=OMEGA, cfg=None):
     n = frames[0].shape[0] if n is None else n
     if cfg is None:
-        return EH.loopHolonomy(frames, _weights(n, omega))
-    return EH.loopHolonomy(frames, _weights(n, omega), cfg)
+        return EH.loop_holonomy(frames, _weights(n, omega))
+    return EH.loop_holonomy(frames, _weights(n, omega), cfg)
 
 
 # ---- synthetic SpectralFiber construction (via the public fromRecord) ---- #
@@ -181,7 +181,7 @@ def _fiber(frame, cells, weights=None, accepted=True, degree=0,
         "weights_im": [float(w.imag) for w in weights],
         "certificate": certificate,
     }
-    return obs.SpectralFiber.fromRecord(record)
+    return obs.SpectralFiber.from_record(record)
 
 
 def _ring_cells(n, offset=0):
@@ -256,7 +256,7 @@ class TransportPrimitiveTest(unittest.TestCase):
     def test_polar_unitary_is_unitary_and_matches_svd(self):
         rng = np.random.default_rng(7)
         m = rng.standard_normal((4, 4)) + 1j * rng.standard_normal((4, 4))
-        p = EH.polarUnitary(m)
+        p = EH.polar_unitary(m)
         self.assertLess(np.abs(p.conj().T @ p - np.eye(4)).max(), MACHINE)
         u, _s, vh = np.linalg.svd(m)
         self.assertLess(np.abs(p - u @ vh).max(), 1e-9)
@@ -268,8 +268,8 @@ class TransportPrimitiveTest(unittest.TestCase):
                              + 1j * rng.standard_normal((3, 3)))
         g1, _ = np.linalg.qr(rng.standard_normal((3, 3))
                              + 1j * rng.standard_normal((3, 3)))
-        lhs = EH.polarUnitary(g1 @ m @ g0)
-        rhs = g1 @ EH.polarUnitary(m) @ g0
+        lhs = EH.polar_unitary(g1 @ m @ g0)
+        rhs = g1 @ EH.polar_unitary(m) @ g0
         self.assertLess(np.abs(lhs - rhs).max(), 1e-9)
 
     def test_single_frame_loop_is_identity(self):
@@ -281,11 +281,11 @@ class TransportPrimitiveTest(unittest.TestCase):
     def test_loop_reports_unit_modulus_determinant(self):
         read = _loop(_exchange_frames())
         self.assertAlmostEqual(abs(read.determinant), 1.0, delta=MACHINE)
-        self.assertLess(read.unitarityResidual, MACHINE)
+        self.assertLess(read.unitarity_residual, MACHINE)
         self.assertEqual(read.steps, 8)
         self.assertEqual(read.rank, 2)
-        self.assertEqual(len(read.stepReads), 8)
-        self.assertTrue(all(s.certified for s in read.stepReads))
+        self.assertEqual(len(read.step_reads), 8)
+        self.assertTrue(all(s.certified for s in read.step_reads))
 
     def test_shape_mismatch_throws(self):
         frames = _exchange_frames()
@@ -295,22 +295,22 @@ class TransportPrimitiveTest(unittest.TestCase):
 
     def test_weights_size_mismatch_throws(self):
         with self.assertRaises(ValueError):
-            EH.loopHolonomy(_exchange_frames(), np.ones(5, complex))
+            EH.loop_holonomy(_exchange_frames(), np.ones(5, complex))
 
     def test_per_step_weights_count_mismatch_throws(self):
         frames = _exchange_frames()
         with self.assertRaises(ValueError):
-            EH.loopHolonomyPerStep(frames,
+            EH.loop_holonomy_per_step(frames,
                                    [np.ones(8, complex)] * (len(frames) - 1))
 
     def test_empty_loop_throws(self):
         with self.assertRaises(ValueError):
-            EH.loopHolonomy([], np.ones(8, complex))
+            EH.loop_holonomy([], np.ones(8, complex))
 
     def test_per_step_weights_match_constant_weights(self):
         frames = _exchange_frames()
-        a = EH.loopHolonomy(frames, _weights(8))
-        b = EH.loopHolonomyPerStep(frames, [_weights(8)] * len(frames))
+        a = EH.loop_holonomy(frames, _weights(8))
+        b = EH.loop_holonomy_per_step(frames, [_weights(8)] * len(frames))
         self.assertLess(np.abs(a.holonomy - b.holonomy).max(), MACHINE)
 
 
@@ -338,54 +338,54 @@ class ExchangeCharacterTest(unittest.TestCase):
 
     def test_one_exchange_normalized_ratio_is_exactly_minus_one(self):
         frames = _exchange_frames()
-        chi = EH.exchangeCharacter(_loop(frames),
+        chi = EH.exchange_character(_loop(frames),
                                    _loop(_reference_frames(frames)))
         self.assertLess(abs(chi.character + 1.0), MACHINE)
-        self.assertEqual(chi.characterSign, -1)
+        self.assertEqual(chi.character_sign, -1)
         self.assertTrue(chi.certificate.holds())
-        self.assertTrue(chi.timingMatched)
-        self.assertTrue(chi.ranksMatched)
+        self.assertTrue(chi.timing_matched)
+        self.assertTrue(chi.ranks_matched)
         self.assertEqual(chi.channel, obs.HolonomyChannel.ParticleExchange)
 
     def test_two_exchanges_give_plus_one(self):
         frames = _double_exchange_frames()
-        chi = EH.exchangeCharacter(_loop(frames),
+        chi = EH.exchange_character(_loop(frames),
                                    _loop(_reference_frames(frames)))
         self.assertLess(abs(chi.character - 1.0), MACHINE)
-        self.assertEqual(chi.characterSign, +1)
+        self.assertEqual(chi.character_sign, +1)
         self.assertTrue(chi.certificate.holds())
 
     def test_odd_cluster_with_even_composite_gives_plus_one(self):
         """The microscopic three-cycle realization of the odd/even block
         swap: mode parity (-1)^{1*2} = +1 shows up in the determinant."""
         frames = _three_cycle_frames()
-        chi = EH.exchangeCharacter(_loop(frames, n=12),
+        chi = EH.exchange_character(_loop(frames, n=12),
                                    _loop(_reference_frames(frames), n=12))
         self.assertLess(abs(chi.character - 1.0), MACHINE)
-        self.assertEqual(chi.characterSign, +1)
+        self.assertEqual(chi.character_sign, +1)
 
     def test_identical_even_composites_exchange_gives_plus_one(self):
         frames = _even_even_frames()
-        chi = EH.exchangeCharacter(_loop(frames),
+        chi = EH.exchange_character(_loop(frames),
                                    _loop(_reference_frames(frames)))
         self.assertLess(abs(chi.character - 1.0), MACHINE)
-        self.assertEqual(chi.characterSign, +1)
+        self.assertEqual(chi.character_sign, +1)
 
     def test_timing_mismatch_is_reported_and_uncertified(self):
         frames = _exchange_frames()
-        chi = EH.exchangeCharacter(
+        chi = EH.exchange_character(
             _loop(frames), _loop(_reference_frames(frames, steps=6)))
-        self.assertFalse(chi.timingMatched)
+        self.assertFalse(chi.timing_matched)
         self.assertFalse(chi.certificate.holds())
-        self.assertEqual(chi.characterSign, 0)
+        self.assertEqual(chi.character_sign, 0)
 
     def test_rank_mismatch_is_reported_and_uncertified(self):
         frames = _exchange_frames()
         ref = [frames[0][:, :1]] * len(frames)
-        chi = EH.exchangeCharacter(_loop(frames), _loop(ref))
-        self.assertFalse(chi.ranksMatched)
+        chi = EH.exchange_character(_loop(frames), _loop(ref))
+        self.assertFalse(chi.ranks_matched)
         self.assertFalse(chi.certificate.holds())
-        self.assertEqual(chi.characterSign, 0)
+        self.assertEqual(chi.character_sign, 0)
 
     def test_leaking_transfer_is_rejected_before_a_sign(self):
         # An orthogonal jump: the tracked modes teleport by 2 cells, the
@@ -394,15 +394,15 @@ class ExchangeCharacterTest(unittest.TestCase):
                   np.stack([_mode(2, 8), _mode(6, 8)], axis=1)]
         loop = _loop(frames + frames)
         self.assertFalse(loop.certificate.holds())
-        self.assertLess(loop.minStepSingularValue, 1e-9)
-        chi = EH.exchangeCharacter(loop, _loop(_reference_frames(frames,
+        self.assertLess(loop.min_step_singular_value, 1e-9)
+        chi = EH.exchange_character(loop, _loop(_reference_frames(frames,
                                                                  steps=4)))
-        self.assertEqual(chi.characterSign, 0)
+        self.assertEqual(chi.character_sign, 0)
         self.assertFalse(chi.certificate.holds())
 
     def test_ill_conditioned_transfer_is_rejected(self):
         cfg = obs.ExchangeHolonomyConfig()
-        cfg.conditionCap = 1.0000001  # every real step conditions above 1
+        cfg.condition_cap = 1.0000001  # every real step conditions above 1
         frames = _exchange_frames()
         # Unequal per-column motion => step conditioning > cap.
         frames[1] = np.stack([_mode(0.9, 8), _mode(4.2, 8)], axis=1)
@@ -419,33 +419,33 @@ class BlockPermutationTest(unittest.TestCase):
     def test_one_exchange_swap_and_minus_one_parities(self):
         steps = _block_steps([0, 4], 8, self.STEPS, 4)
         ref = _static_block_steps([0, 4], 8, self.STEPS)
-        read = EH.blockPermutation(steps, ref)
-        self.assertEqual(list(read.blockPermutation), [1, 0])
-        self.assertEqual(read.blockParity, -1)
-        self.assertEqual(read.occupationParity, -1)
-        self.assertEqual(list(read.blockRanks), [1, 1])
+        read = EH.block_permutation(steps, ref)
+        self.assertEqual(list(read.block_permutation), [1, 0])
+        self.assertEqual(read.block_parity, -1)
+        self.assertEqual(read.occupation_parity, -1)
+        self.assertEqual(list(read.block_ranks), [1, 1])
         self.assertTrue(read.certificate.holds())
-        self.assertLess(read.residualInBlockMotion, MACHINE)
+        self.assertLess(read.residual_in_block_motion, MACHINE)
 
     def test_double_exchange_identity_and_plus_one(self):
         steps = _block_steps([0, 4], 8, 2 * self.STEPS, 8)
-        read = EH.blockPermutation(steps)
-        self.assertEqual(list(read.blockPermutation), [0, 1])
-        self.assertEqual(read.blockParity, +1)
-        self.assertEqual(read.occupationParity, +1)
+        read = EH.block_permutation(steps)
+        self.assertEqual(list(read.block_permutation), [0, 1])
+        self.assertEqual(read.block_parity, +1)
+        self.assertEqual(read.occupation_parity, +1)
 
     def test_odd_even_three_cycle_statistic_plus_one(self):
         """Odd cluster {0} + even composite {4, 8}: the mode three-cycle has
         parity +1 — the graded sign (-1)^{1*2} of the block swap."""
         steps = _block_steps([0, 4, 8], 12, self.STEPS, 4)
-        read = EH.blockPermutation(steps, composites=[[0], [1, 2]])
-        self.assertEqual(list(read.blockPermutation), [1, 2, 0])
-        self.assertEqual(read.occupationParity, +1)
-        self.assertEqual(read.blockParity, +1)  # a 3-cycle of labels
+        read = EH.block_permutation(steps, composites=[[0], [1, 2]])
+        self.assertEqual(list(read.block_permutation), [1, 2, 0])
+        self.assertEqual(read.occupation_parity, +1)
+        self.assertEqual(read.block_parity, +1)  # a 3-cycle of labels
         # The composite's constituents scatter between territories, so the
         # composite-level view is honestly absent (never guessed)...
-        self.assertEqual(list(read.compositePermutation), [])
-        self.assertEqual(read.compositeParity, 0)
+        self.assertEqual(list(read.composite_permutation), [])
+        self.assertEqual(read.composite_parity, 0)
         # ...while the block and mode channels stay certified.
         self.assertTrue(read.certificate.holds())
 
@@ -455,31 +455,31 @@ class BlockPermutationTest(unittest.TestCase):
         occupations, and the rank-parity cross-check agrees because here the
         occupations and the ranks coincide."""
         steps = _block_steps([0, 4], 8, self.STEPS, 4, ranks=[2, 2])
-        two = obs.ClusterOccupancy(occupation=2, sheetCount=1)
-        read = EH.blockPermutation(steps, composites=[[0], [1]],
+        two = obs.ClusterOccupancy(occupation=2, sheet_count=1)
+        read = EH.block_permutation(steps, composites=[[0], [1]],
                                    occupancies=[two, two])
-        self.assertEqual(list(read.blockPermutation), [1, 0])
-        self.assertEqual(list(read.blockRanks), [2, 2])
-        self.assertEqual(list(read.blockOccupations), [2, 2])
-        self.assertEqual(read.blockParity, -1)     # block labels transpose
-        self.assertEqual(read.occupationParity, +1)  # (-1)^{2*2}: the statistic
-        self.assertEqual(read.rankParity, +1)        # the cross-check agrees
-        self.assertTrue(read.rankParityAgrees)
-        self.assertFalse(read.rankParityRetired)
-        self.assertEqual(list(read.compositePermutation), [1, 0])
-        self.assertEqual(read.compositeParity, -1)
+        self.assertEqual(list(read.block_permutation), [1, 0])
+        self.assertEqual(list(read.block_ranks), [2, 2])
+        self.assertEqual(list(read.block_occupations), [2, 2])
+        self.assertEqual(read.block_parity, -1)     # block labels transpose
+        self.assertEqual(read.occupation_parity, +1)  # (-1)^{2*2}: the statistic
+        self.assertEqual(read.rank_parity, +1)        # the cross-check agrees
+        self.assertTrue(read.rank_parity_agrees)
+        self.assertFalse(read.rank_parity_retired)
+        self.assertEqual(list(read.composite_permutation), [1, 0])
+        self.assertEqual(read.composite_parity, -1)
         self.assertTrue(read.certificate.holds())
 
     def test_missing_reference_reports_unmeasured_residual(self):
-        read = EH.blockPermutation(_block_steps([0, 4], 8, self.STEPS, 4))
-        self.assertTrue(math.isnan(read.residualInBlockMotion))
-        self.assertEqual(read.occupationParity, -1)
+        read = EH.block_permutation(_block_steps([0, 4], 8, self.STEPS, 4))
+        self.assertTrue(math.isnan(read.residual_in_block_motion))
+        self.assertEqual(read.occupation_parity, -1)
 
     def test_exchanging_reference_is_rejected(self):
         steps = _block_steps([0, 4], 8, self.STEPS, 4)
-        read = EH.blockPermutation(steps, steps)  # reference exchanges too
+        read = EH.block_permutation(steps, steps)  # reference exchanges too
         self.assertFalse(read.certificate.holds())
-        self.assertEqual(read.occupationParity, 0)
+        self.assertEqual(read.occupation_parity, 0)
 
     def test_residual_detects_uncancelled_in_block_motion(self):
         # The moving loop crosses per-cell metric phases the static
@@ -496,10 +496,10 @@ class BlockPermutationTest(unittest.TestCase):
             loop.append(row)
         ref = [[_fiber(_mode(p, n), _ring_cells(n), weights=np.ones(n))
                 for p in (0, 4)] for _ in range(steps)]
-        read = EH.blockPermutation(loop, ref)
+        read = EH.block_permutation(loop, ref)
         self.assertTrue(read.certificate.holds())
-        self.assertEqual(read.occupationParity, -1)
-        self.assertGreater(read.residualInBlockMotion, 1e-3)
+        self.assertEqual(read.occupation_parity, -1)
+        self.assertGreater(read.residual_in_block_motion, 1e-3)
 
     def test_gap_closure_returns_uncertified_not_a_sign(self):
         steps = _block_steps([0, 4], 8, self.STEPS, 4)
@@ -509,13 +509,13 @@ class BlockPermutationTest(unittest.TestCase):
         x = 4 * t / self.STEPS
         broken[t][0] = _fiber(_mode(x % 8, 8), _ring_cells(8),
                               accepted=False)
-        read = EH.blockPermutation(broken)
+        read = EH.block_permutation(broken)
         self.assertFalse(read.certificate.holds())
-        self.assertEqual(read.occupationParity, 0)
-        self.assertEqual(read.blockParity, 0)
-        self.assertEqual(list(read.blockPermutation), [])
+        self.assertEqual(read.occupation_parity, 0)
+        self.assertEqual(read.block_parity, 0)
+        self.assertEqual(list(read.block_permutation), [])
         # the clean tracking, for contrast, certifies
-        self.assertTrue(EH.blockPermutation(steps).certificate.holds())
+        self.assertTrue(EH.block_permutation(steps).certificate.holds())
 
     def test_block_teleport_is_uncertified(self):
         # Blocks jump 2 cells per step: no certified continuation.
@@ -524,26 +524,26 @@ class BlockPermutationTest(unittest.TestCase):
             x = 2 * t
             steps.append([_fiber(_mode((p + x) % 8, 8), _ring_cells(8))
                           for p in (0, 4)])
-        read = EH.blockPermutation(steps)
+        read = EH.block_permutation(steps)
         self.assertFalse(read.certificate.holds())
-        self.assertEqual(read.occupationParity, 0)
+        self.assertEqual(read.occupation_parity, 0)
 
     def test_block_count_change_is_uncertified(self):
         steps = _block_steps([0, 4], 8, 4, 0)
         steps[2] = steps[2][:1]
-        read = EH.blockPermutation(steps)
+        read = EH.block_permutation(steps)
         self.assertFalse(read.certificate.holds())
 
     def test_bad_composites_partition_throws(self):
         steps = _static_block_steps([0, 4], 8, 4)
         with self.assertRaises(ValueError):
-            EH.blockPermutation(steps, composites=[[0]])       # not covering
+            EH.block_permutation(steps, composites=[[0]])       # not covering
         with self.assertRaises(ValueError):
-            EH.blockPermutation(steps, composites=[[0, 1], [1]])  # overlap
+            EH.block_permutation(steps, composites=[[0, 1], [1]])  # overlap
 
     def test_empty_tracking_throws(self):
         with self.assertRaises(ValueError):
-            EH.blockPermutation([])
+            EH.block_permutation([])
 
 
 # --------------------------------------------------------------------------- #
@@ -551,7 +551,7 @@ class BlockPermutationTest(unittest.TestCase):
 # --------------------------------------------------------------------------- #
 class InvarianceTest(unittest.TestCase):
     def _chi(self, frames, ref_frames, n=8):
-        return EH.exchangeCharacter(_loop(frames, n=n),
+        return EH.exchange_character(_loop(frames, n=n),
                                     _loop(ref_frames, n=n))
 
     def test_character_invariant_under_in_band_rotation(self):
@@ -566,7 +566,7 @@ class InvarianceTest(unittest.TestCase):
             rotated.append(f @ g)
         chi = self._chi(rotated, ref)
         self.assertLess(abs(chi.character - base.character), 1e-9)
-        self.assertEqual(chi.characterSign, base.characterSign)
+        self.assertEqual(chi.character_sign, base.character_sign)
 
     def test_raw_determinant_invariant_under_in_band_rotation(self):
         rng = np.random.default_rng(43)
@@ -586,8 +586,8 @@ class InvarianceTest(unittest.TestCase):
         frames = _exchange_frames()
         ref = _reference_frames(frames)
         base = self._chi(frames, ref)
-        relabeled = EH.permutedCellFrames(frames, perm)
-        relabeled_ref = EH.permutedCellFrames(ref, perm)
+        relabeled = EH.permuted_cell_frames(frames, perm)
+        relabeled_ref = EH.permuted_cell_frames(ref, perm)
         # uniform weights: the permuted metric equals the original
         chi = self._chi(relabeled, relabeled_ref)
         self.assertLess(abs(chi.character - base.character), MACHINE)
@@ -597,8 +597,8 @@ class InvarianceTest(unittest.TestCase):
         frames = _exchange_frames()
         ref = _reference_frames(frames)
         base = self._chi(frames, ref)
-        chi = self._chi(EH.reorientedFrames(frames, signs),
-                        EH.reorientedFrames(ref, signs))
+        chi = self._chi(EH.reoriented_frames(frames, signs),
+                        EH.reoriented_frames(ref, signs))
         self.assertLess(abs(chi.character - base.character), MACHINE)
 
     def test_combined_gauges_never_enter_the_characters(self):
@@ -608,9 +608,9 @@ class InvarianceTest(unittest.TestCase):
         frames = _exchange_frames()
         ref = _reference_frames(frames)
         base = self._chi(frames, ref)
-        gauged = EH.permutedCellFrames(EH.reorientedFrames(frames, signs),
+        gauged = EH.permuted_cell_frames(EH.reoriented_frames(frames, signs),
                                        perm)
-        gauged_ref = EH.permutedCellFrames(EH.reorientedFrames(ref, signs),
+        gauged_ref = EH.permuted_cell_frames(EH.reoriented_frames(ref, signs),
                                            perm)
         rotated = []
         for f in gauged:
@@ -619,11 +619,11 @@ class InvarianceTest(unittest.TestCase):
             rotated.append(f @ g)
         chi = self._chi(rotated, gauged_ref)
         self.assertLess(abs(chi.character - base.character), 1e-9)
-        self.assertEqual(chi.characterSign, -1)
+        self.assertEqual(chi.character_sign, -1)
 
     def test_structural_parity_invariant_under_relabeling(self):
         steps = _block_steps([0, 4], 8, 16, 4)
-        base = EH.blockPermutation(steps)
+        base = EH.block_permutation(steps)
         # rename every vertex id v -> 100 + 7*v (order-scrambling injective
         # map applied to the fiber cell tuples; frames untouched)
         relabeled = []
@@ -631,37 +631,37 @@ class InvarianceTest(unittest.TestCase):
             new_row = []
             for f in row:
                 cells = [[100 + 7 * v for v in cell]
-                         for cell in f.cellVertices()]
-                new_row.append(_fiber(f.rightFrame(), cells,
-                                      weights=np.asarray(f.weightDiagonal())))
+                         for cell in f.cell_vertices()]
+                new_row.append(_fiber(f.right_frame(), cells,
+                                      weights=np.asarray(f.weight_diagonal())))
             relabeled.append(new_row)
-        read = EH.blockPermutation(relabeled)
-        self.assertEqual(list(read.blockPermutation),
-                         list(base.blockPermutation))
-        self.assertEqual(read.occupationParity, base.occupationParity)
-        self.assertEqual(read.blockParity, base.blockParity)
+        read = EH.block_permutation(relabeled)
+        self.assertEqual(list(read.block_permutation),
+                         list(base.block_permutation))
+        self.assertEqual(read.occupation_parity, base.occupation_parity)
+        self.assertEqual(read.block_parity, base.block_parity)
 
     def test_structural_parity_invariant_under_in_band_rotation(self):
         rng = np.random.default_rng(46)
         steps = _block_steps([0, 4], 8, 16, 4, ranks=[2, 2])
         ref = _static_block_steps([0, 4], 8, 16, ranks=[2, 2])
-        base = EH.blockPermutation(steps, ref)
+        base = EH.block_permutation(steps, ref)
         rotated = []
         for row in steps:
             new_row = []
             for f in row:
                 g, _ = np.linalg.qr(rng.standard_normal((2, 2))
                                     + 1j * rng.standard_normal((2, 2)))
-                new_row.append(_fiber(np.asarray(f.rightFrame()) @ g,
-                                      f.cellVertices(),
-                                      weights=np.asarray(f.weightDiagonal())))
+                new_row.append(_fiber(np.asarray(f.right_frame()) @ g,
+                                      f.cell_vertices(),
+                                      weights=np.asarray(f.weight_diagonal())))
             rotated.append(new_row)
-        read = EH.blockPermutation(rotated, ref)
-        self.assertEqual(list(read.blockPermutation),
-                         list(base.blockPermutation))
-        self.assertEqual(read.occupationParity, base.occupationParity)
-        self.assertLess(abs(read.residualInBlockMotion
-                            - base.residualInBlockMotion), 1e-9)
+        read = EH.block_permutation(rotated, ref)
+        self.assertEqual(list(read.block_permutation),
+                         list(base.block_permutation))
+        self.assertEqual(read.occupation_parity, base.occupation_parity)
+        self.assertLess(abs(read.residual_in_block_motion
+                            - base.residual_in_block_motion), 1e-9)
 
 
 # --------------------------------------------------------------------------- #
@@ -676,11 +676,11 @@ class RotationCycleTest(unittest.TestCase):
                 for b in range(d):
                     ga, gb = EH.gamma(a, d), EH.gamma(b, d)
                     anti = ga @ gb + gb @ ga
-                    expected = 2.0 * np.eye(EH.spinorDimension(d)) * (a == b)
+                    expected = 2.0 * np.eye(EH.spinor_dimension(d)) * (a == b)
                     self.assertLess(np.abs(anti - expected).max(), MACHINE)
 
     def test_spin_generator_eigenvalues_are_half_i(self):
-        ev = np.linalg.eigvals(EH.spinGenerator(0, 1, 4))
+        ev = np.linalg.eigvals(EH.spin_generator(0, 1, 4))
         self.assertLess(np.abs(np.sort(ev.imag)
                                - np.array([-0.5, -0.5, 0.5, 0.5])).max(),
                         MACHINE)
@@ -688,56 +688,56 @@ class RotationCycleTest(unittest.TestCase):
 
     def test_two_pi_spinor_rotation_is_minus_identity(self):
         for d in (3, 4):
-            dim = EH.spinorDimension(d)
-            u = EH.spinorRotation(2 * math.pi, 0, 1, d)
+            dim = EH.spinor_dimension(d)
+            u = EH.spinor_rotation(2 * math.pi, 0, 1, d)
             self.assertLess(np.abs(u + np.eye(dim)).max(), MACHINE)
 
     def test_spin_half_two_pi_ratio_is_exactly_minus_one(self):
-        frame0 = EH.transverseSpinorFrame(0, 1, 4)
-        rot = EH.rotationLoopFrames(frame0, 0, 1, 4, 1, self.STEPS)
-        ref = EH.referenceLoopFrames(frame0, self.STEPS)
-        chi = EH.rotationCharacter(_loop(rot, n=4), _loop(ref, n=4))
+        frame0 = EH.transverse_spinor_frame(0, 1, 4)
+        rot = EH.rotation_loop_frames(frame0, 0, 1, 4, 1, self.STEPS)
+        ref = EH.reference_loop_frames(frame0, self.STEPS)
+        chi = EH.rotation_character(_loop(rot, n=4), _loop(ref, n=4))
         self.assertLess(abs(chi.character + 1.0), MACHINE)
-        self.assertEqual(chi.characterSign, -1)
+        self.assertEqual(chi.character_sign, -1)
         self.assertEqual(chi.channel, obs.HolonomyChannel.PhysicalRotation)
         self.assertTrue(chi.certificate.holds())
 
     def test_spin_half_raw_determinant_carries_berry_phase(self):
-        frame0 = EH.transverseSpinorFrame(0, 1, 4)
-        rot = EH.rotationLoopFrames(frame0, 0, 1, 4, 1, self.STEPS)
+        frame0 = EH.transverse_spinor_frame(0, 1, 4)
+        rot = EH.rotation_loop_frames(frame0, 0, 1, 4, 1, self.STEPS)
         raw = _loop(rot, n=4).determinant
         expected = -cmath.exp(1j * OMEGA * self.STEPS)
         self.assertLess(abs(raw - expected), MACHINE)
         self.assertGreater(min(abs(raw - 1.0), abs(raw + 1.0)), 0.5)
 
     def test_four_pi_ratio_is_plus_one(self):
-        frame0 = EH.transverseSpinorFrame(0, 1, 4)
-        rot = EH.rotationLoopFrames(frame0, 0, 1, 4, 2, 2 * self.STEPS)
-        ref = EH.referenceLoopFrames(frame0, 2 * self.STEPS)
-        chi = EH.rotationCharacter(_loop(rot, n=4), _loop(ref, n=4))
+        frame0 = EH.transverse_spinor_frame(0, 1, 4)
+        rot = EH.rotation_loop_frames(frame0, 0, 1, 4, 2, 2 * self.STEPS)
+        ref = EH.reference_loop_frames(frame0, 2 * self.STEPS)
+        chi = EH.rotation_character(_loop(rot, n=4), _loop(ref, n=4))
         self.assertLess(abs(chi.character - 1.0), MACHINE)
-        self.assertEqual(chi.characterSign, +1)
+        self.assertEqual(chi.character_sign, +1)
 
     def test_vector_two_pi_ratio_is_exactly_plus_one(self):
         frame0 = np.zeros((4, 1), complex)
         frame0[0, 0] = 1.0
-        rot = EH.vectorLoopFrames(frame0, 0, 1, 4, 1, self.STEPS)
-        ref = EH.referenceLoopFrames(frame0, self.STEPS)
-        chi = EH.rotationCharacter(_loop(rot, n=4), _loop(ref, n=4))
+        rot = EH.vector_loop_frames(frame0, 0, 1, 4, 1, self.STEPS)
+        ref = EH.reference_loop_frames(frame0, self.STEPS)
+        chi = EH.rotation_character(_loop(rot, n=4), _loop(ref, n=4))
         self.assertLess(abs(chi.character - 1.0), MACHINE)
-        self.assertEqual(chi.characterSign, +1)
+        self.assertEqual(chi.character_sign, +1)
         self.assertTrue(chi.certificate.holds())
 
     def test_axis_polarized_spinor_shows_no_relative_phase(self):
         # A Sigma_01 EIGENvector is stationary under the (0,1) rotation:
         # the loop is pure gauge and the ratio is +1 (the documented
         # transverse-frame requirement, demonstrated).
-        sigma = np.asarray(EH.spinGenerator(0, 1, 4))
+        sigma = np.asarray(EH.spin_generator(0, 1, 4))
         w, v = np.linalg.eigh(1j * sigma)
         frame0 = v[:, [0]]
-        rot = EH.rotationLoopFrames(frame0, 0, 1, 4, 1, self.STEPS)
-        ref = EH.referenceLoopFrames(frame0, self.STEPS)
-        chi = EH.rotationCharacter(_loop(rot, n=4), _loop(ref, n=4))
+        rot = EH.rotation_loop_frames(frame0, 0, 1, 4, 1, self.STEPS)
+        ref = EH.reference_loop_frames(frame0, self.STEPS)
+        chi = EH.rotation_character(_loop(rot, n=4), _loop(ref, n=4))
         self.assertLess(abs(chi.character - 1.0), MACHINE)
 
     def test_rotation_acts_on_the_whole_carried_frame(self):
@@ -745,25 +745,25 @@ class RotationCycleTest(unittest.TestCase):
         # rotates as one object; each transverse column contributes -1, so
         # the even-rank determinant ratio is +1 — the frame is never read
         # as per-column Bloch products.
-        sigma = np.asarray(EH.spinGenerator(0, 1, 4))
+        sigma = np.asarray(EH.spin_generator(0, 1, 4))
         w, v = np.linalg.eigh(1j * sigma)
         # eigenvalues sorted ascending: two -1/2 then two +1/2
         t1 = (v[:, [0]] + v[:, [2]]) / math.sqrt(2)
         t2 = (v[:, [1]] + v[:, [3]]) / math.sqrt(2)
         frame0 = np.hstack([t1, t2])
-        rot = EH.rotationLoopFrames(frame0, 0, 1, 4, 1, self.STEPS)
-        ref = EH.referenceLoopFrames(frame0, self.STEPS)
-        chi = EH.rotationCharacter(_loop(rot, n=4), _loop(ref, n=4))
+        rot = EH.rotation_loop_frames(frame0, 0, 1, 4, 1, self.STEPS)
+        ref = EH.reference_loop_frames(frame0, self.STEPS)
+        chi = EH.rotation_character(_loop(rot, n=4), _loop(ref, n=4))
         self.assertLess(abs(chi.character - 1.0), MACHINE)
 
     def test_rotation_loop_input_validation(self):
-        frame0 = EH.transverseSpinorFrame(0, 1, 4)
+        frame0 = EH.transverse_spinor_frame(0, 1, 4)
         with self.assertRaises(ValueError):
-            EH.rotationLoopFrames(frame0, 0, 1, 4, 1, 2)   # < 3 steps
+            EH.rotation_loop_frames(frame0, 0, 1, 4, 1, 2)   # < 3 steps
         with self.assertRaises(ValueError):
-            EH.rotationLoopFrames(np.ones((3, 1), complex), 0, 1, 4, 1, 8)
+            EH.rotation_loop_frames(np.ones((3, 1), complex), 0, 1, 4, 1, 8)
         with self.assertRaises(ValueError):
-            EH.spinorRotation(1.0, 2, 2, 4)                # equal axes
+            EH.spinor_rotation(1.0, 2, 2, 4)                # equal axes
         with self.assertRaises(ValueError):
             EH.gamma(0, 5)                                 # unsupported d
 
@@ -775,42 +775,42 @@ class TotalJSquaredTest(unittest.TestCase):
     def test_proton_eigenstate_is_exactly_three_quarters(self):
         proton = (2 * _kron(UP, UP, DN) - _kron(UP, DN, UP)
                   - _kron(DN, UP, UP))
-        self.assertLess(abs(EH.totalJSquared(proton) - 0.75), 1e-14)
+        self.assertLess(abs(EH.total_j_squared(proton) - 0.75), 1e-14)
 
     def test_delta_is_exactly_fifteen_quarters(self):
-        self.assertLess(abs(EH.totalJSquared(_kron(UP, UP, UP)) - 3.75),
+        self.assertLess(abs(EH.total_j_squared(_kron(UP, UP, UP)) - 3.75),
                         1e-14)
 
     def test_product_uud_is_seven_quarters(self):
-        self.assertLess(abs(EH.totalJSquared(_kron(UP, UP, DN)) - 1.75),
+        self.assertLess(abs(EH.total_j_squared(_kron(UP, UP, DN)) - 1.75),
                         1e-14)
 
     def test_single_spin_is_three_quarters(self):
-        self.assertLess(abs(EH.totalJSquared(UP) - 0.75), 1e-14)
+        self.assertLess(abs(EH.total_j_squared(UP) - 0.75), 1e-14)
 
     def test_two_spin_singlet_and_triplet(self):
         singlet = (_kron(UP, DN) - _kron(DN, UP)) / math.sqrt(2)
-        self.assertLess(abs(EH.totalJSquared(singlet)), 1e-14)
-        self.assertLess(abs(EH.totalJSquared(_kron(UP, UP)) - 2.0), 1e-14)
+        self.assertLess(abs(EH.total_j_squared(singlet)), 1e-14)
+        self.assertLess(abs(EH.total_j_squared(_kron(UP, UP)) - 2.0), 1e-14)
 
     def test_operator_matches_expectation_read(self):
         rng = np.random.default_rng(9)
         state = rng.standard_normal(8) + 1j * rng.standard_normal(8)
-        j2 = np.asarray(EH.totalJSquaredOperator(3))
+        j2 = np.asarray(EH.total_j_squared_operator(3))
         expected = float(np.real(state.conj() @ j2 @ state
                                  / (state.conj() @ state)))
-        self.assertLess(abs(EH.totalJSquared(state) - expected), 1e-12)
+        self.assertLess(abs(EH.total_j_squared(state) - expected), 1e-12)
         self.assertLess(np.abs(j2 - j2.conj().T).max(), MACHINE)
 
     def test_input_validation(self):
         with self.assertRaises(ValueError):
-            EH.totalJSquared(np.ones(6, complex))          # not 2^n
+            EH.total_j_squared(np.ones(6, complex))          # not 2^n
         with self.assertRaises(ValueError):
-            EH.totalJSquared(np.zeros(8, complex))         # zero state
+            EH.total_j_squared(np.zeros(8, complex))         # zero state
         with self.assertRaises(ValueError):
-            EH.totalJSquaredOperator(0)
+            EH.total_j_squared_operator(0)
         with self.assertRaises(ValueError):
-            EH.totalJSquaredOperator(11)
+            EH.total_j_squared_operator(11)
 
 
 # --------------------------------------------------------------------------- #
@@ -819,27 +819,27 @@ class TotalJSquaredTest(unittest.TestCase):
 class SpinStatisticsTest(unittest.TestCase):
     def _spin_half_pair(self):
         frames = _exchange_frames()
-        exchange = EH.exchangeCharacter(_loop(frames),
+        exchange = EH.exchange_character(_loop(frames),
                                         _loop(_reference_frames(frames)))
-        frame0 = EH.transverseSpinorFrame(0, 1, 4)
-        rot = EH.rotationLoopFrames(frame0, 0, 1, 4, 1, 12)
-        ref = EH.referenceLoopFrames(frame0, 12)
-        rotation = EH.rotationCharacter(_loop(rot, n=4), _loop(ref, n=4))
+        frame0 = EH.transverse_spinor_frame(0, 1, 4)
+        rot = EH.rotation_loop_frames(frame0, 0, 1, 4, 1, 12)
+        ref = EH.reference_loop_frames(frame0, 12)
+        rotation = EH.rotation_character(_loop(rot, n=4), _loop(ref, n=4))
         return exchange, rotation
 
     def test_doubly_cancelled_ratio_is_plus_one_on_spin_half(self):
         exchange, rotation = self._spin_half_pair()
         self.assertLess(abs(exchange.character + 1.0), MACHINE)
         self.assertLess(abs(rotation.character + 1.0), MACHINE)
-        ratio = EH.doublyCancelledRatio(exchange, rotation)
+        ratio = EH.doubly_cancelled_ratio(exchange, rotation)
         self.assertLess(abs(ratio - 1.0), MACHINE)
 
     def test_channel_tags_are_enforced(self):
         exchange, rotation = self._spin_half_pair()
         with self.assertRaises(ValueError):
-            EH.doublyCancelledRatio(rotation, exchange)
+            EH.doubly_cancelled_ratio(rotation, exchange)
         with self.assertRaises(ValueError):
-            EH.doublyCancelledRatio(exchange, exchange)
+            EH.doubly_cancelled_ratio(exchange, exchange)
 
 
 # --------------------------------------------------------------------------- #
@@ -858,42 +858,42 @@ class FiberLoopTest(unittest.TestCase):
         frames = _exchange_frames(steps)
         plain = _loop(frames)
         fibers = self._fiber_loop(steps)
-        read = EH.fiberLoopHolonomy(fibers)
+        read = EH.fiber_loop_holonomy(fibers)
         self.assertLess(np.abs(np.asarray(read.holonomy)
                                - np.asarray(plain.holonomy)).max(), MACHINE)
         self.assertTrue(read.certificate.holds())
-        self.assertFalse(read.uncertifiedBand)
+        self.assertFalse(read.uncertified_band)
 
     def test_closed_gap_returns_uncertified_not_a_sign(self):
         mask = [True] * 16
         mask[7] = False
         loop = self._fiber_loop(16, accepted_mask=mask)
-        read = EH.fiberLoopHolonomy(loop)
-        self.assertTrue(read.uncertifiedBand)
+        read = EH.fiber_loop_holonomy(loop)
+        self.assertTrue(read.uncertified_band)
         self.assertFalse(read.certificate.holds())
         ref = [_fiber(_exchange_frames(16)[0], _ring_cells(8))] * 16
-        chi = EH.exchangeCharacter(read, EH.fiberLoopHolonomy(ref))
-        self.assertEqual(chi.characterSign, 0)
+        chi = EH.exchange_character(read, EH.fiber_loop_holonomy(ref))
+        self.assertEqual(chi.character_sign, 0)
         self.assertFalse(chi.certificate.holds())
 
     def test_rank_change_is_uncertified_never_thrown(self):
         loop = self._fiber_loop(8)
         frames = _exchange_frames(8)
         loop[3] = _fiber(frames[3][:, :1], _ring_cells(8))
-        read = EH.fiberLoopHolonomy(loop)
+        read = EH.fiber_loop_holonomy(loop)
         self.assertFalse(read.certificate.holds())
         self.assertEqual(np.asarray(read.holonomy).size, 0)
 
     def test_disjoint_supports_leak_is_uncertified(self):
         a = _fiber(_mode(0, 4), [[0], [1], [2], [3]])
         b = _fiber(_mode(0, 4), [[10], [11], [12], [13]])
-        read = EH.fiberLoopHolonomy([a, b])
+        read = EH.fiber_loop_holonomy([a, b])
         self.assertFalse(read.certificate.holds())
-        self.assertEqual(read.minStepSingularValue, 0.0)
+        self.assertEqual(read.min_step_singular_value, 0.0)
 
     def test_fiber_loop_invariant_under_cell_relabeling(self):
-        base = EH.fiberLoopHolonomy(self._fiber_loop(16))
-        relabeled = EH.fiberLoopHolonomy(self._fiber_loop(16, offset=500))
+        base = EH.fiber_loop_holonomy(self._fiber_loop(16))
+        relabeled = EH.fiber_loop_holonomy(self._fiber_loop(16, offset=500))
         self.assertLess(abs(relabeled.determinant - base.determinant),
                         MACHINE)
 
@@ -906,9 +906,9 @@ class FiberLoopTest(unittest.TestCase):
         window = _fiber(mode[1:6][:, None] /
                         np.linalg.norm(mode[1:6]),
                         [[c] for c in range(1, 6)])
-        read = EH.fiberLoopHolonomy([full, window])
+        read = EH.fiber_loop_holonomy([full, window])
         self.assertEqual(read.rank, 1)
-        self.assertTrue(all(s.certified for s in read.stepReads))
+        self.assertTrue(all(s.certified for s in read.step_reads))
 
 
 # --------------------------------------------------------------------------- #
@@ -930,7 +930,7 @@ class GradedDelegationTest(unittest.TestCase):
 
     def test_graded_swap_signs_match_the_parity_table(self):
         fock = quantum.FockDirectSum(1, 1)
-        rows, cols, vals, n = fock.gradedSwapMatrixCOO()
+        rows, cols, vals, n = fock.graded_swap_matrix_coo()
         swap = np.zeros((n, n), complex)
         for r, c, v in zip(rows, cols, vals):
             swap[r, c] += v
@@ -952,9 +952,9 @@ class GradedDelegationTest(unittest.TestCase):
             for i, p in enumerate(perm):
                 matrix[p, i] = 1.0
             det = round(float(np.linalg.det(matrix)))
-            bits = quantum.OccupationBitset.fromOccupiedModes(6,
+            bits = quantum.OccupationBitset.from_occupied_modes(6,
                                                               list(range(6)))
-            self.assertEqual(bits.permutationParity(perm), det)
+            self.assertEqual(bits.permutation_parity(perm), det)
 
 
 # --------------------------------------------------------------------------- #
@@ -965,26 +965,26 @@ class SpinLiftTest(unittest.TestCase):
         from scipy.linalg import expm
         for d, seed in ((3, 1), (3, 2), (4, 3), (4, 4), (5, 5)):
             r = _random_rotation(d, seed)
-            a = np.asarray(EH.rotationLog(r))
+            a = np.asarray(EH.rotation_log(r))
             self.assertLess(np.abs(a + a.T).max(), 1e-9)   # antisymmetric
             self.assertLess(np.abs(expm(a) - r).max(), 1e-9)
 
     def test_rotation_log_handles_angle_pi(self):
         from scipy.linalg import expm
         r = np.diag([1.0, -1.0, -1.0])
-        a = np.asarray(EH.rotationLog(r))
+        a = np.asarray(EH.rotation_log(r))
         self.assertLess(np.abs(expm(a) - r).max(), 1e-9)
 
     def test_rotation_log_rejects_non_rotation(self):
         with self.assertRaises(ValueError):
-            EH.rotationLog(np.diag([1.0, 1.0, 2.0]))
+            EH.rotation_log(np.diag([1.0, 1.0, 2.0]))
         with self.assertRaises(ValueError):
-            EH.rotationLog(np.diag([1.0, 1.0, -1.0]))  # det = -1
+            EH.rotation_log(np.diag([1.0, 1.0, -1.0]))  # det = -1
 
     def test_lift_has_half_angle_eigenphases(self):
         theta = 0.9
         for d in (3, 4):
-            s = np.asarray(EH.rotationToSpin(_rz(theta, d), d))
+            s = np.asarray(EH.rotation_to_spin(_rz(theta, d), d))
             phases = np.sort(np.angle(np.linalg.eigvals(s)))
             self.assertLess(abs(abs(phases).max() - theta / 2), 1e-9)
 
@@ -993,7 +993,7 @@ class SpinLiftTest(unittest.TestCase):
         # S gamma(x) S^{-1} = gamma(R x).
         for d, seed in ((3, 21), (4, 22)):
             r = _random_rotation(d, seed)
-            s = np.asarray(EH.rotationToSpin(r, d))
+            s = np.asarray(EH.rotation_to_spin(r, d))
             rng = np.random.default_rng(seed + 100)
             x = rng.standard_normal(d)
             gx = sum(x[a] * np.asarray(EH.gamma(a, d)) for a in range(d))
@@ -1003,47 +1003,47 @@ class SpinLiftTest(unittest.TestCase):
 
     def test_lift_orientation_matches_the_documented_cycle(self):
         # The documented coherence relation between the two conventions:
-        # rotationToSpin(R_ab(theta)) = spinorRotation(-theta, a, b, d).
+        # rotation_to_spin(R_ab(theta)) = spinor_rotation(-theta, a, b, d).
         theta = 0.63
         for d in (3, 4):
-            lifted = np.asarray(EH.rotationToSpin(_rz(theta, d), d))
-            cycle = np.asarray(EH.spinorRotation(-theta, 0, 1, d))
+            lifted = np.asarray(EH.rotation_to_spin(_rz(theta, d), d))
+            cycle = np.asarray(EH.spinor_rotation(-theta, 0, 1, d))
             self.assertLess(np.abs(lifted - cycle).max(), 1e-9)
 
     def test_lift_is_a_projective_homomorphism(self):
         r1 = _random_rotation(3, 31)
         r2 = _random_rotation(3, 32)
-        s12 = np.asarray(EH.rotationToSpin(r1 @ r2, 3))
-        prod = np.asarray(EH.rotationToSpin(r1, 3)) @ np.asarray(
-            EH.rotationToSpin(r2, 3))
+        s12 = np.asarray(EH.rotation_to_spin(r1 @ r2, 3))
+        prod = np.asarray(EH.rotation_to_spin(r1, 3)) @ np.asarray(
+            EH.rotation_to_spin(r2, 3))
         delta = min(np.abs(s12 - prod).max(), np.abs(s12 + prod).max())
         self.assertLess(delta, 1e-9)
 
     def test_loop_lift_two_pi_is_minus_one(self):
         for d in (3, 4):
             loop = [_rz(2 * math.pi * t / 12, d) for t in range(12)]
-            read = EH.loopLiftCharacter(loop, d)
+            read = EH.loop_lift_character(loop, d)
             self.assertEqual(read.character, -1)
             self.assertTrue(read.certificate.holds())
-            self.assertLess(read.closureResidual, 1e-9)
+            self.assertLess(read.closure_residual, 1e-9)
 
     def test_loop_lift_four_pi_is_plus_one(self):
         loop = [_rz(4 * math.pi * t / 24) for t in range(24)]
-        read = EH.loopLiftCharacter(loop, 3)
+        read = EH.loop_lift_character(loop, 3)
         self.assertEqual(read.character, +1)
 
     def test_loop_lift_contractible_wiggle_is_plus_one(self):
         loop = [_rz(0.4 * math.sin(2 * math.pi * t / 10)) for t in range(10)]
-        read = EH.loopLiftCharacter(loop, 3)
+        read = EH.loop_lift_character(loop, 3)
         self.assertEqual(read.character, +1)
         self.assertTrue(read.certificate.holds())
 
     def test_loop_lift_pi_step_is_uncertified(self):
         loop = [np.eye(3), _rz(math.pi), np.eye(3), _rz(math.pi)]
-        read = EH.loopLiftCharacter(loop, 3)
+        read = EH.loop_lift_character(loop, 3)
         self.assertEqual(read.character, 0)
         self.assertFalse(read.certificate.holds())
-        self.assertGreater(read.maxStepAngle, math.pi - 1e-9)
+        self.assertGreater(read.max_step_angle, math.pi - 1e-9)
 
     def _tetra_edges(self):
         return [(0, 1), (0, 2), (0, 3), (1, 2), (1, 3), (2, 3)]
@@ -1055,18 +1055,18 @@ class SpinLiftTest(unittest.TestCase):
         frames = {v: _random_rotation(3, 50 + v) for v in range(4)}
         edges = self._tetra_edges()
         rotations = [frames[i] @ frames[j].T for i, j in edges]
-        read = EH.spinLift(edges, rotations, self._tetra_triangles(), 3)
-        self.assertTrue(read.liftExists)
+        read = EH.spin_lift(edges, rotations, self._tetra_triangles(), 3)
+        self.assertTrue(read.lift_exists)
         self.assertFalse(read.obstructed)
         self.assertTrue(read.certificate.holds())
-        self.assertLess(read.maxCocycleResidual, 1e-9)
-        self.assertEqual(len(read.edgeSigns), 6)
+        self.assertLess(read.max_cocycle_residual, 1e-9)
+        self.assertEqual(len(read.edge_signs), 6)
         # the returned signs satisfy w_t * prod_{e in t} s_e = +1
-        for tri, w in zip(self._tetra_triangles(), read.triangleSigns):
+        for tri, w in zip(self._tetra_triangles(), read.triangle_signs):
             prod = 1
             for c in range(3):
                 key = tuple(sorted((tri[c], tri[(c + 1) % 3])))
-                prod *= read.edgeSigns[edges.index(key)]
+                prod *= read.edge_signs[edges.index(key)]
             self.assertEqual(w * prod, +1)
 
     def test_spin_fixture_accepts_quaternion_tetrahedron(self):
@@ -1078,11 +1078,11 @@ class SpinLiftTest(unittest.TestCase):
         rotations = [_rx(math.pi), _ry(math.pi), _rz(math.pi),
                      np.eye(3), _rx(math.pi), _rz(math.pi)]
         triangles = [[0, 1, 2], [0, 1, 3], [1, 2, 3], [0, 2, 3]]
-        read = EH.spinLift(edges, rotations, triangles, 3)
+        read = EH.spin_lift(edges, rotations, triangles, 3)
         self.assertTrue(read.certificate.holds())
-        self.assertLess(read.maxCocycleResidual, 1e-9)
-        self.assertTrue(read.liftExists)
-        self.assertEqual(sum(1 for w in read.triangleSigns if w < 0) % 2, 0)
+        self.assertLess(read.max_cocycle_residual, 1e-9)
+        self.assertTrue(read.lift_exists)
+        self.assertEqual(sum(1 for w in read.triangle_signs if w < 0) % 2, 0)
 
     def test_non_spin_fixture_rejects_the_pillowcase_class(self):
         # The minimal closed surface with the nontrivial SO(3) bundle: two
@@ -1093,38 +1093,38 @@ class SpinLiftTest(unittest.TestCase):
         edges = [(0, 1), (1, 2), (2, 0)]
         rotations = [_rx(math.pi), _ry(math.pi), _rz(math.pi)]
         triangles = [[0, 1, 2], [0, 2, 1]]
-        read = EH.spinLift(edges, rotations, triangles, 3)
+        read = EH.spin_lift(edges, rotations, triangles, 3)
         self.assertTrue(read.certificate.holds())
-        self.assertFalse(read.liftExists)
+        self.assertFalse(read.lift_exists)
         self.assertTrue(read.obstructed)
-        self.assertEqual(len(read.edgeSigns), 0)
-        self.assertEqual(sum(1 for w in read.triangleSigns if w < 0) % 2, 1)
+        self.assertEqual(len(read.edge_signs), 0)
+        self.assertEqual(sum(1 for w in read.triangle_signs if w < 0) % 2, 1)
 
     def test_obstruction_class_survives_vertex_relabeling(self):
         edges = [(7, 5), (5, 9), (9, 7)]
         rotations = [_rx(math.pi), _ry(math.pi), _rz(math.pi)]
         triangles = [[7, 5, 9], [7, 9, 5]]
-        read = EH.spinLift(edges, rotations, triangles, 3)
+        read = EH.spin_lift(edges, rotations, triangles, 3)
         self.assertTrue(read.obstructed)
 
     def test_broken_cocycle_is_uncertified_neither_verdict(self):
         edges = [(0, 1), (1, 2), (2, 0)]
         rotations = [_rz(0.3), _rz(0.4), _rz(0.2)]  # product != I
-        read = EH.spinLift(edges, rotations, [[0, 1, 2]], 3)
+        read = EH.spin_lift(edges, rotations, [[0, 1, 2]], 3)
         self.assertFalse(read.certificate.holds())
-        self.assertFalse(read.liftExists)
+        self.assertFalse(read.lift_exists)
         self.assertFalse(read.obstructed)
 
     def test_spin_lift_input_validation(self):
         with self.assertRaises(ValueError):
-            EH.spinLift([(0, 1)], [], [[0, 1, 2]], 3)      # count mismatch
+            EH.spin_lift([(0, 1)], [], [[0, 1, 2]], 3)      # count mismatch
         with self.assertRaises(ValueError):
-            EH.spinLift([(0, 1)], [_rz(0.1)], [[0, 1, 2]], 3)  # missing edge
+            EH.spin_lift([(0, 1)], [_rz(0.1)], [[0, 1, 2]], 3)  # missing edge
         with self.assertRaises(ValueError):
-            EH.spinLift([(0, 1), (1, 2), (2, 0)],
+            EH.spin_lift([(0, 1), (1, 2), (2, 0)],
                         [_rz(0.0)] * 3, [[0, 1]], 3)       # not a triangle
         with self.assertRaises(ValueError):
-            EH.spinLift([(0, 0)], [_rz(0.1)], [], 3)       # self-loop
+            EH.spin_lift([(0, 0)], [_rz(0.1)], [], 3)       # self-loop
 
 
 if __name__ == "__main__":

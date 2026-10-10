@@ -54,11 +54,11 @@ Pipeline
    loops, b_2 enclosed voids) are reported.
 
 Reused rather than reimplemented: partial traces
-(``tessera.quantum.partialTrace``), random correlated states
-(``tessera.quantum.randomCorrelatedState``), entropies
-(``tessera.quantum.MutualInformation.vonNeumannEntropy``), mutual information
-(``tessera.quantum.mutualInformation``), the -ln(I/I_MAX) length
-(``tessera.mesh.Edge.vanRaamsdonkLength``), homology
+(``tessera.quantum.partial_trace``), random correlated states
+(``tessera.quantum.random_correlated_state``), entropies
+(``tessera.quantum.MutualInformation.von_neumann_entropy``), mutual information
+(``tessera.quantum.mutual_information``), the -ln(I/I_MAX) length
+(``tessera.mesh.Edge.van_raamsdonk_length``), homology
 (``tessera.cobordism.ChainComplex``), the drawing palette
 (``tessera.drivers.baryon_poles``), shortest paths (``scipy.sparse.csgraph``),
 Haar unitaries (``scipy.stats.unitary_group``), and cliques and the circle
@@ -246,17 +246,17 @@ class QubitNetwork:
     def reduced(self, keep):
         """The reduced state on the qubits in `keep`, in their listed order."""
         from tessera import quantum
-        return quantum.partialTrace(self.matrix(), self.n, [int(q) for q in keep])
+        return quantum.partial_trace(self.matrix(), self.n, [int(q) for q in keep])
 
     def entropy(self, keep):
         """S(keep) in nats."""
         from tessera import quantum
-        return quantum.MutualInformation.vonNeumannEntropy(self.reduced(keep))
+        return quantum.MutualInformation.von_neumann_entropy(self.reduced(keep))
 
     def mutual_information(self, pair):
         """I(i:j) in nats for the two qubits in `pair`."""
         from tessera import quantum
-        return quantum.mutualInformation(self.reduced(pair), 2, 2)
+        return quantum.mutual_information(self.reduced(pair), 2, 2)
 
     def replace_by_marginals(self):
         """Replace the state by the product of its one-qubit marginals."""
@@ -322,12 +322,12 @@ class PureQubitNetwork:
     def entropy(self, keep):
         """S(keep) in nats."""
         from tessera import quantum
-        return quantum.MutualInformation.vonNeumannEntropy(self.reduced(keep))
+        return quantum.MutualInformation.von_neumann_entropy(self.reduced(keep))
 
     def mutual_information(self, pair):
         """I(i:j) in nats for the two qubits in `pair`."""
         from tessera import quantum
-        return quantum.mutualInformation(self.reduced(pair), 2, 2)
+        return quantum.mutual_information(self.reduced(pair), 2, 2)
 
     def replace_by_marginals(self):
         raise ValueError("a product of one-qubit marginals is a mixed state; "
@@ -361,7 +361,7 @@ def random_pure_state(dim, seed):
 def build_inputs(n, seed, state="mixed"):
     """Input pairs, their states and round-1 unitaries, and (odd n) the
     state of the last qubit. Pairs beyond the explicit three draw their
-    states from `tessera.quantum.randomCorrelatedState` and their unitaries
+    states from `tessera.quantum.random_correlated_state` and their unitaries
     from `scipy.stats.unitary_group`, seeded from `seed`. With
     ``state="pure"`` the states are vectors: |00> for the explicit pairs,
     Haar-random pure states for the rest and for the odd qubit."""
@@ -379,12 +379,12 @@ def build_inputs(n, seed, state="mixed"):
             unitaries[pair] = EXPLICIT_UNITARIES[k]
         else:
             states[pair] = (random_pure_state(4, seeds[2 * k]) if state == "pure"
-                            else quantum.randomCorrelatedState(2, seeds[2 * k]))
+                            else quantum.random_correlated_state(2, seeds[2 * k]))
             unitaries[pair] = ("Haar(seed %d, pair %d)" % (seed, k),
                                unitary_group.rvs(4, random_state=seeds[2 * k + 1]))
     if n % 2:
         single = (random_pure_state(2, seeds[-1]) if state == "pure"
-                  else quantum.randomCorrelatedState(1, seeds[-1]))
+                  else quantum.random_correlated_state(1, seeds[-1]))
     else:
         single = None
     return pairs, states, unitaries, single
@@ -431,14 +431,14 @@ def simulate(n, rounds=None, alpha="1/2", seed=0, carry="global", timesteps=None
     for pair in pairs:
         rho = _density(states[pair])
         _require_density_matrix("rho_" + "".join(names[q] for q in pair), rho)
-        S_pair = quantum.MutualInformation.vonNeumannEntropy(rho)
+        S_pair = quantum.MutualInformation.von_neumann_entropy(rho)
         S_global += S_pair
         log("  rho_%s%s: eigenvalues %s   I = %.6f"
             % (names[pair[0]], names[pair[1]],
                ", ".join("%.6f" % v for v in np.linalg.eigvalsh(rho)),
-               quantum.mutualInformation(rho, 2, 2)))
+               quantum.mutual_information(rho, 2, 2)))
     if single is not None:
-        S_global += quantum.MutualInformation.vonNeumannEntropy(_density(single))
+        S_global += quantum.MutualInformation.von_neumann_entropy(_density(single))
     if state == "pure":
         S_global = 0.0
     log("  S_global = %.6f nats (constant: every step is unitary)" % S_global)
@@ -513,7 +513,7 @@ def analyse_slice(net, t, pair, prev, S_global):
     sl["C"] = sl["sumS"] - S_global
     if prev is None:
         sl.update(residual={q: None for q in range(n)}, dtau=0.0, tau=0.0,
-                  dS=None, dI=None, identity_err=None)
+                  d_s=None, dI=None, identity_err=None)
         return sl
     i, j = pair
     I_new, I_old = I_pairs[pair], prev["I_dict"][pair]
@@ -592,7 +592,7 @@ def target_lengths(MI, mode, floor, S=None, geodesic=False, scale=1.0, reference
 
     A pair with I <= floor has no edge (W = 0). The modes:
       inverse  1/I(X:Y)
-      log      -ln(I(X:Y)/I_MAX), via tessera.mesh.Edge.vanRaamsdonkLength
+      log      -ln(I(X:Y)/I_MAX), via tessera.mesh.Edge.van_raamsdonk_length
       log1p    a ln(1 + I_0/I(X:Y)) with the scale a = `scale` and the
                reference mutual information I_0 = `reference`: finite for
                every I > 0, a ln(1 + I_0/I_MAX) at the largest I, divergent
@@ -621,7 +621,7 @@ def target_lengths(MI, mode, floor, S=None, geodesic=False, scale=1.0, reference
     elif mode == "log":
         # epsilon = 0 switches off the edge's length cap: below-floor pairs
         # are already without an edge
-        D[present] = [tessera.mesh.Edge.vanRaamsdonkLength(float(I), I_MAX, 0.0)
+        D[present] = [tessera.mesh.Edge.van_raamsdonk_length(float(I), I_MAX, 0.0)
                       for I in MI[present]]
     elif mode == "log1p":
         D[present] = scale * np.log1p(reference / MI[present])
@@ -684,7 +684,7 @@ def rips_filtration(D, W):
     A set of qubits is a simplex from the scale r at which its longest
     pairwise length appears (its birth; 0 for a single qubit), so the
     simplices are the cliques of the edge graph. For every distinct birth r
-    the complex at r is passed to `tessera.cobordism.ChainComplex.fromCells`
+    the complex at r is passed to `tessera.cobordism.ChainComplex.from_cells`
     for its simplex counts (the f-vector: vertices, edges, triangles, ...)
     and Betti numbers over the rationals.
     """
@@ -700,10 +700,10 @@ def rips_filtration(D, W):
     levels = []
     for r in sorted(set(births)):
         cells = [list(c) for c, b in zip(cliques, births) if b <= r]
-        complex_ = cobordism.ChainComplex.fromCells(cells)
+        complex_ = cobordism.ChainComplex.from_cells(cells)
         levels.append({"scale": float(r),
-                       "f_vector": [int(x) for x in complex_.fVector()],
-                       "betti": [int(x) for x in complex_.bettiNumbers()]})
+                       "f_vector": [int(x) for x in complex_.f_vector()],
+                       "betti": [int(x) for x in complex_.betti_numbers()]})
     return {"cliques": cliques, "births": [float(b) for b in births], "levels": levels}
 
 

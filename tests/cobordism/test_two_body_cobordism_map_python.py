@@ -29,12 +29,12 @@ LAMBDA = np.array([math.sqrt(3.0), 2.0, math.sqrt(3.0), 0.0])
 
 @pytest.fixture
 def whitney_default():
-    previous = HL.defaultMetricSource()
-    HL.setDefaultMetricSource(cob.HodgeMetricSource.WhitneyPencil)
+    previous = HL.default_metric_source()
+    HL.set_default_metric_source(cob.HodgeMetricSource.WhitneyPencil)
     try:
         yield
     finally:
-        HL.setDefaultMetricSource(previous)
+        HL.set_default_metric_source(previous)
 
 
 def lowering():
@@ -59,7 +59,7 @@ def fiber(psi):
 
 
 def disjoint_tetrahedra(st):
-    tets = [tuple(int(v) for v in t) for t in cob.ChainComplex.fromSpacetime(st).kSimplexVertices(3)]
+    tets = [tuple(int(v) for v in t) for t in cob.ChainComplex.from_spacetime(st).k_simplex_vertices(3)]
     for a, b in itertools.combinations(tets, 2):
         if not set(a) & set(b):
             return a, b
@@ -86,7 +86,7 @@ def python_transfer(st, a, b):
         f.degree = 0
         f.cells = [[v] for v in cells]
         f.images = np.eye(4, dtype=complex)
-        f.dualImages = np.eye(4, dtype=complex)
+        f.dual_images = np.eye(4, dtype=complex)
     return cob.PencilLayer.transfer(assembled, 0, fa, fb)
 
 

@@ -19,7 +19,7 @@ from tessera.drivers.bands.crystal import CrystalCell
 
 
 def _tetrahedron_modes():
-    K = cob.ChainComplex.fromTopCells([[0, 1, 2, 3]])
+    K = cob.ChainComplex.from_top_cells([[0, 1, 2, 3]])
     s = [1.0, 1.3, 0.9, 1.1, 1.2, 1.05]
     pencil = ch.CovariantChainHodge(ch.ChainHodge(K, s), ch.Connection.trivial(K)).pencil(0)
     A, M = pencil.A.real, pencil.B.real
@@ -55,7 +55,7 @@ class TestKernel:
         K, s, _, M, _, modes = _tetrahedron_modes()
         T = coulomb.pair_densities(K, s, modes)
         for m, n in ((0, 0), (1, 2), (3, 1)):
-            reference = ch.WhitneyMass.vertexDensityContraction(K, s, modes[:, m:m + 1].conj(), modes[:, n:n + 1])
+            reference = ch.WhitneyMass.vertex_density_contraction(K, s, modes[:, m:m + 1].conj(), modes[:, n:n + 1])
             assert T[:, m, n] == pytest.approx(np.array(reference), abs=1e-15)
         assert np.abs(T.sum(axis=0) - np.eye(4)).max() < 1e-13           # sum_v rho^{mn}_v = <m|n>
 
@@ -67,12 +67,12 @@ class TestHartreeFock:
         interaction = coulomb.ModeInteraction(kernel, levels, coulomb.pair_densities(K, s, modes), sheets=2)
         gamma, energy, _, residual = interaction.roothaan(3)
         assert residual < 1e-11
-        state = quantum.CovarianceState.fromBandProjector(gamma)
-        assert state.purityDefect() < 1e-10 and state.particleNumber().real == pytest.approx(3.0)
+        state = quantum.CovarianceState.from_band_projector(gamma)
+        assert state.purity_defect() < 1e-10 and state.particle_number().real == pytest.approx(3.0)
         # The same state from its occupied Slater frame.
         _, frame = np.linalg.eigh(gamma)
-        slater = quantum.CovarianceState.fromSlaterFrame(frame[:, -3:])
-        assert np.abs(slater.gamma() - gamma).max() < 1e-10 and slater.purityDefect() < 1e-10
+        slater = quantum.CovarianceState.from_slater_frame(frame[:, -3:])
+        assert np.abs(slater.gamma() - gamma).max() < 1e-10 and slater.purity_defect() < 1e-10
 
         algebra = quantum.ExteriorAlgebra(8)
         H = interaction.fock_hamiltonian(algebra)
@@ -83,7 +83,7 @@ class TestHartreeFock:
         determinant /= np.linalg.norm(determinant)
         assert (determinant.conj() @ (H @ determinant)).real == pytest.approx(energy, abs=1e-11)
         # The exact ground state of the three-particle sector lies below it.
-        rows, _, _, _ = algebra.sectorProjectorCOO(3)
+        rows, _, _, _ = algebra.sector_projector_coo(3)
         sector = np.unique(np.array(rows))
         exact = np.linalg.eigvalsh(H[sector][:, sector].toarray())[0]
         assert exact < energy and energy - exact < 0.1
@@ -93,13 +93,13 @@ class TestHartreeFock:
         kernel = coulomb.CoulombKernel(A, M, strength=3.0)
         interaction = coulomb.ModeInteraction(kernel, levels, coulomb.pair_densities(K, s, modes), sheets=2)
         gamma, _, _, _ = interaction.roothaan(3)
-        state = quantum.CovarianceState.fromBandProjector(gamma)
+        state = quantum.CovarianceState.from_band_projector(gamma)
         kernel_matrix = np.column_stack([kernel.potential(np.eye(4)[:, v]) for v in range(4)]).real
         total = 0.0
         for v in range(4):
             for w in range(4):
                 Tv, Tw = interaction.density_operator(v), interaction.density_operator(w)
-                moment = state.wickBilinearMoment([Tv, Tw])
+                moment = state.wick_bilinear_moment([Tv, Tw])
                 assert moment.certificate.holds()
                 total += 0.5 * kernel_matrix[v, w] * (moment.value - np.trace(Tv @ Tw @ gamma))
         assert total.real == pytest.approx(interaction.interaction_energy(gamma).real, abs=1e-11)
@@ -110,14 +110,14 @@ class TestHartreeFock:
         interaction = coulomb.ModeInteraction(coulomb.CoulombKernel(A, M, strength=3.0), levels,
                                               coulomb.pair_densities(K, s, modes), sheets=2)
         gamma, _, _, _ = interaction.roothaan(3)
-        state = quantum.CovarianceState.fromBandProjector(gamma)
-        steps = state.meanFieldEvolve(lambda g: interaction.fock(g), 0.05, 40)
+        state = quantum.CovarianceState.from_band_projector(gamma)
+        steps = state.mean_field_evolve(lambda g: interaction.fock(g), 0.05, 40)
         assert len(steps) == 40
         assert np.abs(state.gamma() - gamma).max() < 1e-9
         # Away from the fixed point the same evolution moves the state.
-        moved = quantum.CovarianceState.fromBandProjector(interaction._filled(interaction.h + 0.3 * np.ones((8, 8)), 3))
+        moved = quantum.CovarianceState.from_band_projector(interaction._filled(interaction.h + 0.3 * np.ones((8, 8)), 3))
         before = moved.gamma().copy()
-        moved.meanFieldEvolve(lambda g: interaction.fock(g), 0.05, 40)
+        moved.mean_field_evolve(lambda g: interaction.fock(g), 0.05, 40)
         assert np.abs(moved.gamma() - before).max() > 1e-3
 
 

@@ -164,7 +164,7 @@ def ref_profile(frame, edge_weights, triangles, weights):
 def orthonormal_band(rng, n_edges, edge_weights):
     """A random rank-three |W|-orthonormal band over n_edges edges."""
     frame = rng.normal(size=(n_edges, 3)) + 1j * rng.normal(size=(n_edges, 3))
-    return ColorAnchor.orthonormalizeFrame(frame, np.asarray(edge_weights))
+    return ColorAnchor.orthonormalize_frame(frame, np.asarray(edge_weights))
 
 
 # ─── the exact Fourier frame from omega ────────────────────────────────────
@@ -189,31 +189,31 @@ class TestFourierFrame(unittest.TestCase):
         self.assertLessEqual(abs(w**2 - np.conj(w)), 1e-15)
 
     def test_f3_dagger_f3_is_identity(self) -> None:
-        f = ColorFiber.fourierFrame()
+        f = ColorFiber.fourier_frame()
         self.assertLessEqual(
             np.max(np.abs(f.conj().T @ f - np.eye(3))), 1e-15)
 
     def test_f3_det_modulus_one(self) -> None:
-        f = ColorFiber.fourierFrame()
+        f = ColorFiber.fourier_frame()
         self.assertLessEqual(abs(abs(np.linalg.det(f)) - 1.0), 1e-15)
 
     def test_f3_matches_independent_exp_dft(self) -> None:
-        f = ColorFiber.fourierFrame()
+        f = ColorFiber.fourier_frame()
         j, k = np.meshgrid(np.arange(3), np.arange(3), indexing="ij")
         ref = OMEGA_EXP ** (j * k) / SQRT3
         self.assertLessEqual(np.max(np.abs(f - ref)), 1e-15)
 
     def test_omega_phase_state_is_one_basis_vector(self) -> None:
-        v = ColorFiber.omegaPhaseState()
+        v = ColorFiber.omega_phase_state()
         ref = np.array([1.0, OMEGA_ALG, np.conj(OMEGA_ALG)]) / SQRT3
         self.assertLessEqual(np.max(np.abs(v - ref)), 1e-15)
-        f = ColorFiber.fourierFrame()
+        f = ColorFiber.fourier_frame()
         self.assertTrue(np.array_equal(v, f[:, 1]))
         self.assertTrue(
-            np.array_equal(v, ColorFiber.fourierBasisVector(1)))
+            np.array_equal(v, ColorFiber.fourier_basis_vector(1)))
 
     def test_cyclic_triad_is_orthonormal(self) -> None:
-        cols = [ColorFiber.fourierBasisVector(k) for k in range(3)]
+        cols = [ColorFiber.fourier_basis_vector(k) for k in range(3)]
         for a in range(3):
             for b in range(3):
                 inner = np.vdot(cols[a], cols[b])
@@ -223,29 +223,29 @@ class TestFourierFrame(unittest.TestCase):
     def test_cyclic_triad_generated_by_pointwise_z3_powers(self) -> None:
         # v_k are Z3 characters: sqrt(3) * (v1 ∘ v1) = v2 and
         # sqrt(3) * (v1 ∘ v2) = v0 — the cyclic orbit of the omega pattern.
-        v0 = ColorFiber.fourierBasisVector(0)
-        v1 = ColorFiber.fourierBasisVector(1)
-        v2 = ColorFiber.fourierBasisVector(2)
+        v0 = ColorFiber.fourier_basis_vector(0)
+        v1 = ColorFiber.fourier_basis_vector(1)
+        v2 = ColorFiber.fourier_basis_vector(2)
         self.assertLessEqual(np.max(np.abs(SQRT3 * v1 * v1 - v2)), 1e-15)
         self.assertLessEqual(np.max(np.abs(SQRT3 * v1 * v2 - v0)), 1e-15)
 
     def test_fourier_basis_vector_range_errors(self) -> None:
         with self.assertRaises(ValueError):
-            ColorFiber.fourierBasisVector(3)
+            ColorFiber.fourier_basis_vector(3)
         with self.assertRaises(ValueError):
-            ColorFiber.fourierBasisVector(-1)
+            ColorFiber.fourier_basis_vector(-1)
 
     def test_constants_regenerate_identically(self) -> None:
         # The constant algebra is a pure function: two generations agree
         # bitwise (no state, no cache to drift — cold recomputation IS the
         # production path).
         self.assertTrue(
-            np.array_equal(ColorFiber.fourierFrame(),
-                           ColorFiber.fourierFrame()))
+            np.array_equal(ColorFiber.fourier_frame(),
+                           ColorFiber.fourier_frame()))
         for a in range(1, 9):
             self.assertTrue(
-                np.array_equal(ColorFiber.gellMann(a),
-                               ColorFiber.gellMann(a)))
+                np.array_equal(ColorFiber.gell_mann(a),
+                               ColorFiber.gell_mann(a)))
 
 
 # ─── Gell-Mann generators on the one-occupation sector ─────────────────────
@@ -253,17 +253,17 @@ class TestFourierFrame(unittest.TestCase):
 class TestGellMann(unittest.TestCase):
     def test_hermitian_exact(self) -> None:
         for a in range(1, 9):
-            la = ColorFiber.gellMann(a)
+            la = ColorFiber.gell_mann(a)
             self.assertEqual(np.max(np.abs(la - la.conj().T)), 0.0)
 
     def test_traceless_exact(self) -> None:
         for a in range(1, 9):
-            self.assertEqual(np.trace(ColorFiber.gellMann(a)), 0.0)
+            self.assertEqual(np.trace(ColorFiber.gell_mann(a)), 0.0)
 
     def test_trace_orthonormalization_two_delta(self) -> None:
         for a in range(1, 9):
             for b in range(1, 9):
-                tr = np.trace(ColorFiber.gellMann(a) @ ColorFiber.gellMann(b))
+                tr = np.trace(ColorFiber.gell_mann(a) @ ColorFiber.gell_mann(b))
                 expected = 2.0 if a == b else 0.0
                 self.assertLessEqual(abs(tr - expected), 1e-15,
                                      msg=f"Tr(l{a} l{b})")
@@ -271,28 +271,28 @@ class TestGellMann(unittest.TestCase):
     def test_matches_independent_table(self) -> None:
         for a in range(1, 9):
             self.assertLessEqual(
-                np.max(np.abs(ColorFiber.gellMann(a) - GELL_MANN_REF[a])),
+                np.max(np.abs(ColorFiber.gell_mann(a) - GELL_MANN_REF[a])),
                 1e-15, msg=f"lambda_{a}")
 
     def test_cartan_generators_h1_h2(self) -> None:
-        u = ColorFiber.matrixUnit
+        u = ColorFiber.matrix_unit
         self.assertTrue(
-            np.array_equal(ColorFiber.gellMann(3), u(0, 0) - u(1, 1)))
+            np.array_equal(ColorFiber.gell_mann(3), u(0, 0) - u(1, 1)))
         h2 = (u(0, 0) + u(1, 1) - 2.0 * u(2, 2)) / SQRT3
         self.assertLessEqual(
-            np.max(np.abs(ColorFiber.gellMann(8) - h2)), 1e-15)
+            np.max(np.abs(ColorFiber.gell_mann(8) - h2)), 1e-15)
 
     def test_index_errors(self) -> None:
         for bad in (0, 9, -1):
             with self.assertRaises(ValueError):
-                ColorFiber.gellMann(bad)
+                ColorFiber.gell_mann(bad)
 
 
 # ─── E_ij bilinears and the gl(3) commutator identity ──────────────────────
 
 class TestBilinears(unittest.TestCase):
     def test_gl3_commutators_on_matrix_units_exact(self) -> None:
-        u = ColorFiber.matrixUnit
+        u = ColorFiber.matrix_unit
         for i in range(3):
             for j in range(3):
                 for k in range(3):
@@ -307,7 +307,7 @@ class TestBilinears(unittest.TestCase):
                                          msg=f"[E{i}{j}, E{k}{L}]")
 
     def test_gl3_commutators_on_fock_bilinears_exact(self) -> None:
-        e = {(i, j): ColorFiber.hoppingMatrix(i, j)
+        e = {(i, j): ColorFiber.hopping_matrix(i, j)
              for i in range(3) for j in range(3)}
         for i in range(3):
             for j in range(3):
@@ -325,17 +325,17 @@ class TestBilinears(unittest.TestCase):
     def test_creation_annihilation_match_jordan_wigner(self) -> None:
         for i in range(3):
             self.assertEqual(
-                np.max(np.abs(ColorFiber.creationMatrix(i) -
+                np.max(np.abs(ColorFiber.creation_matrix(i) -
                               jw_creation(i, 3))), 0.0)
             self.assertEqual(
-                np.max(np.abs(ColorFiber.annihilationMatrix(i) -
+                np.max(np.abs(ColorFiber.annihilation_matrix(i) -
                               jw_annihilation(i, 3))), 0.0)
 
     def test_car_anticommutators(self) -> None:
         for i in range(3):
             for j in range(3):
-                ai = ColorFiber.annihilationMatrix(i)
-                cj = ColorFiber.creationMatrix(j)
+                ai = ColorFiber.annihilation_matrix(i)
+                cj = ColorFiber.creation_matrix(j)
                 anti = ai @ cj + cj @ ai
                 expected = np.eye(8) if i == j else np.zeros((8, 8))
                 self.assertEqual(np.max(np.abs(anti - expected)), 0.0)
@@ -345,43 +345,43 @@ class TestBilinears(unittest.TestCase):
             for j in range(3):
                 ref = jw_creation(i, 3) @ jw_annihilation(j, 3)
                 self.assertEqual(
-                    np.max(np.abs(ColorFiber.hoppingMatrix(i, j) - ref)),
+                    np.max(np.abs(ColorFiber.hopping_matrix(i, j) - ref)),
                     0.0)
 
     def test_triplet_basis_indices(self) -> None:
-        self.assertEqual(tuple(ColorFiber.tripletBasisIndices()), (1, 2, 4))
+        self.assertEqual(tuple(ColorFiber.triplet_basis_indices()), (1, 2, 4))
 
     def test_restrict_hopping_is_matrix_unit(self) -> None:
         for i in range(3):
             for j in range(3):
-                got = ColorFiber.restrictToTriplet(
-                    ColorFiber.hoppingMatrix(i, j))
+                got = ColorFiber.restrict_to_triplet(
+                    ColorFiber.hopping_matrix(i, j))
                 self.assertEqual(
-                    np.max(np.abs(got - ColorFiber.matrixUnit(i, j))), 0.0)
+                    np.max(np.abs(got - ColorFiber.matrix_unit(i, j))), 0.0)
 
     def test_restrict_dgamma_is_identity_map(self) -> None:
         rng = np.random.default_rng(11)
-        mats = [ColorFiber.gellMann(a) for a in range(1, 9)]
+        mats = [ColorFiber.gell_mann(a) for a in range(1, 9)]
         mats.append(rng.normal(size=(3, 3)) + 1j * rng.normal(size=(3, 3)))
         for m in mats:
-            got = ColorFiber.restrictToTriplet(ColorFiber.dGamma(m))
+            got = ColorFiber.restrict_to_triplet(ColorFiber.d_gamma(m))
             self.assertLessEqual(np.max(np.abs(got - m)), 1e-15)
 
     def test_dgamma_annihilates_vacuum_sector(self) -> None:
         rng = np.random.default_rng(12)
         m = rng.normal(size=(3, 3)) + 1j * rng.normal(size=(3, 3))
-        dg = ColorFiber.dGamma(m)
+        dg = ColorFiber.d_gamma(m)
         vac = np.zeros(8, dtype=complex)
         vac[0] = 1.0
         self.assertEqual(np.max(np.abs(dg @ vac)), 0.0)
 
     def test_shape_and_index_errors(self) -> None:
         with self.assertRaises(ValueError):
-            ColorFiber.restrictToTriplet(np.eye(3, dtype=complex))
+            ColorFiber.restrict_to_triplet(np.eye(3, dtype=complex))
         with self.assertRaises(ValueError):
-            ColorFiber.matrixUnit(3, 0)
+            ColorFiber.matrix_unit(3, 0)
         with self.assertRaises(ValueError):
-            ColorFiber.creationMatrix(3)
+            ColorFiber.creation_matrix(3)
 
 
 # ─── the N = 0,1,2,3 sector projectors ─────────────────────────────────────
@@ -394,11 +394,11 @@ class TestSectorProjectors(unittest.TestCase):
     def test_match_independent_popcount_masks(self) -> None:
         for n in range(4):
             self.assertEqual(
-                np.max(np.abs(ColorFiber.sectorProjector(n) -
+                np.max(np.abs(ColorFiber.sector_projector(n) -
                               self.popcount_projector(n))), 0.0)
 
     def test_idempotent_orthogonal_complete(self) -> None:
-        projectors = [ColorFiber.sectorProjector(n) for n in range(4)]
+        projectors = [ColorFiber.sector_projector(n) for n in range(4)]
         total = np.zeros((8, 8), dtype=complex)
         for a, p in enumerate(projectors):
             self.assertEqual(np.max(np.abs(p @ p - p)), 0.0)
@@ -410,27 +410,27 @@ class TestSectorProjectors(unittest.TestCase):
 
     def test_sector_dimensions_1_3_3_1(self) -> None:
         for n, dim in zip(range(4), (1, 3, 3, 1)):
-            self.assertEqual(np.trace(ColorFiber.sectorProjector(n)),
+            self.assertEqual(np.trace(ColorFiber.sector_projector(n)),
                              complex(dim))
 
     def test_named_projectors_are_the_sectors(self) -> None:
-        self.assertTrue(np.array_equal(ColorFiber.vacuumProjector(),
-                                       ColorFiber.sectorProjector(0)))
-        self.assertTrue(np.array_equal(ColorFiber.tripletProjector(),
-                                       ColorFiber.sectorProjector(1)))
-        self.assertTrue(np.array_equal(ColorFiber.antiTripletProjector(),
-                                       ColorFiber.sectorProjector(2)))
-        self.assertTrue(np.array_equal(ColorFiber.singletProjector(),
-                                       ColorFiber.sectorProjector(3)))
+        self.assertTrue(np.array_equal(ColorFiber.vacuum_projector(),
+                                       ColorFiber.sector_projector(0)))
+        self.assertTrue(np.array_equal(ColorFiber.triplet_projector(),
+                                       ColorFiber.sector_projector(1)))
+        self.assertTrue(np.array_equal(ColorFiber.anti_triplet_projector(),
+                                       ColorFiber.sector_projector(2)))
+        self.assertTrue(np.array_equal(ColorFiber.singlet_projector(),
+                                       ColorFiber.sector_projector(3)))
 
     def test_sector_above_top_is_zero(self) -> None:
-        self.assertEqual(np.max(np.abs(ColorFiber.sectorProjector(4))), 0.0)
+        self.assertEqual(np.max(np.abs(ColorFiber.sector_projector(4))), 0.0)
 
     def test_fermion_parity_pattern(self) -> None:
         # 1 ⊕ 3 ⊕ 3̄ ⊕ 1 parities: even, odd, even, odd.
         parity = np.diag([(-1.0) ** bin(b).count("1") for b in range(8)])
         for n, sign in zip(range(4), (+1.0, -1.0, +1.0, -1.0)):
-            p = ColorFiber.sectorProjector(n)
+            p = ColorFiber.sector_projector(n)
             self.assertEqual(np.max(np.abs(parity @ p - sign * p)), 0.0)
 
     def test_delegation_matches_quantum_primitive(self) -> None:
@@ -439,8 +439,8 @@ class TestSectorProjectors(unittest.TestCase):
         alg = ExteriorAlgebra(3)
         for n in range(4):
             self.assertEqual(
-                np.max(np.abs(ColorFiber.sectorProjector(n) -
-                              dense(alg.sectorProjectorCOO(n)))), 0.0)
+                np.max(np.abs(ColorFiber.sector_projector(n) -
+                              dense(alg.sector_projector_coo(n)))), 0.0)
 
 
 # ─── the traceless adjoint-octet projector ─────────────────────────────────
@@ -450,18 +450,18 @@ class TestAdjointOctet(unittest.TestCase):
         vec_i = np.eye(3, dtype=complex).reshape(9, order="F")
         ref = np.eye(9) - np.outer(vec_i, vec_i.conj()) / 3.0
         self.assertLessEqual(
-            np.max(np.abs(ColorFiber.adjointOctetProjector() - ref)), 1e-15)
+            np.max(np.abs(ColorFiber.adjoint_octet_projector() - ref)), 1e-15)
 
     def test_projector_algebra(self) -> None:
-        p8 = ColorFiber.adjointOctetProjector()
+        p8 = ColorFiber.adjoint_octet_projector()
         self.assertLessEqual(np.max(np.abs(p8 - p8.conj().T)), 1e-15)
         self.assertLessEqual(np.max(np.abs(p8 @ p8 - p8)), 1e-15)
         self.assertLessEqual(abs(np.trace(p8) - 8.0), 1e-15)
 
     def test_fixes_gellmann_kills_identity(self) -> None:
-        p8 = ColorFiber.adjointOctetProjector()
+        p8 = ColorFiber.adjoint_octet_projector()
         for a in range(1, 9):
-            v = ColorFiber.gellMann(a).reshape(9, order="F")
+            v = ColorFiber.gell_mann(a).reshape(9, order="F")
             self.assertLessEqual(np.max(np.abs(p8 @ v - v)), 1e-15)
         vec_i = np.eye(3, dtype=complex).reshape(9, order="F")
         self.assertLessEqual(np.max(np.abs(p8 @ vec_i)), 1e-15)
@@ -469,15 +469,15 @@ class TestAdjointOctet(unittest.TestCase):
     def test_vec_convention_is_column_major(self) -> None:
         rng = np.random.default_rng(21)
         m = rng.normal(size=(3, 3)) + 1j * rng.normal(size=(3, 3))
-        p8 = ColorFiber.adjointOctetProjector()
+        p8 = ColorFiber.adjoint_octet_projector()
         got = p8 @ m.reshape(9, order="F")
-        want = ColorFiber.tracelessPart(m).reshape(9, order="F")
+        want = ColorFiber.traceless_part(m).reshape(9, order="F")
         self.assertLessEqual(np.max(np.abs(got - want)), 1e-15)
 
     def test_octet_read_frobenius_split(self) -> None:
         rng = np.random.default_rng(22)
         m = rng.normal(size=(3, 3)) + 1j * rng.normal(size=(3, 3))
-        read = ColorFiber.octetRead(m)
+        read = ColorFiber.octet_read(m)
         frob = np.linalg.norm(m, "fro") ** 2
         self.assertLessEqual(abs(read.octet + read.singlet - frob),
                              1e-13 * frob)
@@ -486,10 +486,10 @@ class TestAdjointOctet(unittest.TestCase):
 
     def test_octet_read_on_generators_and_identity(self) -> None:
         for a in range(1, 9):
-            read = ColorFiber.octetRead(ColorFiber.gellMann(a))
+            read = ColorFiber.octet_read(ColorFiber.gell_mann(a))
             self.assertLessEqual(abs(read.octet - 2.0), 1e-14)
             self.assertLessEqual(read.singlet, 1e-15)
-        read = ColorFiber.octetRead(np.eye(3, dtype=complex))
+        read = ColorFiber.octet_read(np.eye(3, dtype=complex))
         self.assertEqual(read.octet, 0.0)
         self.assertEqual(read.singlet, 3.0)
 
@@ -500,19 +500,19 @@ class TestNormalizers(unittest.TestCase):
     def test_color_vector_is_unit_and_parallel(self) -> None:
         rng = np.random.default_rng(31)
         z = rng.normal(size=3) + 1j * rng.normal(size=3)
-        c = ColorFiber.colorVector(z)
+        c = ColorFiber.color_vector(z)
         self.assertLessEqual(abs(np.vdot(c, c).real - 1.0), 1e-15)
         self.assertLessEqual(np.max(np.abs(c * np.linalg.norm(z) - z)),
                              1e-15 * np.linalg.norm(z))
-        self.assertTrue(np.array_equal(c, ColorFiber.hilbertNormalized(z)))
+        self.assertTrue(np.array_equal(c, ColorFiber.hilbert_normalized(z)))
 
     def test_omega_pattern_color_vector_is_fourier_basis_vector(self) -> None:
         # Unit-modulus squared lengths with the omega phases: the color
         # vector IS the identified Fourier basis vector.
         z = np.array([1.0, OMEGA_ALG, np.conj(OMEGA_ALG)])
-        c = ColorFiber.colorVector(z)
+        c = ColorFiber.color_vector(z)
         self.assertLessEqual(
-            np.max(np.abs(c - ColorFiber.omegaPhaseState())), 1e-15)
+            np.max(np.abs(c - ColorFiber.omega_phase_state())), 1e-15)
 
     def test_perimeter_independent_reference(self) -> None:
         rng = np.random.default_rng(32)
@@ -526,7 +526,7 @@ class TestNormalizers(unittest.TestCase):
     def test_perimeter_normalized_has_unit_perimeter(self) -> None:
         rng = np.random.default_rng(33)
         z = 3.0 * (rng.normal(size=3) + 1j * rng.normal(size=3))
-        zn = ColorFiber.perimeterNormalized(z)
+        zn = ColorFiber.perimeter_normalized(z)
         self.assertLessEqual(abs(ColorFiber.perimeter(zn) - 1.0), 1e-14)
 
     def test_perimeter_and_hilbert_are_distinct_apis(self) -> None:
@@ -534,8 +534,8 @@ class TestNormalizers(unittest.TestCase):
         # generic triangle they disagree, and the perimeter-normalized
         # vector is not a unit Hilbert vector.
         z = np.array([2.0 + 0.5j, -0.25 + 1.0j, 0.75 - 0.3j])
-        zp = ColorFiber.perimeterNormalized(z)
-        zh = ColorFiber.hilbertNormalized(z)
+        zp = ColorFiber.perimeter_normalized(z)
+        zh = ColorFiber.hilbert_normalized(z)
         self.assertGreater(np.max(np.abs(zp - zh)), 1e-3)
         self.assertGreater(abs(np.linalg.norm(zp) - 1.0), 1e-3)
         self.assertLessEqual(abs(np.linalg.norm(zh) - 1.0), 1e-15)
@@ -544,30 +544,30 @@ class TestNormalizers(unittest.TestCase):
         rng = np.random.default_rng(34)
         z = rng.normal(size=3) + 1j * rng.normal(size=3)
         s = 2.75
-        zp1 = ColorFiber.perimeterNormalized(z)
-        zp2 = ColorFiber.perimeterNormalized(s * s * z)
+        zp1 = ColorFiber.perimeter_normalized(z)
+        zp2 = ColorFiber.perimeter_normalized(s * s * z)
         self.assertLessEqual(np.max(np.abs(zp1 - zp2)), 1e-14)
 
     def test_zero_inputs_raise(self) -> None:
         zero = np.zeros(3, dtype=complex)
         with self.assertRaises(ValueError):
-            ColorFiber.colorVector(zero)
+            ColorFiber.color_vector(zero)
         with self.assertRaises(ValueError):
-            ColorFiber.hilbertNormalized(zero)
+            ColorFiber.hilbert_normalized(zero)
         with self.assertRaises(ValueError):
-            ColorFiber.perimeterNormalized(zero)
+            ColorFiber.perimeter_normalized(zero)
 
 
 # ─── det(C) / det(C†C) certificates ────────────────────────────────────────
 
 class TestWedgeCertificates(unittest.TestCase):
     def test_orthonormal_triad_reaches_unit_gram(self) -> None:
-        f = ColorFiber.fourierFrame()
-        self.assertLessEqual(abs(ColorFiber.singletGram(f) - 1.0), 1e-15)
+        f = ColorFiber.fourier_frame()
+        self.assertLessEqual(abs(ColorFiber.singlet_gram(f) - 1.0), 1e-15)
         rng = np.random.default_rng(41)
         for _ in range(5):
             g = random_su3(rng)
-            self.assertLessEqual(abs(ColorFiber.singletGram(g) - 1.0),
+            self.assertLessEqual(abs(ColorFiber.singlet_gram(g) - 1.0),
                                  1e-13)
 
     def test_duplicate_color_modes_vanish(self) -> None:
@@ -581,10 +581,10 @@ class TestWedgeCertificates(unittest.TestCase):
         scale = float(np.linalg.norm(a) ** 2 * np.linalg.norm(b))
         for cols in ((a, a, b), (a, b, a), (b, a, a)):
             self.assertLessEqual(
-                abs(ColorFiber.colorWedgeColumns(*cols)), 1e-15 * scale)
+                abs(ColorFiber.color_wedge_columns(*cols)), 1e-15 * scale)
         c = np.column_stack([a, a, b])
-        self.assertLessEqual(abs(ColorFiber.colorWedge(c)), 1e-15 * scale)
-        self.assertLessEqual(ColorFiber.singletGram(c),
+        self.assertLessEqual(abs(ColorFiber.color_wedge(c)), 1e-15 * scale)
+        self.assertLessEqual(ColorFiber.singlet_gram(c),
                              (1e-15 * scale) ** 2)
 
     def test_duplicate_color_modes_wedge_to_exact_zero_in_fock(self) -> None:
@@ -595,7 +595,7 @@ class TestWedgeCertificates(unittest.TestCase):
         basis = np.eye(3, dtype=complex)
         psi = alg.wedge([basis[0], basis[0], basis[2]])
         self.assertEqual(np.max(np.abs(psi)), 0.0)
-        w = ColorFiber.sectorWeights(np.asarray(psi))
+        w = ColorFiber.sector_weights(np.asarray(psi))
         self.assertEqual((w.vacuum, w.quark, w.anti_triplet, w.singlet),
                          (0.0, 0.0, 0.0, 0.0))
         # A repeated GENERAL complex color column cancels at double
@@ -612,31 +612,31 @@ class TestWedgeCertificates(unittest.TestCase):
         a = rng.normal(size=3) + 1j * rng.normal(size=3)
         b = rng.normal(size=3) + 1j * rng.normal(size=3)
         c = rng.normal(size=3) + 1j * rng.normal(size=3)
-        self.assertEqual(ColorFiber.colorWedgeColumns(a, b, c),
-                         -ColorFiber.colorWedgeColumns(b, a, c))
+        self.assertEqual(ColorFiber.color_wedge_columns(a, b, c),
+                         -ColorFiber.color_wedge_columns(b, a, c))
 
     def test_det_gc_equals_det_c_for_certified_su3(self) -> None:
         rng = np.random.default_rng(44)
         c = rng.normal(size=(3, 3)) + 1j * rng.normal(size=(3, 3))
-        det_c = ColorFiber.colorWedge(c)
+        det_c = ColorFiber.color_wedge(c)
         for _ in range(20):
             g = random_su3(rng)
-            self.assertTrue(ColorFiber.isSpecialUnitary(g, 1e-12))
+            self.assertTrue(ColorFiber.is_special_unitary(g, 1e-12))
             self.assertLessEqual(
-                abs(ColorFiber.colorWedge(g @ c) - det_c),
+                abs(ColorFiber.color_wedge(g @ c) - det_c),
                 1e-12 * max(1.0, abs(det_c)))
             # And the Gram certificate is invariant too.
             self.assertLessEqual(
-                abs(ColorFiber.singletGram(g @ c) -
-                    ColorFiber.singletGram(c)),
+                abs(ColorFiber.singlet_gram(g @ c) -
+                    ColorFiber.singlet_gram(c)),
                 1e-12 * max(1.0, abs(det_c)) ** 2)
 
     def test_singlet_gram_is_abs_wedge_squared(self) -> None:
         rng = np.random.default_rng(45)
         c = rng.normal(size=(3, 3)) + 1j * rng.normal(size=(3, 3))
         self.assertLessEqual(
-            abs(ColorFiber.singletGram(c) - abs(ColorFiber.colorWedge(c))**2),
-            1e-13 * max(1.0, abs(ColorFiber.colorWedge(c)) ** 2))
+            abs(ColorFiber.singlet_gram(c) - abs(ColorFiber.color_wedge(c))**2),
+            1e-13 * max(1.0, abs(ColorFiber.color_wedge(c)) ** 2))
 
     def test_wedge_matches_exterior_algebra_top_sector(self) -> None:
         # Cross-representation: the SAME certificate through the Fock wedge
@@ -644,15 +644,15 @@ class TestWedgeCertificates(unittest.TestCase):
         # is a pure top-wedge (N=3) state.
         rng = np.random.default_rng(46)
         c = rng.normal(size=(3, 3)) + 1j * rng.normal(size=(3, 3))
-        creation = [sum(c[i, col] * ColorFiber.creationMatrix(i)
+        creation = [sum(c[i, col] * ColorFiber.creation_matrix(i)
                         for i in range(3)) for col in range(3)]
         vac = np.zeros(8, dtype=complex)
         vac[0] = 1.0
         psi = creation[0] @ (creation[1] @ (creation[2] @ vac))
         norm2 = float(np.vdot(psi, psi).real)
-        self.assertLessEqual(abs(norm2 - ColorFiber.singletGram(c)),
+        self.assertLessEqual(abs(norm2 - ColorFiber.singlet_gram(c)),
                              1e-13 * max(1.0, norm2))
-        weights = ColorFiber.sectorWeights(psi)
+        weights = ColorFiber.sector_weights(psi)
         self.assertEqual(weights.vacuum, 0.0)
         self.assertEqual(weights.quark, 0.0)
         self.assertEqual(weights.anti_triplet, 0.0)
@@ -660,11 +660,11 @@ class TestWedgeCertificates(unittest.TestCase):
 
     def test_is_special_unitary_negative_controls(self) -> None:
         self.assertFalse(
-            ColorFiber.isSpecialUnitary(2.0 * np.eye(3, dtype=complex)))
+            ColorFiber.is_special_unitary(2.0 * np.eye(3, dtype=complex)))
         # Unitary but det = omega != 1.
         u = np.diag([OMEGA_ALG, 1.0, 1.0])
-        self.assertFalse(ColorFiber.isSpecialUnitary(u))
-        self.assertTrue(ColorFiber.isSpecialUnitary(np.eye(3, dtype=complex)))
+        self.assertFalse(ColorFiber.is_special_unitary(u))
+        self.assertTrue(ColorFiber.is_special_unitary(np.eye(3, dtype=complex)))
 
 
 # ─── sector reads (weights only, no classification) ────────────────────────
@@ -674,7 +674,7 @@ class TestSectorReads(unittest.TestCase):
         for b in range(8):
             psi = np.zeros(8, dtype=complex)
             psi[b] = 1.0
-            w = ColorFiber.sectorWeights(psi)
+            w = ColorFiber.sector_weights(psi)
             got = (w.vacuum, w.quark, w.anti_triplet, w.singlet)
             expected = [0.0, 0.0, 0.0, 0.0]
             expected[bin(b).count("1")] = 1.0
@@ -683,7 +683,7 @@ class TestSectorReads(unittest.TestCase):
     def test_random_state_matches_masks_and_sums(self) -> None:
         rng = np.random.default_rng(51)
         psi = rng.normal(size=8) + 1j * rng.normal(size=8)
-        w = ColorFiber.sectorWeights(psi)
+        w = ColorFiber.sector_weights(psi)
         for n, field in zip(range(4),
                             (w.vacuum, w.quark, w.anti_triplet, w.singlet)):
             mask = [bin(b).count("1") == n for b in range(8)]
@@ -698,9 +698,9 @@ class TestSectorReads(unittest.TestCase):
         v = rng.normal(size=3) + 1j * rng.normal(size=3)
         vac = np.zeros(8, dtype=complex)
         vac[0] = 1.0
-        psi = sum(v[i] * ColorFiber.creationMatrix(i)
+        psi = sum(v[i] * ColorFiber.creation_matrix(i)
                   for i in range(3)) @ vac
-        w = ColorFiber.sectorWeights(psi)
+        w = ColorFiber.sector_weights(psi)
         self.assertEqual(w.vacuum, 0.0)
         self.assertEqual(w.anti_triplet, 0.0)
         self.assertEqual(w.singlet, 0.0)
@@ -711,9 +711,9 @@ class TestSectorReads(unittest.TestCase):
         # a_0† a_1† |vac> is a pure two-occupation (anti-triplet) read.
         vac = np.zeros(8, dtype=complex)
         vac[0] = 1.0
-        psi = (ColorFiber.creationMatrix(0) @
-               (ColorFiber.creationMatrix(1) @ vac))
-        w = ColorFiber.sectorWeights(psi)
+        psi = (ColorFiber.creation_matrix(0) @
+               (ColorFiber.creation_matrix(1) @ vac))
+        w = ColorFiber.sector_weights(psi)
         self.assertEqual((w.vacuum, w.quark, w.anti_triplet, w.singlet),
                          (0.0, 0.0, 1.0, 0.0))
 
@@ -724,9 +724,9 @@ class TestSectorReads(unittest.TestCase):
         psi = rng.normal(size=8) + 1j * rng.normal(size=8)
         alg = ExteriorAlgebra(3)
         for perm in ([1, 2, 0], [2, 1, 0], [0, 2, 1]):
-            u = dense(alg.modePermutationMatrixCOO(perm))
-            w0 = ColorFiber.sectorWeights(psi)
-            w1 = ColorFiber.sectorWeights(u @ psi)
+            u = dense(alg.mode_permutation_matrix_coo(perm))
+            w0 = ColorFiber.sector_weights(psi)
+            w1 = ColorFiber.sector_weights(u @ psi)
             for f0, f1 in zip(
                     (w0.vacuum, w0.quark, w0.anti_triplet, w0.singlet),
                     (w1.vacuum, w1.quark, w1.anti_triplet, w1.singlet)):
@@ -734,7 +734,7 @@ class TestSectorReads(unittest.TestCase):
 
     def test_size_error(self) -> None:
         with self.assertRaises(ValueError):
-            ColorFiber.sectorWeights(np.zeros(4, dtype=complex))
+            ColorFiber.sector_weights(np.zeros(4, dtype=complex))
 
 
 # ─── the calibrated anchor: oracle, atlas, calibration ─────────────────────
@@ -770,14 +770,14 @@ class TestAnchorOracle(unittest.TestCase):
         self.assertEqual(cert.tolerance, 1e-9)
         # Unmeasured quantities are NaN, never zero (#764 convention).
         self.assertTrue(math.isnan(cert.conditioning))
-        self.assertTrue(math.isnan(cert.denseReferenceError))
+        self.assertTrue(math.isnan(cert.dense_reference_error))
 
     def test_oracle_exact_algebraic_fixture_f3(self) -> None:
         # Phi = F3 on three unit-weight edges: A_tau IS F3, |det A|^2 = 1.
-        f = ColorFiber.fourierFrame()
+        f = ColorFiber.fourier_frame()
         w = np.ones(3)
         tri = OrientedTriangle([0, 1, 2], [1, 1, 1])
-        a_tau = ColorAnchor.anchorMatrix(f, w, tri)
+        a_tau = ColorAnchor.anchor_matrix(f, w, tri)
         self.assertLessEqual(np.max(np.abs(a_tau - f)), 1e-15)
         anchor = ColorAnchor([tri])
         p = anchor.evaluate(f, w)
@@ -861,7 +861,7 @@ class TestAnchorOracle(unittest.TestCase):
         phi = rng.normal(size=(n_edges, 3)) + 1j * rng.normal(
             size=(n_edges, 3))
         tri = OrientedTriangle([4, 0, 2], [-1, 1, -1])
-        a_tau = ColorAnchor.anchorMatrix(phi, w, tri)
+        a_tau = ColorAnchor.anchor_matrix(phi, w, tri)
         rows = np.array([-1 * phi[4, :], +1 * phi[0, :], -1 * phi[2, :]])
         ref = np.diag(np.sqrt(w[[4, 0, 2]])) @ rows
         self.assertLessEqual(np.max(np.abs(a_tau - ref)), 1e-15)
@@ -879,7 +879,7 @@ class TestAnchorOracle(unittest.TestCase):
         frame[:, 1] = [0.0, 1.0, 0.0, 0.0]
         frame[:, 2] = [1.0, 1.0, 0.0, 0.0]  # dependent
         with self.assertRaises(ValueError):
-            ColorAnchor.orthonormalizeFrame(frame, np.ones(4))
+            ColorAnchor.orthonormalize_frame(frame, np.ones(4))
 
 
 class TestAnchorNegativeControls(unittest.TestCase):
@@ -892,7 +892,7 @@ class TestAnchorNegativeControls(unittest.TestCase):
         frame = np.zeros((9, 3), dtype=complex)
         block = rng.normal(size=(3, 3)) + 1j * rng.normal(size=(3, 3))
         frame[6:9, :] = block  # support only on edges {6, 7, 8}
-        phi = ColorAnchor.orthonormalizeFrame(frame, w)
+        phi = ColorAnchor.orthonormalize_frame(frame, w)
         anchor = ColorAnchor([OrientedTriangle([0, 1, 2], [1, 1, 1]),
                               OrientedTriangle([3, 4, 5], [1, 1, 1])])
         p = anchor.evaluate(phi, w)
@@ -912,7 +912,7 @@ class TestAnchorNegativeControls(unittest.TestCase):
         w = np.full(4, 0.7)
         frame = rng.normal(size=(4, 3)) + 1j * rng.normal(size=(4, 3))
         frame[1, :] = frame[0, :]  # duplicate one-chain rows on the face
-        phi = ColorAnchor.orthonormalizeFrame(frame, w)
+        phi = ColorAnchor.orthonormalize_frame(frame, w)
         # Right-multiplication preserves the duplicated rows exactly.
         self.assertTrue(np.array_equal(phi[0, :], phi[1, :]))
         anchor = ColorAnchor([OrientedTriangle([0, 1, 2], [1, 1, 1])])
@@ -936,7 +936,7 @@ class TestAnchorNegativeControls(unittest.TestCase):
         frame = np.zeros((9, 3), dtype=complex)
         frame[6:9, :] = np.eye(3)
         un = ColorAnchor([OrientedTriangle([0, 1, 2], [1, 1, 1])])
-        s_un = un.evaluate(ColorAnchor.orthonormalizeFrame(frame, w9),
+        s_un = un.evaluate(ColorAnchor.orthonormalize_frame(frame, w9),
                            w9).score
         self.assertLessEqual(abs(s_oracle - 1.0), 1e-13)
         self.assertGreater(s_oracle, s_ext)
@@ -964,7 +964,7 @@ class TestAnchorNegativeControls(unittest.TestCase):
 
     def test_shape_and_range_errors(self) -> None:
         anchor = ColorAnchor([OrientedTriangle([0, 1, 5], [1, 1, 1])])
-        phi = ColorAnchor.orthonormalizeFrame(
+        phi = ColorAnchor.orthonormalize_frame(
             np.eye(3, dtype=complex), np.ones(3))
         with self.assertRaises(ValueError):  # edge 5 out of range
             anchor.evaluate(phi, np.ones(3))
@@ -989,7 +989,7 @@ class TestAnchorDeclaredWeighting(unittest.TestCase):
         anchor.evaluate(phi, w)
         self.assertTrue(anchor.sealed())
         with self.assertRaisesRegex(RuntimeError, "post-hoc"):
-            anchor.declareWeights([1.0, 0.0])
+            anchor.declare_weights([1.0, 0.0])
 
     def test_failed_evaluate_still_seals(self) -> None:
         # Even a REJECTED read has examined the data: the weighting seals.
@@ -999,15 +999,15 @@ class TestAnchorDeclaredWeighting(unittest.TestCase):
             anchor.evaluate(np.asarray(phi) * 2.0, w)  # not orthonormal
         self.assertTrue(anchor.sealed())
         with self.assertRaisesRegex(RuntimeError, "post-hoc"):
-            anchor.declareWeights([1.0, 0.0])
+            anchor.declare_weights([1.0, 0.0])
 
     def test_declaration_before_data_is_allowed(self) -> None:
         phi, w, tris = self.fixture()
         anchor = ColorAnchor(tris)
-        self.assertEqual(anchor.weightingId(), "uniform")
+        self.assertEqual(anchor.weighting_id(), "uniform")
         self.assertEqual(anchor.weights(), [0.5, 0.5])
-        anchor.declareWeights([0.75, 0.25])
-        self.assertEqual(anchor.weightingId(), "declared")
+        anchor.declare_weights([0.75, 0.25])
+        self.assertEqual(anchor.weighting_id(), "declared")
         p = anchor.evaluate(phi, w)
         self.assertEqual(p.weighting_id, "declared")
         self.assertEqual(p.weights, [0.75, 0.25])
@@ -1024,7 +1024,7 @@ class TestAnchorDeclaredWeighting(unittest.TestCase):
             ColorAnchor(tris, [1.0])  # wrong length
         anchor = ColorAnchor(tris)
         with self.assertRaises(ValueError):
-            anchor.declareWeights([0.2, 0.2])
+            anchor.declare_weights([0.2, 0.2])
 
     def test_uniform_weighting_is_the_default_declaration(self) -> None:
         phi, w, tris = self.fixture()
@@ -1131,10 +1131,10 @@ class TestAnchorInvariances(unittest.TestCase):
         # permutation: det A_tau itself is invariant.
         _, phi, w, tris = self.fixture()
         t = tris[0]
-        base = ColorAnchor.anchorMatrix(phi, w, t)
+        base = ColorAnchor.anchor_matrix(phi, w, t)
         rot = OrientedTriangle([t.edges[1], t.edges[2], t.edges[0]],
                                [t.signs[1], t.signs[2], t.signs[0]])
-        rotated = ColorAnchor.anchorMatrix(phi, w, rot)
+        rotated = ColorAnchor.anchor_matrix(phi, w, rot)
         d0, d1 = np.linalg.det(base), np.linalg.det(rotated)
         self.assertLessEqual(abs(d1 - d0), 1e-14 * max(1.0, abs(d0)))
 
@@ -1143,10 +1143,10 @@ class TestAnchorInvariances(unittest.TestCase):
         # (phase shifts by pi), |det|^2 unchanged.
         _, phi, w, tris = self.fixture()
         t = tris[0]
-        base = ColorAnchor.anchorMatrix(phi, w, t)
+        base = ColorAnchor.anchor_matrix(phi, w, t)
         swap = OrientedTriangle([t.edges[1], t.edges[0], t.edges[2]],
                                 [t.signs[1], t.signs[0], t.signs[2]])
-        swapped = ColorAnchor.anchorMatrix(phi, w, swap)
+        swapped = ColorAnchor.anchor_matrix(phi, w, swap)
         d0, d1 = np.linalg.det(base), np.linalg.det(swapped)
         self.assertLessEqual(abs(d1 + d0), 1e-14 * max(1.0, abs(d0)))
         self.assertLessEqual(abs(abs(d1) ** 2 - abs(d0) ** 2),
@@ -1184,7 +1184,7 @@ class TestAnchorSignedAndMatrixWeights(unittest.TestCase):
         frame = np.zeros((4, 3), dtype=complex)
         frame[[0, 2, 3], :] = rng.normal(size=(3, 3)) + 1j * rng.normal(
             size=(3, 3))
-        phi = ColorAnchor.orthonormalizeFrame(frame, w)
+        phi = ColorAnchor.orthonormalize_frame(frame, w)
         p = ColorAnchor([OrientedTriangle([0, 1, 2], [1, 1, 1])]).evaluate(
             phi, w)
         self.assertEqual(p.krein_signatures, [[2, 1, 0]])
@@ -1197,7 +1197,7 @@ class TestAnchorSignedAndMatrixWeights(unittest.TestCase):
         tris = [OrientedTriangle([0, 1, 2], [1, -1, 1]),
                 OrientedTriangle([1, 3, 4], [-1, 1, 1])]
         p_vec = ColorAnchor(tris).evaluate(phi, w)
-        p_mat = ColorAnchor(tris).evaluateMatrix(
+        p_mat = ColorAnchor(tris).evaluate_matrix(
             phi, np.diag(w).astype(complex))
         self.assertLessEqual(abs(p_vec.score - p_mat.score), 1e-12)
         self.assertLessEqual(
@@ -1221,11 +1221,11 @@ class TestAnchorSignedAndMatrixWeights(unittest.TestCase):
         bad[0, 1] = 1.0  # not Hermitian
         anchor = ColorAnchor([OrientedTriangle([0, 1, 2], [1, 1, 1])])
         with self.assertRaisesRegex(ValueError, "Hermitian"):
-            anchor.evaluateMatrix(phi, bad)
+            anchor.evaluate_matrix(phi, bad)
 
     def test_coupled_matrix_weight_checked_not_assumed(self) -> None:
         # A coupled Hermitian weight: the profile is still an exact
-        # evaluation of A_tau = |W_tau|^{1/2} R_tau Phi (cross-checked in
+        # evaluation of A_tau = |W_tau|^{1/2} R_tau phi (cross-checked in
         # NumPy), and the <= 1 calibration is CHECKED via the reported
         # margin rather than assumed.
         rng = np.random.default_rng(105)
@@ -1233,10 +1233,10 @@ class TestAnchorSignedAndMatrixWeights(unittest.TestCase):
         base = rng.normal(size=(n, n)) + 1j * rng.normal(size=(n, n))
         weight = base @ base.conj().T + 0.5 * np.eye(n)  # Hermitian PD
         frame = rng.normal(size=(n, 3)) + 1j * rng.normal(size=(n, 3))
-        phi = ColorAnchor.orthonormalizeFrameMatrix(frame, weight)
+        phi = ColorAnchor.orthonormalize_frame_matrix(frame, weight)
         tri_spec = [((0, 1, 2), (1, 1, 1)), ((2, 3, 4), (1, -1, 1))]
         tris = [OrientedTriangle(list(e), list(s)) for e, s in tri_spec]
-        p = ColorAnchor(tris).evaluateMatrix(phi, weight)
+        p = ColorAnchor(tris).evaluate_matrix(phi, weight)
 
         # Independent NumPy reference for the matrix path.
         terms_ref = []
@@ -1263,7 +1263,7 @@ class TestConstantAlgebraSelfCheck(unittest.TestCase):
         # The startup-check contract (debug builds run this automatically;
         # every build can call it): the WHOLE constant algebra re-derives
         # within double round-off.
-        self.assertLessEqual(ColorFiber.verifyConstantAlgebra(), 1e-12)
+        self.assertLessEqual(ColorFiber.verify_constant_algebra(), 1e-12)
 
     def test_constant_algebra_certificate(self) -> None:
         # The same claim in the shared #764 vocabulary: AlgebraicallyExact,
@@ -1271,11 +1271,11 @@ class TestConstantAlgebraSelfCheck(unittest.TestCase):
         # re-derivation is deterministic so the residual matches the raw
         # call bitwise.
         cob = tessera.cobordism
-        cert = ColorFiber.constantAlgebraCertificate()
+        cert = ColorFiber.constant_algebra_certificate()
         self.assertEqual(cert.grade, cob.CertificateGrade.AlgebraicallyExact)
         self.assertEqual(cert.domain, cob.CertificateDomain.Static)
         self.assertTrue(cert.holds())
-        self.assertEqual(cert.residual, ColorFiber.verifyConstantAlgebra())
+        self.assertEqual(cert.residual, ColorFiber.verify_constant_algebra())
         self.assertEqual(cert.tolerance, 1e-12)
         self.assertTrue(math.isnan(cert.conditioning))
 
@@ -1287,39 +1287,39 @@ class TestAdjointSingletProjector(unittest.TestCase):
         vec_i = np.eye(3, dtype=complex).reshape(9, order="F")
         ref = np.outer(vec_i, vec_i.conj()) / 3.0
         self.assertLessEqual(
-            np.max(np.abs(ColorFiber.adjointSingletProjector() - ref)),
+            np.max(np.abs(ColorFiber.adjoint_singlet_projector() - ref)),
             1e-15)
 
     def test_bitwise_complement_of_the_octet_projector(self) -> None:
         # The implementation is LITERALLY I9 - P8: assert the delegation
         # bitwise, not just to tolerance.
-        p1 = ColorFiber.adjointSingletProjector()
-        p8 = ColorFiber.adjointOctetProjector()
+        p1 = ColorFiber.adjoint_singlet_projector()
+        p8 = ColorFiber.adjoint_octet_projector()
         self.assertTrue(np.array_equal(p1, np.eye(9, dtype=complex) - p8))
 
     def test_singlet_plus_octet_resolve_to_identity(self) -> None:
         # THE #774 acceptance identity: P1 + P8 = I9 on 3 x 3bar.
-        p1 = ColorFiber.adjointSingletProjector()
-        p8 = ColorFiber.adjointOctetProjector()
+        p1 = ColorFiber.adjoint_singlet_projector()
+        p8 = ColorFiber.adjoint_octet_projector()
         self.assertEqual(np.max(np.abs(p1 + p8 - np.eye(9))), 0.0)
 
     def test_projector_algebra(self) -> None:
-        p1 = ColorFiber.adjointSingletProjector()
+        p1 = ColorFiber.adjoint_singlet_projector()
         self.assertLessEqual(np.max(np.abs(p1 - p1.conj().T)), 1e-15)
         self.assertLessEqual(np.max(np.abs(p1 @ p1 - p1)), 1e-15)
         self.assertLessEqual(abs(np.trace(p1) - 1.0), 1e-15)
         self.assertEqual(np.linalg.matrix_rank(p1), 1)
 
     def test_mutually_orthogonal_with_the_octet(self) -> None:
-        p1 = ColorFiber.adjointSingletProjector()
-        p8 = ColorFiber.adjointOctetProjector()
+        p1 = ColorFiber.adjoint_singlet_projector()
+        p8 = ColorFiber.adjoint_octet_projector()
         self.assertLessEqual(np.max(np.abs(p1 @ p8)), 1e-15)
         self.assertLessEqual(np.max(np.abs(p8 @ p1)), 1e-15)
 
     def test_extracts_the_trace_part(self) -> None:
         rng = np.random.default_rng(741)
         m = rng.normal(size=(3, 3)) + 1j * rng.normal(size=(3, 3))
-        p1 = ColorFiber.adjointSingletProjector()
+        p1 = ColorFiber.adjoint_singlet_projector()
         got = (p1 @ m.reshape(9, order="F")).reshape(3, 3, order="F")
         want = (np.trace(m) / 3.0) * np.eye(3)
         self.assertLessEqual(np.max(np.abs(got - want)), 1e-15)
@@ -1330,9 +1330,9 @@ class TestAdjointSingletProjector(unittest.TestCase):
         rng = np.random.default_rng(742)
         m = rng.normal(size=(3, 3)) + 1j * rng.normal(size=(3, 3))
         v = m.reshape(9, order="F")
-        read = ColorFiber.octetRead(m)
-        p1 = ColorFiber.adjointSingletProjector()
-        p8 = ColorFiber.adjointOctetProjector()
+        read = ColorFiber.octet_read(m)
+        p1 = ColorFiber.adjoint_singlet_projector()
+        p8 = ColorFiber.adjoint_octet_projector()
         self.assertLessEqual(
             abs(read.octet - np.linalg.norm(p8 @ v) ** 2), 1e-13)
         self.assertLessEqual(
@@ -1354,70 +1354,70 @@ class TestOctetBilinears(unittest.TestCase):
                 if i == j:
                     ref = ref - number / 3.0
                 self.assertLessEqual(
-                    np.max(np.abs(ColorFiber.octetBilinear(i, j) - ref)),
+                    np.max(np.abs(ColorFiber.octet_bilinear(i, j) - ref)),
                     1e-15, msg=f"T_{i}{j}")
 
     def test_delegation_identity_is_bitwise(self) -> None:
-        # T_ij == dGamma(tracelessPart(matrixUnit(i, j))) -- the literal
+        # T_ij == d_gamma(traceless_part(matrix_unit(i, j))) -- the literal
         # composition documented in the header.
         for i in range(3):
             for j in range(3):
-                want = ColorFiber.dGamma(ColorFiber.tracelessPart(
-                    ColorFiber.matrixUnit(i, j)))
+                want = ColorFiber.d_gamma(ColorFiber.traceless_part(
+                    ColorFiber.matrix_unit(i, j)))
                 self.assertTrue(np.array_equal(
-                    ColorFiber.octetBilinear(i, j), want))
+                    ColorFiber.octet_bilinear(i, j), want))
 
     def test_diagonal_family_sums_to_zero(self) -> None:
         # sum_i T_ii = N - 3 (N/3): zero up to the dGamma accumulation
         # rounding (double round-off; fl(1/3) sums in operator assembly).
-        total = sum(ColorFiber.octetBilinear(i, i) for i in range(3))
+        total = sum(ColorFiber.octet_bilinear(i, i) for i in range(3))
         self.assertLessEqual(np.max(np.abs(total)), 1e-15)
 
     def test_even_fermion_parity(self) -> None:
         # T_ij conserves N, hence commutes with (-1)^N: the traceless
         # bilinears are EVEN elements of the graded algebra (whitepaper
         # "Fock space as an inductive limit of interactions").
-        parity = dense(ExteriorAlgebra(3).parityMatrixCOO())
+        parity = dense(ExteriorAlgebra(3).parity_matrix_coo())
         for i in range(3):
             for j in range(3):
-                t = ColorFiber.octetBilinear(i, j)
+                t = ColorFiber.octet_bilinear(i, j)
                 self.assertEqual(np.max(np.abs(t @ parity - parity @ t)),
                                  0.0)
 
     def test_triplet_restriction_is_the_traceless_matrix_unit(self) -> None:
         for i in range(3):
             for j in range(3):
-                got = ColorFiber.restrictToTriplet(
-                    ColorFiber.octetBilinear(i, j))
-                want = ColorFiber.tracelessPart(ColorFiber.matrixUnit(i, j))
+                got = ColorFiber.restrict_to_triplet(
+                    ColorFiber.octet_bilinear(i, j))
+                want = ColorFiber.traceless_part(ColorFiber.matrix_unit(i, j))
                 self.assertLessEqual(np.max(np.abs(got - want)), 1e-15)
 
     def test_bilinears_span_the_octet(self) -> None:
         # The nine T_ij restrict to the nine traceless matrix units, whose
         # span is EXACTLY the 8-dimensional octet = range(P8).
         vecs = np.column_stack([
-            ColorFiber.restrictToTriplet(
-                ColorFiber.octetBilinear(i, j)).reshape(9, order="F")
+            ColorFiber.restrict_to_triplet(
+                ColorFiber.octet_bilinear(i, j)).reshape(9, order="F")
             for i in range(3) for j in range(3)])
         self.assertEqual(np.linalg.matrix_rank(vecs), 8)
-        p8 = ColorFiber.adjointOctetProjector()
+        p8 = ColorFiber.adjoint_octet_projector()
         self.assertLessEqual(np.max(np.abs(p8 @ vecs - vecs)), 1e-15)
 
     def test_gellmann_bilinears_are_octet_combinations(self) -> None:
-        # dGamma(lambda_a) is a combination of the T_ij (lambda_a is
-        # traceless): dGamma(lambda_a) = sum_ij (lambda_a)_ij T_ij.
+        # d_gamma(lambda_a) is a combination of the T_ij (lambda_a is
+        # traceless): d_gamma(lambda_a) = sum_ij (lambda_a)_ij T_ij.
         for a in range(1, 9):
-            lam = ColorFiber.gellMann(a)
-            combo = sum(lam[i, j] * ColorFiber.octetBilinear(i, j)
+            lam = ColorFiber.gell_mann(a)
+            combo = sum(lam[i, j] * ColorFiber.octet_bilinear(i, j)
                         for i in range(3) for j in range(3))
             self.assertLessEqual(
-                np.max(np.abs(combo - ColorFiber.dGamma(lam))), 1e-15)
+                np.max(np.abs(combo - ColorFiber.d_gamma(lam))), 1e-15)
 
     def test_index_validation(self) -> None:
         with self.assertRaises(ValueError):
-            ColorFiber.octetBilinear(3, 0)
+            ColorFiber.octet_bilinear(3, 0)
         with self.assertRaises(ValueError):
-            ColorFiber.octetBilinear(0, 5)
+            ColorFiber.octet_bilinear(0, 5)
 
 
 # ─── #774: the adjoint quadratic Casimir C = 3 P8 ──────────────────────────
@@ -1425,8 +1425,8 @@ class TestOctetBilinears(unittest.TestCase):
 class TestAdjointCasimir(unittest.TestCase):
     def test_casimir_matrix_is_three_times_the_octet_projector(self) -> None:
         # THE identity: sum_a ad(lambda_a/2)^2 = C2(adjoint) P8 = 3 P8.
-        c = ColorFiber.adjointCasimirMatrix()
-        p8 = ColorFiber.adjointOctetProjector()
+        c = ColorFiber.adjoint_casimir_matrix()
+        p8 = ColorFiber.adjoint_octet_projector()
         self.assertLessEqual(np.max(np.abs(c - 3.0 * p8)), 1e-14)
 
     def test_casimir_matrix_matches_independent_commutator_sum(self) -> None:
@@ -1440,49 +1440,49 @@ class TestAdjointCasimir(unittest.TestCase):
             k = np.kron(eye.T, half) - np.kron(half.T, eye)
             ref = ref + k @ k
         self.assertLessEqual(
-            np.max(np.abs(ColorFiber.adjointCasimirMatrix() - ref)), 1e-14)
+            np.max(np.abs(ColorFiber.adjoint_casimir_matrix() - ref)), 1e-14)
 
     def test_rayleigh_on_generators_identity_and_zero(self) -> None:
         for a in range(1, 9):
             self.assertLessEqual(
-                abs(ColorFiber.adjointCasimir(ColorFiber.gellMann(a)) - 3.0),
+                abs(ColorFiber.adjoint_casimir(ColorFiber.gell_mann(a)) - 3.0),
                 1e-14)
         self.assertLessEqual(
-            abs(ColorFiber.adjointCasimir(np.eye(3, dtype=complex))), 1e-14)
+            abs(ColorFiber.adjoint_casimir(np.eye(3, dtype=complex))), 1e-14)
         self.assertTrue(np.isnan(
-            ColorFiber.adjointCasimir(np.zeros((3, 3), dtype=complex))))
+            ColorFiber.adjoint_casimir(np.zeros((3, 3), dtype=complex))))
 
     def test_rayleigh_is_three_times_the_octet_fraction(self) -> None:
         rng = np.random.default_rng(743)
         m = rng.normal(size=(3, 3)) + 1j * rng.normal(size=(3, 3))
-        read = ColorFiber.octetRead(m)
+        read = ColorFiber.octet_read(m)
         fraction = read.octet / (read.octet + read.singlet)
         self.assertLessEqual(
-            abs(ColorFiber.adjointCasimir(m) - 3.0 * fraction), 1e-13)
+            abs(ColorFiber.adjoint_casimir(m) - 3.0 * fraction), 1e-13)
 
     def test_su3_invariance(self) -> None:
         rng = np.random.default_rng(744)
         for _ in range(5):
             g = random_su3(rng)
-            self.assertTrue(ColorFiber.isSpecialUnitary(g))
+            self.assertTrue(ColorFiber.is_special_unitary(g))
             m = rng.normal(size=(3, 3)) + 1j * rng.normal(size=(3, 3))
             self.assertLessEqual(
-                abs(ColorFiber.adjointCasimir(g @ m @ g.conj().T) -
-                    ColorFiber.adjointCasimir(m)), 1e-12)
+                abs(ColorFiber.adjoint_casimir(g @ m @ g.conj().T) -
+                    ColorFiber.adjoint_casimir(m)), 1e-12)
 
 
 # ─── #774: octet generators transform in the adjoint under SU(3) ───────────
 
 class TestAdjointTransformation(unittest.TestCase):
     def test_traceless_projection_commutes_with_conjugation(self) -> None:
-        # The octet is an invariant subspace: tracelessPart(g M g^dag) ==
-        # g tracelessPart(M) g^dag for every certified g in SU(3).
+        # The octet is an invariant subspace: traceless_part(g M g^dag) ==
+        # g traceless_part(M) g^dag for every certified g in SU(3).
         rng = np.random.default_rng(745)
         for _ in range(5):
             g = random_su3(rng)
             m = rng.normal(size=(3, 3)) + 1j * rng.normal(size=(3, 3))
-            got = ColorFiber.tracelessPart(g @ m @ g.conj().T)
-            want = g @ ColorFiber.tracelessPart(m) @ g.conj().T
+            got = ColorFiber.traceless_part(g @ m @ g.conj().T)
+            want = g @ ColorFiber.traceless_part(m) @ g.conj().T
             self.assertLessEqual(np.max(np.abs(got - want)), 1e-13)
 
     def test_generators_transform_by_a_real_orthogonal_adjoint(self) -> None:
@@ -1491,10 +1491,10 @@ class TestAdjointTransformation(unittest.TestCase):
         # adjoint (8-dimensional) representation of a random certified
         # SU(3) element (property test over several draws).
         rng = np.random.default_rng(746)
-        lams = [ColorFiber.gellMann(a) for a in range(1, 9)]
+        lams = [ColorFiber.gell_mann(a) for a in range(1, 9)]
         for _ in range(5):
             g = random_su3(rng)
-            self.assertTrue(ColorFiber.isSpecialUnitary(g))
+            self.assertTrue(ColorFiber.is_special_unitary(g))
             r = np.zeros((8, 8), dtype=complex)
             for a in range(8):
                 for b in range(8):
@@ -1515,8 +1515,8 @@ class TestAdjointTransformation(unittest.TestCase):
         # conjugation operator (and so does P1) -- the resolution 1 + 8 is
         # SU(3)-equivariant.
         rng = np.random.default_rng(747)
-        p8 = ColorFiber.adjointOctetProjector()
-        p1 = ColorFiber.adjointSingletProjector()
+        p8 = ColorFiber.adjoint_octet_projector()
+        p1 = ColorFiber.adjoint_singlet_projector()
         for _ in range(3):
             g = random_su3(rng)
             k = np.kron(g.conj(), g)
@@ -1531,15 +1531,15 @@ class TestAdjointTransformation(unittest.TestCase):
         conn = tessera.observables.FiberConnection
         for _ in range(3):
             g = random_su3(rng)
-            ad = conn.adjointRepresentation(g)
+            ad = conn.adjoint_representation(g)
             m = rng.normal(size=(3, 3)) + 1j * rng.normal(size=(3, 3))
-            p8 = ColorFiber.adjointOctetProjector()
+            p8 = ColorFiber.adjoint_octet_projector()
             got = ad @ (p8 @ m.reshape(9, order="F"))
             want = p8 @ (g @ m @ g.conj().T).reshape(9, order="F")
             self.assertLessEqual(np.max(np.abs(got - want)), 1e-12)
             omega = ColorFiber.omega()
             self.assertLessEqual(
-                np.max(np.abs(conn.adjointRepresentation(omega * g) - ad)),
+                np.max(np.abs(conn.adjoint_representation(omega * g) - ad)),
                 1e-12)
 
 
@@ -1574,9 +1574,9 @@ class TestAnchorOverlapCoherence(unittest.TestCase):
         self.assertEqual(p.overlap_relation, "shared-edge")
         self.assertTrue(math.isnan(p.phase_coherence))
         self.assertTrue(math.isnan(p.phase_dispersion))
-        self.assertEqual(anchor.overlappingTriangleCount(), 0)
-        self.assertFalse(anchor.overlapsAnother(0))
-        self.assertFalse(anchor.overlapsAnother(1))
+        self.assertEqual(anchor.overlapping_triangle_count(), 0)
+        self.assertFalse(anchor.overlaps_another(0))
+        self.assertFalse(anchor.overlaps_another(1))
 
     def test_a_single_triangle_atlas_has_nothing_to_overlap(self):
         w = np.array([1.3, 0.7, 1.1])
@@ -1595,8 +1595,8 @@ class TestAnchorOverlapCoherence(unittest.TestCase):
                               for e, s in tri_spec])
         p = anchor.evaluate(phi, w)
         self.assertEqual(p.overlapping_triangles, 2)
-        self.assertTrue(anchor.overlapsAnother(0))
-        self.assertTrue(anchor.overlapsAnother(1))
+        self.assertTrue(anchor.overlaps_another(0))
+        self.assertTrue(anchor.overlaps_another(1))
         _score, _terms, _pr, _phases, coherence = ref_profile(
             phi, w, tri_spec, [0.5, 0.5])
         self.assertFalse(math.isnan(p.phase_coherence))
@@ -1633,10 +1633,10 @@ class TestAnchorOverlapCoherence(unittest.TestCase):
         anchor = ColorAnchor([OrientedTriangle([0, 1, 2], [1, 1, 1]),
                               OrientedTriangle([2, 3, 4], [1, 1, 1]),
                               OrientedTriangle([5, 6, 7], [1, 1, 1])])
-        self.assertEqual(anchor.overlappingTriangleCount(), 2)
-        self.assertTrue(anchor.overlapsAnother(0))
-        self.assertTrue(anchor.overlapsAnother(1))
-        self.assertFalse(anchor.overlapsAnother(2))
+        self.assertEqual(anchor.overlapping_triangle_count(), 2)
+        self.assertTrue(anchor.overlaps_another(0))
+        self.assertTrue(anchor.overlaps_another(1))
+        self.assertFalse(anchor.overlaps_another(2))
         w = np.full(8, 1.1)
         p = anchor.evaluate(self._band(15, 8, w), w)
         self.assertEqual(p.overlapping_triangles, 2)

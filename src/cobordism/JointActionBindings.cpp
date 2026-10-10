@@ -110,7 +110,7 @@ void register_cobordism_joint_action(py::module_ &m) {
       "exactly two top cells), where deficit angles are defined; on a complex "
       "with no interior hinge the primal term is zero. All keeps every hinge of "
       "a top cell with the library's 2 pi - sum(theta) deficit at the boundary "
-      "too, the sum ReggeSolver.reggeAction evaluates.")
+      "too, the sum ReggeSolver.regge_action evaluates.")
       .value("Interior", ReggeHinges::Interior)
       .value("All", ReggeHinges::All);
 
@@ -224,7 +224,7 @@ void register_cobordism_joint_action(py::module_ &m) {
                      &JointActionDeclaration::reggeStartSquaredLengths,
                      "The starting geometry the continued Regge sheets are "
                      "continued from, one squared length per edge in "
-                     "getEdgeList() order; empty means the squared lengths "
+                     "get_edge_list() order; empty means the squared lengths "
                      "the mesh holds when the JointAction is constructed.")
       .def_readwrite("holonomy_weight",
                      &JointActionDeclaration::holonomyWeight,
@@ -296,7 +296,7 @@ void register_cobordism_joint_action(py::module_ &m) {
       "F_tau = prod_e U_e^eps. The stationarity conditions are "
       "the complex equations dS/dz_e = 0, U_e dS/dU_e = 0 and p_j(h) = p_j*, "
       "never the minimization of a selected real projection.\n\n"
-      "Every per-edge vector is in getEdgeList() order and every per-cell "
+      "Every per-edge vector is in get_edge_list() order and every per-cell "
       "quantity in canonical ChainComplex order. The link stationarity of an "
       "edge is reported on its STORED source-to-target orientation, which is "
       "the orientation the Ward current's sign convention refers to.")
@@ -395,7 +395,7 @@ void register_cobordism_joint_action(py::module_ &m) {
            "varies breaks the identity, and this measures by how much.")
       .def("holonomy_hessian", &JointAction::holonomyHessian,
            "sum_tau eps_tau,e eps_tau,e' (F d/dF)^2 phi(F_tau), flat |E| x |E| "
-           "in getEdgeList() order on stored orientations: the holonomy term's "
+           "in get_edge_list() order on stored orientations: the holonomy term's "
            "exact contribution to the link block of the Jacobian in the "
            "multiplicative coordinate U -> U e^delta. Minus it is the Hessian "
            "in the real angles.")

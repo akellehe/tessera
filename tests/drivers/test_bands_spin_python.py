@@ -73,15 +73,15 @@ def test_the_coupling_block_is_a_hopping_term_on_fock_space():
     the one-particle block."""
     levels = np.array([0.0, 40.0, 40.0, 40.0])
     coupling = 3.0 * np.eye(4)
-    block = np.array(cob.OccupationSpectra.hoppingBlock(list(np.diag(levels).ravel().astype(complex)), 4,
+    block = np.array(cob.OccupationSpectra.hopping_block(list(np.diag(levels).ravel().astype(complex)), 4,
                                                         list(np.diag(levels).ravel().astype(complex)), 4,
                                                         list(coupling.ravel().astype(complex)))).reshape(8, 8)
     one_particle = np.linalg.eigvalsh(block)
     assert one_particle == pytest.approx(np.sort(np.concatenate([levels - 3.0, levels + 3.0])))
-    rows, cols, values, n = quantum.FockDirectSum(4, 4).dGammaBlockCOO(np.diag(levels).astype(complex),
+    rows, cols, values, n = quantum.FockDirectSum(4, 4).d_gamma_block_coo(np.diag(levels).astype(complex),
                                                                        np.diag(levels).astype(complex),
                                                                        coupling.astype(complex))
     fock = sp.csr_matrix((values, (rows, cols)), shape=(n, n)).toarray()
     assert n == 256 and np.abs(fock - fock.conj().T).max() < 1e-14
-    expected = np.sort(np.array(cob.OccupationSpectra.fockSums(list(one_particle.astype(complex)))).real)
+    expected = np.sort(np.array(cob.OccupationSpectra.fock_sums(list(one_particle.astype(complex)))).real)
     assert scipy.linalg.eigvalsh(fock) == pytest.approx(expected, abs=1e-9)

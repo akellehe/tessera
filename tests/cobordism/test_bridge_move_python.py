@@ -56,12 +56,12 @@ TAU_B = complex(-0.2, 0.8)
 
 @pytest.fixture
 def whitney_default():
-    previous = HL.defaultMetricSource()
-    HL.setDefaultMetricSource(cob.HodgeMetricSource.WhitneyPencil)
+    previous = HL.default_metric_source()
+    HL.set_default_metric_source(cob.HodgeMetricSource.WhitneyPencil)
     try:
         yield
     finally:
-        HL.setDefaultMetricSource(previous)
+        HL.set_default_metric_source(previous)
 
 
 # --------------------------------------------------------------------------- #
@@ -94,34 +94,34 @@ def host_marking(q, ids):
             out.append((ids[int(i)], ids[int(j)]) if sign > 0 else (ids[int(j)], ids[int(i)]))
         return out
 
-    return [cycle(q.cycle_A()), cycle(q.cycle_B())]
+    return [cycle(q.cycle_a()), cycle(q.cycle_b())]
 
 
 def tops(st):
-    return sorted(tuple(sorted(v.getId() for v in s.getVertices())) for s in st.getTopSimplices())
+    return sorted(tuple(sorted(v.get_id() for v in s.get_vertices())) for s in st.get_top_simplices())
 
 
 def registered(st, size):
     return sorted(
-        tuple(sorted(v.getId() for v in s.getVertices()))
-        for s in st.getSimplices() if len(s.getVertices()) == size
+        tuple(sorted(v.get_id() for v in s.get_vertices()))
+        for s in st.get_simplices() if len(s.get_vertices()) == size
     )
 
 
 def edge_geometry(st):
     out = {}
-    for e in st.getEdgeList().toVector():
-        u, v = e.getSource().getId(), e.getTarget().getId()
-        out[tuple(sorted((u, v)))] = (complex(e.getLength()), complex(e.getPhase()))
+    for e in st.get_edge_list().to_vector():
+        u, v = e.get_source().get_id(), e.get_target().get_id()
+        out[tuple(sorted((u, v)))] = (complex(e.get_length()), complex(e.get_phase()))
     return out
 
 
 def vertex_ids(st):
-    return sorted(v.getId() for v in st.getVertexList().toVector())
+    return sorted(v.get_id() for v in st.get_vertex_list().to_vector())
 
 
 def boundary(st):
-    return sorted(tuple(f) for f in st.getBoundary())
+    return sorted(tuple(f) for f in st.get_boundary())
 
 
 def surface_cells(st):
@@ -227,7 +227,7 @@ def test_bridge_gate_refuses_non_manifold_cells():
     ok, reason = sc.bridge([face[0], face[1], b0, ids_b[7]])
     assert not ok and "cofaces" in reason, reason
     assert sc.depth == 2
-    assert sc.rollbackAll() == 2
+    assert sc.rollback_all() == 2
     assert state(st) == before, "the refused and rolled-back bridges must leave the complex unchanged"
 
 
@@ -252,9 +252,9 @@ def test_bridge_rollback_is_bit_exact():
     for edge, geometry in before[2].items():
         assert after[edge] == geometry, "a bridge never touches an existing edge"
     # materialize the cell's face lattice through the reads the engine makes
-    K = cob.ChainComplex.fromSpacetime(st)
-    assert K.bettiNumbers() == [1, 0, 0, 0]  # the drawn 3-ball alone (fromSpacetime seeds from the top cells)
-    assert sc.bettiNumbers() == [1, 0, 0, 0]
+    K = cob.ChainComplex.from_spacetime(st)
+    assert K.betti_numbers() == [1, 0, 0, 0]  # the drawn 3-ball alone (fromSpacetime seeds from the top cells)
+    assert sc.betti_numbers() == [1, 0, 0, 0]
     assert sc.rollback()
     assert state(st) == before, "round trip after materialization"
     # LIFO with two bridges sharing a face, materialized in between
@@ -264,7 +264,7 @@ def test_bridge_rollback_is_bit_exact():
     b1 = next(v for (u, v) in [tuple(sorted(e)) for e in mapped_edges(qb, ids_b)] if u == b0)
     ok, reason = sc.bridge([face[0], face[1], b0, b1])
     assert ok, reason
-    cob.ChainComplex.fromSpacetime(st).bettiNumbers()
+    cob.ChainComplex.from_spacetime(st).betti_numbers()
     assert sc.rollback()
     assert state(st) == mid
     assert sc.rollback()
@@ -324,7 +324,7 @@ def test_collar_seed_is_the_manifold_between_the_tori(n, whitney_default):
             assert length == 1 + 0j
     assert set(surface_lengths) <= set(geometry)
     # Betti numbers and the monodromy of the seed: the collar, identity for matched markings
-    assert cob.ChainComplex.fromSpacetime(st).bettiNumbers() == [1, 2, 1, 0]
+    assert cob.ChainComplex.from_spacetime(st).betti_numbers() == [1, 2, 1, 0]
     marking_a, marking_b = host_marking(qa, ids_a), host_marking(qb, ids_b)
     read = MC.monodromy(st, marking_a, marking_b)
     assert read.obstruction == "", read.obstruction
@@ -342,7 +342,7 @@ def test_collar_seed_is_the_manifold_between_the_tori(n, whitney_default):
     absent = MC.monodromy(st, marking_a, [[(0, 2 * n * n - 1)], b])
     assert "does not form one closed walk" in absent.obstruction, absent.obstruction
     # ... and a closed walk across a pair that is not an edge of the whole is named as such
-    edges = {tuple(int(v) for v in e) for e in cob.ChainComplex.fromSpacetime(st).kSimplexVertices(1)}
+    edges = {tuple(int(v) for v in e) for e in cob.ChainComplex.from_spacetime(st).k_simplex_vertices(1)}
     u, v = next((u, v) for u in range(2 * n * n) for v in range(u + 1, 2 * n * n) if (u, v) not in edges)
     missing = MC.monodromy(st, marking_a, [[(u, v), (v, u)], b])
     assert "not an edge of the whole" in missing.obstruction, missing.obstruction
@@ -360,7 +360,7 @@ def test_collar_with_interior_layers(whitney_default):
     assert ok, reason
     assert boundary(st) == sorted(mapped_faces(qa, ids_a) + mapped_faces(qb, ids_b))
     assert node.bridge_phase_complete() and len(tops(st)) == 2 * 54
-    assert cob.ChainComplex.fromSpacetime(st).bettiNumbers() == [1, 2, 1, 0]
+    assert cob.ChainComplex.from_spacetime(st).betti_numbers() == [1, 2, 1, 0]
     read = MC.monodromy(st, host_marking(qa, ids_a), host_marking(qb, ids_b))
     assert read.obstruction == "" and read.rounded == [[1, 0], [0, 1]] and read.rounding_residual < 1e-9
 
@@ -434,7 +434,7 @@ def test_bridge_on_the_collar(whitney_default):
     for cell in tops(st):
         if block_split(cell, [set(ids_a.values()), set(ids_b.values())]) != (3, 1):
             continue
-        ok, reason = sc.coneOut(list(cell))
+        ok, reason = sc.cone_out(list(cell))
         if not ok:
             assert reason
             refusals.append(reason)

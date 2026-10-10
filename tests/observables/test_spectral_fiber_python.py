@@ -78,12 +78,12 @@ def _from_simplices(num_vertices, simplices, ids=None):
     st = tessera.Spacetime(metric, tessera.HERMITIAN_WEIGHTED, 1.0, 1.0,
                            tessera.PREFERRED, tessera.Toroid())
     ids = list(range(num_vertices)) if ids is None else ids
-    verts = [st.createVertex(i) for i in ids]
+    verts = [st.create_vertex(i) for i in ids]
     for simplex in simplices:
-        st.createSimplex([verts[i] for i in simplex])
-    for e in st.getEdgeList().toVector():
-        e.setLength(1.0 + 0j)
-        e.setPhase(0.0)
+        st.create_simplex([verts[i] for i in simplex])
+    for e in st.get_edge_list().to_vector():
+        e.set_length(1.0 + 0j)
+        e.set_phase(0.0)
     return st
 
 
@@ -92,10 +92,10 @@ def _triangle(alpha=None):
     l^2 = -alpha^2 (the closed-form Lorentzian fixture)."""
     st = _from_simplices(3, [(0, 1), (1, 2), (2, 0)])
     if alpha is not None:
-        for e in st.getEdgeList().toVector():
-            pair = {e.getSource().getId(), e.getTarget().getId()}
+        for e in st.get_edge_list().to_vector():
+            pair = {e.get_source().get_id(), e.get_target().get_id()}
             if pair == {1, 2}:
-                e.setLength(cmath.sqrt(complex(-(alpha ** 2))))
+                e.set_length(cmath.sqrt(complex(-(alpha ** 2))))
     return st
 
 
@@ -113,14 +113,14 @@ def _two_triangles():
 
 
 def _edge(st, a, b):
-    for e in st.getEdgeList().toVector():
-        if {e.getSource().getId(), e.getTarget().getId()} == {a, b}:
+    for e in st.get_edge_list().to_vector():
+        if {e.get_source().get_id(), e.get_target().get_id()} == {a, b}:
             return e
     raise KeyError((a, b))
 
 
 def _all_vertices(st):
-    return sorted(v.getId() for v in st.getVertexList().toVector())
+    return sorted(v.get_id() for v in st.get_vertex_list().to_vector())
 
 
 def _np_k0(st, support):
@@ -131,12 +131,12 @@ def _np_k0(st, support):
     n = len(ids)
     A = np.zeros((n, n), complex)
     D = np.zeros(n)
-    for e in st.getEdgeList().toVector():
-        s, t = e.getSource().getId(), e.getTarget().getId()
+    for e in st.get_edge_list().to_vector():
+        s, t = e.get_source().get_id(), e.get_target().get_id()
         if s not in idx or t not in idx or s == t:
             continue
-        w = e.getLength() * e.getLength()
-        z = w * np.exp(1j * e.getPhase())
+        w = e.get_length() * e.get_length()
+        z = w * np.exp(1j * e.get_phase())
         A[idx[s], idx[t]] += z
         A[idx[t], idx[s]] += np.conj(z)
         D[idx[s]] += abs(w)
@@ -150,9 +150,9 @@ def _reconstruct(read):
     n = read.dimension
     L = np.zeros((n, n), complex)
     for f in read.fibers:
-        Phi = np.asarray(f.rightFrame())
-        Psi = np.asarray(f.leftFrame())
-        W = np.asarray(f.weightDiagonal())
+        Phi = np.asarray(f.right_frame())
+        Psi = np.asarray(f.left_frame())
+        W = np.asarray(f.weight_diagonal())
         lam = np.array(f.eigenvalues())
         L += Phi @ np.diag(lam) @ Psi.conj().T @ np.diag(W)
     return L
@@ -167,7 +167,7 @@ def _tracker(st, **cfg_kwargs):
 
 # The #808 localization acceptance conjunct: a band certifies only when its
 # rank-normalized localization excess (n_eff - rank)/(n - rank) is at most
-# `maxLocalizationExcess`.  Every band of a VERTEX-TRANSITIVE fixture (C_n,
+# `max_localization_excess`.  Every band of a VERTEX-TRANSITIVE fixture (C_n,
 # the closed icosahedron, an unjittered metric) has a uniform projector
 # diagonal, hence n_eff = n and excess EXACTLY 1: it is perfectly
 # delocalized and never certifies under the default.  Tests whose subject is
@@ -175,7 +175,7 @@ def _tracker(st, **cfg_kwargs):
 # accepts any MEASURED localization (an unmeasured NaN still fails) and
 # reproduces the pre-#808 acceptance; the conjunct itself is exercised in
 # TestLocalizationConjunct.
-ANY_LOCALIZATION = {"maxLocalizationExcess": 1.0}
+ANY_LOCALIZATION = {"max_localization_excess": 1.0}
 
 
 BANNED_LABELS = ("taste", "flavor", "flavour", "color", "colour",
@@ -191,9 +191,9 @@ class TestExactSmallFixtures(unittest.TestCase):
         # P3 (path 0-1-2), k=0: L = [[1,-1,0],[-1,2,-1],[0,-1,1]],
         # spec {0, 1, 3} with hand-computed eigenprojectors.
         st = _from_simplices(3, [(0, 1), (1, 2)])
-        read = _tracker(st, **ANY_LOCALIZATION).enumerateBands([0, 1, 2], 0)
-        self.assertEqual(read.solverPath, "dense-self-adjoint")
-        lam = np.array(read.coveredEigenvalues).real
+        read = _tracker(st, **ANY_LOCALIZATION).enumerate_bands([0, 1, 2], 0)
+        self.assertEqual(read.solver_path, "dense-self-adjoint")
+        lam = np.array(read.covered_eigenvalues).real
         np.testing.assert_allclose(lam, [0.0, 1.0, 3.0], atol=MACHINE)
         self.assertEqual([f.rank() for f in read.fibers], [1, 1, 1])
         vecs = [np.array([1, 1, 1]) / math.sqrt(3),
@@ -209,7 +209,7 @@ class TestExactSmallFixtures(unittest.TestCase):
         # C3, k=0: spec {0, 3, 3}; the degenerate rank-2 band's projector is
         # exactly I - J/3 (hand-built), a single band object.
         st = _triangle()
-        read = _tracker(st, **ANY_LOCALIZATION).enumerateBands([0, 1, 2], 0)
+        read = _tracker(st, **ANY_LOCALIZATION).enumerate_bands([0, 1, 2], 0)
         self.assertEqual([f.rank() for f in read.fibers], [1, 2])
         deg = read.fibers[1]
         self.assertEqual(deg.rank(), 2)
@@ -217,9 +217,9 @@ class TestExactSmallFixtures(unittest.TestCase):
         self.assertLessEqual(
             np.abs(P - (np.eye(3) - np.ones((3, 3)) / 3.0)).max(), MACHINE)
         c = deg.certificate()
-        self.assertEqual((c.positiveSignature, c.negativeSignature), (2, 0))
-        self.assertEqual(c.lowerGap, 3.0)
-        self.assertEqual(c.upperGap, math.inf)
+        self.assertEqual((c.positive_signature, c.negative_signature), (2, 0))
+        self.assertEqual(c.lower_gap, 3.0)
+        self.assertEqual(c.upper_gap, math.inf)
         self.assertTrue(c.accepted)
 
     def test_band_center_and_window(self):
@@ -227,28 +227,28 @@ class TestExactSmallFixtures(unittest.TestCase):
         # is [min Re, max Re].  Degenerate C3 band: center exactly 3;
         # Content-triangle complex band: center exactly 1 - 2i.
         st = _triangle()
-        read = _tracker(st).enumerateBands([0, 1, 2], 0)
+        read = _tracker(st).enumerate_bands([0, 1, 2], 0)
         deg = read.fibers[1]
-        self.assertLessEqual(abs(deg.bandCenter() - 3.0), MACHINE)
+        self.assertLessEqual(abs(deg.band_center() - 3.0), MACHINE)
         c = deg.certificate()
-        self.assertLessEqual(abs(c.frequencyLower - 3.0), MACHINE)
-        self.assertLessEqual(abs(c.frequencyUpper - 3.0), MACHINE)
+        self.assertLessEqual(abs(c.frequency_lower - 3.0), MACHINE)
+        self.assertLessEqual(abs(c.frequency_upper - 3.0), MACHINE)
         st2 = _triangle(alpha=1.0)
         tracker = obs.SpectralFiberTracker(
             st2, obs.SpectralFiberConfig(), cob.HodgeWeightConvention.Content, metric_source=DIAGONAL)
-        read2 = tracker.enumerateBands([0, 1, 2], 1)
+        read2 = tracker.enumerate_bands([0, 1, 2], 1)
         complex_band = min(
             read2.fibers,
             key=lambda f: abs(np.array(f.eigenvalues())[0] - (1.0 - 2.0j)))
-        self.assertLessEqual(abs(complex_band.bandCenter() - (1.0 - 2.0j)),
+        self.assertLessEqual(abs(complex_band.band_center() - (1.0 - 2.0j)),
                              1e-10)
 
     def test_certificate_domains_and_cache_kind(self):
         # Band certificates speak for a frequency window (BandWindow); the
         # solve certificate is the whole-operator Static claim.
         st = _triangle()
-        read = _tracker(st).enumerateBands([0, 1, 2], 0)
-        self.assertEqual(read.solveCertificate.domain,
+        read = _tracker(st).enumerate_bands([0, 1, 2], 0)
+        self.assertEqual(read.solve_certificate.domain,
                          cob.CertificateDomain.Static)
         for f in read.fibers:
             self.assertEqual(f.certificate().certificate.domain,
@@ -259,8 +259,8 @@ class TestExactSmallFixtures(unittest.TestCase):
     def test_triangle_k1_metric_spectrum(self):
         # All-spacelike C3 at k=1: spec(L_1) = {0, 3, 3} (no 2-cells).
         st = _triangle()
-        read = _tracker(st).enumerateBands([0, 1, 2], 1)
-        lam = np.array(read.coveredEigenvalues).real
+        read = _tracker(st).enumerate_bands([0, 1, 2], 1)
+        lam = np.array(read.covered_eigenvalues).real
         np.testing.assert_allclose(np.sort(lam), [0.0, 3.0, 3.0],
                                    atol=MACHINE)
         self.assertEqual([f.rank() for f in read.fibers], [1, 2])
@@ -269,10 +269,10 @@ class TestExactSmallFixtures(unittest.TestCase):
         # Square 00-01-11-10 + diagonal (the testbed): band projectors must
         # equal the projectors built from an independent numpy eigh.
         st = _from_simplices(4, [(0, 1), (1, 2), (2, 3), (3, 0), (0, 2)])
-        read = _tracker(st).enumerateBands([0, 1, 2, 3], 0)
+        read = _tracker(st).enumerate_bands([0, 1, 2, 3], 0)
         L, _ = _np_k0(st, [0, 1, 2, 3])
         lam_ref, U = np.linalg.eigh(L)
-        lam_mine = np.array(read.coveredEigenvalues).real
+        lam_mine = np.array(read.covered_eigenvalues).real
         np.testing.assert_allclose(lam_mine, lam_ref, atol=1e-10)
         start = 0
         for fiber in read.fibers:
@@ -288,7 +288,7 @@ class TestExactSmallFixtures(unittest.TestCase):
         # support = all vertices this pins the restricted assembly to the
         # whole-complex conventions on every regime path.
         st = _from_simplices(4, [(0, 1), (1, 2), (2, 3), (3, 0), (0, 2)])
-        read = _tracker(st).enumerateBands([0, 1, 2, 3], 0)
+        read = _tracker(st).enumerate_bands([0, 1, 2, 3], 0)
         L_ref, _ = _np_k0(st, [0, 1, 2, 3])
         self.assertLessEqual(np.abs(_reconstruct(read) - L_ref).max(), 1e-10)
 
@@ -296,10 +296,10 @@ class TestExactSmallFixtures(unittest.TestCase):
         # Signed-regime whole-support reconstruction equals the global
         # HodgeLaplacian d'Alembertian entry for entry.
         st = _triangle(alpha=2.0)
-        read = _tracker(st).enumerateBands([0, 1, 2], 1)
+        read = _tracker(st).enumerate_bands([0, 1, 2], 1)
         n = read.dimension
         L_ref = np.array(cob.HodgeLaplacian(
-            st, cob.HodgeLaplacian.defaultWeightConvention(), DIAGONAL).laplacian(1)).reshape(n, n)
+            st, cob.HodgeLaplacian.default_weight_convention(), DIAGONAL).laplacian(1)).reshape(n, n)
         self.assertLessEqual(np.abs(_reconstruct(read) - L_ref).max(), 1e-10)
 
     def test_holed_surface_recovers_harmonic_rank_by_gap_rule(self):
@@ -307,12 +307,12 @@ class TestExactSmallFixtures(unittest.TestCase):
         # is found by the RELATIVE GAP RULE; the exact integer homology is a
         # test-side cross-reference only, never a detector input.
         st, _, _, _ = holed_surface(degree=1, jitter=True)
-        read = _tracker(st, **ANY_LOCALIZATION).enumerateBands(
+        read = _tracker(st, **ANY_LOCALIZATION).enumerate_bands(
             _all_vertices(st), 1)
         self.assertEqual(read.regime,
                          cob.CertificateRegime.PositiveSemidefinite)
         lowest = read.fibers[0]
-        b1 = cob.ChainComplex.fromSpacetime(st).bettiNumbers()[1]
+        b1 = cob.ChainComplex.from_spacetime(st).betti_numbers()[1]
         self.assertEqual(b1, 2)               # the reference
         self.assertEqual(lowest.rank(), 2)    # recovered by the gap rule
         self.assertTrue(lowest.accepted())
@@ -322,9 +322,9 @@ class TestExactSmallFixtures(unittest.TestCase):
         # The whitepaper says as much: a fiber "need not be a harmonic space
         # and therefore need not be supported by a hole.  What it does
         # require is a spectral gap, localization, and persistence."
-        self.assertGreater(lowest.certificate().localizationSupportFraction,
+        self.assertGreater(lowest.certificate().localization_support_fraction,
                            0.5)
-        self.assertFalse(_tracker(st).enumerateBands(
+        self.assertFalse(_tracker(st).enumerate_bands(
             _all_vertices(st), 1).fibers[0].accepted())
         P = np.asarray(lowest.projector())
         self.assertLessEqual(abs(P.trace().real - 2.0), 1e-9)
@@ -332,8 +332,8 @@ class TestExactSmallFixtures(unittest.TestCase):
         # The full covered spectrum agrees with the independent
         # HodgeLaplacian eigensolve of the same operator.
         lam_ref = np.sort(np.array(cob.HodgeLaplacian(
-            st, cob.HodgeLaplacian.defaultWeightConvention(), DIAGONAL).eigenvalues(1)).real)
-        lam = np.sort(np.array(read.coveredEigenvalues).real)
+            st, cob.HodgeLaplacian.default_weight_convention(), DIAGONAL).eigenvalues(1)).real)
+        lam = np.sort(np.array(read.covered_eigenvalues).real)
         self.assertLessEqual(np.abs(lam - lam_ref).max(), 1e-10)
 
     def test_icosahedron_top_degree_band(self):
@@ -346,11 +346,11 @@ class TestExactSmallFixtures(unittest.TestCase):
             [3, 9, 4], [3, 4, 2], [3, 2, 6], [3, 6, 8], [3, 8, 9],
             [4, 9, 5], [2, 4, 11], [6, 2, 10], [8, 6, 7], [9, 8, 1],
         ]
-        closed = tessera.Spacetime.fromVertexTuples(2, faces, 1.0, 0.0)
-        closed.materializeFacets()
-        read = _tracker(closed, **ANY_LOCALIZATION).enumerateBands(
+        closed = tessera.Spacetime.from_vertex_tuples(2, faces, 1.0, 0.0)
+        closed.materialize_facets()
+        read = _tracker(closed, **ANY_LOCALIZATION).enumerate_bands(
             _all_vertices(closed), 2)
-        betti = cob.ChainComplex.fromSpacetime(closed).bettiNumbers()
+        betti = cob.ChainComplex.from_spacetime(closed).betti_numbers()
         self.assertEqual(betti[2], 1)
         self.assertEqual(read.fibers[0].rank(), 1)
         self.assertTrue(read.fibers[0].accepted())
@@ -361,8 +361,8 @@ class TestExactSmallFixtures(unittest.TestCase):
         # C12 at k=0: spec {2 - 2 cos(2 pi j / 12)}: rank-1 kernel, rank-2
         # cosine pairs, rank-1 top (j = 6).
         st = _ring(12)
-        read = _tracker(st).enumerateBands(list(range(12)), 0)
-        lam = np.array(read.coveredEigenvalues).real
+        read = _tracker(st).enumerate_bands(list(range(12)), 0)
+        lam = np.array(read.covered_eigenvalues).real
         exact = np.sort(2.0 - 2.0 * np.cos(2.0 * np.pi * np.arange(12) / 12))
         np.testing.assert_allclose(lam, exact, atol=1e-10)
         self.assertEqual([f.rank() for f in read.fibers], [1, 2, 2, 2, 2, 2, 1])
@@ -374,67 +374,67 @@ class TestExactSmallFixtures(unittest.TestCase):
 class TestRegimes(unittest.TestCase):
 
     def test_positive_regime_is_verified_self_adjoint(self):
-        read = _tracker(_triangle()).enumerateBands([0, 1, 2], 0)
+        read = _tracker(_triangle()).enumerate_bands([0, 1, 2], 0)
         self.assertEqual(read.regime,
                          cob.CertificateRegime.PositiveSemidefinite)
         for f in read.fibers:
             c = f.certificate()
-            self.assertTrue(c.selfAdjoint)
-            self.assertEqual(c.leftResidual, c.eigenResidual)
-            self.assertEqual((c.positiveSignature, c.negativeSignature),
+            self.assertTrue(c.self_adjoint)
+            self.assertEqual(c.left_residual, c.eigen_residual)
+            self.assertEqual((c.positive_signature, c.negative_signature),
                              (f.rank(), 0))
             # W-orthonormal frame: Phi^dagger W Phi = I to machine precision.
-            Phi = np.asarray(f.rightFrame())
-            W = np.diag(np.asarray(f.weightDiagonal()))
+            Phi = np.asarray(f.right_frame())
+            W = np.diag(np.asarray(f.weight_diagonal()))
             G = Phi.conj().T @ W @ Phi
             self.assertLessEqual(np.abs(G - np.eye(f.rank())).max(), MACHINE)
-            self.assertLessEqual(c.gramDefect, MACHINE)
+            self.assertLessEqual(c.gram_defect, MACHINE)
 
     def test_krein_closed_form_spectrum_and_inertia(self):
         # spec(L_1) = {0, 3, 1 - 2/alpha^2}; harmonic Krein norm
         # (2 - alpha^2)/3: POSITIVE at alpha=1, NEGATIVE at alpha=2.
         for alpha, harmonic_sig in ((1.0, (1, 0)), (2.0, (0, 1))):
             st = _triangle(alpha=alpha)
-            read = _tracker(st, **ANY_LOCALIZATION).enumerateBands(
+            read = _tracker(st, **ANY_LOCALIZATION).enumerate_bands(
                 [0, 1, 2], 1)
             self.assertEqual(read.regime,
                              cob.CertificateRegime.HermitianIndefinite)
-            self.assertEqual(read.solverPath, "dense-general")
-            lam = sorted(np.array(read.coveredEigenvalues).real)
+            self.assertEqual(read.solver_path, "dense-general")
+            lam = sorted(np.array(read.covered_eigenvalues).real)
             expect = sorted([0.0, 3.0, 1.0 - 2.0 / alpha ** 2])
             np.testing.assert_allclose(lam, expect, atol=1e-10)
             harmonic = min(
                 read.fibers,
                 key=lambda f: abs(np.array(f.eigenvalues())[0]))
             c = harmonic.certificate()
-            self.assertEqual((c.positiveSignature, c.negativeSignature),
+            self.assertEqual((c.positive_signature, c.negative_signature),
                              harmonic_sig)
-            self.assertFalse(c.selfAdjoint)
+            self.assertFalse(c.self_adjoint)
             self.assertTrue(c.accepted)
 
     def test_krein_gram_normalized_to_signature_matrix(self):
         # Phi^dagger W Phi = J = diag(I_p, -I_q) after normalization, and
         # Psi = Phi J gives Psi^dagger W Phi = I.
         st = _triangle(alpha=2.0)
-        read = _tracker(st).enumerateBands([0, 1, 2], 1)
+        read = _tracker(st).enumerate_bands([0, 1, 2], 1)
         for f in read.fibers:
             c = f.certificate()
-            p, q = c.positiveSignature, c.negativeSignature
+            p, q = c.positive_signature, c.negative_signature
             self.assertEqual(p + q, f.rank())  # nonsingular W-Gram here
-            Phi = np.asarray(f.rightFrame())
-            Psi = np.asarray(f.leftFrame())
-            W = np.diag(np.asarray(f.weightDiagonal()))
+            Phi = np.asarray(f.right_frame())
+            Psi = np.asarray(f.left_frame())
+            W = np.diag(np.asarray(f.weight_diagonal()))
             J = np.diag([1.0] * p + [-1.0] * q)
             self.assertLessEqual(
                 np.abs(Phi.conj().T @ W @ Phi - J).max(), 1e-10)
             self.assertLessEqual(
                 np.abs(Psi.conj().T @ W @ Phi - np.eye(f.rank())).max(),
                 1e-10)
-            self.assertLessEqual(c.gramDefect, 1e-10)
+            self.assertLessEqual(c.gram_defect, 1e-10)
 
     def test_negative_signature_is_a_certificate_not_a_label(self):
         st = _triangle(alpha=2.0)
-        read = _tracker(st).enumerateBands([0, 1, 2], 1)
+        read = _tracker(st).enumerate_bands([0, 1, 2], 1)
         harmonic = min(read.fibers,
                        key=lambda f: abs(np.array(f.eigenvalues())[0]))
         text = harmonic.certificate().describe().lower()
@@ -448,31 +448,31 @@ class TestRegimes(unittest.TestCase):
         alpha = 1.0
         st = _triangle(alpha=alpha)
         cfg = obs.SpectralFiberConfig()
-        cfg.maxLocalizationExcess = 1.0   # subject: the spectrum
+        cfg.max_localization_excess = 1.0   # subject: the spectrum
         tracker = obs.SpectralFiberTracker(
             st, cfg, cob.HodgeWeightConvention.Content, metric_source=DIAGONAL)
-        read = tracker.enumerateBands([0, 1, 2], 1)
+        read = tracker.enumerate_bands([0, 1, 2], 1)
         self.assertEqual(read.regime, cob.CertificateRegime.NonNormal)
-        self.assertEqual(read.solverPath, "dense-general")
-        lam = sorted(np.array(read.coveredEigenvalues),
+        self.assertEqual(read.solver_path, "dense-general")
+        lam = sorted(np.array(read.covered_eigenvalues),
                      key=lambda z: (z.real, z.imag))
         expect = sorted([0.0, 3.0, 1.0 - 2.0j / alpha],
                         key=lambda z: (z.real, z.imag))
         np.testing.assert_allclose(lam, expect, atol=1e-10)
         for f in read.fibers:
             c = f.certificate()
-            self.assertFalse(c.selfAdjoint)
+            self.assertFalse(c.self_adjoint)
             # Both residuals and the conditioning are REPORTED.
-            self.assertTrue(np.isfinite(c.eigenResidual))
-            self.assertTrue(np.isfinite(c.leftResidual))
+            self.assertTrue(np.isfinite(c.eigen_residual))
+            self.assertTrue(np.isfinite(c.left_residual))
             # #808: the projector norm and the FRAME condition number are
             # separate quantities, both reported under their own names.
-            self.assertGreaterEqual(c.projectorNorm, 1.0 - 1e-12)
-            self.assertGreaterEqual(c.frameConditionNumber, 1.0 - 1e-12)
+            self.assertGreaterEqual(c.projector_norm, 1.0 - 1e-12)
+            self.assertGreaterEqual(c.frame_condition_number, 1.0 - 1e-12)
             # Matched biorthogonal frames: Psi^dagger W Phi = I.
-            Phi = np.asarray(f.rightFrame())
-            Psi = np.asarray(f.leftFrame())
-            W = np.diag(np.asarray(f.weightDiagonal()))
+            Phi = np.asarray(f.right_frame())
+            Psi = np.asarray(f.left_frame())
+            W = np.diag(np.asarray(f.weight_diagonal()))
             self.assertLessEqual(
                 np.abs(Psi.conj().T @ W @ Phi - np.eye(f.rank())).max(),
                 1e-11)
@@ -486,7 +486,7 @@ class TestRegimes(unittest.TestCase):
         st = _triangle(alpha=1.0)
         tracker = obs.SpectralFiberTracker(
             st, obs.SpectralFiberConfig(), cob.HodgeWeightConvention.Content, metric_source=DIAGONAL)
-        read = tracker.enumerateBands([0, 1, 2], 1)
+        read = tracker.enumerate_bands([0, 1, 2], 1)
         n = read.dimension
         L = np.array(
             cob.HodgeLaplacian(st, cob.HodgeWeightConvention.Content, DIAGONAL)
@@ -508,19 +508,19 @@ class TestRegimes(unittest.TestCase):
         st = _triangle(alpha=1.5)
         tracker = obs.SpectralFiberTracker(
             st, obs.SpectralFiberConfig(), cob.HodgeWeightConvention.Content, metric_source=DIAGONAL)
-        read = tracker.enumerateBands([0, 1, 2], 1)
-        self.assertEqual(read.solverPath, "dense-general")
-        self.assertEqual(read.solveCertificate.regime,
+        read = tracker.enumerate_bands([0, 1, 2], 1)
+        self.assertEqual(read.solver_path, "dense-general")
+        self.assertEqual(read.solve_certificate.regime,
                          cob.CertificateRegime.NonNormal)
         for f in read.fibers:
-            self.assertFalse(f.certificate().selfAdjoint)
+            self.assertFalse(f.certificate().self_adjoint)
 
 
 # --------------------------------------------------------------------------- #
 # one pairing across regimes: the transpose dual of the right frame (#1186)
 # --------------------------------------------------------------------------- #
 class TestTransposeDualFrame(unittest.TestCase):
-    """dualFrame() is Phi~ with Phi~^T Phi = I in every regime, the projector
+    """dual_frame() is Phi~ with Phi~^T Phi = I in every regime, the projector
     is Phi Phi~^T, and the pair is the band's biorthogonal Slater
     covariance.
 
@@ -530,22 +530,22 @@ class TestTransposeDualFrame(unittest.TestCase):
     test_spectral_fiber_pencil_regime_python.py."""
 
     def setUp(self):
-        self._previous_source = cob.HodgeLaplacian.defaultMetricSource()
-        cob.HodgeLaplacian.setDefaultMetricSource(
+        self._previous_source = cob.HodgeLaplacian.default_metric_source()
+        cob.HodgeLaplacian.set_default_metric_source(
             cob.HodgeMetricSource.DiagonalWeights)
 
     def tearDown(self):
-        cob.HodgeLaplacian.setDefaultMetricSource(self._previous_source)
+        cob.HodgeLaplacian.set_default_metric_source(self._previous_source)
 
     def _reads(self):
-        positive = _tracker(_triangle()).enumerateBands([0, 1, 2], 0)
+        positive = _tracker(_triangle()).enumerate_bands([0, 1, 2], 0)
         krein = _tracker(_triangle(alpha=2.0), **ANY_LOCALIZATION) \
-            .enumerateBands([0, 1, 2], 1)
+            .enumerate_bands([0, 1, 2], 1)
         cfg = obs.SpectralFiberConfig()
-        cfg.maxLocalizationExcess = 1.0
+        cfg.max_localization_excess = 1.0
         non_normal = obs.SpectralFiberTracker(
             _triangle(alpha=1.0), cfg,
-            cob.HodgeWeightConvention.Content).enumerateBands([0, 1, 2], 1)
+            cob.HodgeWeightConvention.Content).enumerate_bands([0, 1, 2], 1)
         self.assertEqual(positive.regime,
                          cob.CertificateRegime.PositiveSemidefinite)
         self.assertEqual(krein.regime,
@@ -556,27 +556,27 @@ class TestTransposeDualFrame(unittest.TestCase):
     def test_dual_frame_pairs_to_the_identity_by_the_transpose(self):
         for read in self._reads():
             for f in read.fibers:
-                phi = np.asarray(f.rightFrame())
-                dual = np.asarray(f.dualFrame())
-                self.assertFalse(f.certificate().bilinearLeftFrame)
+                phi = np.asarray(f.right_frame())
+                dual = np.asarray(f.dual_frame())
+                self.assertFalse(f.certificate().bilinear_left_frame)
                 np.testing.assert_allclose(dual.T @ phi, np.eye(f.rank()),
                                            rtol=0, atol=1e-10)
                 # Off the pencil path Phi~ = W conj(Psi): the transpose of
                 # Psi^dagger W, the solver's own normalization.
-                psi = np.asarray(f.leftFrame())
-                w = np.asarray(f.weightDiagonal())
+                psi = np.asarray(f.left_frame())
+                w = np.asarray(f.weight_diagonal())
                 np.testing.assert_allclose(dual, w[:, None] * psi.conj(),
                                            rtol=0, atol=1e-15)
 
     def test_projector_is_the_transpose_product_and_unchanged(self):
         for read in self._reads():
             for f in read.fibers:
-                phi = np.asarray(f.rightFrame())
-                psi = np.asarray(f.leftFrame())
-                w = np.diag(np.asarray(f.weightDiagonal()))
+                phi = np.asarray(f.right_frame())
+                psi = np.asarray(f.left_frame())
+                w = np.diag(np.asarray(f.weight_diagonal()))
                 p = np.asarray(f.projector())
                 np.testing.assert_allclose(
-                    p, phi @ np.asarray(f.dualFrame()).T, rtol=0, atol=1e-14)
+                    p, phi @ np.asarray(f.dual_frame()).T, rtol=0, atol=1e-14)
                 np.testing.assert_allclose(p, phi @ psi.conj().T @ w,
                                            rtol=0, atol=1e-13)
 
@@ -584,23 +584,23 @@ class TestTransposeDualFrame(unittest.TestCase):
         from tessera.quantum import CovarianceDual, CovarianceState
         for read in self._reads():
             for f in read.fibers:
-                state = CovarianceState.fromBiorthogonalFrames(
-                    np.asarray(f.rightFrame()), np.asarray(f.dualFrame()))
+                state = CovarianceState.from_biorthogonal_frames(
+                    np.asarray(f.right_frame()), np.asarray(f.dual_frame()))
                 self.assertEqual(state.dual(), CovarianceDual.Transpose)
                 np.testing.assert_allclose(np.asarray(state.gamma()),
                                            np.asarray(f.projector()),
                                            rtol=0, atol=1e-13)
-                self.assertLess(state.dualityDefect(), 1e-9)
-                self.assertLess(state.purityDefect(), 1e-9)
-                self.assertLess(abs(state.particleNumber() - f.rank()), 1e-9)
+                self.assertLess(state.duality_defect(), 1e-9)
+                self.assertLess(state.purity_defect(), 1e-9)
+                self.assertLess(abs(state.particle_number() - f.rank()), 1e-9)
 
     def test_record_keeps_the_frame_convention(self):
         _, _, non_normal = self._reads()
         f = non_normal.fibers[0]
-        back = obs.SpectralFiber.fromRecord(f.toRecord())
-        self.assertFalse(back.certificate().bilinearLeftFrame)
-        np.testing.assert_array_equal(np.asarray(back.dualFrame()),
-                                      np.asarray(f.dualFrame()))
+        back = obs.SpectralFiber.from_record(f.to_record())
+        self.assertFalse(back.certificate().bilinear_left_frame)
+        np.testing.assert_array_equal(np.asarray(back.dual_frame()),
+                                      np.asarray(f.dual_frame()))
 
 
 # --------------------------------------------------------------------------- #
@@ -614,7 +614,7 @@ class TestGapRule(unittest.TestCase):
         # are REPORTED but UNCERTIFIED (conditioning blows up, grade never
         # holds); the isolated band at 3 stays certified.
         st = _triangle(alpha=math.sqrt(2.0))
-        read = _tracker(st, **ANY_LOCALIZATION).enumerateBands([0, 1, 2], 1)
+        read = _tracker(st, **ANY_LOCALIZATION).enumerate_bands([0, 1, 2], 1)
         near_zero = [f for f in read.fibers
                      if abs(np.array(f.eigenvalues())[0]) < 1.0]
         self.assertGreaterEqual(len(near_zero), 1)
@@ -635,9 +635,9 @@ class TestGapRule(unittest.TestCase):
         def bands_at(delta, grouping, min_gap):
             alpha = math.sqrt(2.0 / (1.0 - delta))
             st = _triangle(alpha=alpha)
-            read = _tracker(st, groupingTolerance=grouping,
-                            minRelativeGap=min_gap,
-                            **ANY_LOCALIZATION).enumerateBands([0, 1, 2], 1)
+            read = _tracker(st, grouping_tolerance=grouping,
+                            min_relative_gap=min_gap,
+                            **ANY_LOCALIZATION).enumerate_bands([0, 1, 2], 1)
             return [(f.rank(), f.accepted()) for f in read.fibers
                     if np.array(f.eigenvalues())[0].real < 1.0]
 
@@ -655,7 +655,7 @@ class TestGapRule(unittest.TestCase):
 
     def test_uncertified_bands_are_reported_not_dropped(self):
         st = _triangle(alpha=math.sqrt(2.0))
-        read = _tracker(st).enumerateBands([0, 1, 2], 1)
+        read = _tracker(st).enumerate_bands([0, 1, 2], 1)
         total_rank = sum(f.rank() for f in read.fibers)
         self.assertEqual(total_rank, read.dimension)
 
@@ -663,12 +663,12 @@ class TestGapRule(unittest.TestCase):
         # A single isolated vertex (no internal edges): L = [[0]] — one
         # rank-1 band with infinite gaps on both sides.
         st = _triangle()
-        read = _tracker(st).enumerateBands([0], 0)
+        read = _tracker(st).enumerate_bands([0], 0)
         self.assertEqual(read.dimension, 1)
         self.assertEqual(len(read.fibers), 1)
         c = read.fibers[0].certificate()
-        self.assertEqual(c.lowerGap, math.inf)
-        self.assertEqual(c.upperGap, math.inf)
+        self.assertEqual(c.lower_gap, math.inf)
+        self.assertEqual(c.upper_gap, math.inf)
         self.assertTrue(c.accepted)
 
     def test_no_betti_oracle_weak_bridge_dumbbell(self):
@@ -680,10 +680,10 @@ class TestGapRule(unittest.TestCase):
         simplices += [(a, b) for a in range(4, 8) for b in range(a + 1, 8)]
         simplices += [(0, 4)]
         st = _from_simplices(8, simplices)
-        _edge(st, 0, 4).setLength(cmath.sqrt(complex(1e-6)))
-        betti0 = cob.ChainComplex.fromSpacetime(st).bettiNumbers()[0]
+        _edge(st, 0, 4).set_length(cmath.sqrt(complex(1e-6)))
+        betti0 = cob.ChainComplex.from_spacetime(st).betti_numbers()[0]
         self.assertEqual(betti0, 1)
-        read = _tracker(st, groupingTolerance=1e-4).enumerateBands(
+        read = _tracker(st, grouping_tolerance=1e-4).enumerate_bands(
             list(range(8)), 0)
         self.assertEqual(read.fibers[0].rank(), 2)  # NOT b0
 
@@ -693,21 +693,21 @@ class TestGapRule(unittest.TestCase):
         # read is marked truncated, and the last covered band's upper gap is
         # finite (bounded by the first uncovered Ritz value).
         st = _ring(600)
-        read = _tracker(st, requestedEigenpairs=12,
-                        **ANY_LOCALIZATION).enumerateBands(
+        read = _tracker(st, requested_eigenpairs=12,
+                        **ANY_LOCALIZATION).enumerate_bands(
                             list(range(600)), 0)
-        self.assertEqual(read.solverPath, "sparse-block-self-adjoint")
+        self.assertEqual(read.solver_path, "sparse-block-self-adjoint")
         self.assertTrue(read.truncated)
-        self.assertLess(len(read.coveredEigenvalues), 600)
+        self.assertLess(len(read.covered_eigenvalues), 600)
         self.assertGreater(len(read.fibers), 0)
         for f in read.fibers:
             self.assertTrue(f.accepted())
         last = read.fibers[-1].certificate()
-        self.assertTrue(np.isfinite(last.upperGap))
+        self.assertTrue(np.isfinite(last.upper_gap))
         # The GATED isolation is likewise shield-bounded, never a silently
         # generous +infinity on the uncovered side (#808).
-        self.assertTrue(np.isfinite(last.nearestDiscardedSeparation))
-        self.assertLessEqual(last.nearestDiscardedSeparation, last.upperGap)
+        self.assertTrue(np.isfinite(last.nearest_discarded_separation))
+        self.assertLessEqual(last.nearest_discarded_separation, last.upper_gap)
 
 
 # --------------------------------------------------------------------------- #
@@ -721,12 +721,12 @@ class TestPropertyInvariance(unittest.TestCase):
         # eigenvector gauge).  Verified directly on the exactly degenerate
         # band.
         st = _triangle()
-        read = _tracker(st).enumerateBands([0, 1, 2], 0)
+        read = _tracker(st).enumerate_bands([0, 1, 2], 0)
         f = read.fibers[1]
         self.assertEqual(f.rank(), 2)
-        Phi = np.asarray(f.rightFrame())
-        Psi = np.asarray(f.leftFrame())
-        W = np.diag(np.asarray(f.weightDiagonal()))
+        Phi = np.asarray(f.right_frame())
+        Psi = np.asarray(f.left_frame())
+        W = np.diag(np.asarray(f.weight_diagonal()))
         P = np.asarray(f.projector())
         rng = np.random.default_rng(7)
         for _ in range(5):
@@ -744,9 +744,9 @@ class TestPropertyInvariance(unittest.TestCase):
     def test_repeated_enumeration_identical_certificates(self):
         st = _triangle()
         tr = _tracker(st)
-        a = tr.enumerateBands([0, 1, 2], 0)
-        b = tr.enumerateBands([0, 1, 2], 0)
-        self.assertEqual(_delta(a.toRecord(), b.toRecord()), 0.0)
+        a = tr.enumerate_bands([0, 1, 2], 0)
+        b = tr.enumerate_bands([0, 1, 2], 0)
+        self.assertEqual(_delta(a.to_record(), b.to_record()), 0.0)
 
     def test_relabeling_leaves_localization_gaps_and_rank_invariant(self):
         # RELABEL gate: rebuild the holed surface with randomly permuted
@@ -762,20 +762,20 @@ class TestPropertyInvariance(unittest.TestCase):
         holed = [f for f in faces if tuple(sorted(f)) not in windows]
         perm = dict(zip(range(12), rng.sample(range(500, 620), 12)))
         relabeled = [[perm[v] for v in f] for f in holed]
-        st_a = tessera.Spacetime.fromVertexTuples(2, holed, 1.0, 0.0)
-        st_b = tessera.Spacetime.fromVertexTuples(2, relabeled, 1.0, 0.0)
+        st_a = tessera.Spacetime.from_vertex_tuples(2, holed, 1.0, 0.0)
+        st_b = tessera.Spacetime.from_vertex_tuples(2, relabeled, 1.0, 0.0)
         for st in (st_a, st_b):
-            st.materializeFacets()
-        read_a = _tracker(st_a).enumerateBands(_all_vertices(st_a), 1)
-        read_b = _tracker(st_b).enumerateBands(_all_vertices(st_b), 1)
+            st.materialize_facets()
+        read_a = _tracker(st_a).enumerate_bands(_all_vertices(st_a), 1)
+        read_b = _tracker(st_b).enumerate_bands(_all_vertices(st_b), 1)
         self.assertEqual(len(read_a.fibers), len(read_b.fibers))
         for fa, fb in zip(read_a.fibers, read_b.fibers):
             ca, cb = fa.certificate(), fb.certificate()
             self.assertEqual(fa.rank(), fb.rank())
             self.assertEqual(ca.accepted, cb.accepted)
             self.assertLessEqual(abs(ca.localization - cb.localization), 1e-9)
-            for ga, gb in ((ca.lowerGap, cb.lowerGap),
-                           (ca.upperGap, cb.upperGap)):
+            for ga, gb in ((ca.lower_gap, cb.lower_gap),
+                           (ca.upper_gap, cb.upper_gap)):
                 if math.isinf(ga):
                     self.assertTrue(math.isinf(gb))
                 else:
@@ -786,8 +786,8 @@ class TestPropertyInvariance(unittest.TestCase):
         # Cell supports map under the permutation (as SETS — no imposed
         # vertex order anywhere).
         cells_a = {tuple(sorted(perm[v] for v in cell))
-                   for cell in read_a.cellVertices}
-        cells_b = {tuple(sorted(cell)) for cell in read_b.cellVertices}
+                   for cell in read_a.cell_vertices}
+        cells_b = {tuple(sorted(cell)) for cell in read_b.cell_vertices}
         self.assertEqual(cells_a, cells_b)
 
     def test_simplex_input_order_invariance(self):
@@ -799,18 +799,18 @@ class TestPropertyInvariance(unittest.TestCase):
         shuffled = list(simplices)
         rng.shuffle(shuffled)
         st_b = _from_simplices(4, shuffled)
-        a = _tracker(st_a).enumerateBands([0, 1, 2, 3], 0)
-        b = _tracker(st_b).enumerateBands([0, 1, 2, 3], 0)
-        self.assertEqual(_delta(a.toRecord(), b.toRecord()), 0.0)
+        a = _tracker(st_a).enumerate_bands([0, 1, 2, 3], 0)
+        b = _tracker(st_b).enumerate_bands([0, 1, 2, 3], 0)
+        self.assertEqual(_delta(a.to_record(), b.to_record()), 0.0)
 
     def test_edge_orientation_flip_invariance_k0(self):
         # Reversing stored edge orientations leaves the Hermitian operator
         # (zero phases) and every certificate unchanged.
         st_a = _from_simplices(3, [(0, 1), (1, 2), (2, 0)])
         st_b = _from_simplices(3, [(1, 0), (2, 1), (0, 2)])
-        a = _tracker(st_a).enumerateBands([0, 1, 2], 0)
-        b = _tracker(st_b).enumerateBands([0, 1, 2], 0)
-        self.assertEqual(_delta(a.toRecord(), b.toRecord()), 0.0)
+        a = _tracker(st_a).enumerate_bands([0, 1, 2], 0)
+        b = _tracker(st_b).enumerate_bands([0, 1, 2], 0)
+        self.assertEqual(_delta(a.to_record(), b.to_record()), 0.0)
 
 
 # --------------------------------------------------------------------------- #
@@ -821,17 +821,17 @@ class TestTracking(unittest.TestCase):
     def test_identity_tracking(self):
         st = _triangle()
         tr = _tracker(st, **ANY_LOCALIZATION)
-        a = tr.enumerateBands([0, 1, 2], 0)
-        b = tr.enumerateBands([0, 1, 2], 0)
-        matches = obs.SpectralFiberTracker.matchFibers(a.fibers, b.fibers)
+        a = tr.enumerate_bands([0, 1, 2], 0)
+        b = tr.enumerate_bands([0, 1, 2], 0)
+        matches = obs.SpectralFiberTracker.match_fibers(a.fibers, b.fibers)
         self.assertEqual(len(matches), len(a.fibers))
         for m in matches:
-            self.assertEqual(m.fromIndex, m.toIndex)
-            self.assertLessEqual(abs(m.overlap.subspaceOverlap - 1.0),
+            self.assertEqual(m.from_index, m.to_index)
+            self.assertLessEqual(abs(m.overlap.subspace_overlap - 1.0),
                                  MACHINE)
-            self.assertTrue(m.certifiedContinuation)
-            self.assertEqual(m.overlap.supportOverlap, 1.0)
-            for angle in m.overlap.principalAngles:
+            self.assertTrue(m.certified_continuation)
+            self.assertEqual(m.overlap.support_overlap, 1.0)
+            for angle in m.overlap.principal_angles:
                 self.assertLessEqual(angle, 1e-7)
 
     def test_tracking_across_a_metric_move(self):
@@ -840,16 +840,16 @@ class TestTracking(unittest.TestCase):
         # overlap, certified continuation.
         st = _from_simplices(3, [(0, 1), (1, 2)])
         tr = _tracker(st, **ANY_LOCALIZATION)
-        before = tr.enumerateBands([0, 1, 2], 0)
-        _edge(st, 0, 1).setLength(cmath.sqrt(complex(1.02)))
-        after = tr.enumerateBands([0, 1, 2], 0)
-        matches = obs.SpectralFiberTracker.matchFibers(before.fibers,
+        before = tr.enumerate_bands([0, 1, 2], 0)
+        _edge(st, 0, 1).set_length(cmath.sqrt(complex(1.02)))
+        after = tr.enumerate_bands([0, 1, 2], 0)
+        matches = obs.SpectralFiberTracker.match_fibers(before.fibers,
                                                        after.fibers)
         self.assertEqual(len(matches), len(before.fibers))
         for m in matches:
-            self.assertGreaterEqual(m.overlap.subspaceOverlap, 0.99)
-            self.assertTrue(m.ranksEqual)
-            self.assertTrue(m.certifiedContinuation)
+            self.assertGreaterEqual(m.overlap.subspace_overlap, 0.99)
+            self.assertTrue(m.ranks_equal)
+            self.assertTrue(m.certified_continuation)
 
     def test_degenerate_band_split_is_reported_not_relabeled(self):
         # Perturbing the triangle splits its exactly degenerate rank-2 band
@@ -859,18 +859,18 @@ class TestTracking(unittest.TestCase):
         # changed multiplicity is a changed band, not a relabeled one.
         st = _triangle()
         tr = _tracker(st)
-        before = tr.enumerateBands([0, 1, 2], 0)
+        before = tr.enumerate_bands([0, 1, 2], 0)
         self.assertEqual(before.fibers[1].rank(), 2)
-        _edge(st, 0, 1).setLength(cmath.sqrt(complex(1.5)))
-        after = tr.enumerateBands([0, 1, 2], 0)
+        _edge(st, 0, 1).set_length(cmath.sqrt(complex(1.5)))
+        after = tr.enumerate_bands([0, 1, 2], 0)
         self.assertEqual([f.rank() for f in after.fibers], [1, 1, 1])
-        matches = obs.SpectralFiberTracker.matchFibers([before.fibers[1]],
+        matches = obs.SpectralFiberTracker.match_fibers([before.fibers[1]],
                                                        after.fibers, 0.5)
         self.assertEqual(len(matches), 1)
         m = matches[0]
-        self.assertFalse(m.ranksEqual)
-        self.assertFalse(m.certifiedContinuation)
-        self.assertLessEqual(abs(m.overlap.subspaceOverlap - 0.5), 1e-9)
+        self.assertFalse(m.ranks_equal)
+        self.assertFalse(m.certified_continuation)
+        self.assertLessEqual(abs(m.overlap.subspace_overlap - 0.5), 1e-9)
 
     def test_tracking_across_resolutions_by_support_and_angles(self):
         # Different component supports (a resolution change): the shared
@@ -878,29 +878,29 @@ class TestTracking(unittest.TestCase):
         # the documented Jaccard.
         st = _two_triangles()
         tr = _tracker(st)
-        whole = tr.enumerateBands([0, 1, 2, 10, 11, 12], 0)
-        part = tr.enumerateBands([0, 1, 2], 0)
-        matches = obs.SpectralFiberTracker.matchFibers(part.fibers,
+        whole = tr.enumerate_bands([0, 1, 2, 10, 11, 12], 0)
+        part = tr.enumerate_bands([0, 1, 2], 0)
+        matches = obs.SpectralFiberTracker.match_fibers(part.fibers,
                                                        whole.fibers, 0.1)
         self.assertGreater(len(matches), 0)
         m = matches[0]
-        self.assertEqual(m.overlap.sharedCells, 3)
-        self.assertEqual(m.overlap.supportOverlap, 0.5)  # 3 shared / 6 union
+        self.assertEqual(m.overlap.shared_cells, 3)
+        self.assertEqual(m.overlap.support_overlap, 0.5)  # 3 shared / 6 union
 
     def test_gap_closed_endpoint_never_certified_continuation(self):
         # Match a certified band against its gap-closed (uncertified)
         # continuation: reported, never certified — identity does not flip.
-        healthy = _tracker(_triangle(alpha=1.0)).enumerateBands([0, 1, 2], 1)
+        healthy = _tracker(_triangle(alpha=1.0)).enumerate_bands([0, 1, 2], 1)
         closed = _tracker(
-            _triangle(alpha=math.sqrt(2.0))).enumerateBands([0, 1, 2], 1)
-        matches = obs.SpectralFiberTracker.matchFibers(
+            _triangle(alpha=math.sqrt(2.0))).enumerate_bands([0, 1, 2], 1)
+        matches = obs.SpectralFiberTracker.match_fibers(
             healthy.fibers, closed.fibers, 0.1)
         self.assertGreater(len(matches), 0)
         for m in matches:
-            to_band = closed.fibers[m.toIndex]
+            to_band = closed.fibers[m.to_index]
             if not to_band.accepted():
-                self.assertFalse(m.certifiedContinuation)
-        self.assertTrue(any(not closed.fibers[m.toIndex].accepted()
+                self.assertFalse(m.certified_continuation)
+        self.assertTrue(any(not closed.fibers[m.to_index].accepted()
                             for m in matches))
 
     def test_persistent_modularity_projector_hook_integration(self):
@@ -908,27 +908,27 @@ class TestTracking(unittest.TestCase):
         # documented integration point.  Component matching stays
         # support-based; the hook's value is reported per match.
         st = _two_triangles()
-        pm = obs.PersistentModularity.fromSpacetime(
+        pm = obs.PersistentModularity.from_spacetime(
             st, obs.PersistentModularity.WeightMap.Unit)
         cfg = obs.PersistentModularityConfig()
         s = pm.discover(1.0, cfg)
         tr = _tracker(st)
-        reads = {tuple(c.support): tr.enumerateBands(c.support, 0)
+        reads = {tuple(c.support): tr.enumerate_bands(c.support, 0)
                  for c in s.components}
-        by_id = {c.id.canonicalHash(): tuple(c.support)
+        by_id = {c.id.canonical_hash(): tuple(c.support)
                  for c in s.components}
 
         def hook(from_id, to_id):
-            fa = reads[by_id[from_id.canonicalHash()]].fibers[0]
-            fb = reads[by_id[to_id.canonicalHash()]].fibers[0]
-            return obs.SpectralFiber.overlap(fa, fb).subspaceOverlap
+            fa = reads[by_id[from_id.canonical_hash()]].fibers[0]
+            fb = reads[by_id[to_id.canonical_hash()]].fibers[0]
+            return obs.SpectralFiber.overlap(fa, fb).subspace_overlap
 
-        pm.setProjectorOverlapHook(hook)
-        matches = pm.matchComponents(s.components, s.components)
+        pm.set_projector_overlap_hook(hook)
+        matches = pm.match_components(s.components, s.components)
         self.assertEqual(len(matches), 2)
         for m in matches:
-            self.assertIsNotNone(m.projectorOverlap)
-        pm.setProjectorOverlapHook(None)
+            self.assertIsNotNone(m.projector_overlap)
+        pm.set_projector_overlap_hook(None)
 
 
 # --------------------------------------------------------------------------- #
@@ -943,39 +943,39 @@ class TestCaching(unittest.TestCase):
         st = _two_triangles()
         tr = _tracker(st)
         cache = cob.AnalyticCache(st)
-        cold = tr.enumerateBands(self.A, 0)
-        first = tr.enumerateBandsCached(cache, self.A, 0)
-        self.assertEqual(_delta(cold.toRecord(), first.toRecord()),
+        cold = tr.enumerate_bands(self.A, 0)
+        first = tr.enumerate_bands_cached(cache, self.A, 0)
+        self.assertEqual(_delta(cold.to_record(), first.to_record()),
                          0.0)
-        served = tr.enumerateBandsCached(cache, [2, 0, 1], 0)  # same set
+        served = tr.enumerate_bands_cached(cache, [2, 0, 1], 0)  # same set
         self.assertEqual(cache.hits, 1)
         self.assertEqual(
-            _delta(cold.toRecord(), served.toRecord()), 0.0)
+            _delta(cold.to_record(), served.to_record()), 0.0)
 
     def test_touched_star_invalidates_component_and_spares_sibling(self):
         st = _two_triangles()
         tr = _tracker(st)
         cache = cob.AnalyticCache(st)
-        a0 = tr.enumerateBandsCached(cache, self.A, 0)
-        b0 = tr.enumerateBandsCached(cache, self.B, 0)
+        a0 = tr.enumerate_bands_cached(cache, self.A, 0)
+        b0 = tr.enumerate_bands_cached(cache, self.B, 0)
         self.assertEqual(cache.size, 2)
 
-        _edge(st, 0, 1).setLength(cmath.sqrt(complex(2.5)))
+        _edge(st, 0, 1).set_length(cmath.sqrt(complex(2.5)))
         star = cob.TouchedStar()
-        star.addChangedEdge(0, 1)
+        star.add_changed_edge(0, 1)
         cache.publish(star)
 
-        a1 = tr.enumerateBandsCached(cache, self.A, 0)  # recomputed
-        b1 = tr.enumerateBandsCached(cache, self.B, 0)  # served
+        a1 = tr.enumerate_bands_cached(cache, self.A, 0)  # recomputed
+        b1 = tr.enumerate_bands_cached(cache, self.B, 0)  # served
         self.assertEqual(cache.invalidations, 1)
         self.assertGreater(
-            _delta(a0.toRecord(), a1.toRecord()), 0.0)
+            _delta(a0.to_record(), a1.to_record()), 0.0)
         self.assertEqual(
-            _delta(b0.toRecord(), b1.toRecord()), 0.0)
+            _delta(b0.to_record(), b1.to_record()), 0.0)
         # The served sibling equals its cold recompute exactly.
         self.assertEqual(
-            _delta(b1.toRecord(),
-                             tr.enumerateBands(self.B, 0).toRecord()), 0.0)
+            _delta(b1.to_record(),
+                             tr.enumerate_bands(self.B, 0).to_record()), 0.0)
 
     def test_unpublished_drift_is_fail_safe(self):
         # A mutation that was never published serves NOTHING — the cached
@@ -983,22 +983,22 @@ class TestCaching(unittest.TestCase):
         st = _two_triangles()
         tr = _tracker(st)
         cache = cob.AnalyticCache(st)
-        tr.enumerateBandsCached(cache, self.A, 0)
-        _edge(st, 0, 1).setLength(cmath.sqrt(complex(3.0)))  # no publish
-        fresh = tr.enumerateBandsCached(cache, self.A, 0)
+        tr.enumerate_bands_cached(cache, self.A, 0)
+        _edge(st, 0, 1).set_length(cmath.sqrt(complex(3.0)))  # no publish
+        fresh = tr.enumerate_bands_cached(cache, self.A, 0)
         self.assertEqual(
-            _delta(fresh.toRecord(),
-                             tr.enumerateBands(self.A, 0).toRecord()), 0.0)
+            _delta(fresh.to_record(),
+                             tr.enumerate_bands(self.A, 0).to_record()), 0.0)
 
     def test_replay_disabled_cache_matches_incremental(self):
         st = _two_triangles()
         tr = _tracker(st)
         cache = cob.AnalyticCache(st)
-        served = tr.enumerateBandsCached(cache, self.A, 0)
-        cache.setEnabled(False)
-        replay = tr.enumerateBandsCached(cache, self.A, 0)
+        served = tr.enumerate_bands_cached(cache, self.A, 0)
+        cache.set_enabled(False)
+        replay = tr.enumerate_bands_cached(cache, self.A, 0)
         self.assertEqual(
-            _delta(served.toRecord(), replay.toRecord()), 0.0)
+            _delta(served.to_record(), replay.to_record()), 0.0)
 
     def test_cold_recompute_matches_incremental_tracking(self):
         # The acceptance bullet end-to-end: frame 0 -> accepted move on A ->
@@ -1007,32 +1007,32 @@ class TestCaching(unittest.TestCase):
         st = _two_triangles()
         tr = _tracker(st)
         cache = cob.AnalyticCache(st)
-        frame0 = [tr.enumerateBandsCached(cache, s, 0)
+        frame0 = [tr.enumerate_bands_cached(cache, s, 0)
                   for s in (self.A, self.B)]
-        _edge(st, 0, 1).setLength(cmath.sqrt(complex(1.7)))
+        _edge(st, 0, 1).set_length(cmath.sqrt(complex(1.7)))
         star = cob.TouchedStar()
-        star.addChangedEdge(0, 1)
+        star.add_changed_edge(0, 1)
         cache.publish(star)
-        frame1_inc = [tr.enumerateBandsCached(cache, s, 0)
+        frame1_inc = [tr.enumerate_bands_cached(cache, s, 0)
                       for s in (self.A, self.B)]
         self.assertEqual(cache.hits, 1)  # sibling B served incrementally
-        frame1_cold = [tr.enumerateBands(s, 0) for s in (self.A, self.B)]
+        frame1_cold = [tr.enumerate_bands(s, 0) for s in (self.A, self.B)]
         for inc, cold in zip(frame1_inc, frame1_cold):
             self.assertEqual(
-                _delta(inc.toRecord(), cold.toRecord()), 0.0)
+                _delta(inc.to_record(), cold.to_record()), 0.0)
         fibers0 = [f for r in frame0 for f in r.fibers]
-        inc_m = obs.SpectralFiberTracker.matchFibers(
+        inc_m = obs.SpectralFiberTracker.match_fibers(
             fibers0, [f for r in frame1_inc for f in r.fibers])
-        cold_m = obs.SpectralFiberTracker.matchFibers(
+        cold_m = obs.SpectralFiberTracker.match_fibers(
             fibers0, [f for r in frame1_cold for f in r.fibers])
         self.assertEqual(len(inc_m), len(cold_m))
         for mi, mc in zip(inc_m, cold_m):
-            self.assertEqual((mi.fromIndex, mi.toIndex, mi.ranksEqual,
-                              mi.certifiedContinuation),
-                             (mc.fromIndex, mc.toIndex, mc.ranksEqual,
-                              mc.certifiedContinuation))
-            self.assertEqual(mi.overlap.subspaceOverlap,
-                             mc.overlap.subspaceOverlap)
+            self.assertEqual((mi.from_index, mi.to_index, mi.ranks_equal,
+                              mi.certified_continuation),
+                             (mc.from_index, mc.to_index, mc.ranks_equal,
+                              mc.certified_continuation))
+            self.assertEqual(mi.overlap.subspace_overlap,
+                             mc.overlap.subspace_overlap)
 
 
 # --------------------------------------------------------------------------- #
@@ -1043,22 +1043,22 @@ class TestBandWindowsAndBoundaries(unittest.TestCase):
     def test_accepted_windows_are_plain_data(self):
         st = _triangle()
         tr = _tracker(st)
-        reads = [tr.enumerateBands([0, 1, 2], k) for k in (0, 1)]
-        windows = obs.SpectralFiberTracker.acceptedWindows(reads)
+        reads = [tr.enumerate_bands([0, 1, 2], k) for k in (0, 1)]
+        windows = obs.SpectralFiberTracker.accepted_windows(reads)
         accepted = [f for r in reads for f in r.fibers if f.accepted()]
         self.assertEqual(len(windows), len(accepted))
         for w, f in zip(windows, accepted):
             c = f.certificate()
             self.assertEqual(w.degree, c.degree)
             self.assertEqual(w.rank, c.rank)
-            self.assertEqual(w.frequencyLower, c.frequencyLower)
-            self.assertEqual(w.frequencyUpper, c.frequencyUpper)
+            self.assertEqual(w.frequency_lower, c.frequency_lower)
+            self.assertEqual(w.frequency_upper, c.frequency_upper)
             self.assertTrue(w.certificate.accepted)
 
     def test_uncertified_bands_never_reach_the_window_list(self):
         st = _triangle(alpha=math.sqrt(2.0))
-        read = _tracker(st).enumerateBands([0, 1, 2], 1)
-        windows = obs.SpectralFiberTracker.acceptedWindows([read])
+        read = _tracker(st).enumerate_bands([0, 1, 2], 1)
+        windows = obs.SpectralFiberTracker.accepted_windows([read])
         self.assertLess(len(windows), len(read.fibers))
         for w in windows:
             self.assertTrue(w.certificate.certificate.holds())
@@ -1083,12 +1083,12 @@ class TestBandWindowsAndBoundaries(unittest.TestCase):
                                  [tuple(remap[v] for v in s)
                                   for s in simplices],
                                  ids=ids)
-            read = _tracker(st).enumerateBands(ids, 0)
+            read = _tracker(st).enumerate_bands(ids, 0)
             self.assertEqual(read.fibers[0].rank(), expect)
 
     def test_degeneracy_reported_without_taste_or_flavor_labels(self):
         st = _triangle()
-        read = _tracker(st).enumerateBands([0, 1, 2], 0)
+        read = _tracker(st).enumerate_bands([0, 1, 2], 0)
         degenerate = read.fibers[1]
         self.assertGreaterEqual(degenerate.rank(), 2)
         text = degenerate.certificate().describe().lower()
@@ -1107,7 +1107,7 @@ class TestBandWindowsAndBoundaries(unittest.TestCase):
             elif isinstance(node, str):
                 self.assertFalse(
                     any(bad in node.lower() for bad in BANNED_LABELS))
-        walk(read.toRecord())
+        walk(read.to_record())
 
     def test_read_only_observable(self):
         # The first ChainComplex/facet materialization on a hand-built
@@ -1116,46 +1116,46 @@ class TestBandWindowsAndBoundaries(unittest.TestCase):
         # After that one-time completion, the fiber reads themselves must
         # leave the geometry, the revision, and every count untouched.
         st = _triangle(alpha=2.0)
-        st.materializeFacets()
-        cob.ChainComplex.fromSpacetime(st)  # one-time lazy face closure
-        rev = st.metricRevisionKey()
-        n_v = st.getVertexCount()
-        n_e = st.getEdgeList().size()
-        n_s = st.getTopSimplexCount()
-        lengths = [e.getLength() for e in st.getEdgeList().toVector()]
-        tr = _tracker(st, crossValidateDense=True)
-        tr.enumerateBands([0, 1, 2], 0)
-        tr.enumerateBands([0, 1, 2], 1)
-        tr.enumerateBands([0, 1], 1)
-        self.assertEqual(st.metricRevisionKey(), rev)
-        self.assertEqual(st.getVertexCount(), n_v)
-        self.assertEqual(st.getEdgeList().size(), n_e)
-        self.assertEqual(st.getTopSimplexCount(), n_s)
+        st.materialize_facets()
+        cob.ChainComplex.from_spacetime(st)  # one-time lazy face closure
+        rev = st.metric_revision_key()
+        n_v = st.get_vertex_count()
+        n_e = st.get_edge_list().size()
+        n_s = st.get_top_simplex_count()
+        lengths = [e.get_length() for e in st.get_edge_list().to_vector()]
+        tr = _tracker(st, cross_validate_dense=True)
+        tr.enumerate_bands([0, 1, 2], 0)
+        tr.enumerate_bands([0, 1, 2], 1)
+        tr.enumerate_bands([0, 1], 1)
+        self.assertEqual(st.metric_revision_key(), rev)
+        self.assertEqual(st.get_vertex_count(), n_v)
+        self.assertEqual(st.get_edge_list().size(), n_e)
+        self.assertEqual(st.get_top_simplex_count(), n_s)
         self.assertEqual(
-            [e.getLength() for e in st.getEdgeList().toVector()], lengths)
+            [e.get_length() for e in st.get_edge_list().to_vector()], lengths)
 
     def test_errors_and_empty_reads(self):
         st = _triangle()
         tr = _tracker(st)
         with self.assertRaises(ValueError):
-            tr.enumerateBands([0, 1, 2], -1)
-        empty = tr.enumerateBands([], 0)
+            tr.enumerate_bands([0, 1, 2], -1)
+        empty = tr.enumerate_bands([], 0)
         self.assertEqual(empty.dimension, 0)
         self.assertEqual(len(empty.fibers), 0)
-        unknown = tr.enumerateBands([777, 888], 0)
+        unknown = tr.enumerate_bands([777, 888], 0)
         self.assertEqual(unknown.dimension, 0)
-        above = tr.enumerateBands([0, 1, 2], 5)  # above the top dimension
+        above = tr.enumerate_bands([0, 1, 2], 5)  # above the top dimension
         self.assertEqual(above.dimension, 0)
 
     def test_enumerate_on_components_covers_configured_degrees(self):
         st = _two_triangles()
-        pm = obs.PersistentModularity.fromSpacetime(
+        pm = obs.PersistentModularity.from_spacetime(
             st, obs.PersistentModularity.WeightMap.Unit)
         s = pm.discover(1.0, obs.PersistentModularityConfig())
         cfg = obs.SpectralFiberConfig()
         cfg.degrees = [0, 1]
         tr = obs.SpectralFiberTracker(st, cfg, metric_source=DIAGONAL)
-        reads = tr.enumerateOnComponents(s.components)
+        reads = tr.enumerate_on_components(s.components)
         self.assertEqual(len(reads), 2 * 2)
         self.assertEqual([r.degree for r in reads], [0, 1, 0, 1])
         for r in reads:
@@ -1170,23 +1170,23 @@ class TestSerialization(unittest.TestCase):
 
     def _reads(self):
         out = [
-            _tracker(_triangle()).enumerateBands([0, 1, 2], 0),
-            _tracker(_triangle(alpha=2.0)).enumerateBands([0, 1, 2], 1),
+            _tracker(_triangle()).enumerate_bands([0, 1, 2], 0),
+            _tracker(_triangle(alpha=2.0)).enumerate_bands([0, 1, 2], 1),
         ]
         st = _triangle(alpha=1.0)
         out.append(obs.SpectralFiberTracker(
             st, obs.SpectralFiberConfig(),
-            cob.HodgeWeightConvention.Content, metric_source=DIAGONAL).enumerateBands([0, 1, 2], 1))
+            cob.HodgeWeightConvention.Content, metric_source=DIAGONAL).enumerate_bands([0, 1, 2], 1))
         return out
 
     def test_fiber_round_trip_every_regime(self):
         for read in self._reads():
             for f in read.fibers:
-                rec = f.toRecord()
-                back = obs.SpectralFiber.fromRecord(rec)
+                rec = f.to_record()
+                back = obs.SpectralFiber.from_record(rec)
                 # NaN-aware every-channel gate: two NaNs agree, any numeric
                 # drift is a flagged channel.
-                self.assertEqual(_delta(rec, back.toRecord()), 0.0)
+                self.assertEqual(_delta(rec, back.to_record()), 0.0)
                 np.testing.assert_array_equal(np.asarray(f.projector()),
                                               np.asarray(back.projector()))
                 self.assertEqual(f.rank(), back.rank())
@@ -1194,34 +1194,34 @@ class TestSerialization(unittest.TestCase):
 
     def test_read_round_trip(self):
         for read in self._reads():
-            rec = read.toRecord()
-            back = obs.ComponentBandRead.fromRecord(rec)
-            self.assertEqual(_delta(rec, back.toRecord()), 0.0)
+            rec = read.to_record()
+            back = obs.ComponentBandRead.from_record(rec)
+            self.assertEqual(_delta(rec, back.to_record()), 0.0)
 
     def test_unknown_schema_version_rejected(self):
         read = self._reads()[0]
-        bad = dict(read.toRecord())
+        bad = dict(read.to_record())
         bad["schema_version"] = 99
         with self.assertRaises(ValueError):
-            obs.ComponentBandRead.fromRecord(bad)
-        fiber_bad = dict(read.fibers[0].toRecord())
+            obs.ComponentBandRead.from_record(bad)
+        fiber_bad = dict(read.fibers[0].to_record())
         fiber_bad["schema_version"] = 99
         with self.assertRaises(ValueError):
-            obs.SpectralFiber.fromRecord(fiber_bad)
+            obs.SpectralFiber.from_record(fiber_bad)
 
     def test_wrong_record_type_rejected(self):
         read = self._reads()[0]
-        rec = dict(read.toRecord())
+        rec = dict(read.to_record())
         with self.assertRaises(ValueError):
-            obs.SpectralFiber.fromRecord(rec)  # a read record, not a fiber
+            obs.SpectralFiber.from_record(rec)  # a read record, not a fiber
 
     def test_certificate_grades_survive_the_round_trip(self):
         healthy = self._reads()[0]
         closed = _tracker(
-            _triangle(alpha=math.sqrt(2.0))).enumerateBands([0, 1, 2], 1)
+            _triangle(alpha=math.sqrt(2.0))).enumerate_bands([0, 1, 2], 1)
         for read in (healthy, closed):
             for f in read.fibers:
-                back = obs.SpectralFiber.fromRecord(f.toRecord())
+                back = obs.SpectralFiber.from_record(f.to_record())
                 self.assertEqual(back.certificate().certificate.grade,
                                  f.certificate().certificate.grade)
                 self.assertEqual(back.certificate().certificate.holds(),
@@ -1237,58 +1237,58 @@ class TestSparseVsDense(unittest.TestCase):
 
     def test_sparse_matches_analytic_ring_spectrum(self):
         st = _ring(self.N)
-        read = _tracker(st, requestedEigenpairs=12).enumerateBands(
+        read = _tracker(st, requested_eigenpairs=12).enumerate_bands(
             list(range(self.N)), 0)
-        self.assertEqual(read.solverPath, "sparse-block-self-adjoint")
-        lam = np.array(read.coveredEigenvalues).real
+        self.assertEqual(read.solver_path, "sparse-block-self-adjoint")
+        lam = np.array(read.covered_eigenvalues).real
         exact = np.sort(
             2.0 - 2.0 * np.cos(2.0 * np.pi * np.arange(self.N) / self.N))
         self.assertLessEqual(np.abs(lam - exact[:len(lam)]).max(), SOLVER)
 
     def test_sparse_matches_dense_path_and_projectors_align(self):
         st = _ring(self.N)
-        sparse = _tracker(st, requestedEigenpairs=12).enumerateBands(
+        sparse = _tracker(st, requested_eigenpairs=12).enumerate_bands(
             list(range(self.N)), 0)
-        dense = _tracker(st, denseCrossover=10 ** 6).enumerateBands(
+        dense = _tracker(st, dense_crossover=10 ** 6).enumerate_bands(
             list(range(self.N)), 0)
-        self.assertEqual(dense.solverPath, "dense-self-adjoint")
-        n_cov = len(sparse.coveredEigenvalues)
+        self.assertEqual(dense.solver_path, "dense-self-adjoint")
+        n_cov = len(sparse.covered_eigenvalues)
         np.testing.assert_allclose(
-            np.array(sparse.coveredEigenvalues).real,
-            np.array(dense.coveredEigenvalues).real[:n_cov], atol=SOLVER)
+            np.array(sparse.covered_eigenvalues).real,
+            np.array(dense.covered_eigenvalues).real[:n_cov], atol=SOLVER)
         # Cold (dense) and sparse tracking of the same bands agree:
         # principal angles ~ 0 between corresponding projected subspaces.
-        matches = obs.SpectralFiberTracker.matchFibers(
+        matches = obs.SpectralFiberTracker.match_fibers(
             sparse.fibers, dense.fibers)
         self.assertEqual(len(matches), len(sparse.fibers))
         for m in matches:
-            self.assertTrue(m.ranksEqual)
-            self.assertGreaterEqual(m.overlap.subspaceOverlap, 1.0 - 1e-8)
+            self.assertTrue(m.ranks_equal)
+            self.assertGreaterEqual(m.overlap.subspace_overlap, 1.0 - 1e-8)
 
     def test_sparse_path_is_deterministic(self):
         st = _ring(self.N)
-        a = _tracker(st, requestedEigenpairs=8).enumerateBands(
+        a = _tracker(st, requested_eigenpairs=8).enumerate_bands(
             list(range(self.N)), 0)
-        b = _tracker(st, requestedEigenpairs=8).enumerateBands(
+        b = _tracker(st, requested_eigenpairs=8).enumerate_bands(
             list(range(self.N)), 0)
-        self.assertEqual(_delta(a.toRecord(), b.toRecord()), 0.0)
+        self.assertEqual(_delta(a.to_record(), b.to_record()), 0.0)
 
     def test_dense_cross_validation_records_reference_error(self):
         st = _triangle()
-        read = _tracker(st, crossValidateDense=True).enumerateBands(
+        read = _tracker(st, cross_validate_dense=True).enumerate_bands(
             [0, 1, 2], 0)
-        err = read.solveCertificate.denseReferenceError
+        err = read.solve_certificate.dense_reference_error
         self.assertTrue(np.isfinite(err))
         self.assertLessEqual(err, 1e-12)
         for f in read.fibers:
             if f.accepted():
                 self.assertTrue(
                     np.isfinite(f.certificate().certificate
-                                .denseReferenceError))
+                                .dense_reference_error))
         # Without the flag the field stays unmeasured (NaN), never zero.
-        plain = _tracker(st).enumerateBands([0, 1, 2], 0)
+        plain = _tracker(st).enumerate_bands([0, 1, 2], 0)
         self.assertTrue(math.isnan(
-            plain.solveCertificate.denseReferenceError))
+            plain.solve_certificate.dense_reference_error))
 
 
 # --------------------------------------------------------------------------- #
@@ -1305,26 +1305,26 @@ class TestLocalizationConjunct(unittest.TestCase):
         # diagonal, so n_eff = n and the excess is exactly 1 -- perfectly
         # delocalized.  Every OTHER conjunct passes with room to spare, so
         # localization is the only reason each band is uncertified.
-        read = _tracker(_ring(12)).enumerateBands(list(range(12)), 0)
+        read = _tracker(_ring(12)).enumerate_bands(list(range(12)), 0)
         self.assertEqual(len(read.fibers), 7)
         for f in read.fibers:
             c = f.certificate()
             self.assertAlmostEqual(c.localization, 1.0 / 12.0, delta=MACHINE)
-            self.assertAlmostEqual(c.localizationSupportFraction, 1.0,
+            self.assertAlmostEqual(c.localization_support_fraction, 1.0,
                                    delta=MACHINE)
-            self.assertAlmostEqual(c.localizationExcess, 1.0, delta=MACHINE)
+            self.assertAlmostEqual(c.localization_excess, 1.0, delta=MACHINE)
             # the other conjuncts hold:
-            self.assertGreater(c.nearestDiscardedSeparation, 0.26)
-            self.assertLess(c.gramDefect, 1e-12)
-            self.assertLess(c.eigenResidual, 1e-12)
-            self.assertLess(c.projectorResidual, 1e-12)
-            self.assertLess(c.projectorNorm, 1.0 + 1e-12)
+            self.assertGreater(c.nearest_discarded_separation, 0.26)
+            self.assertLess(c.gram_defect, 1e-12)
+            self.assertLess(c.eigen_residual, 1e-12)
+            self.assertLess(c.projector_residual, 1e-12)
+            self.assertLess(c.projector_norm, 1.0 + 1e-12)
             # ... and the band is REJECTED anyway.
             self.assertFalse(c.accepted)
             self.assertFalse(c.certificate.holds())
 
     def test_the_permissive_cap_restores_the_pre_gate_acceptance(self):
-        read = _tracker(_ring(12), **ANY_LOCALIZATION).enumerateBands(
+        read = _tracker(_ring(12), **ANY_LOCALIZATION).enumerate_bands(
             list(range(12)), 0)
         self.assertTrue(all(f.accepted() for f in read.fibers))
 
@@ -1334,15 +1334,15 @@ class TestLocalizationConjunct(unittest.TestCase):
         # is accepted EXACTLY when its excess clears the cap -- the gate
         # discriminates, it does not reject everything.
         st, _, _, _ = holed_surface(degree=1, jitter=True)
-        read = _tracker(st).enumerateBands(_all_vertices(st), 1)
+        read = _tracker(st).enumerate_bands(_all_vertices(st), 1)
         accepted = [f for f in read.fibers if f.accepted()]
         self.assertGreater(len(accepted), 5)
         self.assertLess(len(accepted), len(read.fibers))
-        cap = obs.SpectralFiberConfig().maxLocalizationExcess
+        cap = obs.SpectralFiberConfig().max_localization_excess
         self.assertEqual(cap, 0.5)
         for f in read.fibers:
             c = f.certificate()
-            self.assertEqual(c.accepted, c.localizationExcess <= cap)
+            self.assertEqual(c.accepted, c.localization_excess <= cap)
 
     def test_excess_is_rank_normalized_and_relabeling_invariant(self):
         # The bare IPR of a rank-r band cannot exceed 1/r, so the RAW
@@ -1350,30 +1350,30 @@ class TestLocalizationConjunct(unittest.TestCase):
         # projector reads, so both survive a vertex relabeling.
         st, _, _, _ = holed_surface(degree=1, jitter=True)
         ids = _all_vertices(st)
-        base = _tracker(st).enumerateBands(ids, 1)
+        base = _tracker(st).enumerate_bands(ids, 1)
         for f in base.fibers:
             c = f.certificate()
             self.assertGreaterEqual(c.localization,
                                     1.0 / base.dimension - 1e-12)
             self.assertLessEqual(c.localization, 1.0 / c.rank + 1e-12)
-            self.assertGreaterEqual(c.localizationExcess, 0.0)
-            self.assertLessEqual(c.localizationExcess, 1.0)
-        shifted = _tracker(st).enumerateBands(list(reversed(ids)), 1)
+            self.assertGreaterEqual(c.localization_excess, 0.0)
+            self.assertLessEqual(c.localization_excess, 1.0)
+        shifted = _tracker(st).enumerate_bands(list(reversed(ids)), 1)
         for a, b in zip(base.fibers, shifted.fibers):
-            self.assertAlmostEqual(a.certificate().localizationExcess,
-                                   b.certificate().localizationExcess,
+            self.assertAlmostEqual(a.certificate().localization_excess,
+                                   b.certificate().localization_excess,
                                    delta=MACHINE)
 
     def test_a_full_space_band_is_not_called_delocalized(self):
         # A band spanning the WHOLE operator (n == rank) leaves no room to
         # be localized in: the excess is 0 by definition, never 1.  The
         # single isolated vertex is the smallest such case.
-        read = _tracker(_triangle()).enumerateBands([0], 0)
+        read = _tracker(_triangle()).enumerate_bands([0], 0)
         c = read.fibers[0].certificate()
         self.assertEqual(read.dimension, 1)
         self.assertEqual(c.rank, 1)
-        self.assertEqual(c.localizationSupportFraction, 1.0)
-        self.assertEqual(c.localizationExcess, 0.0)
+        self.assertEqual(c.localization_support_fraction, 1.0)
+        self.assertEqual(c.localization_excess, 0.0)
         self.assertTrue(c.accepted)
 
 
@@ -1384,12 +1384,12 @@ class TestBandSeparationIsMeasuredInThePlane(unittest.TestCase):
 
     def _content_read(self, alpha, **cfg_kwargs):
         cfg = obs.SpectralFiberConfig()
-        cfg.maxLocalizationExcess = 1.0     # subject: the isolation rule
+        cfg.max_localization_excess = 1.0     # subject: the isolation rule
         for k, v in cfg_kwargs.items():
             setattr(cfg, k, v)
         tracker = obs.SpectralFiberTracker(
             _triangle(alpha=alpha), cfg, cob.HodgeWeightConvention.Content, metric_source=DIAGONAL)
-        return tracker.enumerateBands([0, 1, 2], 1)
+        return tracker.enumerate_bands([0, 1, 2], 1)
 
     def test_nearest_eigenvalue_is_not_the_sort_adjacent_one(self):
         # Content weights at alpha = 1/2: spec(L_1) = {0, 1 - 4i, 3}.
@@ -1400,22 +1400,22 @@ class TestBandSeparationIsMeasuredInThePlane(unittest.TestCase):
         self.assertEqual(read.regime, cob.CertificateRegime.NonNormal)
         top = max(read.fibers, key=lambda f: f.eigenvalues()[0].real)
         c = top.certificate()
-        self.assertAlmostEqual(c.lowerGap, math.sqrt(20.0), delta=1e-9)
-        self.assertAlmostEqual(c.nearestDiscardedSeparation, 3.0, delta=1e-9)
-        self.assertLess(c.nearestDiscardedSeparation, c.lowerGap)
+        self.assertAlmostEqual(c.lower_gap, math.sqrt(20.0), delta=1e-9)
+        self.assertAlmostEqual(c.nearest_discarded_separation, 3.0, delta=1e-9)
+        self.assertLess(c.nearest_discarded_separation, c.lower_gap)
         bottom = min(read.fibers, key=lambda f: f.eigenvalues()[0].real)
         cb = bottom.certificate()
-        self.assertAlmostEqual(cb.upperGap, math.sqrt(17.0), delta=1e-9)
-        self.assertAlmostEqual(cb.nearestDiscardedSeparation, 3.0, delta=1e-9)
+        self.assertAlmostEqual(cb.upper_gap, math.sqrt(17.0), delta=1e-9)
+        self.assertAlmostEqual(cb.nearest_discarded_separation, 3.0, delta=1e-9)
 
     def test_the_isolation_gate_reads_the_true_separation(self):
         # scale = max|lambda| = |1 - 4i| = sqrt(17).  A floor of 0.9 * scale
         # = 3.71 sits BETWEEN the true separation (3) and the sort-order gap
         # (4.47): the outer bands are rejected on the separation the paper
         # names, where the sort-order rule would have certified them.
-        loose = self._content_read(0.5, minRelativeGap=0.5)
+        loose = self._content_read(0.5, min_relative_gap=0.5)
         self.assertTrue(all(f.accepted() for f in loose.fibers))
-        tight = self._content_read(0.5, minRelativeGap=0.9)
+        tight = self._content_read(0.5, min_relative_gap=0.9)
         verdicts = {round(f.eigenvalues()[0].real, 6): f.accepted()
                     for f in tight.fibers}
         self.assertFalse(verdicts[0.0])
@@ -1433,52 +1433,52 @@ class TestFrameConditionIsNotTheProjectorNorm(unittest.TestCase):
         # rank-2 band's frames are nearly parallel, so their Riesz
         # conditioning explodes (1e8) while the PROJECTOR norm stays near 1.
         st = _triangle(alpha=math.sqrt(2.0))
-        read = _tracker(st, groupingTolerance=1e-6,
-                        **ANY_LOCALIZATION).enumerateBands([0, 1, 2], 1)
+        read = _tracker(st, grouping_tolerance=1e-6,
+                        **ANY_LOCALIZATION).enumerate_bands([0, 1, 2], 1)
         degenerate = max(read.fibers, key=lambda f: f.rank())
         c = degenerate.certificate()
         self.assertEqual(c.rank, 2)
-        self.assertLess(c.projectorNorm, 2.0)
-        self.assertGreater(c.frameConditionNumber, 1e6)
-        self.assertNotAlmostEqual(c.projectorNorm, c.frameConditionNumber,
+        self.assertLess(c.projector_norm, 2.0)
+        self.assertGreater(c.frame_condition_number, 1e6)
+        self.assertNotAlmostEqual(c.projector_norm, c.frame_condition_number,
                                   delta=1.0)
 
     def test_a_w_orthonormal_frame_is_perfectly_conditioned(self):
         # On the self-adjoint path Phi^dagger W Phi = I exactly, so the
         # frame condition number is 1 -- the value the substitute happened
         # to coincide with, and the reason the divergence was invisible.
-        read = _tracker(_ring(12), **ANY_LOCALIZATION).enumerateBands(
+        read = _tracker(_ring(12), **ANY_LOCALIZATION).enumerate_bands(
             list(range(12)), 0)
         for f in read.fibers:
             c = f.certificate()
-            self.assertAlmostEqual(c.frameConditionNumber, 1.0, delta=1e-9)
-            self.assertAlmostEqual(c.projectorNorm, 1.0, delta=1e-9)
+            self.assertAlmostEqual(c.frame_condition_number, 1.0, delta=1e-9)
+            self.assertAlmostEqual(c.projector_norm, 1.0, delta=1e-9)
 
     def test_both_travel_through_the_checkpoint(self):
         st = _triangle(alpha=math.sqrt(2.0))
-        read = _tracker(st, groupingTolerance=1e-6,
-                        **ANY_LOCALIZATION).enumerateBands([0, 1, 2], 1)
+        read = _tracker(st, grouping_tolerance=1e-6,
+                        **ANY_LOCALIZATION).enumerate_bands([0, 1, 2], 1)
         for f in read.fibers:
-            rec = f.toRecord()
+            rec = f.to_record()
             # Schema 3 is the current writer: schema 2 added the two
             # conditionings, and schema 3 the contour certificate and the
             # instance's allowability, margin and Lorentzian rotation.
             self.assertEqual(rec["schema_version"], 3)
-            back = obs.SpectralFiber.fromRecord(rec).certificate()
-            self.assertEqual(back.projectorNorm, f.certificate().projectorNorm)
-            self.assertEqual(back.frameConditionNumber,
-                             f.certificate().frameConditionNumber)
-            self.assertEqual(back.nearestDiscardedSeparation,
-                             f.certificate().nearestDiscardedSeparation)
+            back = obs.SpectralFiber.from_record(rec).certificate()
+            self.assertEqual(back.projector_norm, f.certificate().projector_norm)
+            self.assertEqual(back.frame_condition_number,
+                             f.certificate().frame_condition_number)
+            self.assertEqual(back.nearest_discarded_separation,
+                             f.certificate().nearest_discarded_separation)
 
     def test_a_schema_one_record_leaves_the_new_leaves_unknown(self):
         # Backwards compatibility: schema 1 carried `condition_number`, the
         # projector norm.  It still reads, the projector norm survives, and
         # the quantities it never measured are NaN -- never zero.
         st = _triangle()
-        fiber = _tracker(st, **ANY_LOCALIZATION).enumerateBands(
+        fiber = _tracker(st, **ANY_LOCALIZATION).enumerate_bands(
             [0, 1, 2], 0).fibers[0]
-        rec = dict(fiber.toRecord())
+        rec = dict(fiber.to_record())
         cert = dict(rec["certificate"])
         cert["condition_number"] = cert.pop("projector_norm")
         for key in ("frame_condition_number", "nearest_discarded_separation",
@@ -1486,13 +1486,13 @@ class TestFrameConditionIsNotTheProjectorNorm(unittest.TestCase):
             cert.pop(key)
         rec["certificate"] = cert
         rec["schema_version"] = 1
-        back = obs.SpectralFiber.fromRecord(rec).certificate()
-        self.assertEqual(back.projectorNorm,
-                         fiber.certificate().projectorNorm)
-        for value in (back.frameConditionNumber,
-                      back.nearestDiscardedSeparation,
-                      back.localizationSupportFraction,
-                      back.localizationExcess):
+        back = obs.SpectralFiber.from_record(rec).certificate()
+        self.assertEqual(back.projector_norm,
+                         fiber.certificate().projector_norm)
+        for value in (back.frame_condition_number,
+                      back.nearest_discarded_separation,
+                      back.localization_support_fraction,
+                      back.localization_excess):
             self.assertTrue(math.isnan(value))
 
 

@@ -18,14 +18,14 @@ void register_observables_crossing_register_lineage(py::module_ &m) {
       "calibration; while massCalibrated is False the crossing mass is "
       "reported in uncalibrated units and only ratios are meaningful.")
       .def(py::init<>())
-      .def_readwrite("kappaMass", &CrossingReadoutsConfig::kappaMass)
-      .def_readwrite("massCalibrated", &CrossingReadoutsConfig::massCalibrated)
-      .def_readwrite("signTolerance", &CrossingReadoutsConfig::signTolerance)
-      .def_readwrite("degeneracyTolerance",
+      .def_readwrite("kappa_mass", &CrossingReadoutsConfig::kappaMass)
+      .def_readwrite("mass_calibrated", &CrossingReadoutsConfig::massCalibrated)
+      .def_readwrite("sign_tolerance", &CrossingReadoutsConfig::signTolerance)
+      .def_readwrite("degeneracy_tolerance",
                      &CrossingReadoutsConfig::degeneracyTolerance)
-      .def_readwrite("monopoleTolerance",
+      .def_readwrite("monopole_tolerance",
                      &CrossingReadoutsConfig::monopoleTolerance)
-      .def("toRecord", [](const CrossingReadoutsConfig &self) {
+      .def("to_record", [](const CrossingReadoutsConfig &self) {
         return recordToPython(self.toRecord());
       });
 
@@ -41,16 +41,16 @@ void register_observables_crossing_register_lineage(py::module_ &m) {
       .def_readonly("tau", &TemporalFunctionRead::tau)
       .def_readonly("layer", &TemporalFunctionRead::layer)
       .def_readonly("certified", &TemporalFunctionRead::certified)
-      .def_readonly("failedCertificates",
+      .def_readonly("failed_certificates",
                     &TemporalFunctionRead::failedCertificates)
-      .def_readonly("minCausalIncrement",
+      .def_readonly("min_causal_increment",
                     &TemporalFunctionRead::minCausalIncrement)
-      .def_readonly("causalEdgeCount", &TemporalFunctionRead::causalEdgeCount)
-      .def_readonly("unreachableCount",
+      .def_readonly("causal_edge_count", &TemporalFunctionRead::causalEdgeCount)
+      .def_readonly("unreachable_count",
                     &TemporalFunctionRead::unreachableCount)
       .def("at", &TemporalFunctionRead::at, py::arg("vertex"),
            "tau of one vertex, or NaN when unknown.")
-      .def("toRecord", [](const TemporalFunctionRead &self) {
+      .def("to_record", [](const TemporalFunctionRead &self) {
         return recordToPython(self.toRecord());
       });
 
@@ -62,11 +62,11 @@ void register_observables_crossing_register_lineage(py::module_ &m) {
       "tubes enter the baryon sum; every admissible crossing enters the "
       "crossing mass.")
       .def(py::init<>())
-      .def_readwrite("tubeId", &WorldTubeInput::tubeId)
+      .def_readwrite("tube_id", &WorldTubeInput::tubeId)
       .def_readwrite("band", &WorldTubeInput::band)
       .def_readwrite("orientation", &WorldTubeInput::orientation)
-      .def_readwrite("determinantWinding", &WorldTubeInput::determinantWinding)
-      .def_readwrite("certifiedQuarkTube",
+      .def_readwrite("determinant_winding", &WorldTubeInput::determinantWinding)
+      .def_readwrite("certified_quark_tube",
                      &WorldTubeInput::certifiedQuarkTube);
 
   py::class_<TubeCrossingRead>(m, "TubeCrossingRead",
@@ -75,16 +75,16 @@ void register_observables_crossing_register_lineage(py::module_ &m) {
       "when unknown (an inadmissible crossing has no sign at all, never a "
       "silent zero).")
       .def(py::init<>())
-      .def_readonly("tubeId", &TubeCrossingRead::tubeId)
+      .def_readonly("tube_id", &TubeCrossingRead::tubeId)
       .def_readonly("level", &TubeCrossingRead::level)
-      .def_readonly("crossingEdges", &TubeCrossingRead::crossingEdges)
+      .def_readonly("crossing_edges", &TubeCrossingRead::crossingEdges)
       .def_readonly("density", &TubeCrossingRead::density)
       .def_readonly("perpendicular", &TubeCrossingRead::perpendicular)
       .def_readonly("sign", &TubeCrossingRead::sign)
       .def_readonly("admissible", &TubeCrossingRead::admissible)
-      .def_readonly("failedCertificates",
+      .def_readonly("failed_certificates",
                     &TubeCrossingRead::failedCertificates)
-      .def("toRecord", [](const TubeCrossingRead &self) {
+      .def("to_record", [](const TubeCrossingRead &self) {
         return recordToPython(self.toRecord());
       });
 
@@ -94,16 +94,16 @@ void register_observables_crossing_register_lineage(py::module_ &m) {
       "`calibrated` is False.")
       .def(py::init<>())
       .def_readonly("level", &CrossingMassRead::level)
-      .def_readonly("crossingMass", &CrossingMassRead::crossingMass)
-      .def_readonly("levelSum", &CrossingMassRead::levelSum)
-      .def_readonly("referenceSum", &CrossingMassRead::referenceSum)
-      .def_readonly("kappaMass", &CrossingMassRead::kappaMass)
+      .def_readonly("crossing_mass", &CrossingMassRead::crossingMass)
+      .def_readonly("level_sum", &CrossingMassRead::levelSum)
+      .def_readonly("reference_sum", &CrossingMassRead::referenceSum)
+      .def_readonly("kappa_mass", &CrossingMassRead::kappaMass)
       .def_readonly("calibrated", &CrossingMassRead::calibrated)
       .def_readonly("units", &CrossingMassRead::units)
-      .def_readonly("admissibleCrossings",
+      .def_readonly("admissible_crossings",
                     &CrossingMassRead::admissibleCrossings)
-      .def_readonly("refusedCrossings", &CrossingMassRead::refusedCrossings)
-      .def("toRecord", [](const CrossingMassRead &self) {
+      .def_readonly("refused_crossings", &CrossingMassRead::refusedCrossings)
+      .def("to_record", [](const CrossingMassRead &self) {
         return recordToPython(self.toRecord());
       });
 
@@ -114,14 +114,14 @@ void register_observables_crossing_register_lineage(py::module_ &m) {
       "signal, reported and never silently resolved.")
       .def(py::init<>())
       .def_readonly("level", &BaryonCrossingRead::level)
-      .def_readonly("baryonNumber", &BaryonCrossingRead::baryonNumber)
-      .def_readonly("levelSum", &BaryonCrossingRead::levelSum)
-      .def_readonly("referenceSum", &BaryonCrossingRead::referenceSum)
-      .def_readonly("quarkTubes", &BaryonCrossingRead::quarkTubes)
-      .def_readonly("signDefects", &BaryonCrossingRead::signDefects)
-      .def_readonly("windingAgreements",
+      .def_readonly("baryon_number", &BaryonCrossingRead::baryonNumber)
+      .def_readonly("level_sum", &BaryonCrossingRead::levelSum)
+      .def_readonly("reference_sum", &BaryonCrossingRead::referenceSum)
+      .def_readonly("quark_tubes", &BaryonCrossingRead::quarkTubes)
+      .def_readonly("sign_defects", &BaryonCrossingRead::signDefects)
+      .def_readonly("winding_agreements",
                     &BaryonCrossingRead::windingAgreements)
-      .def("toRecord", [](const BaryonCrossingRead &self) {
+      .def("to_record", [](const BaryonCrossingRead &self) {
         return recordToPython(self.toRecord());
       });
 
@@ -136,13 +136,13 @@ void register_observables_crossing_register_lineage(py::module_ &m) {
       .def_readonly("level", &ChargePowerProfileRead::level)
       .def_readonly("eigenvalues", &ChargePowerProfileRead::eigenvalues)
       .def_readonly("power", &ChargePowerProfileRead::power)
-      .def_readonly("normalizedPower", &ChargePowerProfileRead::normalizedPower)
+      .def_readonly("normalized_power", &ChargePowerProfileRead::normalizedPower)
       .def_readonly("monopole", &ChargePowerProfileRead::monopole)
       .def_readonly("normalized", &ChargePowerProfileRead::normalized)
-      .def_readonly("failedCertificates",
+      .def_readonly("failed_certificates",
                     &ChargePowerProfileRead::failedCertificates)
-      .def_readonly("sliceNodes", &ChargePowerProfileRead::sliceNodes)
-      .def("toRecord", [](const ChargePowerProfileRead &self) {
+      .def_readonly("slice_nodes", &ChargePowerProfileRead::sliceNodes)
+      .def("to_record", [](const ChargePowerProfileRead &self) {
         return recordToPython(self.toRecord());
       });
 
@@ -155,12 +155,12 @@ void register_observables_crossing_register_lineage(py::module_ &m) {
       "named.  The spectral charge-power profile is never substituted.")
       .def(py::init<>())
       .def_readonly("available", &ElectromagneticFormFactorRead::available)
-      .def_readonly("chargeRadiusSquared",
+      .def_readonly("charge_radius_squared",
                     &ElectromagneticFormFactorRead::chargeRadiusSquared)
-      .def_readonly("failedCertificates",
+      .def_readonly("failed_certificates",
                     &ElectromagneticFormFactorRead::failedCertificates)
       .def_readonly("note", &ElectromagneticFormFactorRead::note)
-      .def("toRecord", [](const ElectromagneticFormFactorRead &self) {
+      .def("to_record", [](const ElectromagneticFormFactorRead &self) {
         return recordToPython(self.toRecord());
       });
 
@@ -170,13 +170,13 @@ void register_observables_crossing_register_lineage(py::module_ &m) {
       "solver, no facet materialization, no complex rebuild, and nothing "
       "here enters any emergence objective.")
       .def(py::init<>())
-      .def_readonly_static("kSchemaVersion", &CrossingReadouts::kSchemaVersion)
-      .def_static("temporalFunction", &CrossingReadouts::temporalFunction,
-                  py::arg("spacetime"), py::arg("m0Vertices"),
+      .def_readonly_static("k_schema_version", &CrossingReadouts::kSchemaVersion)
+      .def_static("temporal_function", &CrossingReadouts::temporalFunction,
+                  py::arg("spacetime"), py::arg("m0_vertices"),
                   py::arg("cfg") = CrossingReadoutsConfig{},
                   "The complex Lorentzian distance tau from M0 with its "
                   "temporal-function certificate.")
-      .def_static("bandEdgeDensity",
+      .def_static("band_edge_density",
                   [](const SpectralFiber &band) {
                     py::dict out;
                     for (const auto &entry :
@@ -195,28 +195,28 @@ void register_observables_crossing_register_lineage(py::module_ &m) {
                   py::arg("temporal"), py::arg("level"),
                   py::arg("cfg") = CrossingReadoutsConfig{},
                   "One tube's crossing of the level Re tau = level.")
-      .def_static("crossingMass", &CrossingReadouts::crossingMass,
+      .def_static("crossing_mass", &CrossingReadouts::crossingMass,
                   py::arg("tubes"), py::arg("temporal"), py::arg("level"),
-                  py::arg("m0Level"),
+                  py::arg("m0_level"),
                   py::arg("cfg") = CrossingReadoutsConfig{},
-                  "m_x on `level` as the difference against `m0Level`.")
-      .def_static("baryonNumber", &CrossingReadouts::baryonNumber,
+                  "m_x on `level` as the difference against `m0_level`.")
+      .def_static("baryon_number", &CrossingReadouts::baryonNumber,
                   py::arg("tubes"), py::arg("temporal"), py::arg("level"),
-                  py::arg("m0Level"),
+                  py::arg("m0_level"),
                   py::arg("cfg") = CrossingReadoutsConfig{},
                   "B = (1/3) sum sgn(pi_perp) over certified quark tubes, as "
-                  "the difference against `m0Level`.")
-      .def_static("chargePowerProfile",
+                  "the difference against `m0_level`.")
+      .def_static("charge_power_profile",
                   &CrossingReadouts::chargePowerProfile, py::arg("tubes"),
                   py::arg("temporal"), py::arg("level"),
                   py::arg("cfg") = CrossingReadoutsConfig{},
                   "The spectral charge-power profile on `level`.")
-      .def_static("formFactor", &CrossingReadouts::formFactor,
+      .def_static("form_factor", &CrossingReadouts::formFactor,
                   py::arg("profile"),
                   py::arg("cfg") = CrossingReadoutsConfig{},
                   "The conditional electromagnetic form factor: a refusal "
                   "scaffold naming the certificates this tree lacks.")
-      .def_static("overlayRecord",
+      .def_static("overlay_record",
                   [](const std::vector<WorldTubeInput> &tubes,
                      const TemporalFunctionRead &temporal, double level,
                      double m0Level, const CrossingReadoutsConfig &cfg) {
@@ -224,7 +224,7 @@ void register_observables_crossing_register_lineage(py::module_ &m) {
                         tubes, temporal, level, m0Level, cfg));
                   },
                   py::arg("tubes"), py::arg("temporal"), py::arg("level"),
-                  py::arg("m0Level"),
+                  py::arg("m0_level"),
                   py::arg("cfg") = CrossingReadoutsConfig{},
                   "Every readout on one level as the versioned overlay "
                   "block.");
@@ -280,24 +280,24 @@ void register_observables_crossing_register_lineage(py::module_ &m) {
       "Thresholds the register is accepted under.  Analysis parameters "
       "only: none of them selects which bands or clusters exist.")
       .def(py::init<>())
-      .def_readwrite("minNeighbourOverlap",
+      .def_readwrite("min_neighbour_overlap",
                      &ClusterRegisterConfig::minNeighbourOverlap)
-      .def_readwrite("minFrameLifetime",
+      .def_readwrite("min_frame_lifetime",
                      &ClusterRegisterConfig::minFrameLifetime)
-      .def_readwrite("maxTransportLeakage",
+      .def_readwrite("max_transport_leakage",
                      &ClusterRegisterConfig::maxTransportLeakage)
-      .def_readwrite("maxResolventBound",
+      .def_readwrite("max_resolvent_bound",
                      &ClusterRegisterConfig::maxResolventBound,
                      "Cap on the Riesz resolvent bound of the contour the band "
                      "was selected by; decided only where a contour was drawn.")
-      .def_readwrite("requireContour", &ClusterRegisterConfig::requireContour,
+      .def_readwrite("require_contour", &ClusterRegisterConfig::requireContour,
                      "Require a closed complex-plane contour of the band; a "
                      "band with none is then unmeasured, never failed.")
       .def_readwrite("lorentzian", &ClusterRegisterConfig::lorentzian,
                      "DECLARE the complex Lorentzian: the band must then carry "
                      "a reported rotation epsilon_L > 0 on the allowable side. "
                      "Never inferred from a squared length.")
-      .def_readwrite("minAllowabilityMargin",
+      .def_readwrite("min_allowability_margin",
                      &ClusterRegisterConfig::minAllowabilityMargin);
 
   py::class_<RegisterRegimeReport>(m, "RegisterRegimeReport",
@@ -305,18 +305,18 @@ void register_observables_crossing_register_lineage(py::module_ &m) {
       "is a certificate, never an automatic antiparticle identification.  "
       "Unmeasured values are NaN.")
       .def_readonly("regime", &RegisterRegimeReport::regime)
-      .def_readonly("gramDefect", &RegisterRegimeReport::gramDefect)
-      .def_readonly("positiveSignature",
+      .def_readonly("gram_defect", &RegisterRegimeReport::gramDefect)
+      .def_readonly("positive_signature",
                     &RegisterRegimeReport::positiveSignature)
-      .def_readonly("negativeSignature",
+      .def_readonly("negative_signature",
                     &RegisterRegimeReport::negativeSignature)
-      .def_readonly("neutralSignature",
+      .def_readonly("neutral_signature",
                     &RegisterRegimeReport::neutralSignature)
-      .def_readonly("signatureNormalizable",
+      .def_readonly("signature_normalizable",
                     &RegisterRegimeReport::signatureNormalizable)
-      .def_readonly("eigenResidual", &RegisterRegimeReport::eigenResidual)
-      .def_readonly("leftResidual", &RegisterRegimeReport::leftResidual)
-      .def_readonly("frameConditionNumber",
+      .def_readonly("eigen_residual", &RegisterRegimeReport::eigenResidual)
+      .def_readonly("left_residual", &RegisterRegimeReport::leftResidual)
+      .def_readonly("frame_condition_number",
                     &RegisterRegimeReport::frameConditionNumber);
 
   py::class_<ClusterRegisterRead>(m, "ClusterRegisterRead",
@@ -329,50 +329,50 @@ void register_observables_crossing_register_lineage(py::module_ &m) {
       .def_readonly("degree", &ClusterRegisterRead::degree)
       .def_readonly("rank", &ClusterRegisterRead::rank)
       .def_readonly("band", &ClusterRegisterRead::band)
-      .def_readonly("supportConnected", &ClusterRegisterRead::supportConnected)
-      .def_readonly("supportPieces", &ClusterRegisterRead::supportPieces)
-      .def_readonly("localizationExcess",
+      .def_readonly("support_connected", &ClusterRegisterRead::supportConnected)
+      .def_readonly("support_pieces", &ClusterRegisterRead::supportPieces)
+      .def_readonly("localization_excess",
                     &ClusterRegisterRead::localizationExcess)
-      .def_readonly("bandGap", &ClusterRegisterRead::bandGap)
+      .def_readonly("band_gap", &ClusterRegisterRead::bandGap)
       .def_readonly("contour", &ClusterRegisterRead::contour,
                     "The closed contour the band was selected by; empty when "
                     "no contour was drawn.")
-      .def_readonly("contourNodeCount",
+      .def_readonly("contour_node_count",
                     &ClusterRegisterRead::contourNodeCount)
-      .def_readonly("resolventBound", &ClusterRegisterRead::resolventBound,
+      .def_readonly("resolvent_bound", &ClusterRegisterRead::resolventBound,
                     "The Riesz resolvent bound on that contour -- the "
                     "'controlled resolvent' measurement.")
-      .def_readonly("allowabilityMargin",
+      .def_readonly("allowability_margin",
                     &ClusterRegisterRead::allowabilityMargin,
                     "Kontsevich-Segal allowability margin of the instance the "
                     "band was read on.")
-      .def_readonly("lorentzianEpsilon",
+      .def_readonly("lorentzian_epsilon",
                     &ClusterRegisterRead::lorentzianEpsilon,
                     "The reported rotation epsilon_L the band was read at.")
-      .def_readonly("neighbourOverlap", &ClusterRegisterRead::neighbourOverlap)
-      .def_readonly("frameLifetime", &ClusterRegisterRead::frameLifetime)
-      .def_readonly("transportLeakage",
+      .def_readonly("neighbour_overlap", &ClusterRegisterRead::neighbourOverlap)
+      .def_readonly("frame_lifetime", &ClusterRegisterRead::frameLifetime)
+      .def_readonly("transport_leakage",
                     &ClusterRegisterRead::transportLeakage)
       .def_readonly("regime", &ClusterRegisterRead::regime)
-      .def_readonly("failedConjuncts", &ClusterRegisterRead::failedConjuncts)
+      .def_readonly("failed_conjuncts", &ClusterRegisterRead::failedConjuncts)
       .def_readonly("unmeasured", &ClusterRegisterRead::unmeasured)
       .def_readonly("accepted", &ClusterRegisterRead::accepted)
       .def_readonly("certificate", &ClusterRegisterRead::certificate)
       .def_readonly("thresholds", &ClusterRegisterRead::thresholds)
       .def("describe", &ClusterRegisterRead::describe)
-      .def("toRecord",
+      .def("to_record",
            [](const ClusterRegisterRead &self) {
              return recordToPython(self.toRecord());
            },
            "Checkpoint serialization: the JSON-able record of the read "
            "(schema-versioned; unmeasured channels stay NaN).")
-      .def_static("fromRecord",
+      .def_static("from_record",
                   [](const py::handle &record) {
                     return ClusterRegisterRead::fromRecord(
                         pythonToRecord(record));
                   },
                   py::arg("record"),
-                  "Rehydrate from toRecord() output; rejects an unknown "
+                  "Rehydrate from to_record() output; rejects an unknown "
                   "schema_version (ValueError).");
 
   py::class_<ClusterRegister>(m, "ClusterRegister",
@@ -388,13 +388,13 @@ void register_observables_crossing_register_lineage(py::module_ &m) {
            py::arg("cfg") = ClusterRegisterConfig{})
       .def_property_readonly("config", &ClusterRegister::config)
       .def("read", &ClusterRegister::read, py::arg("st"), py::arg("support"),
-           py::arg("band"), py::arg("track"), py::arg("externalTransports"),
+           py::arg("band"), py::arg("track"), py::arg("external_transports"),
            py::arg("component") = ComponentId{},
            "Read the register of one cluster.  An absent track leaves the "
            "lifetime and overlap conjuncts unmeasured, never satisfied; an "
            "empty transport list likewise leaves leakage unmeasured rather "
            "than small.")
-      .def_static("supportConnectivity", &ClusterRegister::supportConnectivity,
+      .def_static("support_connectivity", &ClusterRegister::supportConnectivity,
                   py::arg("st"), py::arg("support"),
                   "Whether the induced one-skeleton on the support is "
                   "connected, and in how many pieces.");
@@ -422,21 +422,21 @@ void register_observables_crossing_register_lineage(py::module_ &m) {
       "history's steps.")
       .def_readonly("complex", &InteractionCobordism::complex)
       .def_readonly("cells", &InteractionCobordism::cells)
-      .def_readonly("vertexOffsets", &InteractionCobordism::vertexOffsets)
+      .def_readonly("vertex_offsets", &InteractionCobordism::vertexOffsets)
       .def_readonly("levels", &InteractionCobordism::levels)
-      .def_readonly("levelOf", &InteractionCobordism::levelOf)
-      .def_readonly("responseOf", &InteractionCobordism::responseOf)
+      .def_readonly("level_of", &InteractionCobordism::levelOf)
+      .def_readonly("response_of", &InteractionCobordism::responseOf)
       .def_readonly("edges", &InteractionCobordism::edges)
-      .def("incomingVertices", &InteractionCobordism::incomingVertices,
+      .def("incoming_vertices", &InteractionCobordism::incomingVertices,
            "The vertices of the incoming boundary: every vertex of level 0.")
-      .def("outgoingVertices", &InteractionCobordism::outgoingVertices,
+      .def("outgoing_vertices", &InteractionCobordism::outgoingVertices,
            "The vertices of the outgoing boundary: every vertex of the last level.")
-      .def("edgeIndex", &InteractionCobordism::edgeIndex, py::arg("a"), py::arg("b"),
+      .def("edge_index", &InteractionCobordism::edgeIndex, py::arg("a"), py::arg("b"),
            "The canonical C_1(W) index of the edge on the two vertices, or -1 when the pair is "
            "not an edge of W.")
-      .def("fiberEdges", &InteractionCobordism::fiberEdges,
+      .def("fiber_edges", &InteractionCobordism::fiberEdges,
            "The canonical C_1(W) indices of the fiber edges, the only timelike edges of W.")
-      .def("toRecord", [](const InteractionCobordism &self) {
+      .def("to_record", [](const InteractionCobordism &self) {
              return recordToPython(self.toRecord());
            });
 
@@ -447,45 +447,45 @@ void register_observables_crossing_register_lineage(py::module_ &m) {
       "a coboundary is a cocycle and separating because every edge with "
       "endpoints on opposite sides is a crossing edge.")
       .def_readonly("side", &CoorientedCut::side)
-      .def_readonly("crossingEdges", &CoorientedCut::crossingEdges)
-      .def_readonly("crossingSigns", &CoorientedCut::crossingSigns)
+      .def_readonly("crossing_edges", &CoorientedCut::crossingEdges)
+      .def_readonly("crossing_signs", &CoorientedCut::crossingSigns)
       .def_readonly("separates", &CoorientedCut::separates)
-      .def_readonly("failedCertificates", &CoorientedCut::failedCertificates)
-      .def("toRecord",
+      .def_readonly("failed_certificates", &CoorientedCut::failedCertificates)
+      .def("to_record",
            [](const CoorientedCut &self) { return recordToPython(self.toRecord()); });
 
   py::class_<Lineage>(m, "Lineage",
       "An oriented cluster lineage: an integral one-chain of W relative to its "
       "boundary, one coefficient per 1-simplex of W, together with the fermion "
       "number n_Q the lineage carries.")
-      .def_readonly("clusterId", &Lineage::clusterId)
+      .def_readonly("cluster_id", &Lineage::clusterId)
       .def_readonly("coefficients", &Lineage::coefficients)
-      .def_readwrite("fermionNumber", &Lineage::fermionNumber)
-      .def("toRecord", [](const Lineage &self) { return recordToPython(self.toRecord()); });
+      .def_readwrite("fermion_number", &Lineage::fermionNumber)
+      .def("to_record", [](const Lineage &self) { return recordToPython(self.toRecord()); });
 
   py::class_<LineageNumberRead>(m, "LineageNumberRead",
       "The reading of one lineage against one cut: N_Q, whether the cut "
       "separates, whether the lineage is a relative cycle, and the interior "
       "vertices at which it has a source.")
-      .def_readonly("clusterId", &LineageNumberRead::clusterId)
+      .def_readonly("cluster_id", &LineageNumberRead::clusterId)
       .def_readonly("number", &LineageNumberRead::number)
-      .def_readonly("fermionNumber", &LineageNumberRead::fermionNumber)
-      .def_readonly("relativeCycle", &LineageNumberRead::relativeCycle)
-      .def_readonly("interiorSources", &LineageNumberRead::interiorSources)
-      .def_readonly("cutSeparates", &LineageNumberRead::cutSeparates)
-      .def_readonly("failedCertificates", &LineageNumberRead::failedCertificates)
-      .def("toRecord",
+      .def_readonly("fermion_number", &LineageNumberRead::fermionNumber)
+      .def_readonly("relative_cycle", &LineageNumberRead::relativeCycle)
+      .def_readonly("interior_sources", &LineageNumberRead::interiorSources)
+      .def_readonly("cut_separates", &LineageNumberRead::cutSeparates)
+      .def_readonly("failed_certificates", &LineageNumberRead::failedCertificates)
+      .def("to_record",
            [](const LineageNumberRead &self) { return recordToPython(self.toRecord()); });
 
   py::class_<TotalLineageRead>(m, "TotalLineageRead",
       "The reading of a collection of lineages against one cut: "
       "N_q = sum_Q n_Q c_Q . Sigma and B = N_q / 3, the factor 1/3 being an "
       "explicit physical calibration and not a topological theorem.")
-      .def_readonly("fermionNumber", &TotalLineageRead::fermionNumber)
-      .def_readonly("baryonNumber", &TotalLineageRead::baryonNumber)
-      .def_readonly("perLineage", &TotalLineageRead::perLineage)
-      .def_readonly("failedCertificates", &TotalLineageRead::failedCertificates)
-      .def("toRecord",
+      .def_readonly("fermion_number", &TotalLineageRead::fermionNumber)
+      .def_readonly("baryon_number", &TotalLineageRead::baryonNumber)
+      .def_readonly("per_lineage", &TotalLineageRead::perLineage)
+      .def_readonly("failed_certificates", &TotalLineageRead::failedCertificates)
+      .def("to_record",
            [](const TotalLineageRead &self) { return recordToPython(self.toRecord()); });
 
   py::class_<ClusterLineage>(m, "ClusterLineage",
@@ -494,42 +494,42 @@ void register_observables_crossing_register_lineage(py::module_ &m) {
       "cooriented cut on the interaction cobordism. No sign is taken from a "
       "spectral coordinate, from the connection, from an eigenvalue or from a "
       "density, and no level set of a real part is used.")
-      .def_readonly_static("kSchemaVersion", &ClusterLineage::kSchemaVersion)
+      .def_readonly_static("k_schema_version", &ClusterLineage::kSchemaVersion)
       .def_static("history", &ClusterLineage::history, py::arg("levels"), py::arg("reductions"),
                   "The concatenated interaction cobordism of a history of levels.")
-      .def_static("mappingCylinder", &ClusterLineage::mappingCylinder, py::arg("incoming"),
+      .def_static("mapping_cylinder", &ClusterLineage::mappingCylinder, py::arg("incoming"),
                   py::arg("reduction"), py::arg("outgoing"),
                   "One interaction step's cobordism.")
-      .def_static("levelCut", &ClusterLineage::levelCut, py::arg("W"), py::arg("after_level"),
+      .def_static("level_cut", &ClusterLineage::levelCut, py::arg("W"), py::arg("after_level"),
                   "The cut placed between one level and the next.")
-      .def_static("cutFromSides", &ClusterLineage::cutFromSides, py::arg("W"), py::arg("side"),
+      .def_static("cut_from_sides", &ClusterLineage::cutFromSides, py::arg("W"), py::arg("side"),
                   "The cut carried by a declared side per vertex, validated.")
-      .def_static("fromFiberPath", &ClusterLineage::fromFiberPath, py::arg("W"),
+      .def_static("from_fiber_path", &ClusterLineage::fromFiberPath, py::arg("W"),
                   py::arg("start_vertex"), py::arg("fermion_number") = 1,
                   py::arg("cluster_id") = std::string{},
                   "The lineage through the fiber edges out of one starting vertex.")
-      .def_static("fromTrackedSupports", &ClusterLineage::fromTrackedSupports, py::arg("W"),
+      .def_static("from_tracked_supports", &ClusterLineage::fromTrackedSupports, py::arg("W"),
                   py::arg("first_level"), py::arg("supports"), py::arg("fermion_number") = 1,
                   py::arg("cluster_id") = std::string{},
                   "The lineage of a cluster whose support is tracked across levels.")
-      .def_static("fromVertexPath", &ClusterLineage::fromVertexPath, py::arg("W"), py::arg("path"),
+      .def_static("from_vertex_path", &ClusterLineage::fromVertexPath, py::arg("W"), py::arg("path"),
                   py::arg("fermion_number") = 1, py::arg("cluster_id") = std::string{},
                   "The lineage along a declared vertex path of W.")
       .def_static("reversed", &ClusterLineage::reversed, py::arg("lineage"),
                   "The same cluster history traversed in the opposite direction.")
-      .def_static("pairSurfaceBoundary", &ClusterLineage::pairSurfaceBoundary, py::arg("W"),
+      .def_static("pair_surface_boundary", &ClusterLineage::pairSurfaceBoundary, py::arg("W"),
                   py::arg("surface"), py::arg("fermion_number") = 1,
                   py::arg("cluster_id") = std::string{},
                   "The boundary of an oriented pair surface, as a lineage.")
-      .def_static("relativeBoundary", &ClusterLineage::relativeBoundary, py::arg("W"),
+      .def_static("relative_boundary", &ClusterLineage::relativeBoundary, py::arg("W"),
                   py::arg("lineage"), "The lineage's boundary, one integer per vertex of W.")
-      .def_static("intersectionNumber", &ClusterLineage::intersectionNumber, py::arg("W"),
+      .def_static("intersection_number", &ClusterLineage::intersectionNumber, py::arg("W"),
                   py::arg("cut"), py::arg("lineage"), "N_Q = c_Q . Sigma, the bare integer.")
       .def_static("read", &ClusterLineage::read, py::arg("W"), py::arg("cut"), py::arg("lineage"),
                   "N_Q with its certificates.")
       .def_static("totals", &ClusterLineage::totals, py::arg("W"), py::arg("cut"),
                   py::arg("lineages"), "N_q and B over a collection of lineages.")
-      .def_static("orderKey", &ClusterLineage::orderKey, py::arg("read"),
+      .def_static("order_key", &ClusterLineage::orderKey, py::arg("read"),
                   "The deterministic compilation-order key of one cluster's "
                   "oriented lineage, which quantum.EdgeModeRegistry sorts the "
                   "one-particle modes on.  Lexicographic order on the keys is "

@@ -50,7 +50,7 @@ The panels, and the class that feeds each
                                        one-third baryon sum, charge power)
 11. <J^2> and Var(J^2)              -- `CovarianceState` Wick reads
 12. Betti numbers                   -- `Spacetime` (topological observable)
-13. verdict and named reasons       -- `ParticleClusters.classifyBaryon`
+13. verdict and named reasons       -- `ParticleClusters.classify_baryon`
 
 Two of those are DRAWING, not measurement, and are kept out of the record
 accordingly: the layout positions and the dual curvature appear in no
@@ -405,7 +405,7 @@ class CausalClass:
     """How one edge reads causally: LABELS for `Edge`'s own classification.
 
     Not a second definition of causal type. `causal_class` dispatches on
-    `Edge.isSpacelike()` and its siblings, so this panel and every certificate
+    `Edge.is_spacelike()` and its siblings, so this panel and every certificate
     elsewhere answer from ONE classifier. A driver-local rule would eventually
     disagree with the engine about a physical property, which is exactly the
     condition that makes a picture untrustworthy.
@@ -486,13 +486,13 @@ def causal_class(edge):
     The order matters and mirrors the library's: degenerate is tested FIRST,
     because `arg(0)` is `0` and an absent edge would otherwise read spacelike.
     """
-    if edge.isDegenerate():
+    if edge.is_degenerate():
         return CausalClass.DEGENERATE
-    if edge.isSpacelike():
+    if edge.is_spacelike():
         return CausalClass.SPACELIKE
-    if edge.isTimelike():
+    if edge.is_timelike():
         return CausalClass.TIMELIKE
-    if edge.isNull():
+    if edge.is_null():
         return CausalClass.LIGHTLIKE
     return CausalClass.MIXED
 
@@ -509,26 +509,26 @@ def boundary_vertices(spacetime):
     the readout cannot disagree about what M0 is.
 
     The facets are reached through the TOP cells rather than through
-    `getSimplices()`: the lower skeleton is not materialized as registered
-    simplices until something builds it, so `getSimplices()` on a fresh
+    `get_simplices()`: the lower skeleton is not materialized as registered
+    simplices until something builds it, so `get_simplices()` on a fresh
     complex returns the top cells alone and would report every complex as
     closed.
 
-    TWO passes, and the order matters. `getFacets()` REGISTERS the coface
+    TWO passes, and the order matters. `get_facets()` REGISTERS the coface
     relation as a side effect, so a facet's coface count is only complete
     once every top cell has been visited. Counting in the same pass that
     materializes would see each facet before its second cell had registered
     and report the whole complex as boundary.
     """
     facets = {}
-    for top in spacetime.getTopSimplices():
-        for facet in top.getFacets():
+    for top in spacetime.get_top_simplices():
+        for facet in top.get_facets():
             facets[facet.__hash__()] = facet
     boundary = set()
     for facet in facets.values():
-        if len(facet.getCofaces()) == 1:
-            for vertex in facet.getVertices():
-                boundary.add(int(vertex.getId()))
+        if len(facet.get_cofaces()) == 1:
+            for vertex in facet.get_vertices():
+                boundary.add(int(vertex.get_id()))
     return sorted(boundary)
 
 
@@ -536,9 +536,9 @@ def _edge_endpoints(edge):
     """An edge's two vertex ids, through the bound accessors.
 
     `Edge` exposes its endpoints as vertices, not as a key pair, so an id is
-    read through `getSource`/`getTarget` rather than by indexing.
+    read through `get_source`/`get_target` rather than by indexing.
     """
-    return int(edge.getSource().getId()), int(edge.getTarget().getId())
+    return int(edge.get_source().get_id()), int(edge.get_target().get_id())
 
 
 def _hop_layers(spacetime, sources):
@@ -552,7 +552,7 @@ def _hop_layers(spacetime, sources):
     layer = {vertex: 0 for vertex in sources}
     frontier = list(sources)
     adjacency = {}
-    for edge in spacetime.getEdgeList().toVector():
+    for edge in spacetime.get_edge_list().to_vector():
         a, b = _edge_endpoints(edge)
         adjacency.setdefault(a, set()).add(b)
         adjacency.setdefault(b, set()).add(a)
@@ -635,26 +635,26 @@ def _seed_lengths(spacetime, disposition, seed, edges=None, epsilon=0.0):
         raise ValueError(
             "unknown edge disposition %r: expected one of %s"
             % (disposition, ", ".join(EdgeDisposition.ALL)))
-    edges = spacetime.getEdgeList().toVector() if edges is None else list(edges)
+    edges = spacetime.get_edge_list().to_vector() if edges is None else list(edges)
     _write_disposition(spacetime, disposition, seed, edges)
     parts = _timelike_parts(spacetime, disposition, edges)
     if parts is None or epsilon == 0.0:
         return
-    squared = [complex(edge.getLength()) ** 2 for edge in edges]
+    squared = [complex(edge.get_length()) ** 2 for edge in edges]
     rotated = ch.LorentzianFamily.rotate(squared, parts, float(epsilon))
     for edge, value in zip(edges, rotated):
-        edge.setLength(cmath.sqrt(complex(value)))
+        edge.set_length(cmath.sqrt(complex(value)))
 
 
 def _write_disposition(spacetime, disposition, seed, edges):
     """Write the unrotated seed length of `disposition` on `edges`."""
     if disposition == EdgeDisposition.SPACELIKE:
         for edge in edges:
-            edge.setLength(complex(1.0, 0.0))            # l^2 = +1
+            edge.set_length(complex(1.0, 0.0))            # l^2 = +1
         return
     if disposition == EdgeDisposition.TIMELIKE:
         for edge in edges:
-            edge.setLength(complex(0.0, 1.0))            # l^2 = -1
+            edge.set_length(complex(0.0, 1.0))            # l^2 = -1
         return
     if disposition == EdgeDisposition.LIGHTLIKE:
         # Re(l) == Im(l) > 0 with |l| = 1, so l^2 = i exactly: the interval
@@ -662,13 +662,13 @@ def _write_disposition(spacetime, disposition, seed, edges):
         # so x^2 - t^2 cancels to exactly zero and arg(l^2) is exactly pi/2.
         component = math.sqrt(0.5)
         for edge in edges:
-            edge.setLength(complex(component, component))  # l^2 = i
+            edge.set_length(complex(component, component))  # l^2 = i
         return
     if disposition == EdgeDisposition.RANDOM:
         generator = random.Random(seed)
         for edge in edges:
             angle = generator.uniform(0.0, 2.0 * math.pi)
-            edge.setLength(cmath.exp(1j * angle))        # |l| = 1
+            edge.set_length(cmath.exp(1j * angle))        # |l| = 1
         return
     # FOLIATED: the causal character follows the hop layering of M0, which is
     # the same layering the temporal function derives. Edges spanning layers
@@ -677,7 +677,7 @@ def _write_disposition(spacetime, disposition, seed, edges):
     for edge in edges:
         a, b = _edge_endpoints(edge)
         spans_layers = layer.get(a, 0) != layer.get(b, 0)
-        edge.setLength(complex(0.0, 1.0) if spans_layers
+        edge.set_length(complex(0.0, 1.0) if spans_layers
                        else complex(1.0, 0.0))
 
 
@@ -716,8 +716,8 @@ def build_cobordism_host(n_refine=DECLARED_SIZE, seed=DECLARED_HOST_SEED,
     st = T.Spacetime(T.Metric(True, T.Signature(4, T.Lorentzian)), T.CDT,
                      1.0, 1.0, T.PREFERRED, T.SolidSimplex(4))
     st.build()
-    for edge in st.getEdgeList().toVector():
-        edge.setLength(complex(1.0, 0.0))
+    for edge in st.get_edge_list().to_vector():
+        edge.set_length(complex(1.0, 0.0))
     applied = 0
     for step in range(seed, seed + n_refine * 4):
         move = T.AddMove(st, step, False, T.PachnerMode.PreGeometric, False)
@@ -737,7 +737,7 @@ def instance_certificate(spacetime, config):
     `None` when the seed's disposition declares no timelike part and the
     complex is therefore not a Lorentzian instance.
     """
-    margin = float(cob.HodgeLaplacian.kontsevichSegalMargin(spacetime))
+    margin = float(cob.HodgeLaplacian.kontsevich_segal_margin(spacetime))
     disposition = config.get("edge_disposition")
     epsilon = config.get("epsilon")
     return {
@@ -761,7 +761,7 @@ def _finite(value):
     return number if math.isfinite(number) else None
 
 
-def _reasons(read, attribute="failedCertificates"):
+def _reasons(read, attribute="failed_certificates"):
     """The NAMED reasons a read refused, as a list of strings."""
     named = getattr(read, attribute, None)
     if not named:
@@ -905,10 +905,10 @@ class AnimationFrame:
             from scipy.sparse.csgraph import shortest_path
         except ImportError:
             return Absent("numpy/scipy unavailable: no drawing layout")
-        edges = spacetime.getEdgeList().toVector()
-        vertices = sorted({int(v.getId())
+        edges = spacetime.get_edge_list().to_vector()
+        vertices = sorted({int(v.get_id())
                            for edge in edges
-                           for v in (edge.getSource(), edge.getTarget())})
+                           for v in (edge.get_source(), edge.get_target())})
         if len(vertices) < 2:
             return Absent("fewer than two vertices: nothing to lay out")
         index = {v: i for i, v in enumerate(vertices)}
@@ -920,11 +920,11 @@ class AnimationFrame:
         classes = []
         arguments = []
         for edge in edges:
-            a = index.get(int(edge.getSource().getId()))
-            b = index.get(int(edge.getTarget().getId()))
+            a = index.get(int(edge.get_source().get_id()))
+            b = index.get(int(edge.get_target().get_id()))
             if a is None or b is None:
                 continue
-            length = complex(edge.getLength())
+            length = complex(edge.get_length())
             w = math.sqrt(max(abs(length ** 2), 1e-6))
             weights[a, b] = weights[b, a] = min(weights[a, b], w)
             pairs.append((a, b))
@@ -937,7 +937,7 @@ class AnimationFrame:
             # a reader can see where an edge actually sits rather than only
             # which bucket it fell in.
             classes.append(causal_class(edge))
-            arguments.append(edge.squaredArgument())
+            arguments.append(edge.squared_argument())
         distances = shortest_path(weights, method="D", directed=False)
         finite = np.isfinite(distances)
         if not finite.any():
@@ -993,14 +993,14 @@ class AnimationFrame:
         except ImportError:
             return Absent("numpy unavailable: no dual curvature")
         hinge = {}
-        for simplex in spacetime.getSimplices():
-            vertices = simplex.getVertices()
+        for simplex in spacetime.get_simplices():
+            vertices = simplex.get_vertices()
             if len(vertices) != 3:
                 continue
-            key = tuple(sorted(int(v.getId()) for v in vertices))
+            key = tuple(sorted(int(v.get_id()) for v in vertices))
             try:
-                deficit = complex(simplex.deficitAngle())
-                weight = abs(complex(simplex.dualVolume()))
+                deficit = complex(simplex.deficit_angle())
+                weight = abs(complex(simplex.dual_volume()))
             except RuntimeError:
                 # A boundary or degenerate hinge carries no deficit. Only that
                 # geometric failure is absorbed -- a contract failure
@@ -1016,8 +1016,8 @@ class AnimationFrame:
             return Absent("no hinge carries a deficit: the lower skeleton "
                           "is not materialized")
         cells = []
-        for cell in spacetime.getTopSimplices():
-            ids = sorted(int(v.getId()) for v in cell.getVertices())
+        for cell in spacetime.get_top_simplices():
+            ids = sorted(int(v.get_id()) for v in cell.get_vertices())
             faces = [tuple(t) for t in itertools.combinations(ids, 3)]
             cells.append({
                 "vertices": ids,
@@ -1026,7 +1026,7 @@ class AnimationFrame:
             })
         if not cells:
             return Absent("no top cells: nothing to draw a dual over")
-        rows, cols, _count = spacetime.getDualAdjacency()
+        rows, cols, _count = spacetime.get_dual_adjacency()
         return {"cells": cells,
                 "adjacency": list(zip(list(rows), list(cols))),
                 "hinges_with_curvature": len(hinge)}
@@ -1051,12 +1051,12 @@ class AnimationFrame:
         """
         self.components = []
         self.supports = []
-        modularity = obs.PersistentModularity.fromSpacetime(spacetime)
+        modularity = obs.PersistentModularity.from_spacetime(spacetime)
         settings = obs.PersistentModularityConfig()
         window = [config["resolution"] * m for m in config["resolution_window"]]
         settings.resolutions = window
-        settings.baseSeed = config["seed"]
-        report = modularity.scanResolutions(settings)
+        settings.base_seed = config["seed"]
+        report = modularity.scan_resolutions(settings)
         if not report.slices:
             return Absent("modularity returned no resolution slice")
         # The slice at the analysis resolution: the window is a set of
@@ -1068,11 +1068,11 @@ class AnimationFrame:
         # A track covering every slice of the window is a community that
         # persisted across it; its member at the analysis slice is the one to
         # carry forward.
-        persistent = sorted({int(track.memberIndices[analysis])
+        persistent = sorted({int(track.member_indices[analysis])
                              for track in report.tracks
-                             if track.firstSlice == 0
-                             and track.lastSlice == len(window) - 1
-                             and len(track.memberIndices) > analysis})
+                             if track.first_slice == 0
+                             and track.last_slice == len(window) - 1
+                             and len(track.member_indices) > analysis})
         self.components = [offered[i] for i in persistent if i < len(offered)]
         record = {"proposedByModularity": len(offered),
                   "persistedAcrossWindow": len(self.components),
@@ -1088,11 +1088,11 @@ class AnimationFrame:
                              for c in self.components]
             record["band"] = "unavailable: %s" % self.band_reason
         else:
-            proposals = obs.ParticleClusters.proposeSupports(self.components,
+            proposals = obs.ParticleClusters.propose_supports(self.components,
                                                              partition)
             self.supports = [
                 (list(p.support),
-                 self.components[p.modularityIndex] if p.modularity else None,
+                 self.components[p.modularity_index] if p.modularity else None,
                  "+".join([n for n, offered_by in (("modularity", p.modularity),
                                                    ("band", p.band)) if offered_by]))
                 for p in proposals]
@@ -1118,14 +1118,14 @@ class AnimationFrame:
         partition of zero components."""
         self.band_reason = ""
         try:
-            K = ch.WhitneyMass.complexOf(spacetime)
-            lengths = ch.WhitneyMass.squaredLengthsOf(spacetime, K)
+            K = ch.WhitneyMass.complex_of(spacetime)
+            lengths = ch.WhitneyMass.squared_lengths_of(spacetime, K)
             # The crossover is declared at one so that degree zero is read from
             # the sparse pencil whatever the size of the complex: the supports
             # are the only thing wanted here, and a dense Schur form of every
             # degree, once per drawn frame, is work this panel does not need.
             base = ch.ChainHodge(K, lengths, ch.Preset.L2, ch.Branch.Continuation, 1)
-            cov = ch.CovariantChainHodge(base, ch.Connection.fromSpacetime(spacetime, K),
+            cov = ch.CovariantChainHodge(base, ch.Connection.from_spacetime(spacetime, K),
                                          7, False)
             return obs.EffectiveTopology.components(cov, config["band_scale"])
         except Exception as error:                        # noqa: BLE001
@@ -1174,7 +1174,7 @@ class AnimationFrame:
                 if position >= 0:
                     self.candidate_slots[(position, slot)] = len(self.candidates)
                 try:
-                    read = tracker.enumerateBands(support, degree)
+                    read = tracker.enumerate_bands(support, degree)
                 except Exception as error:                # noqa: BLE001
                     self.candidates.append(None)
                     rows.append({"accepted": False,
@@ -1192,7 +1192,7 @@ class AnimationFrame:
                     named = []
                     for fiber in read.fibers:
                         named.extend(_reasons(fiber.certificate(),
-                                              "failedCertificates"))
+                                              "failed_certificates"))
                     rows.append({"accepted": False,
                                  "offered": len(read.fibers),
                                  "proposers": proposers,
@@ -1205,12 +1205,12 @@ class AnimationFrame:
                     "proposers": proposers,
                     "degree": int(chosen.degree()),
                     "rank": int(chosen.rank()),
-                    "lowerGap": _finite(certificate.lowerGap),
-                    "upperGap": _finite(certificate.upperGap),
+                    "lowerGap": _finite(certificate.lower_gap),
+                    "upperGap": _finite(certificate.upper_gap),
                     "localization": _finite(certificate.localization),
                     "localizationExcess": _finite(
-                        certificate.localizationExcess),
-                    "gramDefect": _finite(certificate.gramDefect),
+                        certificate.localization_excess),
+                    "gramDefect": _finite(certificate.gram_defect),
                 })
         if not rows:
             return Absent("no band read was attempted")
@@ -1220,7 +1220,7 @@ class AnimationFrame:
     def _read_frame_tracks(self, spacetime):
         """The component tracks across the retained cobordism frames.
 
-        `PersistentModularity.trackAcrossFrames` is the library's own supplier
+        `PersistentModularity.track_across_frames` is the library's own supplier
         of the two quantities the acceptance conjuncts consume -- the lifetime
         in consecutive frames and the smallest adjacent-frame support overlap
         -- so neither is computed here and neither is assumed. A run with no
@@ -1233,8 +1233,8 @@ class AnimationFrame:
         frames = [list(f.components) for f in self.previous_frames]
         frames.append(list(self.components))
         try:
-            modularity = obs.PersistentModularity.fromSpacetime(spacetime)
-            self.frame_tracks = list(modularity.trackAcrossFrames(frames, 0.5))
+            modularity = obs.PersistentModularity.from_spacetime(spacetime)
+            self.frame_tracks = list(modularity.track_across_frames(frames, 0.5))
         except Exception as error:                        # noqa: BLE001
             return Absent("frame tracking failed: %s" % error)
         if not self.frame_tracks:
@@ -1244,15 +1244,15 @@ class AnimationFrame:
                 "tracks": len(self.frame_tracks),
                 "maxLifetime": max(lifetimes),
                 "minAdjacentOverlap": _finite(
-                    min(float(t.minAdjacentOverlap)
+                    min(float(t.min_adjacent_overlap)
                         for t in self.frame_tracks))}
 
     def _track_of(self, position):
         """The track this frame's component `position` sits at the end of."""
         current = len(self.previous_frames)
         for track in getattr(self, "frame_tracks", []):
-            indices = list(track.memberIndices)
-            if track.lastFrame == current and indices and \
+            indices = list(track.member_indices)
+            if track.last_frame == current and indices and \
                     indices[-1] == position:
                 return track
         return None
@@ -1268,11 +1268,11 @@ class AnimationFrame:
         history = list(self.previous_frames) + [self]
         run = []
         for offset in range(len(list(track.members)) - 1, -1, -1):
-            frame_index = int(track.firstFrame) + offset
+            frame_index = int(track.first_frame) + offset
             if frame_index >= len(history):
                 break
             frame = history[frame_index]
-            member = int(list(track.memberIndices)[offset])
+            member = int(list(track.member_indices)[offset])
             index = getattr(frame, "candidate_slots", {}).get((member, slot))
             candidates = getattr(frame, "candidates", [])
             if index is None or index >= len(candidates) \
@@ -1293,7 +1293,7 @@ class AnimationFrame:
         links = []
         for index in range(1, len(family)):
             try:
-                links.append(connection.transportOnSpacetime(
+                links.append(connection.transport_on_spacetime(
                     spacetime, family[index], family[index - 1]))
             except Exception:                             # noqa: BLE001
                 continue
@@ -1313,10 +1313,10 @@ class AnimationFrame:
         closure = str(config.get("lifetime_winding_closure", "none"))
         try:
             if closure == "closed-family":
-                return connection.closedFamilyWinding(links)
+                return connection.closed_family_winding(links)
             spec = obs.WindingClosureSpec()
             spec.mode = obs.WindingClosureSpec.Mode.NONE
-            return connection.openSegmentWinding(links, spec)
+            return connection.open_segment_winding(links, spec)
         except Exception:                                 # noqa: BLE001
             return None
 
@@ -1333,7 +1333,7 @@ class AnimationFrame:
                 continue
             try:
                 states.append(
-                    qu.CovarianceState.fromBandProjector(fiber.projector()))
+                    qu.CovarianceState.from_band_projector(fiber.projector()))
             except Exception:                             # noqa: BLE001
                 states.append(None)
         return states
@@ -1343,7 +1343,7 @@ class AnimationFrame:
     def _read_anchors(self):
         """The quark reads, which carry the triangle-anchor profile.
 
-        `classifyQuark` is the library's own evaluation of the paper's quark
+        `classify_quark` is the library's own evaluation of the paper's quark
         conditions, and its read reports the anchor score, maximal term,
         participation ratio and determinant-phase dispersion the paper asks
         for -- together with every certificate that failed, NAMED.
@@ -1359,7 +1359,7 @@ class AnimationFrame:
             if fiber is None:
                 continue
             evidence = obs.QuarkCandidateEvidence()
-            evidence.colorBand = fiber
+            evidence.color_band = fiber
             components = getattr(self, "candidate_components",
                                  self.components)
             # A support the degree-zero band proposed and modularity did not
@@ -1369,8 +1369,8 @@ class AnimationFrame:
                 evidence.component = components[index].id
             state = self.states[index] if index < len(self.states) else None
             if state is not None:
-                evidence.parityRead = state.wickParity()
-                evidence.occupationRead = state.wickTotalNumber()
+                evidence.parity_read = state.wick_parity()
+                evidence.occupation_read = state.wick_total_number()
             # The multi-frame evidence. The lifetime and the smallest
             # adjacent-frame overlap come from the candidate's frame track, its
             # band family from the retained frames, and its lifetime transports
@@ -1385,21 +1385,21 @@ class AnimationFrame:
             # unmeasured and the classifier names it.
             track = None if position < 0 else self._track_of(position)
             if track is not None:
-                evidence.frameLifetime = float(track.frames)
-                evidence.frameMinOverlap = float(track.minAdjacentOverlap)
+                evidence.frame_lifetime = float(track.frames)
+                evidence.frame_min_overlap = float(track.min_adjacent_overlap)
                 slot = next((s for (p, s), i
                              in self.candidate_slots.items() if i == index), 0)
                 family = self._band_family(track, slot)
                 if family:
-                    evidence.colorBandFrames = family
+                    evidence.color_band_frames = family
                 links = self._lifetime_transports(self.spacetime, family)
                 if links:
-                    evidence.lifetimeTransports = links
+                    evidence.lifetime_transports = links
                     winding = self._lifetime_winding(links, self.config)
                     if winding is not None:
                         evidence.winding = winding
             try:
-                read = classifier.classifyQuark(evidence)
+                read = classifier.classify_quark(evidence)
             except Exception as error:                    # noqa: BLE001
                 rows.append({"reason": "quark read failed: %s" % error})
                 continue
@@ -1407,13 +1407,13 @@ class AnimationFrame:
             self.quarks.append(read)
             rows.append({
                 "classification": str(read.classification),
-                "colorRank": int(read.colorRank),
-                "score": _finite(read.triangleAnchorScore),
-                "maxTerm": _finite(read.triangleAnchorMaxTerm),
+                "colorRank": int(read.color_rank),
+                "score": _finite(read.triangle_anchor_score),
+                "maxTerm": _finite(read.triangle_anchor_max_term),
                 "participationRatio": _finite(
-                    read.triangleAnchorParticipation),
-                "phaseDispersion": _finite(read.anchorPhaseDispersion),
-                "phaseCoherence": _finite(read.anchorPhaseCoherence),
+                    read.triangle_anchor_participation),
+                "phaseDispersion": _finite(read.anchor_phase_dispersion),
+                "phaseCoherence": _finite(read.anchor_phase_coherence),
                 "reasons": _reasons(read),
             })
         if not rows:
@@ -1440,7 +1440,7 @@ class AnimationFrame:
                 if to_fiber.rank() != from_fiber.rank():
                     continue
                 try:
-                    read = connection.transportOnSpacetime(
+                    read = connection.transport_on_spacetime(
                         spacetime, to_fiber, from_fiber)
                 except Exception as error:                # noqa: BLE001
                     rows.append({
@@ -1450,7 +1450,7 @@ class AnimationFrame:
                         "reason": "transport failed: %s" % error,
                     })
                     continue
-                reason = str(getattr(read, "rejectionReason", "") or "")
+                reason = str(getattr(read, "rejection_reason", "") or "")
                 rows.append({
                     "accepted": bool(read.accepted),
                     "leakage": _finite(getattr(read, "leakage", None)),
@@ -1536,7 +1536,7 @@ class AnimationFrame:
                 "reference surface. The crossing readouts are defined on a "
                 "cobordism with boundary M0 + M1")
         try:
-            temporal = obs.CrossingReadouts.temporalFunction(
+            temporal = obs.CrossingReadouts.temporal_function(
                 spacetime, boundary)
         except Exception as error:                        # noqa: BLE001
             return Absent("temporal function unavailable: %s" % error)
@@ -1554,18 +1554,18 @@ class AnimationFrame:
             if fiber is None:
                 continue
             tube = obs.WorldTubeInput()
-            tube.tubeId = "band-%d" % index
+            tube.tube_id = "band-%d" % index
             tube.band = fiber
             tube.orientation = +1
             quark = (candidate_quarks[index]
                      if index < len(candidate_quarks) else None)
             certified = (quark is not None
                          and str(quark.classification) == "quark")
-            tube.certifiedQuarkTube = certified
-            winding = (getattr(quark, "determinantWinding", None)
+            tube.certified_quark_tube = certified
+            winding = (getattr(quark, "determinant_winding", None)
                        if quark is not None else None)
             if winding is not None:
-                tube.determinantWinding = int(winding)
+                tube.determinant_winding = int(winding)
             tubes.append(tube)
             if certified:
                 quark_tubes.append(tube)
@@ -1577,11 +1577,11 @@ class AnimationFrame:
         block = {"level": level, "tubes": len(tubes)}
         mass = None
         try:
-            mass = obs.CrossingReadouts.crossingMass(tubes, temporal,
+            mass = obs.CrossingReadouts.crossing_mass(tubes, temporal,
                                                     level, 0.0)
-            block["crossingMass"] = _finite(mass.crossingMass)
-            block["admissible"] = int(mass.admissibleCrossings)
-            block["refused"] = int(mass.refusedCrossings)
+            block["crossingMass"] = _finite(mass.crossing_mass)
+            block["admissible"] = int(mass.admissible_crossings)
+            block["refused"] = int(mass.refused_crossings)
             block["calibrated"] = bool(mass.calibrated)
             block["units"] = str(mass.units)
         except Exception as error:                        # noqa: BLE001
@@ -1591,14 +1591,14 @@ class AnimationFrame:
                     "candidate crossing mass failed: %s" % error)
         baryon = None
         try:
-            baryon = obs.CrossingReadouts.baryonNumber(tubes, temporal,
+            baryon = obs.CrossingReadouts.baryon_number(tubes, temporal,
                                                       level, 0.0)
-            block["baryonNumber"] = _finite(baryon.baryonNumber)
-            block["quarkTubes"] = int(baryon.quarkTubes)
+            block["baryonNumber"] = _finite(baryon.baryon_number)
+            block["quarkTubes"] = int(baryon.quark_tubes)
             # Named defects, not a count: a tube whose crossing sign
             # disagrees with its determinant-line winding is reported, never
             # silently resolved.
-            block["signDefects"] = [str(d) for d in baryon.signDefects]
+            block["signDefects"] = [str(d) for d in baryon.sign_defects]
         except Exception as error:                        # noqa: BLE001
             block["baryonNumber"] = Absent("baryon sum failed: %s" % error)
             if len(tubes) == 3 and len(quark_tubes) == 3:
@@ -1624,20 +1624,20 @@ class AnimationFrame:
             else:
                 try:
                     self.crossing_mass_read = (
-                        obs.CrossingReadouts.crossingMass(
+                        obs.CrossingReadouts.crossing_mass(
                             candidate_tubes, temporal, level, 0.0))
                 except Exception as error:                # noqa: BLE001
                     self.crossing_candidate_read_failures.append(
                         "candidate crossing mass failed: %s" % error)
                 try:
                     self.crossing_baryon_read = (
-                        obs.CrossingReadouts.baryonNumber(
+                        obs.CrossingReadouts.baryon_number(
                             candidate_tubes, temporal, level, 0.0))
                 except Exception as error:                # noqa: BLE001
                     self.crossing_candidate_read_failures.append(
                         "candidate baryon sum failed: %s" % error)
         try:
-            profile = obs.CrossingReadouts.chargePowerProfile(
+            profile = obs.CrossingReadouts.charge_power_profile(
                 tubes, temporal, level)
             block["chargePower"] = {
                 "eigenvalues": [_finite(x) for x in profile.eigenvalues],
@@ -1655,7 +1655,7 @@ class AnimationFrame:
                                                          level)
             except Exception as error:                    # noqa: BLE001
                 signs.append({
-                    "tubeId": str(tube.tubeId),
+                    "tubeId": str(tube.tube_id),
                     "sign": None,
                     "admissible": False,
                     "perpendicular": None,
@@ -1663,7 +1663,7 @@ class AnimationFrame:
                 })
                 continue
             signs.append({
-                "tubeId": str(crossing.tubeId),
+                "tubeId": str(crossing.tube_id),
                 "sign": int(crossing.sign),
                 "admissible": bool(crossing.admissible),
                 "perpendicular": complex(crossing.perpendicular),
@@ -1738,13 +1738,13 @@ class AnimationFrame:
         crossing_mass = getattr(self, "crossing_mass_read", None)
         crossing_baryon = getattr(self, "crossing_baryon_read", None)
         if crossing_mass is not None:
-            evidence.crossingMass = crossing_mass
+            evidence.crossing_mass = crossing_mass
         if crossing_baryon is not None:
-            evidence.crossingBaryon = crossing_baryon
+            evidence.crossing_baryon = crossing_baryon
         read_failures = list(getattr(
             self, "crossing_candidate_read_failures", []))
         try:
-            read = obs.ParticleClusters().classifyBaryon(evidence)
+            read = obs.ParticleClusters().classify_baryon(evidence)
         except Exception as error:                        # noqa: BLE001
             detail = ("; " + "; ".join(read_failures)
                       if read_failures else "")
@@ -2877,7 +2877,7 @@ def geometry_document(node, inputs=None, source=None):
     `tests/cobordism/_causal_specimen.rebuild_spacetime`): the dimension, the
     top cells in their intrinsic vertex order, every edge as
     `[source, target, Re l^2, Im l^2]`, and the per-vertex times. That is
-    what `Spacetime.fromVertexTuples` plus `setLength` and `setTime` need to bring
+    what `Spacetime.from_vertex_tuples` plus `set_length` and `set_time` need to bring
     the complex back exactly, which the run document cannot do: it records
     measurements of a geometry, never the geometry.
 
@@ -2885,19 +2885,19 @@ def geometry_document(node, inputs=None, source=None):
     the relaxation moves and the quantity every formula takes, and the
     complex square root has two branches, so writing `l` and reading it back
     would be a branch choice made twice. WHY the times: they are state a
-    `Spacetime` carries and `fromVertexTuples` does not derive.
+    `Spacetime` carries and `from_vertex_tuples` does not derive.
 
     Phases are a separate field, written per edge alongside the squared
     length and only where some phase is nonzero.
     """
     spacetime = node.spacetime()
-    cells = [[int(v.getId()) for v in cell.getVertices()]
-             for cell in spacetime.getTopSimplices()]
+    cells = [[int(v.get_id()) for v in cell.get_vertices()]
+             for cell in spacetime.get_top_simplices()]
     if not cells:
         raise ValueError("the node's complex has no top cell: nothing to write")
     # The container exposes no dimension of its own, so it is read off the
     # top cells: a d-simplex has d + 1 vertices. A complex whose top cells
-    # disagree is not one `fromVertexTuples` could rebuild, and says so here rather
+    # disagree is not one `from_vertex_tuples` could rebuild, and says so here rather
     # than on the read.
     sizes = sorted({len(cell) for cell in cells})
     if len(sizes) != 1:
@@ -2905,13 +2905,13 @@ def geometry_document(node, inputs=None, source=None):
                          % ", ".join(str(n) for n in sizes))
     edges = []
     phases = []
-    for edge in spacetime.getEdgeList().toVector():
-        source_vertex = int(edge.getSource().getId())
-        target_vertex = int(edge.getTarget().getId())
-        squared = complex(edge.getLength()) ** 2
+    for edge in spacetime.get_edge_list().to_vector():
+        source_vertex = int(edge.get_source().get_id())
+        target_vertex = int(edge.get_target().get_id())
+        squared = complex(edge.get_length()) ** 2
         edges.append([source_vertex, target_vertex,
                       squared.real, squared.imag])
-        phase = complex(edge.getPhase())
+        phase = complex(edge.get_phase())
         if phase != 0:
             phases.append([source_vertex, target_vertex,
                            phase.real, phase.imag])
@@ -2921,8 +2921,8 @@ def geometry_document(node, inputs=None, source=None):
         "dimensions": sizes[0] - 1,
         "cells": cells,
         "edges": edges,
-        "vertex_times": [[int(v.getId()), float(v.getTime())]
-                         for v in spacetime.getVertexList().toVector()],
+        "vertex_times": [[int(v.get_id()), float(v.get_time())]
+                         for v in spacetime.get_vertex_list().to_vector()],
     }
     if phases:
         document["edge_phases"] = phases

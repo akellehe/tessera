@@ -14,7 +14,7 @@ geometry term:
     register dimension, with `r_U` exactly recomputable on the new complex.
 
 The geometry term is hinge-local and exact; `r_U` is a global spectral quantity, so
-its exact delta is a before/after `residualForPeriods` recompute.
+its exact delta is a before/after `residual_for_periods` recompute.
 """
 import unittest
 
@@ -29,12 +29,12 @@ _TOL = 1e-11
 
 def _grad_norm2(st):
     rs = T.ReggeSolver(st, T.MatterConfiguration())
-    return sum(abs(z) ** 2 for z in rs.actionGradientExact())
+    return sum(abs(z) ** 2 for z in rs.action_gradient_exact())
 
 
 def _tops(st):
-    return {tuple(sorted(v.getId() for v in c.getVertices()))
-            for c in st.getTopSimplices()}
+    return {tuple(sorted(v.get_id() for v in c.get_vertices()))
+            for c in st.get_top_simplices()}
 
 
 def _holed_s3():
@@ -53,10 +53,10 @@ def _holed_s3():
             break
     a, b = pair
     sc = cob.SurgicalCone(st)
-    sc.coneOut(list(a))
-    sc.coneOut(list(b))
-    for i, e in enumerate(st.getEdgeList().toVector()):
-        e.setLength(cmath.sqrt(complex(1.0 + 0.01 * (i % 7))))
+    sc.cone_out(list(a))
+    sc.cone_out(list(b))
+    for i, e in enumerate(st.get_edge_list().to_vector()):
+        e.set_length(cmath.sqrt(complex(1.0 + 0.01 * (i % 7))))
     return st, [[list(a), list(b)]]
 
 
@@ -64,8 +64,8 @@ def _cdt4(n=160):
     sig = T.Signature(4, T.Lorentzian)
     st = T.Spacetime(T.Metric(True, sig), T.CDT, 1.0, 1.0, T.PREFERRED, T.Toroid())
     st.build(n)
-    for i, e in enumerate(st.getEdgeList().toVector()):
-        e.setLength(cmath.sqrt(complex(1.0 + 0.011 * (i % 5))))
+    for i, e in enumerate(st.get_edge_list().to_vector()):
+        e.set_length(cmath.sqrt(complex(1.0 + 0.011 * (i % 5))))
     return st
 
 
@@ -74,19 +74,19 @@ def _sphere3():
     st = T.Spacetime(T.Metric(True, sig), T.CDT, 1.0, 1.0, T.PREFERRED,
                      T.SimplexBoundarySphere(3))
     st.build()
-    for e in st.getEdgeList().toVector():
-        e.setLength(cmath.sqrt(complex(1.0)))
+    for e in st.get_edge_list().to_vector():
+        e.set_length(cmath.sqrt(complex(1.0)))
     return st
 
 
 def _verts(st):
-    return {v.getId() for v in st.getVertexList().toVector() if v is not None}
+    return {v.get_id() for v in st.get_vertex_list().to_vector() if v is not None}
 
 
 def _edges(st):
-    return {(min(e.getSource().getId(), e.getTarget().getId()),
-             max(e.getSource().getId(), e.getTarget().getId()))
-            for e in st.getEdgeList().toVector()}
+    return {(min(e.get_source().get_id(), e.get_target().get_id()),
+             max(e.get_source().get_id(), e.get_target().get_id()))
+            for e in st.get_edge_list().to_vector()}
 
 
 def _refined_s3(n_refine=12):
@@ -96,14 +96,14 @@ def _refined_s3(n_refine=12):
     st = T.Spacetime(T.Metric(True, sig), T.CDT, 1.0, 1.0, T.PREFERRED,
                      T.SimplexBoundarySphere(3))
     st.build()
-    for e in st.getEdgeList().toVector():
-        e.setLength(cmath.sqrt(complex(1.0)))
+    for e in st.get_edge_list().to_vector():
+        e.set_length(cmath.sqrt(complex(1.0)))
     for seed in range(n_refine):
         mv = T.AddMove(st, seed, False, T.PachnerMode.PreGeometric, False)
         if mv.propose():
             mv.apply()
-    for i, e in enumerate(st.getEdgeList().toVector()):
-        e.setLength(cmath.sqrt(complex(1.0 + 0.01 * (i % 6))))
+    for i, e in enumerate(st.get_edge_list().to_vector()):
+        e.set_length(cmath.sqrt(complex(1.0 + 0.01 * (i % 6))))
     return st
 
 
@@ -117,22 +117,22 @@ class DeltaFEndToEndTest(unittest.TestCase):
         rs = T.ReggeSolver(st, T.MatterConfiguration())
 
         def full_F():
-            return _grad_norm2(st) + _GAMMA * es.residualForPeriods(holes, target)
+            return _grad_norm2(st) + _GAMMA * es.residual_for_periods(holes, target)
 
-        e = st.getEdgeList().toVector()[5]
-        ev = {e.getSource().getId(), e.getTarget().getId()}
+        e = st.get_edge_list().to_vector()[5]
+        ev = {e.get_source().get_id(), e.get_target().get_id()}
         aff = [list(c) for c in _tops(st) if ev.issubset(set(c))]
-        E = rs.affectedEdgesOfCells(aff)
+        E = rs.affected_edges_of_cells(aff)
 
         before_F = full_F()
-        before_gn = rs.gradientNorm2OverEdges(E)
-        before_ru = es.residualForPeriods(holes, target)
-        orig = (e.getLength() * e.getLength())
-        e.setLength(cmath.sqrt(complex(orig * 1.06)))
+        before_gn = rs.gradient_norm2_over_edges(E)
+        before_ru = es.residual_for_periods(holes, target)
+        orig = (e.get_length() * e.get_length())
+        e.set_length(cmath.sqrt(complex(orig * 1.06)))
         after_F = full_F()
-        after_gn = rs.gradientNorm2OverEdges(E)
-        after_ru = es.residualForPeriods(holes, target)
-        e.setLength(cmath.sqrt(complex(orig)))
+        after_gn = rs.gradient_norm2_over_edges(E)
+        after_ru = es.residual_for_periods(holes, target)
+        e.set_length(cmath.sqrt(complex(orig)))
 
         d_full = after_F - before_F
         d_incr = (after_gn - before_gn) + _GAMMA * (after_ru - before_ru)
@@ -162,7 +162,7 @@ class DeltaFEndToEndTest(unittest.TestCase):
         sc = cob.SurgicalCone(st)
         coned = None
         for c in list(tops_before):
-            ok, _reason = sc.coneOut(list(c))
+            ok, _reason = sc.cone_out(list(c))
             if ok:
                 coned = c
                 break
@@ -171,9 +171,9 @@ class DeltaFEndToEndTest(unittest.TestCase):
 
         # the decrement path ran: most of the coned cell's edges are still covered by
         # surviving cells, so they survive (were decremented, not removed).
-        edges_after = {(min(e.getSource().getId(), e.getTarget().getId()),
-                        max(e.getSource().getId(), e.getTarget().getId()))
-                       for e in st.getEdgeList().toVector()}
+        edges_after = {(min(e.get_source().get_id(), e.get_target().get_id()),
+                        max(e.get_source().get_id(), e.get_target().get_id()))
+                       for e in st.get_edge_list().to_vector()}
         cell_edges = [(coned[i], coned[j])
                       for i in range(len(coned)) for j in range(i + 1, len(coned))]
         survived = [e for e in cell_edges if e in edges_after]
@@ -183,11 +183,11 @@ class DeltaFEndToEndTest(unittest.TestCase):
         affected = [list(x) for x in (tops_before ^ _tops(st))]
         st0 = _cdt4()  # fresh identical before-complex (no reliance on rollback)
         rs0 = T.ReggeSolver(st0, T.MatterConfiguration())
-        E = sorted(set(map(tuple, rs0.affectedEdgesOfCells(affected)))
-                   | set(map(tuple, rs.affectedEdgesOfCells(affected))))
+        E = sorted(set(map(tuple, rs0.affected_edges_of_cells(affected)))
+                   | set(map(tuple, rs.affected_edges_of_cells(affected))))
         self.assertTrue(E)
         d_full = _grad_norm2(st) - before_full
-        d_loc = rs.gradientNorm2OverEdges(E) - rs0.gradientNorm2OverEdges(E)
+        d_loc = rs.gradient_norm2_over_edges(E) - rs0.gradient_norm2_over_edges(E)
         self.assertLess(abs(d_full - d_loc), 1e-9)
 
     def test_surgery_shifts_register_and_ru_recomputes(self):
@@ -208,11 +208,11 @@ class DeltaFEndToEndTest(unittest.TestCase):
         self.assertIsNotNone(pair, "refined S^3 must contain a disjoint cell pair")
         a, b = pair
 
-        b2_before = list(cob.ChainComplex.fromSpacetime(st).bettiNumbers())[2]
+        b2_before = list(cob.ChainComplex.from_spacetime(st).betti_numbers())[2]
         sc = cob.SurgicalCone(st)
-        self.assertTrue(sc.coneOut(list(a))[0])   # opens the manifold (b₃ → 0)
-        self.assertTrue(sc.coneOut(list(b))[0])   # disjoint ⇒ raises b₂ by 1
-        b2_after = list(cob.ChainComplex.fromSpacetime(st).bettiNumbers())[2]
+        self.assertTrue(sc.cone_out(list(a))[0])   # opens the manifold (b₃ → 0)
+        self.assertTrue(sc.cone_out(list(b))[0])   # disjoint ⇒ raises b₂ by 1
+        b2_after = list(cob.ChainComplex.from_spacetime(st).betti_numbers())[2]
         self.assertEqual(b2_after, b2_before + 1, "surgery did not shift the register")
 
         # r_U over BOTH emergent holes (2 holes, 1 harmonic mode ⇒ over-constrained,
@@ -220,13 +220,13 @@ class DeltaFEndToEndTest(unittest.TestCase):
         es = cob.EigenstateSynthesis(st, 2)
         holes = [list(a), list(b)]
         target = [complex(1.0), complex(0.3)]
-        r_u = es.residualForPeriods(holes, target)
+        r_u = es.residual_for_periods(holes, target)
         self.assertGreater(r_u, 1.0)
-        g = es.residualForPeriodsGradient(holes, target)
-        l2 = {tuple(sorted((e.getSource().getId(), e.getTarget().getId()))):
-              (e.getLength() * e.getLength()).real for e in st.getEdgeList().toVector()}
+        g = es.residual_for_periods_gradient(holes, target)
+        l2 = {tuple(sorted((e.get_source().get_id(), e.get_target().get_id()))):
+              (e.get_length() * e.get_length()).real for e in st.get_edge_list().to_vector()}
         edges = [tuple(sorted(c)) for c in
-                 cob.ChainComplex.fromSpacetime(st).kSimplexVertices(1)]
+                 cob.ChainComplex.from_spacetime(st).k_simplex_vertices(1)]
         euler = sum(l2[edges[i]] * g[i] for i in range(len(edges)))
         self.assertLess(abs(euler + 2.0 * r_u) / r_u, 1e-9,
                         "Σℓ²∂r_U = −2·r_U failed on the post-surgery complex")
@@ -241,11 +241,11 @@ class ConeInverseTest(unittest.TestCase):
         st = _sphere3()
         sc = cob.SurgicalCone(st)
         # open a boundary so a cone-in onto a boundary triangle is admissible
-        self.assertTrue(sc.coneOut([0, 1, 2, 3])[0])
+        self.assertTrue(sc.cone_out([0, 1, 2, 3])[0])
         tops0, edges0, verts0 = _tops(st), _edges(st), _verts(st)
 
         # cone-in on the boundary triangle {0,1,2} → a fresh apex + the new cell
-        self.assertTrue(sc.coneIn([0, 1, 2])[0])
+        self.assertTrue(sc.cone_in([0, 1, 2])[0])
         apex = (_verts(st) - verts0).pop()                  # the one fresh vertex
         added_edges = _edges(st) - edges0
         # exactly the k = d apex ("out") edges were added (apex→0, apex→1, apex→2)
@@ -253,7 +253,7 @@ class ConeInverseTest(unittest.TestCase):
         created = sorted([apex, 0, 1, 2])
 
         # the explicit inverse move (NOT rollback): cone the created cell out
-        self.assertTrue(sc.coneOut(created)[0])
+        self.assertTrue(sc.cone_out(created)[0])
 
         # structure restored bit-for-bit: only the k apex edges + apex went away,
         # the covered base edges {0,1},{0,2},{1,2} survived.

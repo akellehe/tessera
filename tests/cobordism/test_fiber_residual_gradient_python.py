@@ -29,12 +29,12 @@ LAMBDA = np.array([math.sqrt(3.0), 2.0, math.sqrt(3.0), 0.0])
 
 @pytest.fixture
 def whitney_default():
-    previous = HL.defaultMetricSource()
-    HL.setDefaultMetricSource(cob.HodgeMetricSource.WhitneyPencil)
+    previous = HL.default_metric_source()
+    HL.set_default_metric_source(cob.HodgeMetricSource.WhitneyPencil)
     try:
         yield
     finally:
-        HL.setDefaultMetricSource(previous)
+        HL.set_default_metric_source(previous)
 
 
 def fiber_target(psi, cells=CELLS):
@@ -47,13 +47,13 @@ def fiber_target(psi, cells=CELLS):
 
 def jitter(node, rng, scale=0.25):
     """Generic complex squared lengths so nothing sits on a symmetric point."""
-    for e in node.spacetime().getEdgeList().toVector():
+    for e in node.spacetime().get_edge_list().to_vector():
         s = 1.0 + scale * rng.uniform(-1, 1) + 1j * scale * rng.uniform(-1, 1)
-        e.setLength(np.sqrt(complex(s)))
+        e.set_length(np.sqrt(complex(s)))
 
 
 def squared_lengths(node):
-    return np.array([complex(e.getLength()) ** 2 for e in node.spacetime().getEdgeList().toVector()])
+    return np.array([complex(e.get_length()) ** 2 for e in node.spacetime().get_edge_list().to_vector()])
 
 
 def holomorphic(packed):
@@ -70,19 +70,19 @@ def flip_flop(psi, phi):
 
 
 def central_difference(node, evaluate, h=1e-6):
-    edges = node.spacetime().getEdgeList().toVector()
+    edges = node.spacetime().get_edge_list().to_vector()
     out = np.zeros(len(edges), dtype=complex)
     for i, e in enumerate(edges):
-        l0 = complex(e.getLength())
+        l0 = complex(e.get_length())
         s0 = l0 * l0
         parts = []
         for step in (h, 1j * h):
-            e.setLength(np.sqrt(s0 + step))
+            e.set_length(np.sqrt(s0 + step))
             plus = evaluate()
-            e.setLength(np.sqrt(s0 - step))
+            e.set_length(np.sqrt(s0 - step))
             minus = evaluate()
             parts.append((plus - minus) / (2 * h))
-        e.setLength(l0)
+        e.set_length(l0)
         out[i] = complex(parts[0], parts[1])
     return out
 
@@ -97,7 +97,7 @@ class TestWholeComplexFiberGradient:
         node.use_fiber_residuals(True)
         lengths, phases = node.fiber_residual_gradient(node.whole_complex_fiber_target())
         lengths = np.asarray(lengths)
-        assert lengths.shape == (node.spacetime().getEdgeList().size(),)
+        assert lengths.shape == (node.spacetime().get_edge_list().size(),)
         s = squared_lengths(node)
         euler = abs(np.sum(s * holomorphic(lengths))) / max(np.abs(lengths).max() * np.abs(s).max(), 1e-300)
         assert euler < 1e-10, f"Euler identity violated: {euler:.3e}"
@@ -124,7 +124,7 @@ class TestTwoBodyGradient:
         node = MC(MC.seed_simplex(3), [[1.0 + 0j, 0j, 0j, 0j], [1.0 + 0j, 0j, 0j, 0j]], [], degrees=[0],
                   precone=8, einstein_hilbert=False)
         jitter(node, rng, 0.15)
-        tets = [tuple(int(v) for v in t) for t in cob.ChainComplex.fromSpacetime(node.spacetime()).kSimplexVertices(3)]
+        tets = [tuple(int(v) for v in t) for t in cob.ChainComplex.from_spacetime(node.spacetime()).k_simplex_vertices(3)]
         a, b = next((x, y) for x, y in itertools.combinations(tets, 2) if not set(x) & set(y))
         node.seed_inputs([0, 1])
         node.attach_input_fiber(0, fiber_target(psi), [[v] for v in a])

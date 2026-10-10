@@ -13,7 +13,7 @@ Three isomorphic, disjoint sheets of the regular tetrahedron, each carrying the
 symmetric unit Dirac monopole (`baryon_poles.build_host`). The certified
 sheeting (sheet-major cells, six base edges per sheet) is declared as the
 colour multiplicity; the projective rotation action D_1(g) of T = A_4 on each
-sheet's edges (`MonopoleSupport.edgeRepresentation`) is declared as the
+sheet's edges (`MonopoleSupport.edge_representation`) is declared as the
 support's symmetry, with the projective class read from
 `MonopoleSupport.cocycle`.
 

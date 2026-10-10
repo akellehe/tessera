@@ -50,14 +50,14 @@ def _cell_in_order(order):
     """
     st = _spacetime(4)
     st.build()
-    vertices = {v.getId(): v for v in st.getVertexList().toVector()}
-    for simplex in list(st.getSimplices()):
-        if len(simplex.getVertices()) == 5:
-            st.removeSimplex(simplex)
-    st.createSimplex([vertices[i] for i in order])
-    for edge in st.getEdgeList().toVector():
-        endpoints = (edge.getSource().getId(), edge.getTarget().getId())
-        edge.setLength(cmath.sqrt(complex(-1.0 if 4 in endpoints else 1.0)))
+    vertices = {v.get_id(): v for v in st.get_vertex_list().to_vector()}
+    for simplex in list(st.get_simplices()):
+        if len(simplex.get_vertices()) == 5:
+            st.remove_simplex(simplex)
+    st.create_simplex([vertices[i] for i in order])
+    for edge in st.get_edge_list().to_vector():
+        endpoints = (edge.get_source().get_id(), edge.get_target().get_id())
+        edge.set_length(cmath.sqrt(complex(-1.0 if 4 in endpoints else 1.0)))
     # The ReggeSolver constructor materializes the facet and hinge skeleton.
     tessera.ReggeSolver(st, tessera.MatterConfiguration())
     return st
@@ -65,8 +65,8 @@ def _cell_in_order(order):
 
 def _edges_by_pair(st):
     out = {}
-    for edge in st.getEdgeList().toVector():
-        a, b = edge.getSource().getId(), edge.getTarget().getId()
+    for edge in st.get_edge_list().to_vector():
+        a, b = edge.get_source().get_id(), edge.get_target().get_id()
         out[(min(a, b), max(a, b))] = edge
     return out
 
@@ -74,12 +74,12 @@ def _edges_by_pair(st):
 def _finite_difference(st, hinge, pair):
     """Central difference of the deficit angle in the l^2 of one edge."""
     edge = _edges_by_pair(st)[pair]
-    original = edge.getLength() * edge.getLength()
-    edge.setLength(cmath.sqrt(complex(original + _STEP)))
-    plus = complex(hinge.deficitAngle())
-    edge.setLength(cmath.sqrt(complex(original - _STEP)))
-    minus = complex(hinge.deficitAngle())
-    edge.setLength(cmath.sqrt(complex(original)))
+    original = edge.get_length() * edge.get_length()
+    edge.set_length(cmath.sqrt(complex(original + _STEP)))
+    plus = complex(hinge.deficit_angle())
+    edge.set_length(cmath.sqrt(complex(original - _STEP)))
+    minus = complex(hinge.deficit_angle())
+    edge.set_length(cmath.sqrt(complex(original)))
     return (plus - minus) / (2.0 * _STEP)
 
 
@@ -90,15 +90,15 @@ def _finite_difference(st, hinge, pair):
 ], ids=["sorted", "permuted", "reversed_apex_first"])
 def test_gradient_matches_the_value_whatever_order_the_cell_stores(order):
     st = _cell_in_order(order)
-    cell = next(s for s in st.getSimplices() if len(s.getVertices()) == 5)
-    assert [v.getId() for v in cell.getVertices()] == list(order), (
+    cell = next(s for s in st.get_simplices() if len(s.get_vertices()) == 5)
+    assert [v.get_id() for v in cell.get_vertices()] == list(order), (
         "createSimplex is expected to keep the given vertex order")
 
-    hinges = [s for s in st.getSimplices() if len(s.getVertices()) == 3]
+    hinges = [s for s in st.get_simplices() if len(s.get_vertices()) == 3]
     assert hinges, "the Regge solver should materialize the 2-simplex hinges"
     hinge = hinges[0]
 
-    gradient = {tuple(k): v for k, v in hinge.deficitAngleGradient().items()}
+    gradient = {tuple(k): v for k, v in hinge.deficit_angle_gradient().items()}
     assert gradient, "a hinge of a 4-simplex has a gradient in every edge"
 
     for pair, analytic in gradient.items():

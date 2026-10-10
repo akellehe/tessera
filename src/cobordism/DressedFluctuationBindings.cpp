@@ -103,7 +103,7 @@ void register_cobordism_dressed_fluctuation(py::module_ &m) {
                      "second term of the exact elimination.")
       .def_readwrite("induced_one_body", &ManyBodySpaceRead::inducedOneBody,
                      "The part of the quartic that is a one-body operator, "
-                     "-1/2 dGamma(sum_ab (A^-1)_ab O_a O_b), which reordering "
+                     "-1/2 d_gamma(sum_ab (A^-1)_ab O_a O_b), which reordering "
                      "the product of two currents produces.")
       .def_readwrite("normal_ordered_quartic",
                      &ManyBodySpaceRead::normalOrderedQuartic,
