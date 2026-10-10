@@ -3,7 +3,8 @@ description: >-
   Prints the compiler cache's statistics for the build that just ran, puts
   them on the run's summary page, and saves the ccache directory the job's
   CCACHE_DIR names to actions/cache under the key compiler-cache-restore
-  computed. Run it right after the build step, with `if: ${{ !cancelled() }}`.
+  computed. Run it right after the build step, with a condition of
+  "not cancelled" so a failed build still saves the objects it produced.
 
 inputs:
   cache-hit:
