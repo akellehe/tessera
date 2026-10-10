@@ -35,6 +35,7 @@ import cmath
 import copy
 import json
 import math
+import glob
 import os
 import sys
 import time
@@ -1340,15 +1341,19 @@ class AnalysisOverlayTest(unittest.TestCase):
             os.path.abspath(__file__))))
         overlay = os.path.join(root, "src", "cobordism",
                                "RecursiveFiberSimulation.cpp")
-        engine = os.path.join(root, "src", "cobordism", "MultiCobordism.cpp")
         if not os.path.exists(overlay):     # installed wheel, not a checkout
             self.skipTest("source tree not available")
+        engine = sorted(glob.glob(os.path.join(root, "src", "cobordism",
+                                               "MultiCobordism*")))
+        self.assertTrue(engine)
         with open(overlay) as handle:
             overlay_text = handle.read()
         self.assertIn("classifyBoundSupercomponents", overlay_text)
         self.assertIn("boundSupercomponentSearch", overlay_text)
-        with open(engine) as handle:
-            self.assertNotIn("classifyBoundSupercomponents", handle.read())
+        for path in engine:
+            with open(path) as handle:
+                self.assertNotIn("classifyBoundSupercomponents", handle.read(),
+                                 msg=path)
 
     def test_the_baryon_writer_emits_every_declared_field(self):
         """The `particles.baryons` record is the BaryonRead, whole: the

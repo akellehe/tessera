@@ -288,8 +288,8 @@ jobs:
           fi
 
       # A full build is memory-bound, not CPU-bound: the template-heavy
-      # translation units (src/cobordism/MultiCobordism.cpp, the per-subsystem
-      # Bindings.cpp, the Eigen-dense chainhodge sources) each peak near 4.7 GB
+      # translation units (the per-subsystem Bindings.cpp, the Eigen-dense
+      # chainhodge sources) each peak near 4.7 GB
       # in cc1plus at -O3 -march=native. A fixed parallel level sized for the
       # larger runner host (125 GB) ran eight such compilers on the 29 GB host
       # while other work was using it: swap filled completely and one job died

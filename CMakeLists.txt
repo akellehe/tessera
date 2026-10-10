@@ -24,8 +24,8 @@ endif()
 
 # ---- Build resource limits (memory-aware Ninja job pools) ----
 # A full tessera build is memory-bound, not CPU-bound. The template-heavy
-# translation units (src/cobordism/MultiCobordism.cpp, the per-subsystem
-# Bindings.cpp, the Eigen-dense chainhodge sources) each peak near 4.7 GB in
+# translation units (the per-subsystem Bindings.cpp, the Eigen-dense
+# chainhodge sources) each peak near 4.7 GB in
 # cc1plus at -O3 -march=native. Ninja's default parallelism is (cores + 2), so
 # on a 16-core box a plain `pip install -e ".[dev]"` launches 18 of those at
 # once — tens of GB of demand against whatever the machine actually has. The
