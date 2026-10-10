@@ -336,8 +336,8 @@ Build options via environment variables:
 TESSERA_CUDA=0       pip install -e .     # CPU-only build
 TESSERA_CCACHE=0     pip install -e .     # disable the ccache compiler cache
 TESSERA_BUILD_TESTS=0 pip install -e .    # skip the C++ test executables under tests/quantum
-TESSERA_FAST_LINKER=0 pip install -e .    # disable the mold/lld fast linker (Debug builds)
-TESSERA_FAST_LINKER_RELEASE=1 pip install -e .  # mold for the Release/RelWithDebInfo link too (opt-in, see CMakeLists.txt)
+TESSERA_FAST_LINKER=0 pip install -e .    # disable the mold/lld fast linker for every configuration
+TESSERA_FAST_LINKER_RELEASE=0 pip install -e .  # keep the default linker for the Release/RelWithDebInfo link (mold otherwise)
 TESSERA_ASAN=1       pytest tests/        # AddressSanitizer + UBSan
 TESSERA_VERBOSE=1    pytest tests/        # C++ logging
 TESSERA_ASSERTIONS=1 pytest tests/        # extra invariant checks

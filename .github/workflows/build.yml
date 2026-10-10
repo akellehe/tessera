@@ -17,13 +17,6 @@ on:
         type: choice
         options: [full, fast]
         default: full
-      fast_linker_release:
-        description: >-
-          Link the Release/RelWithDebInfo module with mold instead of the
-          default BFD ld (TESSERA_FAST_LINKER_RELEASE=1), for the validation
-          run of the mold link against the golden-value tests.
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -188,11 +181,6 @@ jobs:
       # runners.
       AGENT_TOOLSDIRECTORY: /opt/hostedtoolcache
       TESSERA_CUDA: "0"
-      # mold for the Release/RelWithDebInfo link, on a manual dispatch that
-      # asks for it (the ``fast_linker_release`` input); empty on every other
-      # event, so those links stay on the default linker until the validation
-      # run described in CMakeLists.txt has passed.
-      TESSERA_FAST_LINKER_RELEASE: ${{ inputs.fast_linker_release && '1' || '' }}
       # The runner box is shared (other self-hosted runners + interactive use);
       # cap math-library parallelism so concurrent matrix jobs stay good
       # neighbors. Tunable. Build parallelism (CMAKE_BUILD_PARALLEL_LEVEL) is
