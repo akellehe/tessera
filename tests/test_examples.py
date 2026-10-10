@@ -319,6 +319,21 @@ class TestRootLatticeSpacetime(unittest.TestCase):
         os.unlink(path)
 
 
+class TestEntanglementSpectralDimension(unittest.TestCase):
+    """Tests for examples/entanglement_spectral_dimension.py"""
+
+    def test_runs_both_schedules_and_saves_the_figure(self):
+        rc, out, err, path = run_example(
+            "entanglement_spectral_dimension.py",
+            ["--qubits", "4", "--timesteps", "3", "--sigma-count", "12"])
+        self.assertEqual(rc, 0, f"Script failed:\nstdout:\n{out}\nstderr:\n{err}")
+        self.assertIn("SPECTRAL DIMENSION", out)
+        self.assertIn("chain schedule", out)
+        self.assertTrue(os.path.exists(path), f"No output at {path}")
+        self.assertGreater(os.path.getsize(path), 0)
+        os.unlink(path)
+
+
 class TestBuildBenchmark(unittest.TestCase):
     """Tests for examples/benchmarks/build_benchmark.py"""
 
