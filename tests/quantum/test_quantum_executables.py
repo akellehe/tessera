@@ -10,6 +10,7 @@ Skips cleanly when the quantum subsystem is not built.
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 import unittest
 from pathlib import Path
@@ -47,13 +48,31 @@ class TestQuantumExecutables(unittest.TestCase):
                 f"{exe_name} not found — build with `cmake -DTESSERA_QUANTUM=ON` "
                 "or set the env var TESSERA_QUANTUM=1 before running pytest"
             )
-        result = subprocess.run(
-            [str(exe)],
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            cwd=REPO_ROOT,
-        )
+        # Line-buffered, so the output an executable has produced is in the
+        # pipe when a timeout kills it: a block-buffered stdout into a pipe
+        # dies with the process, and the failure would not say which section
+        # stalled. stdbuf (GNU coreutils) sets the C stdio buffering that
+        # std::cout writes through; without it the run is unchanged.
+        stdbuf = shutil.which("stdbuf")
+        command = ([stdbuf, "-oL", "-eL"] if stdbuf else []) + [str(exe)]
+        try:
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                cwd=REPO_ROOT,
+            )
+        except subprocess.TimeoutExpired as expired:
+            def text(stream) -> str:
+                if stream is None:
+                    return ""
+                return stream.decode(errors="replace") if isinstance(stream, bytes) else stream
+            self.fail(
+                f"{exe_name} did not finish within {timeout} s; the output it "
+                f"produced before the timeout:\nstdout:\n{text(expired.stdout)}\n"
+                f"stderr:\n{text(expired.stderr)}"
+            )
         self.assertEqual(
             result.returncode,
             0,
