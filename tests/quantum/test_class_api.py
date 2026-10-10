@@ -40,8 +40,8 @@ try:
         StandardMajorization,
         LogConcaveMajorization,
         PeakRadialMajorization,
-        Poset,
     )
+    from tessera import Poset
     HAVE_QUANTUM = True
 except ImportError:
     HAVE_QUANTUM = False

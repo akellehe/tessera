@@ -20,7 +20,6 @@
 #include "spacetime/pachner/RemoveMove.h"
 #include "spacetime/pachner/ShiftMove.h"
 #include "simulations/ReggeSolver.h"
-#include "matter/MatterConfiguration.h"
 #include "mesh/SimplexFilter.h"
 #include "observables/ModularityOptimizer.h"
 #include "observables/SparseGraph.h"
@@ -28,6 +27,7 @@
 #include "observables/WilsonLoop.h"
 #include "spacetime/Spacetime.h"
 #include "ForceLayout.h"
+#include "Poset.h"
 #include "mesh/VertexList.h"
 #include "mesh/EdgeList.h"
 #include "spacetime/Signature.h"
@@ -54,6 +54,7 @@ void register_isospin_doublet(py::module_ m);
 void register_simulations(py::module_ m);
 void register_cobordism(py::module_ m);
 void register_chainhodge(py::module_ m);
+void register_matter(py::module_ m);
 
 PYBIND11_MODULE(_tessera, m) {
   m.doc() = R"doc(
@@ -102,6 +103,9 @@ References:
   auto m_cobordism   = m.def_submodule("cobordism",
       "Cobordisms between PL manifolds: characteristic numbers, verification, "
       "reconstruction.");
+  auto m_matter      = m.def_submodule("matter",
+      "Matter on a triangulation: MatterConfiguration, worldlines, hinge "
+      "classification.");
   auto m_chainhodge  = m.def_submodule("chainhodge",
       "Chain-level Whitney Hodge pencil: sparse inverse chain metrics, "
       "branches, and instance certificates.");
@@ -109,6 +113,7 @@ References:
   // --- Per-subsystem bindings (one file per subsystem) ---
   register_mesh(m_mesh);
   register_spacetime(m_spacetime);
+  register_matter(m_matter);
   register_observables(m_observables);
   register_isospin_doublet(m_observables);
   register_simulations(m_simulations);
@@ -116,56 +121,115 @@ References:
   register_chainhodge(m_chainhodge);
 
   // ========================================
-  // MatterConfiguration
+  // Poset: finite partial orders and their comparison (include/Poset.h)
   // ========================================
-  py::enum_<HingeType>(m, "HingeType")
-      .value("SPATIAL", HingeType::SPATIAL)
-      .value("TIMELIKE", HingeType::TIMELIKE);
+  py::class_<Poset>(m, "Poset",
+          R"doc(Hasse / cover representation of a finite partial order.
 
-  py::class_<MatterConfiguration>(m, "MatterConfiguration",
-      R"doc(Intrinsic (coordinate-free) specification of stress-energy on a triangulation.
+Nodes are integers ``0 .. getNodeCount - 1``. ``covers`` lists the cover
+edges: each entry ``(a, b)`` means ``a`` strictly precedes ``b`` with no
+intermediate node. The full strict order is the transitive closure of
+the covers; see :func:`compareOrders` for pairwise statistics derived
+from that closure.
 
-Matter is defined relationally: by assigning energy densities to vertices,
-simplices, or as a function of geodesic distance from a reference vertex.
+Construct empty (``Poset()``) and resize via the ``getNodeCount``
+setter, or pass an integer to pre-populate node count
+(``Poset(4)``). Mutate via :meth:`addCover` (single edge) or the
+``covers`` setter (whole list). The class makes no internal
+consistency checks; callers are responsible for transitivity and
+acyclicity.
 
-For point particles, the matter action is the proper-time action:
-S_matter = -M Σ √(-ℓ²) along the worldline.)doc")
+See ``docs/source/causal_sets.md`` for the conceptual background.
+)doc")
       .def(py::init<>())
-      .def("setWorldlineMass", &MatterConfiguration::setWorldlineMass,
-           py::arg("center"), py::arg("mass"), py::arg("spacetime"),
-           R"doc(Assign a static point mass along its worldline through all time slices.
+      .def(py::init<int>(), py::arg("nodeCount"),
+          "Construct with the node count pre-set to ``nodeCount``.")
+      .def("addCover", &Poset::addCover, py::arg("a"), py::arg("b"),
+          R"doc(Add the cover edge ``a -> b`` (a strictly precedes b, no intermediate).
 
-Traces a worldline from center through the foliation by following
-timelike edges.  The matter action is the proper-time action:
-S_matter = -M Σ √(-ℓ²) along the worldline.
+Both endpoints must already exist (call the int constructor or the
+``getNodeCount`` setter first). No deduplication is performed — adding
+the same cover twice creates two parallel edges. Covers normally come
+from a transitive reduction, where duplicates cannot arise.
+)doc")
+      .def_property("getNodeCount",
+          [](Poset const& p) { return p.getNodeCount(); },
+          [](Poset& p, int n) { p.setNodeCount(n); },
+          "Number of nodes. Setting grows the node set; nodes are not "
+          "removed if you set a smaller value, and cover edges are "
+          "preserved across resizes.")
+      .def("getCoverCount", &Poset::getCoverCount,
+          "Number of cover edges currently registered.")
+      .def_property("covers",
+          [](Poset const& p) { return p.covers(); },
+          [](Poset& p, std::vector<std::pair<int, int>> const& covers) {
+              p.setCovers(covers);
+          },
+          "Cover edges as a list of ``(a, b)`` pairs. Setting replaces "
+          "the entire cover list in one pass.")
+      .def("toDot", &Poset::toDot,
+          "Graphviz DOT representation of the Hasse diagram. "
+          "Nodes labelled by their integer id; one directed edge per "
+          "cover. Suitable for ``dot -Tsvg`` rendering.")
+      .def_static("fromSpacetime",
+          [](py::object spacetime_obj) {
+              auto const* st = spacetime_obj.cast<tessera::spacetime::Spacetime const*>();
+              return tessera::Poset::fromSpacetime(*st);
+          }, py::arg("spacetime"),
+          R"doc(Build the causet partial order on a Spacetime's vertices.
 
-Args:
-    center: A vertex on the worldline (any time slice).
-    mass: The mass in geometrized units (G=c=1).
-    spacetime: The spacetime to trace through.)doc")
-      .def("setEnergyDensity", &MatterConfiguration::setEnergyDensity,
-           py::arg("simplex"), py::arg("rho"),
-           R"doc(Assign energy density to a top-simplex.
+Reads the directed-edge / timelike-edge subgraph as the strict
+``precedes`` relation, then takes the transitive reduction to recover
+cover edges. The result has one node per Spacetime vertex (in
+ascending ID order); cover edges are between strictly comparable
+vertices with no intermediate.
+)doc")
+      .def("__repr__", [](Poset const& p) {
+          return "Poset(getNodeCount=" + std::to_string(p.getNodeCount()) +
+                 ", covers=" + std::to_string(p.getCoverCount()) + " edges)";
+      });
 
-Args:
-    simplex: The simplex to assign density to.
-    rho: Energy density in geometrized units.)doc")
-      .def("setRadialProfile", &MatterConfiguration::setRadialProfile,
-           py::arg("center"), py::arg("rhoOfR"),
-           R"doc(Assign energy density as a function of geodesic distance.
+  py::class_<OrderAgreement>(m, "OrderAgreement",
+          R"doc(Pairwise agreement statistics between two posets.
 
-Args:
-    center: The reference vertex.
-    rhoOfR: A callable taking distance (float) and returning density (float).)doc")
-      .def_static("buildWorldline", &MatterConfiguration::buildWorldline,
-           py::arg("center"), py::arg("spacetime"),
-           py::return_value_policy::copy,
-           R"doc(Trace a worldline from center through all time slices.
+Counted over unordered pairs (i, j) with i < j:
+* concordant — both orders relate the pair, in the same direction.
+* discordant — both orders relate the pair, in opposite directions.
+* only_a / only_b — exactly one order relates the pair.
 
-Returns a list of vertices, one per time slice, ordered by time.)doc")
-      .def_static("classifyHinge", &MatterConfiguration::classifyHinge,
-           py::arg("hinge"),
-           R"doc(Classify a hinge as SPATIAL (all vertices at one time) or TIMELIKE.)doc");
+Build via :meth:`Majorization.agreement(a, b, n_labels)`.
+)doc")
+      .def_readonly("kendallTau",         &OrderAgreement::kendallTau)
+      .def_readonly("discordantFraction", &OrderAgreement::discordantFraction)
+      .def_readonly("hasseEditDistance",  &OrderAgreement::hasseEditDistance)
+      .def_readonly("nConcordant",        &OrderAgreement::nConcordant)
+      .def_readonly("nDiscordant",        &OrderAgreement::nDiscordant)
+      .def_readonly("nComparableBoth",    &OrderAgreement::nComparableBoth)
+      .def_readonly("nOnlyA",             &OrderAgreement::nOnlyA)
+      .def_readonly("nOnlyB",             &OrderAgreement::nOnlyB);
+
+  m.def("compareOrders", &tessera::compareOrders,
+      py::arg("a"), py::arg("b"), py::arg("nLabels"),
+      R"doc(Pairwise agreement statistics between two posets on a shared label set.
+
+Counts unordered pairs (i, j) with i < j in five disjoint buckets via
+Floyd–Warshall transitive closures of `a` and `b`:
+
+* concordant   — both orders relate the pair the same way
+* discordant   — both orders relate the pair, opposite ways
+* only-a       — `a` relates the pair, `b` does not
+* only-b       — `b` relates the pair, `a` does not
+* neither      — neither order relates the pair
+
+Returns an :class:`OrderAgreement` with ``kendallTau``,
+``discordantFraction``, ``hasseEditDistance``, and the five counts.
+
+Complexity: O(nLabels^3) for the transitive closure, O(nLabels^2) for
+the pair counts. Practical up to a few thousand labels.
+
+See ``docs/source/causal_sets.md`` for the methodology context.
+)doc");
+
   // ========================================
   // ForceLayout
   // ========================================

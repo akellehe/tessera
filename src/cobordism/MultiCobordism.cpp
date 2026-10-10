@@ -50,7 +50,7 @@
 
 namespace tessera::cobordism {
 
-using ::tessera::MatterConfiguration;
+using ::tessera::matter::MatterConfiguration;
 using ::tessera::simulations::ReggeSolver;
 using complexd = std::complex<double>;
 

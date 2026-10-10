@@ -7,6 +7,7 @@
 #include <pybind11/complex.h>
 #include <pybind11/functional.h>
 #include <pybind11/chrono.h>
+#include <pybind11/eigen.h>
 
 #include "spacetime/topologies/Topology.h"
 #include "spacetime/topologies/Cylinder.h"
@@ -20,6 +21,7 @@
 #include "spacetime/pachner/RemoveMove.h"
 #include "spacetime/pachner/ShiftMove.h"
 #include "simulations/ReggeSolver.h"
+#include "simulations/InteractionSimulation.h"
 #include "matter/MatterConfiguration.h"
 #include "mesh/SimplexFilter.h"
 #include "observables/ModularityOptimizer.h"
@@ -249,7 +251,7 @@ The total action is S = S_grav + S_matter where:
 
 Minimizes F = ||∇S||² to find stationary points of S (the discrete
 Einstein equations).  F ≥ 0, and F = 0 at the solution.)doc")
-      .def(py::init<std::shared_ptr<Spacetime>, MatterConfiguration>(),
+      .def(py::init<std::shared_ptr<Spacetime>, ::tessera::matter::MatterConfiguration>(),
            py::arg("spacetime"), py::arg("matter"))
       .def("dihedralAngle", &ReggeSolver::dihedralAngle,
            py::arg("sigma"), py::arg("hinge"),
@@ -343,4 +345,150 @@ Einstein equations).  F ≥ 0, and F = 0 at the solution.)doc")
            "values as the dense actionHessianExact on the nonzero pattern (edge "
            "pairs sharing a hinge), assembled at O(nnz) memory instead of O(|E|²).");
 
+
+  using ::tessera::simulations::InitialChargeMode;
+  using ::tessera::simulations::InteractionConfig;
+  using ::tessera::simulations::InteractionSimulation;
+
+  // ─── InteractionSimulation: interaction-history Monte Carlo ────────
+  // See docs/source/interaction-history-monte-carlo.md.
+  py::class_<InteractionConfig>(m, "InteractionConfig",
+      R"doc(Configuration for an interaction-history Monte Carlo run.
+
+nSystems randomized correlated mixed-state systems on a Poisson-Delaunay
+initial layer (delaunayEdges is the connectivity, supplied by the
+caller); the Schwinger two-site unitary exp(-i H_XY dt) drives each
+interaction; beta is the inverse temperature in e^{-beta S}.
+)doc")
+      .def(py::init<>())
+      .def_readwrite("nSystems",           &InteractionConfig::nSystems)
+      .def_readwrite("a",                  &InteractionConfig::a)
+      .def_readwrite("g",                  &InteractionConfig::g)
+      .def_readwrite("m",                  &InteractionConfig::m)
+      .def_readwrite("dt",                 &InteractionConfig::dt)
+      .def_readwrite("beta",               &InteractionConfig::beta)
+      .def_readwrite("epsilonI",           &InteractionConfig::epsilonI)
+      .def_readwrite("targetInteractions",
+                     &InteractionConfig::targetInteractions)
+      .def_readwrite("delaunayEdges",      &InteractionConfig::delaunayEdges)
+      .def_readwrite("useCharges",         &InteractionConfig::useCharges)
+      .def_readwrite("featureCharges",
+                     &InteractionConfig::featureCharges)
+      .def_readwrite("featureDeactivateOnAnnihilate",
+                     &InteractionConfig::featureDeactivateOnAnnihilate)
+      .def_readwrite("featurePhotonOnAnnihilate",
+                     &InteractionConfig::featurePhotonOnAnnihilate)
+      .def_readwrite("featureQuditBasis",
+                     &InteractionConfig::featureQuditBasis)
+      .def_readwrite("featureChoiSigmaAB",
+                     &InteractionConfig::featureChoiSigmaAB)
+      .def_readwrite("j_chargeCharge",
+                     &InteractionConfig::j_chargeCharge)
+      .def_readwrite("j_spinSpin",
+                     &InteractionConfig::j_spinSpin)
+      .def_readwrite("massShift",
+                     &InteractionConfig::massShift)
+      .def_readwrite("gammaCpViolation",
+                     &InteractionConfig::gammaCpViolation)
+      .def_readwrite("dtPair",
+                     &InteractionConfig::dtPair)
+      .def_readwrite("cpBias",             &InteractionConfig::cpBias)
+      .def_readwrite("initialChargeMode",
+                     &InteractionConfig::initialChargeMode)
+      .def_readwrite("seed",               &InteractionConfig::seed)
+      .def_readwrite("quiet",              &InteractionConfig::quiet);
+
+  py::enum_<tessera::simulations::InitialChargeMode>(m, "InitialChargeMode")
+      .value("ALTERNATING",
+             tessera::simulations::InitialChargeMode::ALTERNATING)
+      .value("RANDOM",
+             tessera::simulations::InitialChargeMode::RANDOM);
+
+  py::class_<InteractionSimulation>(m, "InteractionSimulation",
+      R"doc(Metropolis Monte Carlo over interaction histories, weighted by
+the geometric Regge action on the dual lattice.
+
+Mirrors tessera.CDT: the move primitives interact() / unInteract(), the
+driving loop sweep() / thermalize() / tune(), and the diagnostics
+computeAction() / getSpectralDimension() / getAcceptanceRates(). The
+object of the search is the beta at which the emergent spectral
+dimension reaches 4.
+)doc")
+      .def(py::init<InteractionConfig>(), py::arg("config"))
+      .def("interact",   &InteractionSimulation::interact,
+           R"doc(Propose + Metropolis-accept one interaction. Returns acceptance.)doc")
+      .def("unInteract", &InteractionSimulation::unInteract,
+           R"doc(Propose + Metropolis-accept one un-interaction. Returns acceptance.)doc")
+      .def("sweep",      &InteractionSimulation::sweep,
+           R"doc(One Monte Carlo sweep; returns the number of accepted moves.)doc")
+      .def("thermalize", &InteractionSimulation::thermalize,
+           R"doc(Tune to the target volume, then sweep to equilibrium.)doc")
+      .def("tune",       &InteractionSimulation::tune,
+           py::arg("progress") = nullptr,
+           R"doc(Grow the complex toward targetInteractions.)doc")
+      .def("computeAction", &InteractionSimulation::computeAction,
+           R"doc(The geometric Regge action S = sum_h A_h eps_h.)doc")
+      .def("getSpectralDimension",
+           &InteractionSimulation::getSpectralDimension,
+           py::arg("sigmas"), py::arg("krylovDim") = 30,
+           R"doc(Heat-kernel spectral dimension D_S(sigma) of the MI-weighted complex.)doc")
+      .def("getDeficitAngleDistribution",
+           &InteractionSimulation::getDeficitAngleDistribution,
+           R"doc(Deficit angles over the interior hinges.)doc")
+      .def("getVolumeProfile", &InteractionSimulation::getVolumeProfile,
+           R"doc(Interaction-count profile by time slice.)doc")
+      .def("getAcceptanceRates",
+           &InteractionSimulation::getAcceptanceRates,
+           R"doc(Accepted / attempted ratio per move type.)doc")
+      .def("annihilate", &InteractionSimulation::annihilate,
+           R"doc(Spontaneous partial annihilation of a (+, -) frontier pair.)doc")
+      .def("pairCreate", &InteractionSimulation::pairCreate,
+           R"doc(Spontaneous (+, -) pair creation with a Bell joint.)doc")
+      .def("getGlobalCharge", &InteractionSimulation::getGlobalCharge,
+           R"doc(Total signed charge across the complex.)doc")
+      .def("getChargeProfile", &InteractionSimulation::getChargeProfile,
+           R"doc(Per-time-slice (n_+, n_0, n_-, sum_q).)doc")
+      .def("getChargeCorrelation",
+           &InteractionSimulation::getChargeCorrelation,
+           py::arg("maxDist"),
+           R"doc(<q_v . q_w> as a function of graph distance.)doc")
+      .def("quditChargeOf", &InteractionSimulation::quditChargeOf,
+           py::arg("vertex"),
+           R"doc(A single vertex's continuous charge via Tr[ρ · Q̂].
+
+Q̂ = diag(+1, +1, -1, -1) on the {|+0⟩, |+1⟩, |−0⟩, |−1⟩} basis.
+For an integer-charge eigenstate this returns ±1; for the maximally-mixed
+I/4 proxy it returns 0; for an arbitrary mixed state, the value sits in
+[−1, +1]. Requires ``featureQuditBasis = True``. Returns 0.0 for vertices
+the simulation has no qudit state for.)doc")
+      .def("quditStateOf",
+           [](const InteractionSimulation &self, tessera::mesh::VertexPtr v)
+               -> py::object {
+             const auto &m = self.quditStateOfMap();
+             auto it = m.find(v);
+             if (it == m.end()) return py::none();
+             return py::cast(it->second);
+           },
+           py::arg("vertex"),
+           R"doc(A single vertex's 4×4 qudit density matrix, or ``None`` if
+no qudit state is stored. Exposes per-vertex purity, charge content and
+basis populations directly, rather than through the projected
+``Tr[ρ · Q̂]`` accessor. Requires ``featureQuditBasis = True``.)doc")
+      .def("quditJointStateFor",
+           &InteractionSimulation::quditJointStateFor,
+           py::arg("x"), py::arg("y"),
+           R"doc(16×16 joint qudit state ρ_XY for a pair.
+
+Returns the stored correlated joint when (x, y) share an interaction
+history or are initial-layer Delaunay neighbours; otherwise the
+uncorrelated product ρ_x ⊗ ρ_y.)doc")
+      .def("getSpacetime", &InteractionSimulation::getSpacetime,
+           R"doc(The interaction-history simplicial complex (the primal).)doc")
+      .def_property_readonly("interactionCount",
+           &InteractionSimulation::interactionCount)
+      .def_property_readonly("frontierSize",
+           &InteractionSimulation::frontierSize)
+      .def_property("beta", &InteractionSimulation::getBeta,
+           &InteractionSimulation::setBeta)
+      .def("setSeed", &InteractionSimulation::setSeed, py::arg("seed"));
 }

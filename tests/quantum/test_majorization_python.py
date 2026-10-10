@@ -16,11 +16,11 @@ import unittest
 from itertools import permutations
 
 try:
+    from tessera import Poset
     from tessera.quantum import (
         QuantumConfig,
         Interval,
         SchmidtSpectra,
-        Poset,
         Majorization,
         StandardMajorization,
         SchwingerModel,

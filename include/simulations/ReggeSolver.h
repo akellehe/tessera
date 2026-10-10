@@ -69,7 +69,7 @@ using namespace ::tessera::quantum;
 class ReggeSolver {
   public:
     ReggeSolver(std::shared_ptr<Spacetime> spacetime,
-                MatterConfiguration matter);
+                ::tessera::matter::MatterConfiguration matter);
 
     // ==================== Geometry queries ====================
 
@@ -211,13 +211,13 @@ class ReggeSolver {
         return spacetime_;
     }
 
-    [[nodiscard]] const MatterConfiguration& getMatter() const noexcept {
+    [[nodiscard]] const ::tessera::matter::MatterConfiguration& getMatter() const noexcept {
         return matter_;
     }
 
   private:
     std::shared_ptr<Spacetime> spacetime_;
-    MatterConfiguration matter_;
+    ::tessera::matter::MatterConfiguration matter_;
 
     /// Collect all (d-2)-simplices (hinges) in the complex.
     [[nodiscard]] std::vector<SimplexPtr> collectHinges() const;

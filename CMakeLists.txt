@@ -359,6 +359,7 @@ set(TESSERA_PYBIND_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/bindings.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/mesh/Bindings.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/spacetime/Bindings.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/matter/Bindings.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/observables/Bindings.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/observables/IsospinDoubletBindings.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/simulations/Bindings.cpp"
