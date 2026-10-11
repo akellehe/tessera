@@ -1144,8 +1144,7 @@ std::map<std::pair<std::pair<std::uint64_t, std::uint64_t>,
          std::complex<double>>
 Simplex::deficitAngleHessian() const {
     using cd = std::complex<double>;
-    using EK = std::pair<std::uint64_t, std::uint64_t>;
-    std::map<std::pair<EK, EK>, cd> hess;
+    std::map<std::pair<VertexIdPair, VertexIdPair>, cd> hess;
     if (!spacetime || vertices.empty()) return hess;
     const int topSize =
         spacetime->getMetric()->getSignature()->getDimensions() + 1;
@@ -1263,8 +1262,8 @@ Simplex::deficitAngleHessian() const {
                      - 2.0 * (Ne * Den - N * De) * Df) / (Den * Den * Den);
 
                 const cd d2theta = d2thetaDr2 * e.dr * f.dr + dthetaDr * d2r;
-                const EK ke{std::min(e.va, e.vb), std::max(e.va, e.vb)};
-                const EK kf{std::min(f.va, f.vb), std::max(f.va, f.vb)};
+                const VertexIdPair ke{std::min(e.va, e.vb), std::max(e.va, e.vb)};
+                const VertexIdPair kf{std::min(f.va, f.vb), std::max(f.va, f.vb)};
                 hess[{ke, kf}] -= d2theta;      // eps = 2pi - sum theta
             }
         }
@@ -2076,8 +2075,7 @@ bool Simplex::dualGeometryIsDegenerate() const {
 std::map<std::pair<std::uint64_t, std::uint64_t>, std::complex<double>>
 Simplex::dualVolumeGradient() const {
     using cd = std::complex<double>;
-    using EK = std::pair<std::uint64_t, std::uint64_t>;
-    std::map<EK, cd> grad;
+    std::map<VertexIdPair, cd> grad;
     if (vertices.empty()) return grad;
     const int n = ambientTopDimension();
     const int k = static_cast<int>(size()) - 1;
@@ -2087,12 +2085,12 @@ Simplex::dualVolumeGradient() const {
     // c(hinge) to c(facet) and h2 from c(facet) to c(top) (circumcentricHeight):
     // d|*h| = inv * sum_facets (dh1 * S + h1 * dS).
     const double inv = 1.0 / (static_cast<double>(n - k) * (n - k - 1));
-    std::map<EK, cd> dV;
-    std::set<EK> edges;                   // the star: every edge of every top
+    std::map<VertexIdPair, cd> dV;
+    std::set<VertexIdPair> edges;         // the star: every edge of every top
     for (const auto& cf : getCofaces()) {
         const CircumcentricHeight h1 = circumcentricHeight(cf, this, HeightOrder::Gradient);
         cd S{0.0, 0.0};
-        std::map<EK, cd> dS;
+        std::map<VertexIdPair, cd> dS;
         for (const auto& tp : cf->getCofaces()) {
             const CircumcentricHeight h2 = circumcentricHeight(tp, cf, HeightOrder::Gradient);
             S += h2.value;
@@ -2117,15 +2115,14 @@ std::map<std::pair<std::pair<std::uint64_t, std::uint64_t>,
          std::complex<double>>
 Simplex::dualVolumeHessian() const {
     using cd = std::complex<double>;
-    using EK = std::pair<std::uint64_t, std::uint64_t>;
-    std::map<std::pair<EK, EK>, cd> hess;
+    std::map<std::pair<VertexIdPair, VertexIdPair>, cd> hess;
     if (vertices.empty()) return hess;
     const int n = ambientTopDimension();
     const int k = static_cast<int>(size()) - 1;
     if (k != n - 2) return hess;
 
     // The star's edges, indexed, so the per-facet pieces assemble densely.
-    std::set<EK> edgeSet;
+    std::set<VertexIdPair> edgeSet;
     for (const auto& cf : getCofaces())
         for (const auto& tp : cf->getCofaces()) {
             const auto& tv = tp->getVertices();
@@ -2135,9 +2132,9 @@ Simplex::dualVolumeHessian() const {
                     edgeSet.insert({std::min(a, b), std::max(a, b)});
                 }
         }
-    const std::vector<EK> ev(edgeSet.begin(), edgeSet.end());
+    const std::vector<VertexIdPair> ev(edgeSet.begin(), edgeSet.end());
     const std::size_t nE = ev.size();
-    std::map<EK, std::size_t> index;
+    std::map<VertexIdPair, std::size_t> index;
     for (std::size_t i = 0; i < nE; ++i) index.emplace(ev[i], i);
     const auto slots = [&](const CircumcentricHeight& h) {
         std::vector<std::ptrdiff_t> at(h.edges.size(), -1);

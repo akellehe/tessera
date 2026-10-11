@@ -43,6 +43,8 @@
 namespace tessera::cobordism {
 
 using cd = std::complex<double>;
+using ::tessera::mesh::ascendingIds;
+using ::tessera::mesh::VertexIdPair;
 
 // === Free interior connectivity (general growth primitive) ===
 
@@ -90,13 +92,10 @@ bool EigenstateSynthesis::attachInteriorVertex(
   // Snapshot the pinned boundary (id-pair -> (complex w, theta)) for the
   // bit-exact check. The whole complex l2 is compared, not (Re, phase), so the
   // dW invariant catches Im-only corruption too.
-  std::map<std::pair<std::uint64_t, std::uint64_t>,
-           std::pair<std::complex<double>, std::complex<double>>>
+  std::map<VertexIdPair, std::pair<std::complex<double>, std::complex<double>>>
       boundaryBefore;
   for (const auto i : boundaryEdgeIdx_) {
-    const std::uint64_t a = edges_[i]->getSource()->getId();
-    const std::uint64_t b = edges_[i]->getTarget()->getId();
-    boundaryBefore[{std::min(a, b), std::max(a, b)}] = {
+    boundaryBefore[edges_[i]->ascendingIds()] = {
         (edges_[i]->getLength() * edges_[i]->getLength()), edges_[i]->getPhase()};
   }
 
@@ -130,31 +129,22 @@ bool EigenstateSynthesis::attachInteriorVertex(
   // Validate the only two invariants the experiment allows.
   // (a) Valid downward-closed complex: every pair within each new simplex carries
   //     an edge (createSimplexTracked guarantees this — assert it as a real gate).
-  std::set<std::pair<std::uint64_t, std::uint64_t>> edgeKeys;
-  for (const auto e : edges_) {
-    const std::uint64_t a = e->getSource()->getId();
-    const std::uint64_t b = e->getTarget()->getId();
-    edgeKeys.insert({std::min(a, b), std::max(a, b)});
-  }
+  std::set<VertexIdPair> edgeKeys;
+  for (const auto e : edges_) edgeKeys.insert(e->ascendingIds());
   bool valid = true;
   for (const auto &spec : incidentSimplices) {
     std::vector<std::uint64_t> ids(spec.begin(), spec.end());
     ids.push_back(vnew->getId());
     for (std::size_t i = 0; valid && i + 1 < ids.size(); ++i)
       for (std::size_t j = i + 1; valid && j < ids.size(); ++j) {
-        const std::pair<std::uint64_t, std::uint64_t> key{
-            std::min(ids[i], ids[j]), std::max(ids[i], ids[j])};
-        if (edgeKeys.find(key) == edgeKeys.end()) valid = false;
+        if (edgeKeys.find(ascendingIds(ids[i], ids[j])) == edgeKeys.end()) valid = false;
       }
   }
   // (b) Pinned boundary dW bit-exact: same edge set, same weights/phases.
   if (valid) {
     std::size_t matched = 0;
     for (const auto i : boundaryEdgeIdx_) {
-      const std::uint64_t a = edges_[i]->getSource()->getId();
-      const std::uint64_t b = edges_[i]->getTarget()->getId();
-      const auto it =
-          boundaryBefore.find({std::min(a, b), std::max(a, b)});
+      const auto it = boundaryBefore.find(edges_[i]->ascendingIds());
       if (it == boundaryBefore.end() ||
           it->second.first != (edges_[i]->getLength() * edges_[i]->getLength()) ||
           it->second.second != edges_[i]->getPhase()) {

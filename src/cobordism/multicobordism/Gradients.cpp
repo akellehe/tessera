@@ -24,12 +24,12 @@ complexd packHolomorphic(complexd dF) {
 
 /// Canonical C_1 index of every live edge (EdgeList order), by vertex pair.
 std::vector<std::size_t> canonicalEdgeIndices(const Spacetime &spacetime, const ChainComplex &K) {
-  std::map<std::pair<std::uint64_t, std::uint64_t>, std::size_t> canonical;
+  std::map<VertexIdPair, std::size_t> canonical;
   const auto cells = K.kSimplexVertices(1);
   for (std::size_t j = 0; j < cells.size(); ++j) canonical[{cells[j][0], cells[j][1]}] = j;
   std::vector<std::size_t> out;
   for (const auto *edge : spacetime.getEdgeList()->toVector()) {
-    const auto found = canonical.find(edgeKey(edge));
+    const auto found = canonical.find(edge->ascendingIds());
     if (found == canonical.end())
       throw std::logic_error("MultiCobordism: a live edge is absent from the chain complex");
     out.push_back(found->second);
@@ -117,8 +117,8 @@ std::vector<multicobordism::ResidualGradient> MultiCobordism::inputStateResidual
   for (const BoundaryBlock *block : blocks)
     if (!block || !block->marking)
       throw std::logic_error("MultiCobordism::inputStateResidualGradientsOn: a block carries no marking");
-  std::map<std::pair<std::uint64_t, std::uint64_t>, std::size_t> parentIndex;
-  for (std::size_t e = 0; e < edges.size(); ++e) parentIndex[edgeKey(edges[e])] = e;
+  std::map<VertexIdPair, std::size_t> parentIndex;
+  for (std::size_t e = 0; e < edges.size(); ++e) parentIndex[edges[e]->ascendingIds()] = e;
   // The whole: its zero mode and the resolvent frames of its band derivative,
   // computed once and shared by every block (the expensive part is the
   // per-edge derivative of the whole's images, which does not depend on the
@@ -601,12 +601,12 @@ multicobordism::ResidualGradient MultiCobordism::fiberModeAscent() const {
   ResidualGradient total;
   total.lengths = Eigen::VectorXcd::Zero(static_cast<Eigen::Index>(edges.size()));
   total.phases = Eigen::VectorXcd::Zero(static_cast<Eigen::Index>(edges.size()));
-  std::map<std::pair<std::uint64_t, std::uint64_t>, std::size_t> parentIndex;
-  for (std::size_t e = 0; e < edges.size(); ++e) parentIndex[edgeKey(edges[e])] = e;
+  std::map<VertexIdPair, std::size_t> parentIndex;
+  for (std::size_t e = 0; e < edges.size(); ++e) parentIndex[edges[e]->ascendingIds()] = e;
   const auto accumulate = [&](const ResidualGradient &g, const Spacetime &on, double weight) {
     const auto onEdges = on.getEdgeList()->toVector();
     for (std::size_t e = 0; e < onEdges.size(); ++e) {
-      const auto found = parentIndex.find(edgeKey(onEdges[e]));
+      const auto found = parentIndex.find(onEdges[e]->ascendingIds());
       if (found == parentIndex.end()) continue;
       total.lengths[static_cast<Eigen::Index>(found->second)] += weight * g.lengths[static_cast<Eigen::Index>(e)];
       if (g.phases.size() == static_cast<Eigen::Index>(onEdges.size()))

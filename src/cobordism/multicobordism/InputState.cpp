@@ -207,7 +207,7 @@ multicobordism::ResidualGradient MultiCobordism::ownStateResidualGradientOn(
   for (const auto *vertex : read->spacetime()->getVertexList()->liveVector()) ids.push_back(vertex->getId());
   std::sort(ids.begin(), ids.end());
   std::map<std::pair<std::uint64_t, std::uint64_t>, std::size_t> parentIndex;
-  for (std::size_t e = 0; e < parentEdges.size(); ++e) parentIndex[edgeKey(parentEdges[e])] = e;
+  for (std::size_t e = 0; e < parentEdges.size(); ++e) parentIndex[parentEdges[e]->ascendingIds()] = e;
   const auto &edges = read->edges();
   for (std::size_t e = 0; e < edges.size(); ++e) {
     const std::uint64_t u = ids.at(edges[e].first), v = ids.at(edges[e].second);

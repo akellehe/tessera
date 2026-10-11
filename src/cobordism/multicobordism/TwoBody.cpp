@@ -178,7 +178,7 @@ void MultiCobordism::setTwoBodyCases(std::vector<TwoBodyCase> cases) {
         firstPairedCase = index;
       }
     }
-    std::set<std::pair<std::uint64_t, std::uint64_t>> boundaryEdges;
+    std::set<VertexIdPair> boundaryEdges;
     for (const auto &[endpoints, squaredLength] : boundaryCase.boundary) {
       if (!std::isfinite(squaredLength.real()) ||
           !std::isfinite(squaredLength.imag()))
@@ -188,8 +188,8 @@ void MultiCobordism::setTwoBodyCases(std::vector<TwoBodyCase> cases) {
             std::to_string(endpoints.first) + ", " +
             std::to_string(endpoints.second) +
             ") a non-finite squared length");
-      const auto canonical = std::minmax(endpoints.first, endpoints.second);
-      if (!boundaryEdges.emplace(canonical.first, canonical.second).second)
+      const VertexIdPair canonical = ascendingIds(endpoints.first, endpoints.second);
+      if (!boundaryEdges.insert(canonical).second)
         throw std::invalid_argument(
             "MultiCobordism::setTwoBodyCases: case " +
             std::to_string(index) + " repeats boundary edge (" +

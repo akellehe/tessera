@@ -7,6 +7,7 @@
 #include "mesh/Fingerprint.h"
 #include "mesh/ForwardDeclarations.h"
 #include "mesh/EdgeKey.h"
+#include "mesh/VertexIdPair.h"
 // walkLoop calls Vertex::getId() non-dependently, so Vertex must be complete at
 // its definition. Vertex.h only forward-declares Edge, so this include is acyclic.
 #include "mesh/Vertex.h"
@@ -299,6 +300,12 @@ class Edge {
     ///
     /// @returns A tuple of {sourceId, targetId}.
     EdgeKey getKey() const noexcept;
+
+    /// The endpoint ids in ascending order, the key of the undirected edge;
+    /// ``getKey`` keeps the stored source → target order instead.
+    [[nodiscard]] VertexIdPair ascendingIds() const noexcept {
+      return mesh::ascendingIds(getSource()->getId(), getTarget()->getId());
+    }
 
     /// Set the complex edge length \f$l\f$ — the edge's one degree of freedom. Real for
     /// spacelike, imaginary for timelike, general complex off the real-Lorentzian locus.

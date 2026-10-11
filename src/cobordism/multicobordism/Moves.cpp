@@ -31,7 +31,7 @@ Spacetime::Record MultiCobordism::snapshotOf(
   record.dimensions = spacetime.getDimensions();
   record.cells = std::move(cellVertexTuples);
   for (const auto *edge : spacetime.getEdgeList()->toVector())
-    record.edges[edgeKey(edge)] = Spacetime::edgeGeometryOf(*edge);
+    record.edges[edge->ascendingIds()] = Spacetime::edgeGeometryOf(*edge);
   return record;
 }
 
@@ -49,12 +49,11 @@ MultiCobordism::BoundaryRecord MultiCobordism::boundaryRecordOf(
   // some boundary facet contains both its endpoints, which is the same
   // incidence the facet set is read from, so the two halves cannot disagree
   // about what the boundary is.
-  std::set<std::pair<std::uint64_t, std::uint64_t>> boundaryEdges;
+  std::set<VertexIdPair> boundaryEdges;
   for (const auto &facet : record.facets)
     for (std::size_t first = 0; first + 1 < facet.size(); ++first)
       for (std::size_t second = first + 1; second < facet.size(); ++second)
-        boundaryEdges.emplace(std::min(facet[first], facet[second]),
-                              std::max(facet[first], facet[second]));
+        boundaryEdges.insert(ascendingIds(facet[first], facet[second]));
   for (const auto &endpoints : boundaryEdges) {
     const ::tessera::mesh::EdgeKey key(endpoints.first, endpoints.second);
     if (const auto *edge =
@@ -373,12 +372,12 @@ double MultiCobordism::deltaF(
   // Widening is safe: delta||grad S||^2 = after - before is exact over any
   // fixed superset of the affected edges, because every edge outside the set
   // keeps its gradient and cancels.
-  std::map<std::pair<std::uint64_t, std::uint64_t>, complexd> baseLengths;
+  std::map<VertexIdPair, complexd> baseLengths;
   for (const auto *edge : spacetime_->getEdgeList()->toVector())
-    baseLengths[edgeKey(edge)] = edge->getLength();
-  std::set<std::pair<std::uint64_t, std::uint64_t>> movedEdges;
+    baseLengths[edge->ascendingIds()] = edge->getLength();
+  std::set<VertexIdPair> movedEdges;
   for (const auto *edge : candidateSpacetime->getEdgeList()->toVector()) {
-    const auto key = edgeKey(edge);
+    const auto key = edge->ascendingIds();
     const auto found = baseLengths.find(key);
     if (found == baseLengths.end() ||
         found->second != edge->getLength())

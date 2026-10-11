@@ -44,6 +44,8 @@ internal interface as well, edit the Doxyfile and comment out its exclusions.
 ```
 ```{doxygenfile} EdgeKey.h
 ```
+```{doxygenfile} VertexIdPair.h
+```
 ```{doxygenfile} EdgeList.h
 ```
 ```{doxygenfile} Fingerprint.h

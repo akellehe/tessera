@@ -3,6 +3,8 @@
 
 #include "chainhodge/DressedAnchor.h"
 
+#include "mesh/VertexIdPair.h"
+
 #include <algorithm>
 #include <cmath>
 #include <deque>
@@ -17,12 +19,13 @@ namespace tessera::chainhodge {
 
 namespace {
 
-using EdgeKey = std::pair<std::uint64_t, std::uint64_t>;
+using ::tessera::mesh::ascendingIds;
+using ::tessera::mesh::VertexIdPair;
 
 /// Every canonical edge of the complex, keyed by its ascending vertex pair and
 /// valued by its canonical \f$ C_1 \f$ index.
-std::map<EdgeKey, int> edgeIndexMap(const cobordism::ChainComplex &K) {
-  std::map<EdgeKey, int> index;
+std::map<VertexIdPair, int> edgeIndexMap(const cobordism::ChainComplex &K) {
+  std::map<VertexIdPair, int> index;
   const auto edges = K.kSimplexVertices(1);
   for (std::size_t j = 0; j < edges.size(); ++j)
     index[{edges[j][0], edges[j][1]}] = static_cast<int>(j);
@@ -147,7 +150,7 @@ DeclaredPaths DeclaredPaths::breadthFirst(const cobordism::ChainComplex &K,
 DeclaredPaths DeclaredPaths::fromWalks(
     const cobordism::ChainComplex &K, std::uint64_t basePoint,
     const std::map<std::uint64_t, std::vector<std::uint64_t>> &walks) {
-  const std::map<EdgeKey, int> index = edgeIndexMap(K);
+  const std::map<VertexIdPair, int> index = edgeIndexMap(K);
   for (const auto &[vertex, walk] : walks) {
     if (walk.empty() || walk.front() != basePoint)
       throw std::invalid_argument("DeclaredPaths::fromWalks: the walk to vertex " +
@@ -157,7 +160,7 @@ DeclaredPaths DeclaredPaths::fromWalks(
       throw std::invalid_argument("DeclaredPaths::fromWalks: the walk keyed by vertex " +
                                   std::to_string(vertex) + " must end at that vertex");
     for (std::size_t i = 0; i + 1 < walk.size(); ++i) {
-      const EdgeKey key{std::min(walk[i], walk[i + 1]), std::max(walk[i], walk[i + 1])};
+      const VertexIdPair key = ascendingIds(walk[i], walk[i + 1]);
       if (walk[i] == walk[i + 1] || index.find(key) == index.end())
         throw std::invalid_argument("DeclaredPaths::fromWalks: the walk to vertex " +
                                     std::to_string(vertex) + " steps from " +
@@ -225,11 +228,11 @@ FaceRestriction DressedAnchor::faceRestriction(const cobordism::ChainComplex &K,
     throw std::invalid_argument("DressedAnchor: the triangle index " + std::to_string(faceIndex) +
                                 " is out of range");
   const auto &t = triangles[faceIndex];
-  const std::map<EdgeKey, int> index = edgeIndexMap(K);
+  const std::map<VertexIdPair, int> index = edgeIndexMap(K);
 
   // The cyclic order of the oriented triangle (v0 -> v1 -> v2 -> v0), with the
   // incidence signs of d[v0,v1,v2] = [v1,v2] - [v0,v2] + [v0,v1].
-  const std::vector<EdgeKey> ordered{{t[0], t[1]}, {t[1], t[2]}, {t[0], t[2]}};
+  const std::vector<VertexIdPair> ordered{{t[0], t[1]}, {t[1], t[2]}, {t[0], t[2]}};
   const std::vector<int> signs{+1, +1, -1};
 
   FaceRestriction out;

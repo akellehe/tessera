@@ -429,9 +429,9 @@ bool MultiCobordism::stage2Update(double beta, double tolerance,
       outputTargets_.empty() && inputBlocks_.empty() && outputBlocks_.empty();
   const auto explicitConstraintAscentDirection = [&]() {
     Eigen::VectorXcd ascent = Eigen::VectorXcd::Zero(edgeCount);
-    std::map<std::pair<std::uint64_t, std::uint64_t>, std::size_t> edgeIndices;
+    std::map<VertexIdPair, std::size_t> edgeIndices;
     for (std::size_t edgeIndex = 0; edgeIndex < edgeCount; ++edgeIndex)
-      edgeIndices[edgeKey(edges[edgeIndex])] = edgeIndex;
+      edgeIndices[edges[edgeIndex]->ascendingIds()] = edgeIndex;
     const auto oneCells =
         ChainComplex::fromSpacetime(*spacetime_).kSimplexVertices(1);
     for (const auto &constraint : registerConstraints_) {
@@ -445,8 +445,7 @@ bool MultiCobordism::stage2Update(double beta, double tolerance,
         const auto &cell = oneCells[i];
         if (cell.size() != 2)
           continue;
-        const auto found = edgeIndices.find(
-            {std::min(cell[0], cell[1]), std::max(cell[0], cell[1])});
+        const auto found = edgeIndices.find(ascendingIds(cell[0], cell[1]));
         if (found != edgeIndices.end())
           ascent[static_cast<Eigen::Index>(found->second)] +=
               complexd{gradient[i], 0.0};
