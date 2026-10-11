@@ -20,6 +20,7 @@ import os
 import numpy as np
 import pytest
 
+import tessera
 from tessera import chainhodge as ch
 from tessera import cobordism as cob
 
@@ -52,7 +53,7 @@ def fiber_target(psi, contour=None):
 def node_with_state(psi, contour=None, seed=0):
     """An input node: a single Δ³ whose WHOLE complex must carry the state on the
     seed's four vertices; no blocks, no period targets."""
-    node = MC(MC.seed_simplex(3), [], [], degrees=[0], seed=seed, einstein_hilbert=False)
+    node = MC(tessera.SolidSimplex.spacetime(3), [], [], degrees=[0], seed=seed, einstein_hilbert=False)
     node.set_whole_complex_fiber_target(fiber_target(psi, contour))
     node.use_fiber_residuals(True)
     return node
@@ -70,21 +71,21 @@ def python_residual(st, psi, band_index=1, contour=None):
 
 class TestSeedSimplex:
     def test_seed_simplex_is_one_lorentzian_tetrahedron(self):
-        st = MC.seed_simplex(3)
+        st = tessera.SolidSimplex.spacetime(3)
         assert all(len(f) == 3 for f in st.get_boundary())  # triangles bound a 3-simplex
         assert st.get_vertex_list().size() == 4 and st.get_edge_list().size() == 6
         assert len(st.get_boundary()) == 4
         for e in st.get_edge_list().to_vector():
             assert abs(complex(e.get_length()) ** 2) == pytest.approx(1.0)
         with pytest.raises(ValueError, match="dimension must be at least one"):
-            MC.seed_simplex(0)
+            tessera.SolidSimplex.spacetime(0)
 
 
 class TestFiberResidual:
     def test_whole_complex_residual_matches_the_pencil_read_and_is_all_of_r_u(self, whitney_default):
         rng = np.random.default_rng(0)
         psi = rng.normal(size=4) + 1j * rng.normal(size=4)
-        node = MC(MC.seed_simplex(3), [], [], degrees=[0], einstein_hilbert=False)
+        node = MC(tessera.SolidSimplex.spacetime(3), [], [], degrees=[0], einstein_hilbert=False)
         assert node.r_u(node.spacetime()) == 0.0
         node.set_whole_complex_fiber_target(fiber_target(psi))
         assert not node.uses_fiber_residuals()
@@ -103,7 +104,7 @@ class TestFiberResidual:
     def test_block_form_reads_the_block_subcomplex(self, whitney_default):
         rng = np.random.default_rng(0)
         psi = rng.normal(size=4) + 1j * rng.normal(size=4)
-        node = MC(MC.seed_simplex(3), [[1.0 + 0j, 0j, 0j, 0j]], [], degrees=[0], einstein_hilbert=False)
+        node = MC(tessera.SolidSimplex.spacetime(3), [[1.0 + 0j, 0j, 0j, 0j]], [], degrees=[0], einstein_hilbert=False)
         node.seed_inputs([0])
         node.set_input_fiber(0, fiber_target(psi))
         node.use_fiber_residuals(True)
@@ -114,13 +115,13 @@ class TestFiberResidual:
             node.fiber_residual_for_input_block(1)
 
     def test_refusals(self, whitney_default):
-        node = MC(MC.seed_simplex(3), [], [], degrees=[0], einstein_hilbert=False)
+        node = MC(tessera.SolidSimplex.spacetime(3), [], [], degrees=[0], einstein_hilbert=False)
         with pytest.raises(RuntimeError, match="no whole-complex fiber target"):
             node.whole_complex_fiber_residual()
         empty = cob.BoundaryFiber()
         with pytest.raises(ValueError, match="no images"):
             node.set_whole_complex_fiber_target(empty)
-        diagonal = MC(MC.seed_simplex(3), [], [], degrees=[0], einstein_hilbert=False,
+        diagonal = MC(tessera.SolidSimplex.spacetime(3), [], [], degrees=[0], einstein_hilbert=False,
                       metric_source=cob.HodgeMetricSource.DiagonalWeights)
         diagonal.set_whole_complex_fiber_target(fiber_target([1, 0, 0, 0]))
         diagonal.use_fiber_residuals(True)
@@ -129,7 +130,7 @@ class TestFiberResidual:
 
     def test_flat_band_carries_no_state(self, whitney_default):
         psi = np.array([1.0, 0.0, 0.0, 0.0], dtype=complex)
-        st = MC.seed_simplex(3)
+        st = tessera.SolidSimplex.spacetime(3)
         flat = cob.PencilLayer.band_contour(cob.PencilLayer.assemble([st]), 0, 0)
         node = node_with_state(psi, contour=flat)
         assert node.whole_complex_fiber_residual() == pytest.approx(0.75, abs=1e-12)  # 1 - |<1, e0>|^2 / 4
@@ -152,7 +153,7 @@ class TestFiberResidual:
         assert ch.FaceAnchor.flat_zero_mode_overlap(cov, np.asarray(read.dual_images), np.asarray(read.images)) == pytest.approx(1.0, abs=1e-10)
 
     def test_band_contour_indexing(self, whitney_default):
-        st = MC.seed_simplex(3)
+        st = tessera.SolidSimplex.spacetime(3)
         assembled = cob.PencilLayer.assemble([st])
         ev = sorted(np.abs(np.asarray(assembled.op.spectrum(0).eigenvalues)))
         c0 = cob.PencilLayer.band_contour(assembled, 0, 0)
@@ -180,7 +181,7 @@ class TestDrive:
     def test_geometry_descends_the_residual_with_growth_room(self, whitney_default):
         rng = np.random.default_rng(1)
         psi = rng.normal(size=4) + 1j * rng.normal(size=4)
-        node = MC(MC.seed_simplex(3), [], [], degrees=[0], precone=2, einstein_hilbert=False)
+        node = MC(tessera.SolidSimplex.spacetime(3), [], [], degrees=[0], precone=2, einstein_hilbert=False)
         node.set_whole_complex_fiber_target(fiber_target(psi))
         node.use_fiber_residuals(True)
         assert node.spacetime().get_vertex_list().size() == 6
@@ -207,7 +208,7 @@ class TestDrive:
             pytest.skip("full gate: set TESSERA_SLOW_TESTS=1")
         rng = np.random.default_rng(3)
         psi = rng.normal(size=4) + 1j * rng.normal(size=4)
-        node = MC(MC.seed_simplex(3), [], [], degrees=[0], precone=8, einstein_hilbert=False)
+        node = MC(tessera.SolidSimplex.spacetime(3), [], [], degrees=[0], precone=8, einstein_hilbert=False)
         node.set_whole_complex_fiber_target(fiber_target(psi))
         node.use_fiber_residuals(True)
         residuals = [node.whole_complex_fiber_residual()]
@@ -226,7 +227,7 @@ class TestDrive:
             pytest.skip("full gate: set TESSERA_SLOW_TESTS=1")
         rng = np.random.default_rng(3)
         psi = rng.normal(size=4) + 1j * rng.normal(size=4)
-        node = MC(MC.seed_simplex(3), [], [], degrees=[0], seed=0, precone=8, einstein_hilbert=False)
+        node = MC(tessera.SolidSimplex.spacetime(3), [], [], degrees=[0], seed=0, precone=8, einstein_hilbert=False)
         node.set_whole_complex_fiber_target(fiber_target(psi))
         node.use_fiber_residuals(True)
         residuals = [node.whole_complex_fiber_residual()]

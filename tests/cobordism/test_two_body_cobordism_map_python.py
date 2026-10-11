@@ -19,6 +19,7 @@ import os
 import numpy as np
 import pytest
 
+import tessera
 from tessera import cobordism as cob
 
 MC = cob.MultiCobordism
@@ -67,7 +68,7 @@ def disjoint_tetrahedra(st):
 
 
 def interaction_node(psi, phi, precone=8, seed=0, choi=True):
-    node = MC(MC.seed_simplex(3), [[1.0 + 0j, 0j, 0j, 0j], [1.0 + 0j, 0j, 0j, 0j]], [], degrees=[0],
+    node = MC(tessera.SolidSimplex.spacetime(3), [[1.0 + 0j, 0j, 0j, 0j], [1.0 + 0j, 0j, 0j, 0j]], [], degrees=[0],
               seed=seed, precone=precone, einstein_hilbert=False)
     st = node.spacetime()
     node.seed_inputs([0, 1])
@@ -142,7 +143,7 @@ class TestAttachmentAndResidual:
     def test_refusals(self, whitney_default):
         rng = np.random.default_rng(3)
         psi, phi = (rng.normal(size=4) + 1j * rng.normal(size=4) for _ in range(2))
-        node = MC(MC.seed_simplex(3), [[1.0 + 0j, 0j, 0j, 0j], [1.0 + 0j, 0j, 0j, 0j]], [], degrees=[0],
+        node = MC(tessera.SolidSimplex.spacetime(3), [[1.0 + 0j, 0j, 0j, 0j], [1.0 + 0j, 0j, 0j, 0j]], [], degrees=[0],
                   precone=8, einstein_hilbert=False)
         node.seed_inputs([0, 1])
         a, b = disjoint_tetrahedra(node.spacetime())
@@ -198,7 +199,7 @@ class TestDrive:
 class TestDag:
     def test_attachment_and_target_plumbing(self, whitney_default):
         dag = cob.CobordismDAG()
-        n = dag.add_node(MC.seed_simplex(3), [[1.0 + 0j, 0j, 0j, 0j]], [], [], [0], 1.0, 0)
+        n = dag.add_node(tessera.SolidSimplex.spacetime(3), [[1.0 + 0j, 0j, 0j, 0j]], [], [], [0], 1.0, 0)
         dag.set_fiber_piping(True, 0, True)
         dag.set_input_attachment(n, 0, [[0], [1], [2], [3]])
         dag.set_two_body_target(n, np.eye(4, dtype=complex), False)

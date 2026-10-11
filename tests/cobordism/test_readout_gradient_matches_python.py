@@ -10,6 +10,7 @@ borrowing another objective's direction.
 import numpy as np
 import pytest
 
+import tessera
 from tessera import cobordism as cob
 
 MC = cob.MultiCobordism
@@ -18,7 +19,7 @@ R = MC.ReadoutMode
 
 def node():
     """A host with no boundary: the flag is about the READING, not the host."""
-    return MC(MC.seed_simplex(3), [], [], degrees=[1], seed=0, precone=2,
+    return MC(tessera.SolidSimplex.spacetime(3), [], [], degrees=[1], seed=0, precone=2,
               einstein_hilbert=False)
 
 

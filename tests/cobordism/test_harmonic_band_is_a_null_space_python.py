@@ -157,7 +157,7 @@ def test_the_split_form_agrees_with_the_pencil_null_space(reading):
 def test_the_band_rank_is_the_first_betti_number(reading):
     """dim ker L_1 = b_1, the Hodge count, here over a complex chain metric."""
     node = reading["node"]
-    assert reading["band"].rank() == node.betti(node.spacetime())[1]
+    assert reading["band"].rank() == node.spacetime().get_betti_numbers()[1]
 
 
 def test_the_harmonic_form_is_the_same_but_its_COORDINATES_ARE_NOT(reading):

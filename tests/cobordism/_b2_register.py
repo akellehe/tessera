@@ -74,5 +74,5 @@ class B2Register:
                 "ball, whose b_2 is 0")
         kept = [cell for index, cell in enumerate(cells) if index not in pair]
         spacetime = tessera.Spacetime.from_vertex_tuples(3, kept, 1.0, 0.0)
-        holes = cobordism.MultiCobordism.emergent_holes(spacetime, 2)
+        holes = spacetime.get_holes(2)
         return spacetime, holes

@@ -21,6 +21,7 @@ import sys
 
 import pytest
 
+import tessera
 from tessera import cobordism as cob
 
 sys.path.insert(0, os.path.join(
@@ -35,12 +36,12 @@ MC = cob.MultiCobordism
 
 
 def simplex_node(seed=0, precone=0):
-    return MC(MC.seed_simplex(3), [], [], degrees=[1], seed=seed, precone=precone,
+    return MC(tessera.SolidSimplex.spacetime(3), [], [], degrees=[1], seed=seed, precone=precone,
               einstein_hilbert=False)
 
 
 def boundary(node):
-    return {tuple(f) for f in MC.boundary_facets(node.spacetime())}
+    return {tuple(f) for f in node.spacetime().get_boundary()}
 
 
 def cells(node):
@@ -87,7 +88,7 @@ def collar_node(seed_value=7):
         warnings.simplefilter("ignore")
         tori = [obs.SimplicialQubit.flat_torus(tau, 3, 3)
                 for tau in (complex(0.3, 1.1), complex(-0.2, 0.8))]
-    seed = MC.seed_collar(tori[0].spacetime(), tori[1].spacetime(), 1)
+    seed = cob.SurfaceSeed.collar(tori[0].spacetime(), tori[1].spacetime(), 1)
     node = MC(seed.host, [[1.0 + 0j], [1.0 + 0j]], [], degrees=[1],
               seed=seed_value, einstein_hilbert=False)
     node.seed_inputs([sorted(ids.values()) for ids in seed.vertex_ids])

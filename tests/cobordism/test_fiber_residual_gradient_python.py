@@ -18,6 +18,7 @@ import time
 import numpy as np
 import pytest
 
+import tessera
 from tessera import cobordism as cob
 
 MC = cob.MultiCobordism
@@ -91,7 +92,7 @@ class TestWholeComplexFiberGradient:
     def test_euler_identity_and_finite_difference_sanity(self, whitney_default):
         rng = np.random.default_rng(0)
         psi = rng.normal(size=4) + 1j * rng.normal(size=4)
-        node = MC(MC.seed_simplex(3), [], [], degrees=[0], precone=4, einstein_hilbert=False)
+        node = MC(tessera.SolidSimplex.spacetime(3), [], [], degrees=[0], precone=4, einstein_hilbert=False)
         jitter(node, rng)
         node.set_whole_complex_fiber_target(fiber_target(psi))
         node.use_fiber_residuals(True)
@@ -108,7 +109,7 @@ class TestWholeComplexFiberGradient:
     def test_block_and_ascent_agree_with_the_sum_of_terms(self, whitney_default):
         rng = np.random.default_rng(1)
         psi = rng.normal(size=4) + 1j * rng.normal(size=4)
-        node = MC(MC.seed_simplex(3), [], [], degrees=[0], precone=4, einstein_hilbert=False)
+        node = MC(tessera.SolidSimplex.spacetime(3), [], [], degrees=[0], precone=4, einstein_hilbert=False)
         jitter(node, rng)
         node.set_whole_complex_fiber_target(fiber_target(psi))
         node.use_fiber_residuals(True)
@@ -121,7 +122,7 @@ class TestWholeComplexFiberGradient:
 class TestTwoBodyGradient:
     def _node(self, rng):
         psi, phi = (rng.normal(size=4) + 1j * rng.normal(size=4) for _ in range(2))
-        node = MC(MC.seed_simplex(3), [[1.0 + 0j, 0j, 0j, 0j], [1.0 + 0j, 0j, 0j, 0j]], [], degrees=[0],
+        node = MC(tessera.SolidSimplex.spacetime(3), [[1.0 + 0j, 0j, 0j, 0j], [1.0 + 0j, 0j, 0j, 0j]], [], degrees=[0],
                   precone=8, einstein_hilbert=False)
         jitter(node, rng, 0.15)
         tets = [tuple(int(v) for v in t) for t in cob.ChainComplex.from_spacetime(node.spacetime()).k_simplex_vertices(3)]
@@ -157,7 +158,7 @@ class TestStage2UsesTheAnalyticAscent:
     def test_descent_and_speed(self, whitney_default):
         rng = np.random.default_rng(4)
         psi = rng.normal(size=4) + 1j * rng.normal(size=4)
-        node = MC(MC.seed_simplex(3), [], [], degrees=[0], precone=8, einstein_hilbert=False)
+        node = MC(tessera.SolidSimplex.spacetime(3), [], [], degrees=[0], precone=8, einstein_hilbert=False)
         node.set_whole_complex_fiber_target(fiber_target(psi))
         node.use_fiber_residuals(True)
         before = node.whole_complex_fiber_residual()

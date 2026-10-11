@@ -45,7 +45,7 @@ def test_a_four_torus_case_does_not_invent_a_tensor_two_state_vector():
         return obs.SimplicialQubit.flat_torus(complex(tau), GRID, GRID).spacetime()
 
     # A real seed: the case reads its boundary through the vertex maps.
-    seed = MC.seed_joined_collars(
+    seed = cob.SurfaceSeed.joined_collars(
         [surface(TAU_A), surface(-TAU_A.conjugate()),
          surface(TAU_B), surface(-TAU_B.conjugate())], 3)
     ids = [{int(k): int(v) for k, v in mapping.items()}

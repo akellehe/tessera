@@ -43,6 +43,7 @@ import sys
 
 import pytest
 
+import tessera
 from tessera import cobordism as cob
 
 sys.path.insert(0, os.path.join(
@@ -156,7 +157,7 @@ def test_a_node_without_a_fixed_boundary_is_unaffected():
     An emergent host grown from a seed simplex declares none, so its
     dispositions stay free and every free build behaves as it did.
     """
-    node = MC(MC.seed_simplex(3), [], [], degrees=[1], seed=0, precone=10,
+    node = MC(tessera.SolidSimplex.spacetime(3), [], [], degrees=[1], seed=0, precone=10,
               einstein_hilbert=True)
     assert not node.has_fixed_boundary
     before = boundary_geometry(node)

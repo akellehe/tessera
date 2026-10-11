@@ -59,7 +59,7 @@ def surfaces():
 
 @pytest.fixture(scope="module")
 def joined():
-    return MC.seed_joined_collars(surfaces(), 3)
+    return cob.SurfaceSeed.joined_collars(surfaces(), 3)
 
 
 def test_it_is_one_connected_manifold_with_four_boundary_tori(joined):
@@ -91,13 +91,13 @@ def test_fewer_than_three_layers_is_refused_by_name():
     """With two layers every cell touches a surface: there is none to remove."""
     for layers in (1, 2):
         with pytest.raises(ValueError) as caught:
-            MC.seed_joined_collars(surfaces(), layers)
+            cob.SurfaceSeed.joined_collars(surfaces(), layers)
         assert "three" in str(caught.value)
 
 
 def test_an_odd_number_of_surfaces_is_refused():
     with pytest.raises(ValueError):
-        MC.seed_joined_collars(surfaces()[:3], 3)
+        cob.SurfaceSeed.joined_collars(surfaces()[:3], 3)
 
 
 # ---- what it buys the readout ----
@@ -117,7 +117,7 @@ def low_level_four_torus_node():
     moduli = (TAU_A, -TAU_A.conjugate(), TAU_B, -TAU_B.conjugate())
     tori = [obs.SimplicialQubit.flat_torus(tau, GRID, GRID)
             for tau in moduli]
-    seed = MC.seed_joined_collars(
+    seed = cob.SurfaceSeed.joined_collars(
         [surface.spacetime() for surface in tori], 3)
     ids = [{int(k): int(v) for k, v in mapping.items()}
            for mapping in seed.vertex_ids]

@@ -29,6 +29,7 @@ import sys
 
 import pytest
 
+import tessera
 from tessera import cobordism as cob
 
 sys.path.insert(0, os.path.join(
@@ -48,7 +49,7 @@ DISPOSITION_KINDS = {"cone_in_timelike", "flip_disposition"}
 
 def host(precone=2):
     """A small emergent host: a seed simplex with a couple of cone-ins."""
-    return MC(MC.seed_simplex(3), [], [], degrees=[1], seed=0,
+    return MC(tessera.SolidSimplex.spacetime(3), [], [], degrees=[1], seed=0,
               precone=precone, einstein_hilbert=False)
 
 
@@ -74,7 +75,7 @@ def expected_counts(spacetime):
         "flip_at": sum(len(c.get_vertices()) for c in big),
         "iflip_at": sum(len(c.get_edges()) for c in big),
         "cone_out": len(cells),
-        "cone_in": len(MC.boundary_facets(spacetime)),
+        "cone_in": len(spacetime.get_boundary()),
     }
 
 

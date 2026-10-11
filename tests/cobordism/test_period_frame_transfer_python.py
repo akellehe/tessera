@@ -111,6 +111,7 @@ import warnings
 import numpy as np
 import pytest
 
+import tessera
 from tessera import cobordism as cob
 from tessera import observables as obs
 
@@ -180,7 +181,7 @@ def state_fiber(q, ids, contour_on):
 
 def collar(n, attach=(0, 1), einstein_hilbert=False, real_squared_lengths_only=False, weight=None, seed_value=0):
     qa, qb = torus(TAU_A, n), torus(TAU_B, n)
-    seed = MC.seed_collar(qa.spacetime(), qb.spacetime(), 1)
+    seed = cob.SurfaceSeed.collar(qa.spacetime(), qb.spacetime(), 1)
     node = MC(seed.host, [[1.0 + 0j], [1.0 + 0j]], [], degrees=[1], seed=seed_value,
               einstein_hilbert=einstein_hilbert, real_squared_lengths_only=real_squared_lengths_only)
     node.seed_inputs([sorted(ids.values()) for ids in seed.vertex_ids])
@@ -311,7 +312,7 @@ def degree0_fiber(psi):
 
 
 def interaction_node(psi, phi, seed=0):
-    node = MC(MC.seed_simplex(3), [[1.0 + 0j, 0j, 0j, 0j], [1.0 + 0j, 0j, 0j, 0j]], [], degrees=[0],
+    node = MC(tessera.SolidSimplex.spacetime(3), [[1.0 + 0j, 0j, 0j, 0j], [1.0 + 0j, 0j, 0j, 0j]], [], degrees=[0],
               seed=seed, precone=8, einstein_hilbert=False)
     tets = [tuple(int(v) for v in t) for t in cob.ChainComplex.from_spacetime(node.spacetime()).k_simplex_vertices(3)]
     a, b = next((x, y) for x, y in itertools.combinations(tets, 2) if not set(x) & set(y))

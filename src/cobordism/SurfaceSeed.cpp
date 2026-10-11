@@ -1,44 +1,54 @@
 // Copyright (c) 2026 Twin Vector Labs LLC.
 // All rights reserved.
 
-// MultiCobordism (include/cobordism/MultiCobordism.h): seeding and surfaces:
-// seed simplices, collars, block surfaces, surface inventories and bridge
-// candidates. One of the translation units that define the class's members
-// by responsibility (https://github.com/akellehe/tessera/issues/1481).
+#include "cobordism/SurfaceSeed.h"
 
-#include "Internal.h"
+#include <algorithm>
+#include <cmath>
+#include <complex>
+#include <map>
+#include <set>
+#include <stdexcept>
+#include <string>
+#include <utility>
+
+#include <Eigen/Dense>
+
+#include "cobordism/ChainComplex.h"
+#include "mesh/Edge.h"
+#include "mesh/EdgeList.h"
+#include "mesh/Simplex.h"
+#include "mesh/Vertex.h"
+#include "mesh/VertexList.h"
+#include "spacetime/Spacetime.h"
 
 namespace tessera::cobordism {
 
-std::shared_ptr<Spacetime> MultiCobordism::seedSimplex(int dimension, bool balancedEdges) {
-  using namespace ::tessera::spacetime;
-  if (dimension < 1)
-    throw std::invalid_argument("MultiCobordism::seedSimplex: dimension must be at least one");
-  auto metric = std::make_shared<Metric>(true, Signature(dimension, SignatureType::Lorentzian));
-  std::shared_ptr<Topology> topology = std::make_shared<SolidSimplex>(dimension);
-  auto host = std::make_shared<Spacetime>(metric, SpacetimeType::CDT, 1.0, 1.0,
-                                          Foliation::PREFERRED, topology);
-  host->build();
-  // The wiring mode is stamped before any growth, and the seed's own
-  // uniform |l^2| = 1 edges honor it too (balanced: l = sqrt(1/2)*(1+i)).
-  host->setBalancedEdgeWiring(balancedEdges);
-  for (auto *edge : host->getEdgeList()->toVector())
-    edge->setLength(balancedEdges ? Spacetime::balancedLength(1.0) : std::sqrt(complexd(1.0, 0.0)));
-  return host;
+using complexd = std::complex<double>;
+
+namespace {
+
+// An edge's endpoints as an ascending vertex-id pair.
+std::pair<std::uint64_t, std::uint64_t> edgeKey(const ::tessera::mesh::Edge *edge) {
+  const auto a = edge->getSource()->getId();
+  const auto b = edge->getTarget()->getId();
+  return {std::min(a, b), std::max(a, b)};
 }
 
-MultiCobordism::SurfaceSeed MultiCobordism::seedFromSurfaces(
+}  // namespace
+
+SurfaceSeed SurfaceSeed::fromSurfaces(
     const std::vector<std::shared_ptr<Spacetime>> &surfaces) {
   if (surfaces.empty())
-    throw std::invalid_argument("MultiCobordism::seedFromSurfaces: no surfaces");
+    throw std::invalid_argument("SurfaceSeed::fromSurfaces: no surfaces");
   int surfaceDimension = -1;
   for (const auto &surface : surfaces) {
-    if (!surface) throw std::invalid_argument("MultiCobordism::seedFromSurfaces: null surface");
+    if (!surface) throw std::invalid_argument("SurfaceSeed::fromSurfaces: null surface");
     if (surfaceDimension < 0) surfaceDimension = surface->getDimensions();
     if (surface->getDimensions() != surfaceDimension)
-      throw std::invalid_argument("MultiCobordism::seedFromSurfaces: the surfaces differ in dimension");
+      throw std::invalid_argument("SurfaceSeed::fromSurfaces: the surfaces differ in dimension");
     if (surface->getTopSimplices().empty())
-      throw std::invalid_argument("MultiCobordism::seedFromSurfaces: a surface has no top cells");
+      throw std::invalid_argument("SurfaceSeed::fromSurfaces: a surface has no top cells");
   }
   // Disjoint id ranges: surface s's vertices, in ascending id order, take the
   // next block of host ids. The host is one d-dimensional complex whose only
@@ -73,17 +83,17 @@ MultiCobordism::SurfaceSeed MultiCobordism::seedFromSurfaces(
   for (auto *edge : seed.host->getEdgeList()->toVector()) {
     const auto found = lengths.find(edgeKey(edge));
     if (found == lengths.end())
-      throw std::logic_error("MultiCobordism::seedFromSurfaces: a host edge belongs to no surface");
+      throw std::logic_error("SurfaceSeed::fromSurfaces: a host edge belongs to no surface");
     edge->setLength(found->second);
     edge->setPhase(complexd(0.0, 0.0));
   }
   return seed;
 }
 
-MultiCobordism::SurfaceSeed MultiCobordism::seedJoinedCollars(
+SurfaceSeed SurfaceSeed::joinedCollars(
     const std::vector<std::shared_ptr<Spacetime>> &surfaces, int layers,
     const std::vector<std::uint64_t> &twist) {
-  const std::string prefix = "MultiCobordism::seedJoinedCollars: ";
+  const std::string prefix = "SurfaceSeed::joinedCollars: ";
   if (surfaces.size() % 2 != 0 || surfaces.empty())
     throw std::invalid_argument(prefix + "an even, non-zero number of surfaces is required: each is collared with its partner");
   // Three layers, not one. A prism cell spans two adjacent layers, so the
@@ -97,7 +107,7 @@ MultiCobordism::SurfaceSeed MultiCobordism::seedJoinedCollars(
   // present one face set, and the pairs are checked through it below.
   std::vector<SurfaceSeed> collars;
   for (std::size_t pair = 0; pair < surfaces.size(); pair += 2)
-    collars.push_back(seedCollar(surfaces[pair], surfaces[pair + 1], layers, twist));
+    collars.push_back(collar(surfaces[pair], surfaces[pair + 1], layers, twist));
   const auto cellsOf = [](const Spacetime &spacetime) {
     std::vector<std::vector<std::uint64_t>> cells;
     for (const auto &topSimplex : spacetime.getTopSimplices()) {
@@ -179,14 +189,14 @@ MultiCobordism::SurfaceSeed MultiCobordism::seedJoinedCollars(
     for (auto &cell : cells) joined.push_back(std::move(cell));
     offset += span;
   }
-  // One gate on the whole, as seedCollar takes on its prism.
+  // One gate on the whole, as collar takes on its prism.
   const auto verdict = ChainComplex::dualComplexIsValid(joined, surfaces.front()->getDimensions() + 1);
   if (!verdict.first)
     throw std::invalid_argument(prefix + "the joined collars are not a manifold-with-boundary: " + verdict.second);
   SurfaceSeed seed;
   seed.host = Spacetime::fromVertexTuples(surfaces.front()->getDimensions() + 1, joined, 1.0, complexd(0.0, 0.0));
   // Each surface's own lengths verbatim on its edges, the auto-wired length
-  // everywhere else, zero phases throughout -- seedCollar's convention.
+  // everywhere else, zero phases throughout -- collar's convention.
   std::map<std::pair<std::uint64_t, std::uint64_t>, complexd> lengths;
   for (std::size_t index = 0; index < surfaces.size(); ++index)
     for (const auto *edge : surfaces[index]->getEdgeList()->toVector()) {
@@ -208,10 +218,10 @@ MultiCobordism::SurfaceSeed MultiCobordism::seedJoinedCollars(
   return seed;
 }
 
-MultiCobordism::SurfaceSeed MultiCobordism::seedTubedCollars(
+SurfaceSeed SurfaceSeed::tubedCollars(
     const std::vector<std::shared_ptr<Spacetime>> &surfaces, int layers,
     const std::vector<std::uint64_t> &twist, const TubeSpec &tube) {
-  const std::string prefix = "MultiCobordism::seedTubedCollars: ";
+  const std::string prefix = "SurfaceSeed::tubedCollars: ";
   if (surfaces.size() != 4)
     throw std::invalid_argument(prefix + "exactly four surfaces are required: two collars, each with its far surface");
   for (const auto &surface : surfaces)
@@ -235,10 +245,10 @@ MultiCobordism::SurfaceSeed MultiCobordism::seedTubedCollars(
     throw std::invalid_argument(prefix + "faceA is no face of the first collar's far surface");
   if (!isFaceOf(*surfaces[3], tube.faceB))
     throw std::invalid_argument(prefix + "faceB is no face of the second collar's far surface");
-  // The two collars, each as seedCollar builds it (the twist on each far
+  // The two collars, each as collar builds it (the twist on each far
   // surface), on disjoint host id ranges.
-  std::vector<SurfaceSeed> collars = {seedCollar(surfaces[0], surfaces[1], layers, twist),
-                                      seedCollar(surfaces[2], surfaces[3], layers, twist)};
+  std::vector<SurfaceSeed> collars = {collar(surfaces[0], surfaces[1], layers, twist),
+                                      collar(surfaces[2], surfaces[3], layers, twist)};
   std::vector<std::vector<std::uint64_t>> joined;
   std::vector<std::map<std::uint64_t, std::uint64_t>> vertexIds;
   std::uint64_t offset = 0;
@@ -302,7 +312,7 @@ MultiCobordism::SurfaceSeed MultiCobordism::seedTubedCollars(
   SurfaceSeed seed;
   seed.host = Spacetime::fromVertexTuples(dimension, joined, 1.0, complexd(0.0, 0.0));
   // Each surface's own lengths verbatim on its edges, the auto-wired length
-  // everywhere else, zero phases throughout -- seedCollar's convention.
+  // everywhere else, zero phases throughout -- collar's convention.
   std::map<std::pair<std::uint64_t, std::uint64_t>, complexd> lengths;
   for (std::size_t index = 0; index < surfaces.size(); ++index)
     for (const auto *edge : surfaces[index]->getEdgeList()->toVector()) {
@@ -325,7 +335,7 @@ MultiCobordism::SurfaceSeed MultiCobordism::seedTubedCollars(
     const auto lengthOf = [&](std::uint64_t u, std::uint64_t v) {
       const auto found = lengths.find({std::min(u, v), std::max(u, v)});
       if (found == lengths.end())
-        throw std::logic_error("MultiCobordism::seedTubedCollars: an attachment face edge has no surface length");
+        throw std::logic_error("SurfaceSeed::tubedCollars: an attachment face edge has no surface length");
       return found->second.real();
     };
     const double c = lengthOf(end[0], end[1]);  // 0-1
@@ -376,16 +386,16 @@ MultiCobordism::SurfaceSeed MultiCobordism::seedTubedCollars(
   return seed;
 }
 
-MultiCobordism::SurfaceSeed MultiCobordism::seedCollar(const std::shared_ptr<Spacetime> &surfaceA,
+SurfaceSeed SurfaceSeed::collar(const std::shared_ptr<Spacetime> &surfaceA,
                                                        const std::shared_ptr<Spacetime> &surfaceB,
                                                        int layers,
                                                        const std::vector<std::uint64_t> &twist) {
-  if (!surfaceA || !surfaceB) throw std::invalid_argument("MultiCobordism::seedCollar: null surface");
-  if (layers < 1) throw std::invalid_argument("MultiCobordism::seedCollar: layers must be at least one");
+  if (!surfaceA || !surfaceB) throw std::invalid_argument("SurfaceSeed::collar: null surface");
+  if (layers < 1) throw std::invalid_argument("SurfaceSeed::collar: layers must be at least one");
   if (surfaceA->getDimensions() != surfaceB->getDimensions())
-    throw std::invalid_argument("MultiCobordism::seedCollar: the surfaces differ in dimension");
+    throw std::invalid_argument("SurfaceSeed::collar: the surfaces differ in dimension");
   if (surfaceA->getTopSimplices().empty() || surfaceB->getTopSimplices().empty())
-    throw std::invalid_argument("MultiCobordism::seedCollar: a surface has no top cells");
+    throw std::invalid_argument("SurfaceSeed::collar: a surface has no top cells");
   // A surface's vertices in ascending id order are its base indices; the two
   // surfaces must present one and the same face set under those indices, the
   // shared triangulation the collar is the product of.
@@ -417,20 +427,20 @@ MultiCobordism::SurfaceSeed MultiCobordism::seedCollar(const std::shared_ptr<Spa
   // check this function already makes -- there is no separate gate.
   if (!twist.empty()) {
     if (twist.size() != indexB.size())
-      throw std::invalid_argument("MultiCobordism::seedCollar: the twist has " +
+      throw std::invalid_argument("SurfaceSeed::collar: the twist has " +
                                   std::to_string(twist.size()) + " entries for " +
                                   std::to_string(indexB.size()) + " vertices");
     std::vector<bool> seen(twist.size(), false);
     for (const std::uint64_t to : twist) {
       if (to >= twist.size() || seen[to])
-        throw std::invalid_argument("MultiCobordism::seedCollar: the twist is not a permutation of the "
+        throw std::invalid_argument("SurfaceSeed::collar: the twist is not a permutation of the "
                                     "surface's base indices");
       seen[to] = true;
     }
     for (auto &[id, index] : indexB) index = twist[index];
   }
   if (indexA.size() != indexB.size())
-    throw std::invalid_argument("MultiCobordism::seedCollar: the surfaces differ in combinatorics: surface A has " +
+    throw std::invalid_argument("SurfaceSeed::collar: the surfaces differ in combinatorics: surface A has " +
                                 std::to_string(indexA.size()) + " vertices, surface B " +
                                 std::to_string(indexB.size()));
   const auto facesA = facesOf(*surfaceA, indexA);
@@ -442,11 +452,11 @@ MultiCobordism::SurfaceSeed MultiCobordism::seedCollar(const std::shared_ptr<Spa
   };
   for (const auto &face : facesA)
     if (!facesB.count(face))
-      throw std::invalid_argument("MultiCobordism::seedCollar: the surfaces differ in combinatorics: face " +
+      throw std::invalid_argument("SurfaceSeed::collar: the surfaces differ in combinatorics: face " +
                                   nameFace(face) + " of surface A (base indices) is no face of surface B");
   for (const auto &face : facesB)
     if (!facesA.count(face))
-      throw std::invalid_argument("MultiCobordism::seedCollar: the surfaces differ in combinatorics: face " +
+      throw std::invalid_argument("SurfaceSeed::collar: the surfaces differ in combinatorics: face " +
                                   nameFace(face) + " of surface B (base indices) is no face of surface A");
   // The staircase prism over the shared faces: layer l is base index + n*l
   // (prismCells' stride is one past the largest base index, n here), so layer
@@ -459,7 +469,7 @@ MultiCobordism::SurfaceSeed MultiCobordism::seedCollar(const std::shared_ptr<Spa
   // One gate on the whole: the manifold check on the result, refused by name.
   const auto verdict = ChainComplex::dualComplexIsValid(cells, dimension);
   if (!verdict.first)
-    throw std::invalid_argument("MultiCobordism::seedCollar: the collar is not a manifold-with-boundary: " +
+    throw std::invalid_argument("SurfaceSeed::collar: the collar is not a manifold-with-boundary: " +
                                 verdict.second);
   SurfaceSeed seed;
   seed.host = Spacetime::fromVertexTuples(dimension, cells, 1.0, complexd(0.0, 0.0));
@@ -489,241 +499,6 @@ MultiCobordism::SurfaceSeed MultiCobordism::seedCollar(const std::shared_ptr<Spa
   }
   seed.vertexIds = {std::move(hostIdA), std::move(hostIdB)};
   return seed;
-}
-
-MultiCobordism::BlockSurface MultiCobordism::blockSurface(const BoundaryBlock &block,
-                                                          const Spacetime &spacetime) {
-  const std::size_t faceSize = static_cast<std::size_t>(std::max(0, spacetime.getDimensions()));
-  const auto inside = [&](const std::vector<std::uint64_t> &ids) {
-    for (const std::uint64_t v : ids)
-      if (!block.vertices.count(v)) return false;
-    return true;
-  };
-  // The faces the block carries (a surface block's own triangles as seeded),
-  // sorted so a tuple compares with the host's canonical ones.
-  std::set<std::vector<std::uint64_t>> faces;
-  for (auto face : block.faces) {
-    std::sort(face.begin(), face.end());
-    if (face.size() == faceSize && inside(face)) faces.insert(std::move(face));
-  }
-  // The host's registered (d-1)-simplices inside the block: the surface's own
-  // triangles, whether or not a top cell has reached them yet.
-  for (const auto &simplex : spacetime.getSimplices()) {
-    if (simplex == nullptr || simplex->isStale() || simplex->size() != faceSize) continue;
-    auto ids = simplex->topTuple();
-    if (inside(ids)) faces.insert(std::move(ids));
-  }
-  // The facets of the top cells inside the block: a covered surface face that
-  // no read has materialized yet is still a face of the surface.
-  for (const auto &topSimplex : spacetime.getTopSimplices()) {
-    const auto cell = topSimplex->topTuple();
-    for (std::size_t omit = 0; omit < cell.size(); ++omit) {
-      std::vector<std::uint64_t> facet;
-      for (std::size_t i = 0; i < cell.size(); ++i)
-        if (i != omit) facet.push_back(cell[i]);
-      if (facet.size() == faceSize && inside(facet)) faces.insert(std::move(facet));
-    }
-  }
-  std::set<std::vector<std::uint64_t>> edges;
-  for (const auto *edge : spacetime.getEdgeList()->toVector()) {
-    if (edge == nullptr || edge->getSource() == nullptr || edge->getTarget() == nullptr) continue;
-    const auto key = edgeKey(edge);
-    if (block.vertices.count(key.first) && block.vertices.count(key.second))
-      edges.insert({key.first, key.second});
-  }
-  return {std::vector<std::vector<std::uint64_t>>(faces.begin(), faces.end()),
-          std::vector<std::vector<std::uint64_t>>(edges.begin(), edges.end())};
-}
-
-bool MultiCobordism::hasFixedBoundary() const noexcept {
-  // A surface block only. Its own triangles are a component of the boundary,
-  // declared by the caller, which is what makes dW a stated fact rather than
-  // whatever the search exposed. A pinned region is deliberately not one:
-  // "pinning constrains the geometry, it does not veto a topology change" is
-  // the settled reading of `declarePinnedRegion` (the acceptance in
-  // applyMoveSpecification and the ManifoldValidityIsTheOnlyGate tests), and
-  // making it imply a topological gate would quietly reverse it.
-  for (const auto &block : inputBlocks_)
-    if (block.surface) return true;
-  for (const auto &block : outputBlocks_)
-    if (block.surface) return true;
-  return false;
-}
-
-std::set<std::vector<std::uint64_t>> MultiCobordism::boundaryFacetsOf(const Spacetime &spacetime) {
-  std::map<std::vector<std::uint64_t>, int> incidence;
-  for (const auto &topSimplex : spacetime.getTopSimplices()) {
-    if (topSimplex == nullptr) continue;
-    const auto cell = topSimplex->topTuple();
-    for (std::size_t omit = 0; omit < cell.size(); ++omit) {
-      std::vector<std::uint64_t> facet;
-      facet.reserve(cell.size() - 1);
-      for (std::size_t i = 0; i < cell.size(); ++i)
-        if (i != omit) facet.push_back(cell[i]);
-      ++incidence[facet];
-    }
-  }
-  std::set<std::vector<std::uint64_t>> boundary;
-  for (auto &[facet, count] : incidence)
-    if (count == 1) boundary.insert(facet);
-  return boundary;
-}
-
-MultiCobordism::SurfaceInventory MultiCobordism::surfaceInventoryOf(
-    const Spacetime &spacetime) const {
-  SurfaceInventory inventory;
-  for (const auto &topSimplex : spacetime.getTopSimplices()) {
-    auto cell = topSimplex->topTuple();
-    for (std::size_t omit = 0; omit < cell.size(); ++omit) {
-      std::vector<std::uint64_t> facet;
-      for (std::size_t i = 0; i < cell.size(); ++i)
-        if (i != omit) facet.push_back(cell[i]);
-      ++inventory.facetIncidence[facet];
-    }
-    inventory.topCells.insert(std::move(cell));
-  }
-  for (std::size_t index = 0; index < inputBlocks_.size(); ++index) {
-    const auto &block = inputBlocks_[index];
-    if (!block.surface) continue;
-    const BlockSurface surface = blockSurface(block, spacetime);
-    std::set<std::vector<std::uint64_t>> faces(surface.faces.begin(), surface.faces.end());
-    // Every non-empty subset of a face is a simplex of the surface: the parts
-    // a bridge may take from this block.
-    std::set<std::vector<std::uint64_t>> simplices;
-    for (const auto &face : faces)
-      for (std::uint64_t mask = 1; mask < (std::uint64_t{1} << face.size()); ++mask) {
-        std::vector<std::uint64_t> part;
-        for (std::size_t i = 0; i < face.size(); ++i)
-          if (mask & (std::uint64_t{1} << i)) part.push_back(face[i]);
-        simplices.insert(std::move(part));
-      }
-    inventory.blocks.push_back(index);
-    inventory.faces.push_back(std::move(faces));
-    inventory.simplices.push_back(std::move(simplices));
-  }
-  return inventory;
-}
-
-bool MultiCobordism::hasSurfaceInputs() const {
-  std::size_t count = 0;
-  for (const auto &block : inputBlocks_)
-    if (block.surface) ++count;
-  return count >= 2;
-}
-
-std::vector<std::vector<std::uint64_t>> MultiCobordism::uncoveredInputFacesOn(
-    const Spacetime &spacetime) const {
-  std::vector<std::vector<std::uint64_t>> uncovered;
-  bool anySurface = false;
-  for (const auto &block : inputBlocks_) anySurface = anySurface || block.surface;
-  if (!anySurface) return uncovered;
-  const SurfaceInventory inventory = surfaceInventoryOf(spacetime);
-  for (const auto &faces : inventory.faces)
-    for (const auto &face : faces)
-      if (!inventory.facetIncidence.count(face)) uncovered.push_back(face);
-  return uncovered;
-}
-
-std::vector<std::vector<std::uint64_t>> MultiCobordism::uncoveredInputFaces() const {
-  return uncoveredInputFacesOn(*spacetime_);
-}
-
-bool MultiCobordism::bridgePhaseCompleteOn(const Spacetime &spacetime) const {
-  const SurfaceInventory inventory = surfaceInventoryOf(spacetime);
-  if (inventory.blocks.empty()) return false;
-  // Every surface face has exactly one top cell on it, and the boundary of
-  // the top cells is exactly the union of the surface faces. Both read off
-  // one facet-incidence count, so the two conditions cannot disagree about
-  // what a boundary facet is.
-  std::set<std::vector<std::uint64_t>> surfaceFaces;
-  for (const auto &faces : inventory.faces) surfaceFaces.insert(faces.begin(), faces.end());
-  if (surfaceFaces.empty()) return false;
-  for (const auto &face : surfaceFaces) {
-    const auto found = inventory.facetIncidence.find(face);
-    if (found == inventory.facetIncidence.end() || found->second != 1) return false;
-  }
-  for (const auto &[facet, count] : inventory.facetIncidence)
-    if (count == 1 && !surfaceFaces.count(facet)) return false;
-  return true;
-}
-
-bool MultiCobordism::bridgePhaseComplete() const { return bridgePhaseCompleteOn(*spacetime_); }
-
-std::vector<std::vector<std::uint64_t>> MultiCobordism::bridgeCandidatesOn(
-    const Spacetime &spacetime) const {
-  std::vector<std::vector<std::uint64_t>> candidates;
-  const SurfaceInventory inventory = surfaceInventoryOf(spacetime);
-  if (inventory.blocks.size() < 2) return candidates;
-  const std::size_t faceSize = static_cast<std::size_t>(std::max(0, spacetime.getDimensions()));
-  // Which surface block (by position in the inventory) each vertex belongs to.
-  std::map<std::uint64_t, std::size_t> blockOfVertex;
-  std::vector<std::vector<std::uint64_t>> blockVertices(inventory.blocks.size());
-  for (std::size_t b = 0; b < inventory.blocks.size(); ++b)
-    for (const std::uint64_t v : inputBlocks_[inventory.blocks[b]].vertices) {
-      blockOfVertex.emplace(v, b);
-      blockVertices[b].push_back(v);
-    }
-  // The frontier: boundary facets of the top cells that are not surface faces
-  // (their other side is still open), and surface faces no top cell covers.
-  std::set<std::vector<std::uint64_t>> surfaceFaces;
-  for (const auto &faces : inventory.faces) surfaceFaces.insert(faces.begin(), faces.end());
-  std::vector<std::vector<std::uint64_t>> frontier;
-  for (const auto &[facet, count] : inventory.facetIncidence)
-    if (count == 1 && !surfaceFaces.count(facet)) frontier.push_back(facet);
-  for (const auto &face : surfaceFaces)
-    if (!inventory.facetIncidence.count(face)) frontier.push_back(face);
-  // A part of a candidate cell inside block b is admissible when it is a
-  // simplex of b's surface — and, when it is a whole face, an uncovered one:
-  // a covered surface face already has the one top cell it will ever have.
-  const auto partAdmissible = [&](std::size_t b, std::vector<std::uint64_t> part) {
-    std::sort(part.begin(), part.end());
-    if (!inventory.simplices[b].count(part)) return false;
-    if (part.size() == faceSize && inventory.facetIncidence.count(part)) return false;
-    return true;
-  };
-  std::set<std::vector<std::uint64_t>> distinct;
-  for (const auto &face : frontier) {
-    // The face's vertices by block; a face touching a vertex outside every
-    // surface block (a bulk vertex a later cone-in minted) is not bridged.
-    std::map<std::size_t, std::vector<std::uint64_t>> parts;
-    bool bridgeable = true;
-    for (const std::uint64_t v : face) {
-      const auto found = blockOfVertex.find(v);
-      if (found == blockOfVertex.end()) {
-        bridgeable = false;
-        break;
-      }
-      parts[found->second].push_back(v);
-    }
-    if (!bridgeable || parts.empty() || parts.size() > 2) continue;
-    // The blocks a completing vertex may come from: the face's own blocks,
-    // or — when the face lies in one block — any other surface block.
-    std::vector<std::size_t> sources;
-    for (const auto &[b, part] : parts) sources.push_back(b);
-    if (parts.size() == 1)
-      for (std::size_t b = 0; b < inventory.blocks.size(); ++b)
-        if (!parts.count(b)) sources.push_back(b);
-    for (const std::size_t b : sources)
-      for (const std::uint64_t v : blockVertices[b]) {
-        if (std::find(face.begin(), face.end(), v) != face.end()) continue;
-        std::map<std::size_t, std::vector<std::uint64_t>> cellParts = parts;
-        cellParts[b].push_back(v);
-        if (cellParts.size() != 2) continue;  // the split is across exactly two blocks
-        bool admissible = true;
-        for (const auto &[block, part] : cellParts)
-          if (!partAdmissible(block, part)) {
-            admissible = false;
-            break;
-          }
-        if (!admissible) continue;
-        std::vector<std::uint64_t> cell(face.begin(), face.end());
-        cell.push_back(v);
-        std::sort(cell.begin(), cell.end());
-        if (inventory.topCells.count(cell)) continue;
-        if (distinct.insert(cell).second) candidates.push_back(std::move(cell));
-      }
-  }
-  return candidates;
 }
 
 }  // namespace tessera::cobordism

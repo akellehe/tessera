@@ -117,7 +117,7 @@ class ProtonIngredientsNodesTest(unittest.TestCase):
         self.assertAlmostEqual(r_at_weight_2, 2.0 * r_at_weight_1, places=9)
         node.run_stage1(max_steps=10, n_candidate_moves=4,
                         grow_boundaries=True)
-        betti = cob.MultiCobordism.betti(node.st)
+        betti = node.st.get_betti_numbers()
         self.assertTrue(len(betti) > 3)
         self.assertTrue(math.isfinite(node.objective()))
 

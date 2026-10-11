@@ -777,11 +777,11 @@ class TestSpacetimeDiscovery(unittest.TestCase):
         # covered by the planted (forced-partition) fixtures.  Hash
         # equality is not asserted either: canonical hashes read the
         # ORIENTED incidence and the fromVertexTuples rebuild inside
-        # LiveComplex.relabel does not preserve stored source/target roles
+        # Spacetime.relabeled does not preserve stored source/target roles
         # (the pure-graph relabeling tests cover hashes with orientation
         # preserved).
         st = _make_spacetime()
-        relabeled = tessera.LiveComplex.relabel(st, seed=4)
+        relabeled = st.relabeled(seed=4)
         g = PM.from_spacetime(st, PM.WeightMap.Unit)
         g2 = PM.from_spacetime(relabeled.spacetime, PM.WeightMap.Unit)
         cfg = _cfg((1.0,), restarts=2)

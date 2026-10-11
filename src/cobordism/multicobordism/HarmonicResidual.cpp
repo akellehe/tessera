@@ -11,71 +11,6 @@
 
 namespace tessera::cobordism {
 
-std::vector<int> MultiCobordism::betti(const Spacetime &spacetime) {
-  // Betti numbers are purely combinatorial, and the residual path calls this on
-  // every objective evaluation while only edge lengths move, so Smith normal
-  // form dominates the profile. The spacetime's structural revision shows when
-  // the last computation is still exact.
-  if (const auto *cached = spacetime.cachedBettiNumbers()) return *cached;
-  auto numbers = ChainComplex::fromSpacetime(spacetime).bettiNumbers();
-  spacetime.storeBettiNumbers(numbers);
-  return numbers;
-}
-
-std::vector<std::vector<std::uint64_t>> MultiCobordism::emergentHoles(
-    const Spacetime &spacetime, int registerDegree) {
-  // The (k+2)-vertex tuples all of whose drop-one facets are boundary facets.
-  std::set<std::vector<std::uint64_t>> boundaryFacets;
-  for (auto boundaryFacet : spacetime.getBoundary()) {
-    std::sort(boundaryFacet.begin(), boundaryFacet.end());
-    boundaryFacets.insert(std::move(boundaryFacet));
-  }
-  std::vector<std::vector<std::uint64_t>> emergentHoleTuples;
-  if (boundaryFacets.empty() ||
-      static_cast<int>(boundaryFacets.begin()->size()) !=
-          registerDegree + 1)  // facets must be k-cells
-    return emergentHoleTuples;
-  std::set<std::uint64_t> boundaryVertexIds;
-  for (const auto &boundaryFacet : boundaryFacets)
-    for (auto vertexId : boundaryFacet) boundaryVertexIds.insert(vertexId);
-  std::set<std::vector<std::uint64_t>> emergentHoleSet;
-  for (const auto &boundaryFacet : boundaryFacets) {
-    for (auto candidateVertexId : boundaryVertexIds) {
-      if (std::find(boundaryFacet.begin(), boundaryFacet.end(),
-                    candidateVertexId) != boundaryFacet.end())
-        continue;
-      std::vector<std::uint64_t> candidateHole = boundaryFacet;
-      candidateHole.push_back(candidateVertexId);
-      std::sort(candidateHole.begin(), candidateHole.end());
-      bool allFacetsAreBoundary = true;
-      for (std::size_t droppedIndex = 0; droppedIndex < candidateHole.size();
-           ++droppedIndex) {
-        std::vector<std::uint64_t> dropOneFacet;
-        for (std::size_t copyIndex = 0; copyIndex < candidateHole.size();
-             ++copyIndex)
-          if (copyIndex != droppedIndex)
-            dropOneFacet.push_back(candidateHole[copyIndex]);
-        if (!boundaryFacets.count(dropOneFacet)) {
-          allFacetsAreBoundary = false;
-          break;
-        }
-      }
-      if (allFacetsAreBoundary) emergentHoleSet.insert(candidateHole);
-    }
-  }
-  emergentHoleTuples.assign(emergentHoleSet.begin(), emergentHoleSet.end());
-  return emergentHoleTuples;
-}
-
-double MultiCobordism::reggeActionGradient(
-    const std::shared_ptr<Spacetime> &spacetime) {
-  ReggeSolver reggeSolver(spacetime, MatterConfiguration());
-  double squaredGradientNorm = 0.0;
-  for (const auto &gradientComponent : reggeSolver.actionGradientExact())
-    squaredGradientNorm += std::norm(gradientComponent);
-  return squaredGradientNorm;
-}
-
 Eigen::VectorXcd MultiCobordism::targetStateVector(
     const std::vector<complexd> &targetState) {
   Eigen::VectorXcd targetVector(targetState.size());
@@ -87,7 +22,7 @@ Eigen::VectorXcd MultiCobordism::targetStateVector(
 
 std::vector<std::vector<std::uint64_t>> MultiCobordism::holesCarryingTheTarget(
     const Spacetime &spacetime, int registerDegree, std::size_t targetDimension) {
-  auto emergentHoleTuples = emergentHoles(spacetime, registerDegree);
+  auto emergentHoleTuples = spacetime.getHoles(registerDegree);
   // One target component per hole: holes beyond the target's width have no component
   // to carry and take no part in the fit.
   if (emergentHoleTuples.size() > targetDimension)
@@ -197,7 +132,7 @@ double MultiCobordism::residualOfTargetStateAgainstHarmonicWithDistinctMatching(
   const Eigen::VectorXcd targetVector = targetStateVector(targetState);
   const double fullLeakResidual = targetVector.squaredNorm();  // zero-filled leak
 
-  const auto bettiNumbers = betti(*spacetime);
+  const auto bettiNumbers = spacetime->getBettiNumbers();
   if (registerDegree < 0) //||  # TODO: why would we exit if registerDegree is higher than betti numbers?
     return fullLeakResidual;
   if (registerDegree >= static_cast<int>(bettiNumbers.size())) {
@@ -264,7 +199,7 @@ double MultiCobordism::residualForBoundaryBlockWithDistinctMatchings(
   }
   if (useFiberResiduals_ && boundaryBlock.fiber && boundaryBlock.fiber->images.cols() > 0)
     return fiberResidualForBoundaryBlock(boundaryBlock, spacetime);
-  auto blockSubcomplex = spacetime->subcomplexWithinVertexSet(
+  auto blockSubcomplex = spacetime->getRegion(
     boundaryBlock.vertices);
   double residual = 0.0;
   if (!blockSubcomplex)  // no complex to read: the target leaks in full, per degree

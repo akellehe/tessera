@@ -49,10 +49,11 @@ class InteriorHinges;  // the shared 4D hinge-selection core (InteriorHinges.h)
 ///     facet/coface skeleton that the `dualVolume()` and `deficitAngle()` reads
 ///     walk must already be present on the live complex, as it is on every built
 ///     state. Completing a bare `Spacetime::fromVertexTuples` skeleton — for dump
-///     rehydration and the RELABEL-gate rebuild — is the job of `LiveComplex`.
+///     rehydration and the RELABEL-gate rebuild — is the job of
+///     `Spacetime::fromRecord` and `Spacetime::relabeled`.
 ///   * Hole selection is validated at one entry point. The selected holes are the
 ///     emergent `(degree+2)`-vertex removed top cells
-///     (`cobordism::MultiCobordism::emergentHoles`), in emergent-hole order. A
+///     (`spacetime::Spacetime::getHoles`), in emergent-hole order. A
 ///     deficit throws `std::invalid_argument` naming the holes found. A surplus
 ///     is a recorded truncation naming the dropped holes in `selectionWarning()`
 ///     (the Python binding emits it as a `UserWarning`), never a silent slice.
@@ -78,8 +79,8 @@ class InteriorHinges;  // the shared 4D hinge-selection core (InteriorHinges.h)
 /// `gauged(theta)` rotates the register target by the surviving global U(1)
 /// phase, which contains the \f$ \mathbb{Z}_3 \f$ cyclic recolor of the singlet
 /// and the orientation flip. It builds nothing and shares the same live complex.
-/// The RELABEL gate needs a rebuilt, relabeled complex; that construction lives
-/// in `LiveComplex` and is orchestrated by `ObservableGates`.
+/// The RELABEL gate needs a rebuilt, relabeled complex; that construction is
+/// `Spacetime::relabeled`, orchestrated by `ObservableGates`.
 class RegisterContext {
   public:
     /// Read the context over the already-built `spacetime`, selecting and
@@ -185,7 +186,7 @@ class RegisterContext {
     /// \f$ \mathbb{Z}_3 \f$ cyclic recolor of the singlet and the orientation
     /// flip. Shares this context's spacetime and caches; nothing is rebuilt. The
     /// RELABEL gate needs a rebuilt, relabeled complex and lives in
-    /// `LiveComplex` and `ObservableGates`.
+    /// `Spacetime::relabeled` and `ObservableGates`.
     [[nodiscard]] std::shared_ptr<RegisterContext> gauged(double theta) const;
 
   private:

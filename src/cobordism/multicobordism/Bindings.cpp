@@ -72,7 +72,7 @@ void register_cobordism_multicobordism(py::module_ &m) {
       "An emergent boundary block of a MultiCobordism (an input or output): the "
       "vertex set whose own sub-complex carries the block, and its target period "
       "vector. Read the block's sub-complex with Spacetime.from_vertex_tuples over the "
-      "cells inside `vertices`, then its holes with MultiCobordism.emergent_holes.")
+      "cells inside `vertices`, then its holes with Spacetime.get_holes.")
       .def_property_readonly(
           "vertices",
           [](const MultiCobordism::BoundaryBlock &block) {
@@ -93,7 +93,7 @@ void register_cobordism_multicobordism(py::module_ &m) {
                                return block.surface;
                              },
                              "True for an input SURFACE block (the region form of "
-                             "seed_inputs on a seed_from_surfaces host): its faces are "
+                             "seed_inputs on a SurfaceSeed.from_surfaces host): its faces are "
                              "cells of the host the bulk is drawn onto by bridges.")
       .def_property_readonly("faces",
                              [](const MultiCobordism::BoundaryBlock &block) {
@@ -230,29 +230,6 @@ void register_cobordism_multicobordism(py::module_ &m) {
                      "this field is not in tensor-product coordinates.")
       .def_readwrite("input_coefficients", &MultiCobordism::TwoBodyTarget::inputCoefficients,
                      "Optional case-specific coefficients in marked-block/cycle order.");
-  py::class_<MultiCobordism::SurfaceSeed>(m, "SurfaceSeed",
-      "A host seeded from boundary surfaces (qubit cobordism spec S2): `host` is ONE "
-      "d-dimensional Spacetime holding every surface as its own simplices (triangles, "
-      "edges, vertices with the surface's lengths and zero phases) on disjoint vertex id "
-      "ranges and NO d-cell; `vertex_ids[s]` maps surface s's vertex ids to the host's.")
-      .def_readonly("host", &MultiCobordism::SurfaceSeed::host)
-      .def_readonly("vertex_ids", &MultiCobordism::SurfaceSeed::vertexIds)
-      .def_readonly("tube_rings", &MultiCobordism::SurfaceSeed::tubeRings,
-                    "The vertex rings of a tube (seed_tubed_collars), ring 0 on the first collar's far "
-                    "surface, the last on the second's; empty on every other seed.");
-  py::class_<MultiCobordism::TubeSpec>(m, "TubeSpec",
-      "The tube of seed_tubed_collars: a prism over one attachment face of each far surface "
-      "(`face_a`, `face_b` in the far surfaces' OWN vertex ids), `layers` prism layers long, "
-      "consecutive rings `length` apart, the interior rings scaled about their centroid by "
-      "`waist`; `reflect` (default) matches the last two vertices of face_b in reversed order, "
-      "the orientation-consistent connected sum of the two far surfaces.")
-      .def(py::init<>())
-      .def_readwrite("layers", &MultiCobordism::TubeSpec::layers)
-      .def_readwrite("length", &MultiCobordism::TubeSpec::length)
-      .def_readwrite("waist", &MultiCobordism::TubeSpec::waist)
-      .def_readwrite("face_a", &MultiCobordism::TubeSpec::faceA)
-      .def_readwrite("face_b", &MultiCobordism::TubeSpec::faceB)
-      .def_readwrite("reflect", &MultiCobordism::TubeSpec::reflect);
   py::class_<MultiCobordism::BlockSurface>(m, "BlockSurface",
       "A block's own surface: its (d-1)-faces and its "
       "edges inside its vertex set, as sorted vertex-id tuples.")
@@ -439,10 +416,6 @@ void register_cobordism_multicobordism(py::module_ &m) {
       .def("geometry_admissible", &MultiCobordism::geometryAdmissible, py::arg("spacetime"),
            "Whitney pencil: whether the geometry lies in the closure of the Kontsevich-Segal "
            "allowable domain (margin >= 0); always true under DiagonalWeights.")
-      .def_static("betti", &MultiCobordism::betti, py::arg("st"))
-      .def_static("emergent_holes", &MultiCobordism::emergentHoles,
-                  py::arg("st"), py::arg("k"))
-      .def_static("regge_action_gradient", &MultiCobordism::reggeActionGradient, py::arg("st"))
       .def_static("near_kernel_residual_gradient",
            [](const std::shared_ptr<Spacetime> &st, int k, std::size_t n,
               std::optional<HodgeLaplacian::MetricSource> source) {
@@ -642,17 +615,6 @@ void register_cobordism_multicobordism(py::module_ &m) {
                   "and come back unchanged. Every entry is a candidate to "
                   "SCORE, not a promise that it applies -- the gates still "
                   "refuse what they always refused.")
-      .def_static("boundary_facets",
-                  [](const Spacetime &spacetime) {
-                    // A list, not a set: a Python set cannot hold an
-                    // unhashable list, so the std::set's order (ascending
-                    // vertex tuples) is handed over as a sequence.
-                    const auto facets = MultiCobordism::boundaryFacetsOf(spacetime);
-                    return std::vector<std::vector<std::uint64_t>>(facets.begin(), facets.end());
-                  },
-                  py::arg("spacetime"), py::call_guard<py::gil_scoped_release>(),
-                  "The boundary of `spacetime` as sorted vertex tuples in ascending order: every "
-                  "codimension-one face carried by exactly one top cell.")
       .def("use_fiber_residuals", &MultiCobordism::useFiberResiduals, py::arg("enabled"),
            "Score blocks carrying a fiber-form target by the fiber residual (least-squares leak of the "
            "target images in the band read on the block's own pencil, restricted to the fiber's cells) "
@@ -908,42 +870,6 @@ void register_cobordism_multicobordism(py::module_ &m) {
            },
            py::arg("contour") = std::nullopt, py::arg("kappa") = 10.0,
            "The fiber the whole complex carries on the target's cells: what a downstream node is piped.")
-      .def_static("seed_simplex", &MultiCobordism::seedSimplex, py::arg("dimension"),
-           py::arg("balanced_edges") = false,
-           "A single dimension-simplex host with a uniform Lorentzian metric: the canonical seed.")
-      .def_static("seed_from_surfaces", &MultiCobordism::seedFromSurfaces, py::arg("surfaces"),
-           "The SurfaceSeed of closed (d-1)-dimensional Spacetimes (e.g. "
-           "SimplicialQubit.flat_torus(tau, n, n).spacetime()): one d-dimensional host holding "
-           "every surface as its own simplices with its lengths and zero phases on disjoint "
-           "vertex id ranges, and no d-cell -- the bulk is drawn afterwards by gated bridges.")
-      .def_static("seed_joined_collars", &MultiCobordism::seedJoinedCollars,
-                  py::arg("surfaces"), py::arg("layers") = 3,
-                  py::arg("twist") = std::vector<std::uint64_t>{},
-                  "Two collars joined along a removed tetrahedron: FOUR boundary surfaces on one "
-                  "connected manifold. Gluing along a sphere is a connected sum, which adds no first "
-                  "homology, so b_1 = 2 + 2 = 4 with nothing dying on the boundary -- the dimension a "
-                  "4-dimensional target needs, since rank(H^1(W) -> H^1(dW)) = b_1(dW)/2. layers must "
-                  "be at least three: a prism cell spans two adjacent layers, so an all-interior cell "
-                  "exists only with two interior layers.")
-      .def_static("seed_tubed_collars", &MultiCobordism::seedTubedCollars,
-                  py::arg("surfaces"), py::arg("layers") = 1,
-                  py::arg("twist") = std::vector<std::uint64_t>{},
-                  py::arg("tube") = MultiCobordism::TubeSpec{},
-                  "Two collars joined by a TUBE (a 1-handle) between their far surfaces: the prism over "
-                  "one attachment face of each (TubeSpec), so the far boundary is ONE genus-two surface, "
-                  "the connected sum of the two far tori through the tube, and dW = T^2 + T^2 + Sigma_2. "
-                  "The tube joins two components and adds no loop: b_1(W) = 4 = b_1(dW)/2 with no class "
-                  "invisible to the boundary. Euclidean tube geometry declared from the attachment faces' "
-                  "own lengths, the waist and the length (the knobs of the neck); gated once as a whole "
-                  "by dualComplexIsValid and refused by name.")
-      .def_static("seed_collar", &MultiCobordism::seedCollar, py::arg("surface_a"), py::arg("surface_b"),
-           py::arg("layers") = 1, py::arg("twist") = std::vector<std::uint64_t>{},
-           "The SurfaceSeed of the COLLAR between two surfaces of identical combinatorics: "
-           "T^2 x I over their shared triangulation (Spacetime.prism_cells, `layers` product layers), "
-           "layer 0 = surface A, last layer = surface B, the surfaces' lengths verbatim, the auto-wired "
-           "length on every other edge, zero phases, gated once as a whole by dualComplexIsValid and "
-           "refused by name; a combinatorial mismatch is refused by name. Seed both id sets as input "
-           "blocks with seed_inputs; bridge_phase_complete() then holds by construction.")
       .def_static("block_surface", &MultiCobordism::blockSurface, py::arg("block"), py::arg("spacetime"),
            "The block's own surface: its (d-1)-faces (registered ones and facets of top cells "
            "inside the block) and its edges inside its vertex set, as sorted vertex tuples.")
@@ -1143,7 +1069,7 @@ void register_cobordism_multicobordism(py::module_ &m) {
                &MultiCobordism::seedInputs),
            py::arg("regions"),
            "Seed one INPUT block per explicit vertex region -- the surface inputs of a "
-           "seed_from_surfaces host (each block is marked `surface`).")
+           "SurfaceSeed.from_surfaces host (each block is marked `surface`).")
       .def("has_surface_inputs", &MultiCobordism::hasSurfaceInputs,
            "At least two input blocks are surface blocks; only then does stage 1 offer bridges.")
       .def("uncovered_input_faces", &MultiCobordism::uncoveredInputFaces,
@@ -1271,13 +1197,13 @@ Wrong -- st describes the pre-drive complex, so every later read is stale:
 
     st = node.st
     node.run_stage1(180, 8, 15, True)
-    holes = len(MultiCobordism.emergent_holes(st, 3))   # the OLD complex
+    holes = len(st.get_holes(3))   # the OLD complex
 
 Right -- re-read after each drive call:
 
     node.run_stage1(180, 8, 15, True)
     st = node.st
-    holes = len(MultiCobordism.emergent_holes(st, 3))   # the node's complex
+    holes = len(st.get_holes(3))   # the node's complex
 )doc")
       .def_property_readonly("inputs", &MultiCobordism::inputs,
                              py::return_value_policy::reference_internal,

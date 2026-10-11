@@ -17,7 +17,7 @@ Specification labels below describe the historical selected-state
 implementation, not the consolidated reading's current numbering.
 Two flat qubit tori (``SimplicialQubit.flat_torus``) are the boundary of a
 3-complex whose bulk starts as the collar between them
-(``MultiCobordism.seed_collar``) and is then synthesized by the shared stage-1
+(``SurfaceSeed.collar``) and is then synthesized by the shared stage-1
 and stage-2 loop against the two-body target chi of spec S5 -- the XY
 flip-flop of two spin-1/2 at ``--J`` and ``--time`` -- while each torus keeps
 representing its input state through the zero mode of its OWN Laplacian.
@@ -182,14 +182,14 @@ DECLARED_TORI = 2
 DECLARED_COLLAR_TWIST = "none"
 
 #: The causal character the COLLAR'S INTERIOR edges are seeded with.
-#: Defaults to `spacelike`, which is what `seed_collar` already wires, so the
+#: Defaults to `spacelike`, which is what `SurfaceSeed.collar` already wires, so the
 #: flag changes no existing run until it is asked to. It is recorded under
 #: `interior_disposition` rather than `edge_disposition` because the latter
 #: is the NEUTRAL driver's key for the whole host's edges, and a qubit
 #: configuration carries none of those. The command-line flag stays
 #: `--edge-disposition`.
 #:
-#: `seed_collar` writes each torus's own lengths onto its edges and wires
+#: `SurfaceSeed.collar` writes each torus's own lengths onto its edges and wires
 #: every other edge to 1.0, so without this a qubit host is all-spacelike in
 #: its bulk and cannot say otherwise.
 #:
@@ -755,7 +755,7 @@ def _torus_fiber(torus, ids):
 def _dispose_interior(host, tori, ids, disposition, seed):
     """Give the collar's INTERIOR edges a causal character.
 
-    `seed_collar` writes each torus's own lengths onto its edges and wires
+    `SurfaceSeed.collar` writes each torus's own lengths onto its edges and wires
     every other edge to 1.0, so a qubit host is all-spacelike in its bulk with
     no way to say otherwise. This gives those edges the same closed vocabulary
     the neutral driver uses (`EdgeDisposition`).
@@ -1250,7 +1250,7 @@ def seed_qubit_host(config):
         tube.waist = float(config.get("tube_waist", DECLARED_TUBE_WAIST))
         tube.face_a = _tube_face(grid)
         tube.face_b = _tube_face(grid)
-        seed = MC.seed_tubed_collars([torus.spacetime() for torus in tori],
+        seed = cob.SurfaceSeed.tubed_collars([torus.spacetime() for torus in tori],
                                      int(config["layers"]), _collar_twist(config, grid), tube)
     elif int(config.get("tori", DECLARED_TORI)) == 4:
         # Two collars joined along a removed tetrahedron. Gluing along a sphere
@@ -1258,11 +1258,11 @@ def seed_qubit_host(config):
         # with nothing dying on the boundary. Needs three layers: a prism cell
         # spans two adjacent layers, so the all-interior cell the join removes
         # exists only with two interior layers.
-        seed = MC.seed_joined_collars([torus.spacetime() for torus in tori],
+        seed = cob.SurfaceSeed.joined_collars([torus.spacetime() for torus in tori],
                                       int(config["layers"]),
                                       _collar_twist(config, grid))
     else:
-        seed = MC.seed_collar(tori[0].spacetime(), tori[1].spacetime(),
+        seed = cob.SurfaceSeed.collar(tori[0].spacetime(), tori[1].spacetime(),
                               config["layers"], _collar_twist(config, grid))
     ids = [{int(k): int(v) for k, v in mapping.items()}
            for mapping in seed.vertex_ids]
@@ -1288,7 +1288,7 @@ def build_qubit_node(config):
 
     Step by step the setup the T1-T3 tests measured under (spec S1-S3, S5),
     with D2/D3 as revised: the tori `SimplicialQubit.flat_torus(tau, n, n)`;
-    the collar `MultiCobordism.seed_collar` (or two joined collars for four
+    the collar `SurfaceSeed.collar` (or two joined collars for four
     tori), with incompatible readout/host combinations refused by name;
     the node with the degree-1 register on the complex locus (the tori carry
     complex lengths and pure-gauge phases), the Regge term per `regge` and
@@ -2364,7 +2364,7 @@ def stall_causes(config, frames):
     if disposition != ea.EdgeDisposition.SPACELIKE:
         causes.append(
             "--edge-disposition %s seeds the collar's interior away from the "
-            "lengths seed_collar wires. `random` in particular gives every "
+            "lengths SurfaceSeed.collar wires. `random` in particular gives every "
             "interior edge a uniformly random phase, which has been measured "
             "to leave no improving move on the first unit" % (disposition,))
     return causes
@@ -2497,7 +2497,7 @@ def _add_qubit_run_arguments(run):
                      choices=list(ea.EdgeDisposition.ALL),
                      default=DECLARED_INTERIOR_DISPOSITION,
                      help="the causal character the COLLAR'S INTERIOR edges "
-                          "are seeded with. seed_collar writes each torus's "
+                          "are seeded with. SurfaceSeed.collar writes each torus's "
                           "own lengths onto its edges and wires every other "
                           "edge to 1.0, so without this the bulk is "
                           "all-spacelike and cannot say otherwise. The tori's "
@@ -3397,7 +3397,7 @@ def _flip_checks(config, tori, host, ids, markings, monodromy, lattice, predicte
     layers = int(config["layers"])
     checks = []
     rounded = np.asarray(monodromy["rounded"], dtype=int)
-    betti = MC.betti(host)
+    betti = host.get_betti_numbers()
     cells = len(host.get_top_simplices())
     expected_cells = 6 * n * n * layers + n * n * len(passes)
     checks.append(_check(
@@ -4259,7 +4259,7 @@ def seed_genus_two_host(config):
     twist = surface.rotation(k) if k else []
     if twist and not surface.is_automorphism(twist):
         raise RuntimeError("r^%d is not a simplicial automorphism of the decagon surface" % k)
-    seed = MC.seed_collar(surface.spacetime(), surface.spacetime(), int(config["layers"]), twist)
+    seed = cob.SurfaceSeed.collar(surface.spacetime(), surface.spacetime(), int(config["layers"]), twist)
     ids = [{int(a): int(b) for a, b in mapping.items()} for mapping in seed.vertex_ids]
     _dispose_interior(seed.host, [surface, surface], ids,
                       config.get("interior_disposition", DECLARED_INTERIOR_DISPOSITION), int(config["seed"]))

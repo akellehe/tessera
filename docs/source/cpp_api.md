@@ -174,8 +174,6 @@ internal interface as well, edit the Doxyfile and comment out its exclusions.
 ```
 ```{doxygenfile} RegisterContext.h
 ```
-```{doxygenfile} LiveComplex.h
-```
 ```{doxygenfile} InteriorHinges.h
 ```
 ```{doxygenfile} RegisterObservable.h
@@ -216,6 +214,8 @@ internal interface as well, edit the Doxyfile and comment out its exclusions.
 ```{doxygenfile} CobordismObjective.h
 ```
 ```{doxygenfile} MultiCobordism.h
+```
+```{doxygenfile} SurfaceSeed.h
 ```
 ```{doxygenfile} CobordismDAG.h
 ```

@@ -125,7 +125,7 @@ void RegisterContext::initialize(
 
   // The emergent register census at the register degree (nothing placed).
   std::vector<std::vector<std::uint64_t>> emergent =
-      MultiCobordism::emergentHoles(st, degree_);
+      st.getHoles(degree_);
   holesTotal_ = static_cast<int>(emergent.size());
 
   const std::vector<std::vector<std::uint64_t>> &candidates =
@@ -170,7 +170,7 @@ int RegisterContext::bK() const {
 
 const std::vector<int> &RegisterContext::betti() const {
   if (!caches_->bettiBuilt) {
-    caches_->betti = MultiCobordism::betti(*spacetime_);
+    caches_->betti = spacetime_->getBettiNumbers();
     caches_->bettiBuilt = true;
   }
   return caches_->betti;

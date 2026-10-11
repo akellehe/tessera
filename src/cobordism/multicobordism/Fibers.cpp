@@ -61,25 +61,10 @@ chainhodge::Contour MultiCobordism::fiberContourOn(const AssembledPencil &assemb
                                       : target.contour;
 }
 
-bool MultiCobordism::adoptParentEdgeGeometry(Spacetime &child, const Spacetime &parent) {
-  std::map<std::pair<std::uint64_t, std::uint64_t>, ::tessera::mesh::Edge *> parentEdges;
-  for (auto *edge : parent.getEdgeList()->toVector()) parentEdges.emplace(edgeKey(edge), edge);
-  for (auto *edge : child.getEdgeList()->toVector()) {
-    const auto found = parentEdges.find(edgeKey(edge));
-    if (found == parentEdges.end()) return false;
-    // Through the canonical record, so a parent edge stored the other way
-    // round from the child's hands over the phase on the child's orientation.
-    restoreEdgeGeometry(*edge, edgeGeometryOf(*found->second));
-  }
-  return true;
-}
-
 std::shared_ptr<Spacetime> MultiCobordism::blockSubcomplexWithGeometry(
     const BoundaryBlock &block, const std::shared_ptr<Spacetime> &spacetime) {
-  auto sub = spacetime->subcomplexWithinVertexSet(block.vertices);
+  auto sub = spacetime->getRegion(block.vertices);
   if (!sub) return nullptr;
-  if (!adoptParentEdgeGeometry(*sub, *spacetime))
-    throw std::logic_error("MultiCobordism::blockSubcomplexWithGeometry: a block edge is absent from the parent");
   sub->materializeFacets();
   return sub;
 }
@@ -95,7 +80,7 @@ std::shared_ptr<Spacetime> MultiCobordism::blockSurfaceWithGeometry(
   // cells never enter: this is the block's own Laplacian, not a restriction
   // of the whole's.
   auto own = Spacetime::fromVertexTuples(spacetime->getDimensions() - 1, surface.faces, 1.0, complexd(0.0, 0.0));
-  if (!adoptParentEdgeGeometry(*own, *spacetime)) return nullptr;  // a torn surface carries nothing
+  if (!own->copyEdgeGeometryFrom(*spacetime)) return nullptr;  // a torn surface carries nothing
   own->materializeFacets();
   return own;
 }

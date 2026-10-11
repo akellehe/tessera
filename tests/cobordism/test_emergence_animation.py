@@ -84,7 +84,7 @@ class DriveTest(unittest.TestCase):
     def test_the_host_is_neutral(self):
         """No holes, no pinned carrier, no boundary blocks by construction."""
         host = ea.build_cobordism_host(SMALL, ea.DECLARED_HOST_SEED)
-        betti = list(MC.betti(host))
+        betti = list(host.get_betti_numbers())
         # A 4-ball refined by stellar adds stays contractible: the neutral
         # host carries no hole for a quark to be identified with.
         self.assertEqual(betti[0], 1)

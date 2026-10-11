@@ -97,6 +97,7 @@ import warnings
 import numpy as np
 import pytest
 
+import tessera
 from tessera import cobordism as cob
 from tessera import observables as obs
 
@@ -165,7 +166,7 @@ def host_marking(q, ids):
 
 def collar(n, weight=1e6, einstein_hilbert=False, real_squared_lengths_only=False, seed_value=0, layers=1):
     qa, qb = torus(TAU_A, n), torus(TAU_B, n)
-    seed = MC.seed_collar(qa.spacetime(), qb.spacetime(), layers)
+    seed = cob.SurfaceSeed.collar(qa.spacetime(), qb.spacetime(), layers)
     node = MC(seed.host, [[1.0 + 0j], [1.0 + 0j]], [], degrees=[1], seed=seed_value,
               einstein_hilbert=einstein_hilbert, real_squared_lengths_only=real_squared_lengths_only)
     node.seed_inputs([sorted(ids.values()) for ids in seed.vertex_ids])
@@ -461,7 +462,7 @@ def gauged_collar(n, seed_value=0):
     tori's holomorphic forms attached as the state fibers, and their
     markings with (1, tau_in)."""
     qa, qb = torus(TAU_A, n), torus(TAU_B, n)
-    seed = MC.seed_collar(qa.spacetime(), qb.spacetime(), 1)
+    seed = cob.SurfaceSeed.collar(qa.spacetime(), qb.spacetime(), 1)
     st = seed.host
     ids = seed.vertex_ids
     g = {}
@@ -694,7 +695,7 @@ def pristine_dump():
     monodromy read of the collar seed on zero phases."""
     rng = np.random.default_rng(975)
     psi, phi = (rng.normal(size=4) + 1j * rng.normal(size=4) for _ in range(2))
-    node = MC(MC.seed_simplex(3), [[1.0 + 0j, 0j, 0j, 0j], [1.0 + 0j, 0j, 0j, 0j]], [], degrees=[0],
+    node = MC(tessera.SolidSimplex.spacetime(3), [[1.0 + 0j, 0j, 0j, 0j], [1.0 + 0j, 0j, 0j, 0j]], [], degrees=[0],
               seed=0, precone=8, einstein_hilbert=False)
     for e in node.spacetime().get_edge_list().to_vector():
         s = 1.0 + 0.15 * rng.uniform(-1, 1) + 1j * 0.15 * rng.uniform(-1, 1)

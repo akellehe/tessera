@@ -252,7 +252,7 @@ The total action is S = S_grav + S_matter where:
 Minimizes F = ||∇S||² to find stationary points of S (the discrete
 Einstein equations).  F ≥ 0, and F = 0 at the solution.)doc")
       .def(py::init<std::shared_ptr<Spacetime>, ::tessera::matter::MatterConfiguration>(),
-           py::arg("spacetime"), py::arg("matter"))
+           py::arg("spacetime"), py::arg("matter") = ::tessera::matter::MatterConfiguration{})
       .def("dihedral_angle", &ReggeSolver::dihedralAngle,
            py::arg("sigma"), py::arg("hinge"),
            "Dihedral angle at hinge h within top-simplex sigma.")
@@ -304,6 +304,9 @@ Einstein equations).  F ≥ 0, and F = 0 at the solution.)doc")
            "Total action: S = S_grav + S_matter.  Stationary point = Einstein eqs.")
       .def("action_gradient_norm", &ReggeSolver::actionGradientNorm,
            "||∇S||² = Σ_e (∂S/∂ℓ²_e)².  Zero = Regge equations solved.")
+      .def("action_gradient_exact_norm", &ReggeSolver::actionGradientExactNorm,
+           "Sum over edges of |dS/dl^2_e|^2 for the exact gradient: the geometry term "
+           "||grad S_Regge||^2 of the cobordism objective, zero at a stationary action.")
       .def("action_gradient_exact", &ReggeSolver::actionGradientExact,
            "Exact analytic gradient of the complex dual (Sorkin) Regge action: "
            "∂S/∂ℓ²_e per edge (getEdgeList order), as a list of complex. "

@@ -397,6 +397,7 @@ set(TESSERA_PYBIND_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/cobordism/IntegerLinalgBindings.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/cobordism/PencilBindings.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/cobordism/ObjectiveBindings.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/cobordism/SurfaceSeedBindings.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/cobordism/multicobordism/Bindings.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/cobordism/DagProtonCertificateBindings.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/cobordism/AnalyticCacheBindings.cpp"

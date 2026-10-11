@@ -101,7 +101,7 @@ class ProtonSynthesis {
   ///                        uniform edge-length magnitude. Takes precedence
   ///                        over `preconeTimelike`.
   ///   * `balancedEdges`  — wire the seed and every node with the balanced
-  ///                        edge form (`MultiCobordism::seedSimplex`, where
+  ///                        edge form (`SolidSimplex::spacetime`, where
   ///                        balanced wiring gives `ℓ = √(1/2)(1+i)`).
   ///   * `singularValueRatio` — score the whole-complex term of `r_U` with the
   ///                        scale-invariant singular-value half-sum ratio
@@ -191,7 +191,7 @@ class ProtonSynthesis {
   /// sub-block. This is what the observable readers consume. Triggers
   /// `build()`.
   [[nodiscard]] std::shared_ptr<Spacetime> block();
-  /// The holes (`(k+2)`-vertex tuples, `MultiCobordism::emergentHoles`) of the
+  /// The holes (`(k+2)`-vertex tuples, `Spacetime::getHoles`) of the
   /// synthesized proton, over which the singlet periods are read; at least
   /// `minEmergentHoles` of them when converged. A topological observable of
   /// this construction, not a quark count. Triggers `build()`.

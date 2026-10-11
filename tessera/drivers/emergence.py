@@ -1707,7 +1707,7 @@ class AnimationFrame:
         as a persistent modular spectral cluster, not as a hole.
         """
         try:
-            values = list(MC.betti(spacetime))
+            values = list(spacetime.get_betti_numbers())
         except Exception as error:                        # noqa: BLE001
             return Absent("Betti numbers unavailable: %s" % error)
         numbers = {degree: (int(values[degree]) if degree < len(values)

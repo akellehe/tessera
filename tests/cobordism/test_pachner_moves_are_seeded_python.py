@@ -28,6 +28,7 @@ the one a caller relies on.
 """
 import pytest
 
+import tessera
 from tessera import cobordism as cob
 
 MC = cob.MultiCobordism
@@ -56,7 +57,7 @@ def node(seed, precone=PRECONE):
     0 moves commit across four seeds; with it on, 2-3 commit and F falls
     (4.88 -> 1.67 at precone 4).
     """
-    return MC(MC.seed_simplex(3), [], [], degrees=[1], seed=seed,
+    return MC(tessera.SolidSimplex.spacetime(3), [], [], degrees=[1], seed=seed,
               precone=precone, einstein_hilbert=True)
 
 

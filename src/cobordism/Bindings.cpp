@@ -16,6 +16,7 @@ void register_cobordism_hodge(py::module_ &m);
 void register_cobordism_integer_linalg(py::module_ &m);
 void register_cobordism_pencil(py::module_ &m);
 void register_cobordism_objective(py::module_ &m);
+void register_cobordism_surface_seed(py::module_ &m);
 void register_cobordism_multicobordism(py::module_ &m);
 void register_cobordism_dag_proton_certificate(py::module_ &m);
 void register_cobordism_analytic_cache(py::module_ &m);
@@ -38,6 +39,7 @@ void register_cobordism(py::module_ m) {
   register_cobordism_integer_linalg(m);
   register_cobordism_pencil(m);
   register_cobordism_objective(m);
+  register_cobordism_surface_seed(m);
   register_cobordism_multicobordism(m);
   register_cobordism_dag_proton_certificate(m);
   register_cobordism_analytic_cache(m);

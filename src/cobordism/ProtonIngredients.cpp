@@ -53,7 +53,7 @@ std::shared_ptr<Spacetime> ProtonIngredients::buildMinimalSeed() {
   // Unbalanced wiring, which is what this arm has always built. Unlike
   // ProtonSynthesis::buildMinimalSeed there is no parameter to select the balanced
   // variant, because nothing composes this arm with balanced edges.
-  return MultiCobordism::seedSimplex(kDim, /*balancedEdges=*/false);
+  return SolidSimplex::spacetime(kDim, /*balancedEdges=*/false);
 }
 
 std::shared_ptr<MultiCobordism> ProtonIngredients::recombinationNode(
@@ -138,10 +138,10 @@ void ProtonIngredients::build(int maxRestarts, int initSteps, int evolveSteps,
   // answer-shaped quantity may steer or gate this build.
   const auto holeCount = [&](const std::shared_ptr<Spacetime> &whole) {
     return static_cast<int>(
-        MultiCobordism::emergentHoles(*whole, registerDegree_).size());
+        whole->getHoles(registerDegree_).size());
   };
   const auto bettiAtRegisterDegree = [&](const std::shared_ptr<Spacetime> &whole) {
-    const auto betti = MultiCobordism::betti(*whole);
+    const auto betti = whole->getBettiNumbers();
     return registerDegree_ < static_cast<int>(betti.size()) ? betti[registerDegree_]
                                                             : 0;
   };
@@ -196,7 +196,7 @@ void ProtonIngredients::build(int maxRestarts, int initSteps, int evolveSteps,
       persistent_ = persisted;
       keptSeed_ = seedA;
       spacetime_ = whole;
-      emergentHoles_ = MultiCobordism::emergentHoles(*whole, registerDegree_);
+      emergentHoles_ = whole->getHoles(registerDegree_);
       singletResidual_ = MultiCobordism::residualOfTargetStateAgainstHarmonic(
           whole, registerDegree_, ProtonSynthesis::singlet());  // diagnostic read, after the fact
       inputResidual_ = stepB->rU(whole);

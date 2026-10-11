@@ -10,39 +10,9 @@
 
 void register_observables_register_observable(py::module_ &m) {
   // ==========================================================================
-  // Emergent-proton readout battery: pure readers over a live complex, the
-  // loader/transform layer, and the gauge/relabel gates.
+  // Emergent-proton readout battery: pure readers over a live complex and the
+  // gauge/relabel gates.
   // ==========================================================================
-
-  // ---- LiveComplex: the loader / transform layer (outside the readers) ----
-  py::class_<LiveComplex::Relabeled>(m, "Relabeled",
-      "A relabeled rebuild: the live relabeled complex + the vertex-id "
-      "permutation (original id -> relabeled id).")
-      .def_readonly("spacetime", &LiveComplex::Relabeled::spacetime)
-      .def_readonly("vertex_map", &LiveComplex::Relabeled::vertexMap);
-
-  py::class_<LiveComplex>(m, "LiveComplex",
-      R"doc(The loader / transform layer outside the pure readers: loads a
-saved combinatorial and metric description back into a live,
-skeleton-complete Spacetime, and produces a relabeled copy for the relabel
-gate. Never builds a spacetime of its own and never re-runs the dynamics
-(those live in ProtonSynthesis / ProtonIngredients / MultiCobordism); it
-reads a recorded geometry back through ``Spacetime.from_vertex_tuples``, completing
-the facet skeleton with ``materialize_facets``.)doc")
-      .def_static("load", &LiveComplex::load, py::arg("cells"),
-                  py::arg("squared_lengths"), py::arg("vertex_times"),
-                  py::arg("dimensions"),
-                  "Load a live skeleton-complete complex from cells + per-edge "
-                  "complex squared lengths + vertex times (schema-1 dump "
-                  "rehydration).")
-      .def_static("subcomplex", &LiveComplex::subcomplex, py::arg("cells"),
-                  py::arg("dimensions"),
-                  "Load a uniform-metric sub-complex from already-selected "
-                  "ambient cells (the block-residual carry diagnostic).")
-      .def_static("relabel", &LiveComplex::relabel, py::arg("spacetime"),
-                  py::arg("seed"),
-                  "A relabeled rebuild under a deterministic vertex-id "
-                  "permutation (the relabel-gate transform).");
 
   // ---- RegisterContext: the validated read context (pure reader) ----
   py::class_<RegisterContext, std::shared_ptr<RegisterContext>>(

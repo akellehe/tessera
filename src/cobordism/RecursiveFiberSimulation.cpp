@@ -43,6 +43,7 @@
 #include "quantum/CovarianceState.h"
 #include "quantum/LazyFock.h"
 #include "spacetime/Spacetime.h"
+#include "simulations/ReggeSolver.h"
 
 namespace tessera::cobordism {
 
@@ -721,7 +722,8 @@ MultiCobordism::RefinementIndicators MultiCobordism::refinementIndicators()
   RefinementIndicators indicators;
   indicators.solverError = lastStage2Improvement_;
   if (!spacetime_) return indicators;
-  indicators.reggeStationarityResidual = reggeActionGradient(spacetime_);
+  indicators.reggeStationarityResidual =
+      ::tessera::simulations::ReggeSolver(spacetime_).actionGradientExactNorm();
   indicators.hodgeStationarityResidual = hodgeEntropyStationarity();
 
   const int dimension = spacetime_->getDimensions();
@@ -871,16 +873,16 @@ std::string MultiCobordism::rawComplexJson(
   // Serialized in canonical endpoint order rather than live list order, so the
   // recorded complex is a pure function of the geometry. Both edge fields are
   // recorded: the length is orientation-free, while the connection phase is
-  // not, so the canonical min->max direction phase (`edgeGeometryOf`) is what
+  // not, so the canonical min->max direction phase (`Spacetime::edgeGeometryOf`) is what
   // keeps the document orientation-independent.
-  std::map<std::pair<std::uint64_t, std::uint64_t>, EdgeGeometry> edgesByEndpoints;
+  std::map<std::pair<std::uint64_t, std::uint64_t>, Spacetime::EdgeGeometry> edgesByEndpoints;
   for (const auto *edge : spacetime->getEdgeList()->toVector()) {
     if (edge == nullptr || edge->getSource() == nullptr ||
         edge->getTarget() == nullptr)
       continue;
     const auto a = edge->getSource()->getId();
     const auto b = edge->getTarget()->getId();
-    edgesByEndpoints[{std::min(a, b), std::max(a, b)}] = edgeGeometryOf(*edge);
+    edgesByEndpoints[{std::min(a, b), std::max(a, b)}] = Spacetime::edgeGeometryOf(*edge);
   }
   std::string edgeText = "[";
   bool firstEdge = true;
@@ -1793,10 +1795,11 @@ std::string MultiCobordism::replayCheckpoint(const std::string &checkpoint) {
   }
   // The document is a snapshot: the cells and, per edge on the canonical
   // min->max direction, the length and the phase. It is rebuilt through the
-  // same `rebuild` a committed stage-1 move uses. An edge recorded without a
+  // same `Spacetime::fromRecord` a committed stage-1 move uses. An edge recorded without a
   // phase takes `replayPhaseDefault`.
-  Snapshot recorded;
-  recorded.first = std::move(cells);
+  Spacetime::Record recorded;
+  recorded.dimensions = dimensions;
+  recorded.cells = std::move(cells);
   for (const auto &edgeText :
        Json::elements(Json::topLevelValue(rawComplex, "edges"))) {
     const auto a = static_cast<std::uint64_t>(
@@ -1805,7 +1808,7 @@ std::string MultiCobordism::replayCheckpoint(const std::string &checkpoint) {
         Json::asNumber(Json::topLevelValue(edgeText, "b")));
     const auto parts = Json::elements(Json::topLevelValue(edgeText, "length"));
     if (parts.size() != 2) continue;
-    EdgeGeometry geometry{
+    Spacetime::EdgeGeometry geometry{
         complexd{Json::asNumber(parts[0]), Json::asNumber(parts[1])},
         replayPhaseDefault()};
     const auto phaseParts =
@@ -1813,9 +1816,10 @@ std::string MultiCobordism::replayCheckpoint(const std::string &checkpoint) {
     if (phaseParts.size() == 2)
       geometry.phase = complexd{Json::asNumber(phaseParts[0]),
                                 Json::asNumber(phaseParts[1])};
-    recorded.second[{std::min(a, b), std::max(a, b)}] = geometry;
+    recorded.edges[{std::min(a, b), std::max(a, b)}] = geometry;
   }
-  auto spacetime = rebuild(dimensions, recorded);
+  auto spacetime = Spacetime::fromRecord(
+      recorded, Spacetime::MissingEdgeGeometry::KeepDefault);
 
   // Rebuild the node the checkpoint describes and recompute everything
   // cold.

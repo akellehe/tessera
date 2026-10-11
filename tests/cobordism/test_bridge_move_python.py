@@ -4,11 +4,11 @@
 
 Two qubit tori (``SimplicialQubit.flat_torus``) can be seeded into one
 3-dimensional host as their own triangles with their lengths and no 3-cell
-(``MultiCobordism.seed_from_surfaces``), each torus one input block; that is
+(``SurfaceSeed.from_surfaces``), each torus one input block; that is
 the host the bridge primitive is exercised on. ``SurgicalCone.bridge`` creates
 a tetrahedron on existing vertices split across the two blocks (1+3, 2+2,
 3+1), gated by the manifold check and nothing else, rolled back bit-exactly
-on refusal. The experiment's host is the COLLAR (``MultiCobordism.seed_collar``,
+on refusal. The experiment's host is the COLLAR (``SurfaceSeed.collar``,
 spec S3): the minimal manifold connecting the two tori, the prism over their
 shared triangulation created as one gated whole, so that the boundary of W is
 exactly the two tori by construction; everything after it is emergent, with
@@ -138,7 +138,7 @@ def state(st):
 
 def seeded(seed_value=0, einstein_hilbert=False):
     qa, qb = torus(TAU_A, 3), torus(TAU_B, 4)
-    seed = MC.seed_from_surfaces([qa.spacetime(), qb.spacetime()])
+    seed = cob.SurfaceSeed.from_surfaces([qa.spacetime(), qb.spacetime()])
     node = MC(seed.host, [[1.0 + 0j], [1.0 + 0j]], [], degrees=[1], seed=seed_value,
               einstein_hilbert=einstein_hilbert)
     node.seed_inputs([sorted(ids.values()) for ids in seed.vertex_ids])
@@ -180,9 +180,9 @@ def test_seed_from_surfaces_holds_the_tori():
     assert len(node.uncovered_input_faces()) == 18 + 32
     assert not node.bridge_phase_complete()
     with pytest.raises(ValueError):
-        MC.seed_from_surfaces([])
+        cob.SurfaceSeed.from_surfaces([])
     with pytest.raises(ValueError, match="differ in dimension"):
-        MC.seed_from_surfaces([qa.spacetime(), MC.seed_simplex(3)])
+        cob.SurfaceSeed.from_surfaces([qa.spacetime(), T.SolidSimplex.spacetime(3)])
 
 
 # --------------------------------------------------------------------------- #
@@ -278,7 +278,7 @@ def test_bridge_rollback_is_bit_exact():
 # --------------------------------------------------------------------------- #
 def collar(n, layers=1, seed_value=0):
     qa, qb = torus(TAU_A, n), torus(TAU_B, n)
-    seed = MC.seed_collar(qa.spacetime(), qb.spacetime(), layers)
+    seed = cob.SurfaceSeed.collar(qa.spacetime(), qb.spacetime(), layers)
     node = MC(seed.host, [[1.0 + 0j], [1.0 + 0j]], [], degrees=[1], seed=seed_value, einstein_hilbert=False)
     node.seed_inputs([sorted(ids.values()) for ids in seed.vertex_ids])
     node.use_fiber_residuals(True)
@@ -368,16 +368,16 @@ def test_collar_with_interior_layers(whitney_default):
 def test_collar_refuses_mismatched_surfaces():
     qa, qb = torus(TAU_A, 3), torus(TAU_B, 4)
     with pytest.raises(ValueError, match="differ in combinatorics: surface A has 9 vertices, surface B 16"):
-        MC.seed_collar(qa.spacetime(), qb.spacetime())
+        cob.SurfaceSeed.collar(qa.spacetime(), qb.spacetime())
     # same vertex count, different faces: the intrinsic Delaunay pass flips edges
     flipped = qa.intrinsic_delaunay()
     assert flipped.delaunay_flip_count() > 0
     with pytest.raises(ValueError, match=r"differ in combinatorics: face \(\d+,\d+,\d+\) of surface A"):
-        MC.seed_collar(qa.spacetime(), flipped.spacetime())
+        cob.SurfaceSeed.collar(qa.spacetime(), flipped.spacetime())
     with pytest.raises(ValueError, match="layers must be at least one"):
-        MC.seed_collar(qa.spacetime(), torus(TAU_B, 3).spacetime(), 0)
+        cob.SurfaceSeed.collar(qa.spacetime(), torus(TAU_B, 3).spacetime(), 0)
     with pytest.raises(ValueError, match="differ in dimension"):
-        MC.seed_collar(qa.spacetime(), MC.seed_simplex(3))
+        cob.SurfaceSeed.collar(qa.spacetime(), T.SolidSimplex.spacetime(3))
 
 
 # --------------------------------------------------------------------------- #
@@ -452,7 +452,7 @@ def test_bridge_on_the_collar(whitney_default):
 # 6. ordinary nodes never see the bridge kind; a rebuild keeps uncovered faces
 # --------------------------------------------------------------------------- #
 def test_ordinary_nodes_are_untouched_and_rebuilds_keep_the_tori(whitney_default):
-    ordinary = MC(MC.seed_simplex(3), [[1.0 + 0j]], [], degrees=[1], einstein_hilbert=False)
+    ordinary = MC(T.SolidSimplex.spacetime(3), [[1.0 + 0j]], [], degrees=[1], einstein_hilbert=False)
     ordinary.seed_inputs([0])
     assert not ordinary.has_surface_inputs()
     assert not ordinary.inputs[0].surface

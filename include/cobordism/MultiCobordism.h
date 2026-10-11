@@ -12,6 +12,7 @@
 #include "cobordism/CobordismObjective.h"
 #include "cobordism/HodgeLaplacian.h"
 #include "cobordism/PencilLayer.h"
+#include "cobordism/SurfaceSeed.h"
 #include "spacetime/pachner/AddMove.h"
 #include "spacetime/pachner/FlipMove.h"
 #include "spacetime/pachner/IFlipMove.h"
@@ -145,7 +146,7 @@ class MultiCobordism {
   /// is not itself a complex: it stores the vertex set it occupies plus the
   /// target period vector its own \f$ L_k \f$ sub-complex must carry. The
   /// sub-complex is recovered on demand from `vertices` by
-  /// `subcomplexWithinVertexSet`, the ambient complex's top cells whose
+  /// `getRegion`, the ambient complex's top cells whose
   /// vertices all lie in the set.
   struct BoundaryBlock {
     /// Host vertex ids the block occupies.
@@ -159,7 +160,7 @@ class MultiCobordism {
     /// by `readOutputFiber` after relaxation.
     std::optional<BoundaryFiber> fiber;
     /// True when the block is an input surface of the host: seeded by the
-    /// region form of `seedInputs` on a `seedFromSurfaces` host, its
+    /// region form of `seedInputs` on a `fromSurfaces` host, its
     /// \f$ (d-1) \f$-faces are cells of the host that no top cell need cover,
     /// and the bulk is drawn onto them by bridges. A block seeded from a
     /// simplex is never a surface.
@@ -352,12 +353,6 @@ class MultiCobordism {
   /// or output block, whose own triangles are a component of the boundary. A
   /// pinned region is not one (see `setBoundaryMayExtend`).
   [[nodiscard]] bool hasFixedBoundary() const noexcept;
-  /// The boundary of \p spacetime as a set of facets: every codimension-one
-  /// face carried by exactly one top cell, as sorted vertex-id tuples. This
-  /// is \f$ \partial W \f$ read from the cells alone, the same incidence
-  /// count `surfaceInventoryOf` takes, with no geometry and no orientation.
-  [[nodiscard]] static std::set<std::vector<std::uint64_t>> boundaryFacetsOf(
-      const Spacetime &spacetime);
 
   /// \param host              Bare host complex the register is grown from.
   /// \param inputTargets      One target period vector per input boundary block.
@@ -756,15 +751,6 @@ class MultiCobordism {
   }
 
   // ---- module-level helpers (static) ----
-  /// Betti numbers (combinatorial, geometry-free).
-  [[nodiscard]] static std::vector<int> betti(const Spacetime &st);
-  /// The emergent \f$k\f$-register, read off `getBoundary`: the
-  /// \f$(k+2)\f$-vertex tuples all of whose drop-one facets are boundary
-  /// facets.
-  [[nodiscard]] static std::vector<std::vector<std::uint64_t>> emergentHoles(
-      const Spacetime &st, int k);
-  /// `Σ_e |actionGradientExact_e|²` — the full-complex Regge extremization term.
-  [[nodiscard]] static double reggeActionGradient(const std::shared_ptr<Spacetime> &st);
 
 
   /// The monodromy of a drawn cobordism between two marked surfaces. The whole
@@ -1123,7 +1109,7 @@ class MultiCobordism {
   /// `runStage1`'s `growBlockRegions` grows it under the objective.
   void seedInputs(const std::vector<std::uint64_t> &seeds);
   /// Seed one input block per explicit vertex region: the surface inputs of a
-  /// `seedFromSurfaces` host. A boundary surface has no top cell for a seed
+  /// `fromSurfaces` host. A boundary surface has no top cell for a seed
   /// vertex's cell neighbourhood to find, so its vertex set is the block, given
   /// as `SurfaceSeed::vertexIds` supplies it. Marks each block
   /// `BoundaryBlock::surface`. The block's target is the constructor's
@@ -1234,162 +1220,6 @@ class MultiCobordism {
   [[nodiscard]] BoundaryFiber readWholeComplexFiber(const chainhodge::Contour *contour = nullptr,
                                                     double kappa = 10.0) const;
 
-  /// A single \p dimension-simplex host with a uniform metric
-  /// (\f$ |\ell^2| = 1 \f$; balanced wiring gives \f$ \ell=\sqrt{1/2}(1+i) \f$),
-  /// Lorentzian signature, and the causal dynamical triangulations (CDT) type
-  /// and preferred foliation. This is the seed every host grows from;
-  /// `ProtonSynthesis::buildMinimalSeed` is this at dimension 4.
-  ///
-  /// Reference: Ambjorn, Jurkiewicz and Loll, "Dynamically Triangulating
-  /// Lorentzian Quantum Gravity", arXiv:hep-th/0105267.
-  /// @throws std::invalid_argument for dimension below 1.
-  [[nodiscard]] static std::shared_ptr<Spacetime> seedSimplex(int dimension,
-                                                              bool balancedEdges = false);
-
-  /// A host seeded from boundary surfaces.
-  struct SurfaceSeed {
-    /// One \f$ d \f$-dimensional `Spacetime` (\f$ d \f$ is the surfaces'
-    /// dimension plus 1; 3 for tori) holding every surface as its own
-    /// simplices — triangles, edges and vertices with the surface's lengths and
-    /// zero phases — on disjoint vertex id ranges. Either the bare surfaces
-    /// with no \f$ d \f$-cell (`seedFromSurfaces`) or the collar between two
-    /// surfaces (`seedCollar`).
-    std::shared_ptr<Spacetime> host;
-    /// `vertexIds[s]` maps surface \f$ s \f$'s vertex ids to the host's, so a
-    /// marking or fiber stated on the surface carries over. The region form of
-    /// `seedInputs` takes those id sets as the blocks.
-    std::vector<std::map<std::uint64_t, std::uint64_t>> vertexIds;
-    /// The vertex rings of a tube (`seedTubedCollars`), ring 0 the attachment
-    /// face on the first collar's far surface, the last ring the attachment
-    /// face on the second collar's, in the order the two faces were matched;
-    /// empty on every other seed.
-    std::vector<std::vector<std::uint64_t>> tubeRings;
-  };
-  /// The tube of `seedTubedCollars`: a prism over one attachment face of each
-  /// far surface.
-  struct TubeSpec {
-    /// Number of prism layers along the tube.
-    int layers{2};
-    /// Spacing between consecutive rings.
-    double length{1.0};
-    /// Scale applied to the interior rings about their centroid.
-    double waist{1.0};
-    /// Attachment face in the first far surface's own vertex ids.
-    std::vector<std::uint64_t> faceA;
-    /// Attachment face in the second far surface's own vertex ids.
-    std::vector<std::uint64_t> faceB;
-    /// Match the last two vertices of `faceB` in reversed order, giving the
-    /// orientation-consistent connected sum in which both far surfaces keep the
-    /// bulk's induced orientation. False reverses the second.
-    bool reflect{true};
-  };
-  /// Build the `SurfaceSeed` of the bare \p surfaces (no \f$ d \f$-cell), each
-  /// a closed \f$ (d-1) \f$-dimensional `Spacetime`, for example
-  /// `observables::SimplicialQubit::flatTorus(tau, n, n).spacetime()`. The
-  /// metric signature (Lorentzian, dimension \f$ d \f$), the CDT type and the
-  /// preferred foliation are those of `seedSimplex`; the surfaces themselves
-  /// are read, never changed.
-  /// @throws std::invalid_argument on no surfaces, a null surface, surfaces of
-  ///   differing dimension, or a surface without top cells.
-  [[nodiscard]] static SurfaceSeed seedFromSurfaces(
-      const std::vector<std::shared_ptr<Spacetime>> &surfaces);
-
-  /// Two collars joined along a removed tetrahedron: four boundary surfaces on
-  /// one connected manifold.
-  ///
-  /// A two-torus collar's harmonic space cannot carry a 4-dimensional target,
-  /// and that is forced: for a compact oriented 3-manifold
-  /// \f$\operatorname{rank}(H^1(W)\to H^1(\partial W)) = b_1(\partial W)/2\f$,
-  /// so two tori leave 2 and four leave 4.
-  ///
-  /// Each surface is collared with its partner as `seedCollar` does, and the
-  /// two collars are joined by removing one all-interior cell from each and
-  /// identifying the two boundary spheres. Gluing along a sphere is a connected
-  /// sum, which adds no first homology, so \f$b_1 = 2+2 = 4\f$ with nothing
-  /// dying on the boundary.
-  ///
-  /// \p layers must be at least three: a prism cell spans two adjacent layers,
-  /// so an all-interior cell exists only once there are two interior layers.
-  /// `vertexIds` comes back in the order the surfaces were given.
-  /// @throws std::invalid_argument on a null surface, surfaces differing in
-  ///   dimension or combinatorics, fewer than three layers, or a join that is
-  ///   not a manifold-with-boundary.
-  [[nodiscard]] static SurfaceSeed seedJoinedCollars(
-      const std::vector<std::shared_ptr<Spacetime>> &surfaces, int layers = 3,
-      const std::vector<std::uint64_t> &twist = {});
-  /// The collar between two surfaces: the minimal manifold connecting the two
-  /// boundaries, \f$ T^2 \times I \f$ over their shared triangulation
-  /// (`Spacetime::prismCells` over the base faces with \p layers product
-  /// layers), created as one gated whole.
-  ///
-  /// The surfaces must have identical combinatorics: their vertices in
-  /// ascending id order are the base indices, and the two face sets must
-  /// coincide under those indices. Layer 0 carries surface A's vertices (host
-  /// ids \f$ 0 \ldots n-1 \f$), the last layer surface B's (host ids
-  /// \f$ n\cdot\mathrm{layers} \ldots \f$), and intermediate layers are fresh
-  /// interior vertices. A's and B's edges carry their surfaces' lengths
-  /// verbatim; every other edge carries `Spacetime::autoWiredLength`; every
-  /// phase is zero. The whole host is gated once by
-  /// `ChainComplex::dualComplexIsValid`, so `bridgePhaseComplete()` holds by
-  /// construction on the node that seeds both surfaces as its input blocks.
-  ///
-  /// The collar must be seeded rather than grown because a per-cell drawing of
-  /// the bulk cannot reach \f$ \partial W = T_A \sqcup T_B \f$: a cell the
-  /// manifold gate accepts meets the complex along a disk, so a drawing from
-  /// one cell stays a ball.
-  ///
-  /// \p twist relabels surface B's base indices before the two surfaces are
-  /// identified: `twist[k]` is the base index of B that meets base index \p k
-  /// of A. Empty is the identity, giving the product collar, whose two boundary
-  /// surfaces are homologous and whose monodromy is therefore the identity. A
-  /// twist makes the collar an \f$I\f$-bundle that is not a product, and the
-  /// monodromy becomes the twist's class; it must be a simplicial automorphism
-  /// of the shared triangulation. The standard grid torus admits the swap
-  /// \f$[[0,1],[1,0]]\f$ (orientation-reversing, propagator
-  /// \f$\tau\mapsto1/\tau\f$) but not a Dehn twist, which sends the diagonal to
-  /// a step that is no edge. Either way the monodromy is an integer matrix: the
-  /// whole-complex harmonic reading realizes \f$GL(2,\mathbb{Z})\f$ and no
-  /// more.
-  /// @throws std::invalid_argument on a null surface, `layers < 1`, surfaces of
-  ///   differing dimension or combinatorics, a surface without top cells, or a
-  ///   collar the manifold gate refuses.
-  [[nodiscard]] static SurfaceSeed seedCollar(const std::shared_ptr<Spacetime> &surfaceA,
-                                              const std::shared_ptr<Spacetime> &surfaceB,
-                                              int layers = 1,
-                                              const std::vector<std::uint64_t> &twist = {});
-  /// Two collars joined by a tube: the far surfaces of two `seedCollar` collars
-  /// (surfaces 1 and 3 of the four given, in pairs) are connected by the prism
-  /// \f$ t \times [0, \text{layers}] \f$ over one attachment face \f$ t \f$ of
-  /// each (`Spacetime::prismCells`), forming a 1-handle between the two
-  /// components. The far boundary becomes one surface of genus two — the
-  /// connected sum of the two far tori through the tube — while the near tori
-  /// are untouched, so
-  /// \f$ \partial W = T^2 \sqcup T^2 \sqcup \Sigma_2 \f$,
-  /// \f$ b_1(W) = 2 + 2 = 4 \f$ (the tube joins two components and adds no
-  /// loop), and \f$ \operatorname{rank}(H^1(W) \to H^1(\partial W)) = 4 =
-  /// b_1(\partial W)/2 \f$ with no class invisible to the boundary. No sphere
-  /// join is made; the tube is the connection.
-  ///
-  /// The tube's geometry is Euclidean: the two attachment faces are laid out in
-  /// the plane from their own lengths, and ring \f$ \ell \f$ of the tube is the
-  /// affine interpolation of the two layouts at
-  /// \f$ s = \ell/\text{layers} \f$, scaled about its centroid by `tube.waist`
-  /// (the end rings by 1) at height \f$ \ell \cdot \f$ `tube.length`. Every
-  /// tube edge gets the Euclidean distance of its endpoints, so the end rings
-  /// carry the surfaces' own lengths verbatim. Shrinking the waist or
-  /// lengthening the tube pinches the connected sum, which is the separating
-  /// degeneration of the genus-two surface.
-  ///
-  /// Gated once as a whole by `ChainComplex::dualComplexIsValid`. `vertexIds`
-  /// comes back in the order the surfaces were given; `tubeRings` lists the
-  /// tube's vertex rings.
-  /// @throws std::invalid_argument on other than four surfaces, a null one,
-  ///   an attachment face that is no face of its surface, a non-positive
-  ///   waist or length, fewer than one tube layer, or a join that is not a
-  ///   manifold-with-boundary.
-  [[nodiscard]] static SurfaceSeed seedTubedCollars(
-      const std::vector<std::shared_ptr<Spacetime>> &surfaces, int layers,
-      const std::vector<std::uint64_t> &twist, const TubeSpec &tube);
 
   /// A block's own surface: its \f$ (d-1) \f$-faces and its edges inside its
   /// vertex set, as sorted vertex-id tuples. A face is inside the block when
@@ -2149,7 +1979,7 @@ class MultiCobordism {
   // ==================================================================
   //
   // Two boundary surfaces sit in one host. The bulk between them starts as the
-  // collar (`seedCollar`), the minimal manifold connecting them; from there
+  // collar (`collar`), the minimal manifold connecting them; from there
   // stage 1 and stage 2 are emergent. `bridge` is one of stage 1's gated move
   // kinds: a candidate top cell on existing vertices, k from one surface block
   // and d+1-k from the other (1+3, 2+2, 3+1 for tetrahedra), applied through
@@ -2683,39 +2513,14 @@ class MultiCobordism {
   [[nodiscard]] int lastStage1Lookahead() const { return lastStage1LookaheadDepth_; }
 
  private:
-  /// One edge's geometry as a snapshot records it: the complex length, which is
-  /// orientation-free, and the connection phase on the canonical min-to-max
-  /// orientation of the edge's vertex pair. `mesh::Edge` stores its phase on
-  /// its own source-to-target orientation, the convention
-  /// `chainhodge::Connection::fromSpacetime` reads, and the link on the reverse
-  /// orientation is the inverse, so an edge stored max-to-min records its phase
-  /// negated (`edgeGeometryOf`) and takes it back negated
-  /// (`restoreEdgeGeometry`). Keyed by vertex pair, the record is a pure
-  /// function of the geometry, as the checkpoint's `raw_complex` is.
-  struct EdgeGeometry {
-    /// The edge's complex length.
-    std::complex<double> length;
-    /// The connection phase on the min-to-max orientation.
-    std::complex<double> phase;
-  };
-  /// A committed stage-1 move's record of a complex: its top cells, followed on
-  /// a node with surface inputs by the uncovered surface faces, and every
-  /// edge's `EdgeGeometry` keyed by vertex pair. Both fields of an edge are
-  /// carried, because boundary tori carry pure-gauge link phases and, under the
-  /// Whitney pencil, the operator depends on them at every degree: their input
-  /// fibers are zero modes of the twisted Laplacian, so a rebuild restoring
-  /// lengths alone would reset every phase to zero.
-  using Snapshot =
-      std::pair<std::vector<std::vector<std::uint64_t>>,
-                std::map<std::pair<std::uint64_t, std::uint64_t>, EdgeGeometry>>;
-  /// The fixed boundary as the gate reads it: `boundaryFacetsOf` together
-  /// with the `EdgeGeometry` of every edge lying inside one of those facets.
+  /// The fixed boundary as the gate reads it: `Spacetime::getBoundary` together
+  /// with the `Spacetime::EdgeGeometry` of every edge lying inside one of those facets.
   /// Both halves come from one pass, because the gate takes this record twice
   /// per candidate — once before the move and once after — and reading the
   /// boundary is the whole cost of arming it.
   struct BoundaryRecord {
     std::set<std::vector<std::uint64_t>> facets;
-    std::map<std::pair<std::uint64_t, std::uint64_t>, EdgeGeometry> edges;
+    std::map<std::pair<std::uint64_t, std::uint64_t>, Spacetime::EdgeGeometry> edges;
   };
   [[nodiscard]] static BoundaryRecord boundaryRecordOf(const Spacetime &spacetime);
 
@@ -2763,7 +2568,7 @@ class MultiCobordism {
 
   /// One boundary block's `r_U` term: the sum over the register degrees of
   /// `residualOfTargetStateAgainstHarmonic` evaluated on the block's own
-  /// sub-complex (`subcomplexWithinVertexSet`) against the block's target. When the
+  /// sub-complex (`Spacetime::getRegion`) against the block's target. When the
   /// block has no full sub-complex yet, the full leak summed over the degrees.
   [[nodiscard]] double residualForBoundaryBlock(
       const BoundaryBlock &boundaryBlock,
@@ -2821,34 +2626,22 @@ class MultiCobordism {
   [[nodiscard]] std::vector<std::vector<std::uint64_t>> bridgeCandidatesOn(
       const Spacetime &spacetime) const;
 
-  /// The phase of the inverse link, \f$ -\varphi \f$, computed as
-  /// \f$ 0 - \varphi \f$ so that a zero phase stays \f$ +0 \f$ on either
-  /// orientation: an all-zero connection round-trips bit-identically, with no
-  /// signed zero introduced by the orientation rule.
-  [[nodiscard]] static std::complex<double> inverseLinkPhase(
-      std::complex<double> phase) noexcept;
-  /// \p edge's length and its phase on the canonical min->max orientation.
-  [[nodiscard]] static EdgeGeometry edgeGeometryOf(const ::tessera::mesh::Edge &edge);
-  /// Write \p geometry onto \p edge: the length verbatim, the phase back on
-  /// the edge's own orientation (negated when the edge is stored max->min).
-  static void restoreEdgeGeometry(::tessera::mesh::Edge &edge,
-                                  const EdgeGeometry &geometry);
-  /// Record \p spacetime as a `Snapshot`.
-  [[nodiscard]] Snapshot snapshotOf(const Spacetime &spacetime) const;
-  [[nodiscard]] Snapshot snapshot() const;
-  /// The complex \p complexSnapshot records, rebuilt at \p dimensions from its
-  /// cells with every recorded edge's length and phase restored by
-  /// `restoreEdgeGeometry`. An edge the record does not hold, one a move
-  /// created, keeps `Spacetime::fromVertexTuples`'s auto-wired length and zero phase.
+  /// Record \p spacetime as a `Spacetime::Record`: its top cells as sorted
+  /// vertex tuples, followed on a node with surface inputs by the uncovered
+  /// surface faces, and every edge's length and phase. Both fields of an edge
+  /// are carried, because boundary tori carry pure-gauge link phases and,
+  /// under the Whitney pencil, the operator depends on them at every degree.
+  [[nodiscard]] Spacetime::Record snapshotOf(const Spacetime &spacetime) const;
+  [[nodiscard]] Spacetime::Record snapshot() const;
+  /// The complex \p complexSnapshot records (`Spacetime::fromRecord`), carrying
+  /// the node's edge-wiring mode. An edge the record does not hold, one a move
+  /// created, keeps `Spacetime::fromVertexTuples`'s length and zero phase.
   /// This is the rebuild behind stage-1 candidates, the committed step, the
   /// precone and refinement cone-ins, and checkpoint replay.
-  [[nodiscard]] static std::shared_ptr<Spacetime> rebuild(
-      int dimensions, const Snapshot &complexSnapshot);
-  /// `rebuild` at the node's dimension, carrying the node's edge-wiring mode
   /// so combinatorial moves scored on the result wire their new edges under
   /// the same convention.
   [[nodiscard]] std::shared_ptr<Spacetime> build(
-      const Snapshot &complexSnapshot) const;
+      const Spacetime::Record &complexSnapshot) const;
 
   /// Draw one random stage-1 move specification on `spacetime`: a `{kind, payload}`
   /// pair where `kind` is one of `add`/`remove`/`flip`/`iflip` (payload = a seed for
@@ -2894,8 +2687,8 @@ class MultiCobordism {
   /// of the sampled deep path in `step`: each level enumerates against the
   /// complex the previous level left, so the search walks a tree of the
   /// actual move space rather than a product of the base one.
-  [[nodiscard]] std::pair<double, Snapshot> bestComposition(
-      const Snapshot &fromSnapshot, int remainingMoves, double baseObjective,
+  [[nodiscard]] std::pair<double, Spacetime::Record> bestComposition(
+      const Spacetime::Record &fromSnapshot, int remainingMoves, double baseObjective,
       double baseResidualU,
       const std::set<std::vector<std::uint64_t>> &baseCellSet);
   /// One iteration of `runStage1`'s loop: optional boundary growth plus one
@@ -3171,11 +2964,9 @@ class MultiCobordism {
   /// contour, else the lowest band above the zero mode, for `AsStored`.
   [[nodiscard]] static chainhodge::Contour fiberContourOn(const AssembledPencil &assembled,
                                                           const BoundaryFiber &fiber, FiberBand band);
-  /// The block's sub-complex carrying the parent's geometry.
-  /// `subcomplexWithinVertexSet` builds it at unit lengths, since its period
-  /// residual is combinatorial, so the fiber reads copy every edge's length and
-  /// phase from \p spacetime by vertex pair. Null when the region holds no top
-  /// cell.
+  /// The block's region of \p spacetime (`Spacetime::getRegion`), which carries
+  /// the parent's edge lengths and phases, with its facets materialized for the
+  /// fiber reads. Null when the region holds no top cell.
   [[nodiscard]] static std::shared_ptr<Spacetime> blockSubcomplexWithGeometry(
       const BoundaryBlock &block, const std::shared_ptr<Spacetime> &spacetime);
   /// The complex a block's fiber is read on: a surface block's own surface
@@ -3183,11 +2974,6 @@ class MultiCobordism {
   /// (`blockSubcomplexWithGeometry`). Null when there is nothing to read.
   [[nodiscard]] static std::shared_ptr<Spacetime> blockComplexWithGeometry(
       const BoundaryBlock &block, const std::shared_ptr<Spacetime> &spacetime);
-  /// Copy every edge's length and phase of \p parent onto \p child, matched by
-  /// vertex pair: the shared tail of both block materializations. False when
-  /// a child edge is absent from the parent (the child is then not a
-  /// sub-complex of the parent and its geometry is meaningless).
-  [[nodiscard]] static bool adoptParentEdgeGeometry(Spacetime &child, const Spacetime &parent);
   /// An input region stops growing once its residual drops below this, i.e.
   /// once it carries its state.
   double inputCarriedTolerance_ = 1e-12;

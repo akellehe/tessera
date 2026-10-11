@@ -39,6 +39,7 @@ import warnings
 import numpy as np
 import pytest
 
+import tessera
 from tessera import cobordism as cob
 from tessera import observables as obs
 
@@ -191,7 +192,7 @@ def collar_with_phases(n, layers=1, seed_value=0, gauge_seeds=(11, 12)):
     ``gauge_seeds`` on the host, with a nonzero phase on every sixth bulk edge
     as well, each torus's gauged holomorphic form attached as its state fiber."""
     qa, qb = torus(TAU_A, n), torus(TAU_B, n)
-    seed = MC.seed_collar(qa.spacetime(), qb.spacetime(), layers)
+    seed = cob.SurfaceSeed.collar(qa.spacetime(), qb.spacetime(), layers)
     st = seed.host
     ids_a, ids_b = seed.vertex_ids
     regions = [set(ids_a.values()), set(ids_b.values())]
@@ -463,7 +464,7 @@ def ordinary_node_dump():
     import itertools
     rng = np.random.default_rng(11)
     psi, phi = (rng.normal(size=4) + 1j * rng.normal(size=4) for _ in range(2))
-    node = MC(MC.seed_simplex(3), [[1.0 + 0j, 0j, 0j, 0j], [1.0 + 0j, 0j, 0j, 0j]], [], degrees=[0],
+    node = MC(tessera.SolidSimplex.spacetime(3), [[1.0 + 0j, 0j, 0j, 0j], [1.0 + 0j, 0j, 0j, 0j]], [], degrees=[0],
               seed=0, precone=8, einstein_hilbert=True)
     for e in node.spacetime().get_edge_list().to_vector():
         s = 1.0 + 0.15 * rng.uniform(-1, 1) + 1j * 0.15 * rng.uniform(-1, 1)

@@ -7,7 +7,7 @@
 // proton construction, and this environment only drives them. Every macro-action is one
 // `MultiCobordism::buildStep`, plus the `directedConeOut`/`directedConeIn` probe when
 // `directedGrow` is set; the observation and reward only read published engine quantities
-// (r_U, reggeActionGradient, emergentHoles, r_state, Betti numbers). The fixed
+// (r_U, ReggeSolver::actionGradientExactNorm, emergentHoles, r_state, Betti numbers). The fixed
 // `ProtonSynthesis.build()` schedule (init -> evolve -> relax) becomes the learning problem: the
 // agent chooses which macro-action to take, and with what parameters.
 

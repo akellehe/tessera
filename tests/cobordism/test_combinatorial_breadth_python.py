@@ -33,6 +33,7 @@ import sys
 
 import pytest
 
+import tessera
 from tessera import cobordism as cob
 
 sys.path.insert(0, os.path.join(
@@ -63,7 +64,7 @@ def host(precone=PRECONE):
     identically zero, nothing ever commits, and every schedule assertion below
     would pass for the wrong reason.
     """
-    return MC(MC.seed_simplex(3), [], [], degrees=[1], seed=0,
+    return MC(tessera.SolidSimplex.spacetime(3), [], [], degrees=[1], seed=0,
               precone=precone, einstein_hilbert=True)
 
 

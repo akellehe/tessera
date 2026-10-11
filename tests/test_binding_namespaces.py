@@ -41,5 +41,14 @@ class TestBindingNamespaces(unittest.TestCase):
         cobordism = tessera.cobordism
         self.assertIs(cobordism.MultiCobordism.ObjectiveTerms, cobordism.ObjectiveTerms)
 
+    def test_the_seeds_are_surface_seed_constructors_and_a_solid_simplex(self):
+        cobordism = tessera.cobordism
+        for name in ("from_surfaces", "collar", "joined_collars", "tubed_collars"):
+            with self.subTest(name=name):
+                self.assertTrue(hasattr(cobordism.SurfaceSeed, name))
+                self.assertFalse(hasattr(cobordism.MultiCobordism, "seed_" + name))
+        self.assertTrue(hasattr(tessera.SolidSimplex, "spacetime"))
+        self.assertFalse(hasattr(cobordism.MultiCobordism, "seed_simplex"))
+
 if __name__ == "__main__":
     unittest.main()
