@@ -215,6 +215,8 @@ internal interface as well, edit the Doxyfile and comment out its exclusions.
 ```
 ```{doxygenfile} MultiCobordism.h
 ```
+```{doxygenfile} SurfaceSeed.h
+```
 ```{doxygenfile} CobordismDAG.h
 ```
 ```{doxygenfile} ProtonSynthesis.h
