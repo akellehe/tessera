@@ -2,7 +2,7 @@
 //
 // Shared CSR construction from a symmetric COO edge list: one prefix-sum plus
 // cursor pass covering both callers, SparseGraph::fromCOO (binary, uint32
-// indices, int64 pointers) and EmergentGraph::buildFromCOO_ (weighted, int
+// indices, int64 pointers) and WeightedCsrGraph::buildFromCOO (weighted, int
 // indices and pointers), via the (Idx, Ptr) / (Idx, W, Ptr) type pairs.
 //
 // Contract: input rows/cols must already be the symmetric form (each

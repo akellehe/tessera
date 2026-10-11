@@ -18,6 +18,7 @@
 #include <stdexcept>
 #include <string>
 #include "spacetime/Spacetime.h"
+#include "spacetime/Staircase.h"
 #include "cobordism/ChainComplex.h"
 #include <cstdio>
 #include "graph/CSRBuilder.hpp"
@@ -717,11 +718,10 @@ std::vector<std::vector<std::uint64_t>> Spacetime::prismCells(
       std::vector<std::uint64_t> base(cell.begin(), cell.end());
       std::sort(base.begin(), base.end());
       const std::size_t m = base.size();
+      const auto lower = [&](std::size_t i) { return lo[base[i]] + loOff; };
+      const auto upper = [&](std::size_t i) { return hi[base[i]] + hiOff; };
       for (std::size_t j = 0; j < m; ++j) {
-        std::vector<std::uint64_t> s;
-        s.reserve(m + 1);
-        for (std::size_t i = 0; i <= j; ++i) s.push_back(lo[base[i]] + loOff);
-        for (std::size_t i = j; i < m; ++i) s.push_back(hi[base[i]] + hiOff);
+        std::vector<std::uint64_t> s = staircaseCell(m, j, lower, upper);
         std::sort(s.begin(), s.end());
         out.insert(std::move(s));
       }
@@ -739,13 +739,12 @@ std::vector<std::vector<std::uint64_t>> Spacetime::worldprismBoundaryFaces(
   // staircase cell are the boundary of partial(g x I) (the caps g and g_top and
   // the side worldsheets); the shared (interior) face is the staircase diagonal.
   const std::size_t m = facet.size();
+  const auto lower = [&](std::size_t i) { return facet[i] + loOffset; };
+  const auto upper = [&](std::size_t i) { return facet[i] + hiOffset; };
   std::vector<std::vector<std::uint64_t>> staircase;
   staircase.reserve(m);
   for (std::size_t k = 0; k < m; ++k) {
-    std::vector<std::uint64_t> s;
-    s.reserve(m + 1);
-    for (std::size_t i = 0; i <= k; ++i) s.push_back(facet[i] + loOffset);
-    for (std::size_t i = k; i < m; ++i) s.push_back(facet[i] + hiOffset);
+    std::vector<std::uint64_t> s = staircaseCell(m, k, lower, upper);
     std::sort(s.begin(), s.end());
     staircase.push_back(std::move(s));
   }
@@ -1492,14 +1491,6 @@ void Spacetime::updateOrientationCounters(const SimplexPtr &simplex, int delta) 
   return ::tessera::observables::SparseGraph::fromCOO(rows, cols, n);
 }
 
-namespace {
-
-// Private SpectralGraph subclass used only by
-// Spacetime::getSpectralDimensionOnSkeleton — holds the CSR of the
-// weighted 1-skeleton of filtered top simplices and supplies the
-
-}  // anonymous namespace
-
 std::vector<double>
 Spacetime::getSpectralDimensionOnSkeleton(
     std::vector<double> const& sigmas,
@@ -1550,35 +1541,8 @@ Spacetime::getSpectralDimensionOnSkeleton(
     return std::vector<double>(sigmas.size(), 0.0);
   }
 
-  // Build CSR (each undirected edge listed twice).
-  const int n = static_cast<int>(idx.size());
-  std::vector<int>    rows, cols;
-  std::vector<double> ws;
-  rows.reserve(edgeList.size() * 2);
-  cols.reserve(edgeList.size() * 2);
-  ws.reserve(edgeList.size() * 2);
-  for (auto const& [u, v, w] : edgeList) {
-    rows.push_back(u); cols.push_back(v); ws.push_back(w);
-    rows.push_back(v); cols.push_back(u); ws.push_back(w);
-  }
-  std::vector<int>    indptr, indices;
-  std::vector<double> weights;
-  ::tessera::graph::buildCSRFromCOO<int, double, int>(
-      static_cast<std::size_t>(n), rows, cols, ws,
-      indptr, indices, weights);
-
-  std::vector<double> degrees(static_cast<std::size_t>(n), 0.0);
-  for (int v = 0; v < n; ++v) {
-    const int lo = indptr[static_cast<std::size_t>(v)];
-    const int hi = indptr[static_cast<std::size_t>(v) + 1];
-    for (int k = lo; k < hi; ++k) {
-      degrees[static_cast<std::size_t>(v)] +=
-          weights[static_cast<std::size_t>(k)];
-    }
-  }
-
-  ::tessera::graph::WeightedCsrGraph view(n, std::move(indptr), std::move(indices),
-                              std::move(weights), std::move(degrees));
+  const auto view = ::tessera::graph::WeightedCsrGraph::fromWeightedEdges(
+      static_cast<int>(idx.size()), edgeList);
   const std::vector<double> p = view.returnProbability(sigmas, krylovDim);
   return SpectralGraph::spectralDimension(sigmas, p);
 }

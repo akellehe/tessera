@@ -209,11 +209,8 @@ public:
     [[nodiscard]] std::string toGraphML() const;
 
 private:
-    EmergentGraph() = default;
-    void buildFromCOO_(int n,
-                        std::vector<int> const& rows,
-                        std::vector<int> const& cols,
-                        std::vector<double> const& weights);
+    EmergentGraph(::tessera::graph::WeightedCsrGraph graph, int nEdges)
+      : WeightedCsrGraph(std::move(graph)), nEdges_(nEdges) {}
 
     // The CSR adjacency, the degrees and L = D - W come from
     // graph::WeightedCsrGraph; the edge count is this class's own.

@@ -12,6 +12,7 @@
 #include <cstdlib>
 #include <functional>
 #include <map>
+#include <optional>
 #include <set>
 #include <stdexcept>
 #include <string>
@@ -1079,64 +1080,99 @@ void collectOrientCells(const std::vector<std::vector<std::uint64_t>> &raws,
   }
 }
 
-/// The orientation covector of a pseudomanifold, one entry per cell.
-///
-/// Facet j of a sorted cell drops vertex j and carries the boundary sign
-/// (-1)^j. Across an interior facet the two induced signs must cancel, so
-/// eps_b = -eps_a * s_a * s_b; a boundary facet imposes nothing. Each connected
-/// component is rooted at its lex-smallest cell with eps = +1.
-///
-/// Throws if a facet has more than two cofaces (not a pseudomanifold), or if
-/// propagation reaches a cell twice with opposite signs (not orientable).
-std::vector<int> propagateOrientation(const std::vector<OrientCell> &cells,
-                                      std::size_t nv, const char *context,
-                                      const char *nonOrientableNote) {
-  std::map<OrientCell, std::vector<std::pair<std::size_t, int>>> cofaces;
-  for (std::size_t ci = 0; ci < cells.size(); ++ci)
-    for (std::size_t j = 0; j < nv; ++j) {
-      OrientCell f;
-      f.reserve(nv - 1);
-      for (std::size_t i = 0; i < nv; ++i)
-        if (i != j) f.push_back(cells[ci][i]);
-      cofaces[f].emplace_back(ci, (j % 2 == 0) ? 1 : -1);
-    }
-  for (const auto &[f, at] : cofaces)
-    if (at.size() > 2)
-      throw std::runtime_error(
-          std::string("ChainComplex::") + context + ": facet " +
-          joinCellIds(f) + " has " + std::to_string(at.size()) +
-          " cofaces (not a pseudomanifold)");
+/// Facet j of a sorted cell: the cell with vertex j dropped.
+OrientCell facetOf(const OrientCell &cell, std::size_t j) {
+  OrientCell f;
+  f.reserve(cell.size() - 1);
+  for (std::size_t i = 0; i < cell.size(); ++i)
+    if (i != j) f.push_back(cell[i]);
+  return f;
+}
 
-  std::vector<int> eps(cells.size(), 0);
-  for (std::size_t root = 0; root < cells.size(); ++root) {
+/// Per cell its facets, or per facet its cofaces, as (index, boundary sign).
+using Incidences = std::vector<std::vector<std::pair<std::size_t, int>>>;
+
+/// The orientation propagation shared by the covectors and
+/// coherentOrientation: signs eps = +-1 on cells joined through shared
+/// facets.
+///
+/// Across a facet two cells share, the two induced signs must cancel, so
+/// eps_b = -eps_a * s_a * s_b; a facet of one cell imposes nothing. Each
+/// connected component is rooted at its first cell with eps = +1, and the
+/// search visits a cell's facets in the order `facets` lists them. Returns
+/// false, with `at` = (cell, slot in `facets[cell]`), where propagation first
+/// reaches a cell with the opposite sign (not orientable); a facet that more
+/// than two cells share always ends there.
+bool propagateSigns(const Incidences &facets, const Incidences &cofaces,
+                    std::vector<int> &eps,
+                    std::pair<std::size_t, std::size_t> &at) {
+  eps.assign(facets.size(), 0);
+  for (std::size_t root = 0; root < facets.size(); ++root) {
     if (eps[root] != 0) continue;
     eps[root] = 1;
     std::vector<std::size_t> stack{root};
     while (!stack.empty()) {
       const std::size_t a = stack.back();
       stack.pop_back();
-      for (std::size_t j = 0; j < nv; ++j) {
-        OrientCell f;
-        f.reserve(nv - 1);
-        for (std::size_t i = 0; i < nv; ++i)
-          if (i != j) f.push_back(cells[a][i]);
-        const int sa = (j % 2 == 0) ? 1 : -1;
-        for (const auto &[b, sb] : cofaces.at(f)) {
+      for (std::size_t slot = 0; slot < facets[a].size(); ++slot) {
+        const auto [f, sa] = facets[a][slot];
+        for (const auto &[b, sb] : cofaces[f]) {
           if (b == a) continue;
           const int want = -eps[a] * sa * sb;
           if (eps[b] == 0) {
             eps[b] = want;
             stack.push_back(b);
           } else if (eps[b] != want) {
-            throw std::runtime_error(
-                std::string("ChainComplex::") + context +
-                ": orientation propagation contradicts itself at facet " +
-                joinCellIds(f) + " (" + nonOrientableNote + ")");
+            at = {a, slot};
+            return false;
           }
         }
       }
     }
   }
+  return true;
+}
+
+/// The orientation covector of a pseudomanifold, one entry per cell.
+///
+/// Facet j of a sorted cell drops vertex j and carries the boundary sign
+/// (-1)^j; each component is rooted at its lex-smallest cell (propagateSigns).
+///
+/// Throws if a facet has more than two cofaces (not a pseudomanifold), or if
+/// propagation reaches a cell twice with opposite signs (not orientable).
+std::vector<int> propagateOrientation(const std::vector<OrientCell> &cells,
+                                      std::size_t nv, const char *context,
+                                      const char *nonOrientableNote) {
+  // Facets are numbered as first met; the map keeps them in lex order.
+  std::map<OrientCell, std::size_t> facetIndex;
+  Incidences facets(cells.size());
+  Incidences cofaces;
+  for (std::size_t ci = 0; ci < cells.size(); ++ci) {
+    facets[ci].reserve(nv);
+    for (std::size_t j = 0; j < nv; ++j) {
+      const auto [it, added] =
+          facetIndex.try_emplace(facetOf(cells[ci], j), cofaces.size());
+      if (added) cofaces.emplace_back();
+      const int sign = (j % 2 == 0) ? 1 : -1;
+      facets[ci].emplace_back(it->second, sign);
+      cofaces[it->second].emplace_back(ci, sign);
+    }
+  }
+  for (const auto &[f, index] : facetIndex)
+    if (cofaces[index].size() > 2)
+      throw std::runtime_error(
+          std::string("ChainComplex::") + context + ": facet " +
+          joinCellIds(f) + " has " + std::to_string(cofaces[index].size()) +
+          " cofaces (not a pseudomanifold)");
+
+  std::vector<int> eps;
+  std::pair<std::size_t, std::size_t> at;
+  if (!propagateSigns(facets, cofaces, eps, at))
+    throw std::runtime_error(
+        std::string("ChainComplex::") + context +
+        ": orientation propagation contradicts itself at facet " +
+        joinCellIds(facetOf(cells[at.first], at.second)) + " (" +
+        nonOrientableNote + ")");
   return eps;
 }
 
@@ -1182,6 +1218,28 @@ std::vector<int> ChainComplex::orientationCovector(
 
   return propagateOrientation(cells, nv, "orientationCovector",
                               "the complex is non-orientable");
+}
+
+std::optional<std::vector<int>> ChainComplex::coherentOrientation(
+    int k, const std::vector<std::size_t> &cells) const {
+  std::vector<int> position(numSimplices(k), -1);
+  for (std::size_t i = 0; i < cells.size(); ++i)
+    position[cells[i]] = static_cast<int>(i);
+  // The stored incidences of each listed cell, and the listed cells of each face.
+  Incidences facets(cells.size());
+  Incidences cofaces(numSimplices(k - 1));
+  for (const auto &entry : boundaryEntries(k)) {
+    const int member = position[static_cast<std::size_t>(entry.column)];
+    if (member < 0) continue;
+    facets[static_cast<std::size_t>(member)].emplace_back(
+        static_cast<std::size_t>(entry.row), entry.value);
+    cofaces[static_cast<std::size_t>(entry.row)].emplace_back(
+        static_cast<std::size_t>(member), entry.value);
+  }
+  std::vector<int> eps;
+  std::pair<std::size_t, std::size_t> at;
+  if (!propagateSigns(facets, cofaces, eps, at)) return std::nullopt;
+  return eps;
 }
 
 }  // namespace tessera::cobordism

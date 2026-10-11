@@ -3,7 +3,6 @@
 
 #include "quantum/Holography.hpp"
 
-#include "graph/CSRBuilder.hpp"
 #include "quantum/ChoiState.hpp"
 #include "quantum/TDVPRunner.hpp"
 
@@ -337,7 +336,7 @@ MutualInformationProfile::weightedAdjacency() const {
 EmergentGraph::EmergentGraph(MutualInformationProfile const& profile) {
     auto coo = profile.weightedAdjacency();
     // coo lists each undirected edge twice (v→w and w→v) already.
-    buildFromCOO_(profile.nLabels(), coo.rows, coo.cols, coo.weights);
+    buildFromCOO(profile.nLabels(), coo.rows, coo.cols, coo.weights);
     nEdges_ = static_cast<int>(coo.rows.size()) / 2;
 }
 
@@ -345,46 +344,15 @@ EmergentGraph
 EmergentGraph::fromWeightedEdges(
     int n,
     std::vector<std::tuple<int, int, double>> const& edges) {
-    std::vector<int>    rows;
-    std::vector<int>    cols;
-    std::vector<double> weights;
-    rows.reserve(edges.size() * 2);
-    cols.reserve(edges.size() * 2);
-    weights.reserve(edges.size() * 2);
     for (auto const& [u, v, w] : edges) {
         if (u < 0 || v < 0 || u >= n || v >= n || u == v) {
             throw std::invalid_argument(
                 "EmergentGraph::fromWeightedEdges: edge endpoints out of "
                 "range or self-loop");
         }
-        rows.push_back(u); cols.push_back(v); weights.push_back(w);
-        rows.push_back(v); cols.push_back(u); weights.push_back(w);
     }
-    EmergentGraph g;
-    g.buildFromCOO_(n, rows, cols, weights);
-    g.nEdges_ = static_cast<int>(edges.size());
-    return g;
-}
-
-void EmergentGraph::buildFromCOO_(int n,
-                                    std::vector<int> const& rows,
-                                    std::vector<int> const& cols,
-                                    std::vector<double> const& weights) {
-    n_ = n;
-    ::tessera::graph::buildCSRFromCOO<int, double, int>(
-        static_cast<std::size_t>(n_), rows, cols, weights,
-        indptr_, indices_, weights_);
-
-    degrees_.assign(static_cast<std::size_t>(n_), 0.0);
-    for (int v = 0; v < n_; ++v) {
-        const int lo = indptr_[static_cast<std::size_t>(v)];
-        const int hi = indptr_[static_cast<std::size_t>(v) + 1];
-        double d = 0.0;
-        for (int k = lo; k < hi; ++k) {
-            d += weights_[static_cast<std::size_t>(k)];
-        }
-        degrees_[static_cast<std::size_t>(v)] = d;
-    }
+    return EmergentGraph(WeightedCsrGraph::fromWeightedEdges(n, edges),
+                         static_cast<int>(edges.size()));
 }
 
 Eigen::SparseMatrix<double> EmergentGraph::laplacian() const {
