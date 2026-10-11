@@ -7,7 +7,7 @@ steps: Step A (recombination) makes a *colored* diquark `{1, ω}`; Step B
 (formation) makes the proton *color singlet* `{1, ω, ω²}`. The synthesis pins
 those targets, and the whitepaper permits targets only in explicitly labelled
 controlled synthesis, so every node it builds is in
-`MultiCobordism.SimulationMode.SYNTHESIS` and it refuses to drive a node in
+`multicobordism.SimulationMode.SYNTHESIS` and it refuses to drive a node in
 emergence mode. These tests confirm the constants, the label and the refusal,
 and that `ProtonSynthesis` actually assembles a converged proton — the whole
 formation cobordism carries the singlet on at least three holes, on the relaxed
@@ -70,15 +70,15 @@ class ProtonSynthesisModeTest(unittest.TestCase):
         for factory in ("recombination_node", "formation_node", "direct_node"):
             with self.subTest(factory=factory):
                 node = getattr(self.synthesis, factory)(1)
-                self.assertEqual(node.simulation_mode, MC.SimulationMode.SYNTHESIS)
+                self.assertEqual(node.simulation_mode, tessera.cobordism.multicobordism.SimulationMode.SYNTHESIS)
                 self.assertEqual(MC.mode_name(node.simulation_mode), "synthesis")
 
     def test_drive_refuses_emergence_mode(self):
-        for submode in (MC.EmergenceSubmode.STRICT,
-                        MC.EmergenceSubmode.CERTIFICATES_BLIND_MEAN_FIELD):
+        for submode in (tessera.cobordism.multicobordism.EmergenceSubmode.STRICT,
+                        tessera.cobordism.multicobordism.EmergenceSubmode.CERTIFICATES_BLIND_MEAN_FIELD):
             with self.subTest(submode=submode):
                 node = self.synthesis.formation_node(1)
-                node.set_simulation_mode(MC.SimulationMode.EMERGENCE, submode)
+                node.set_simulation_mode(tessera.cobordism.multicobordism.SimulationMode.EMERGENCE, submode)
                 edges_before = len(node.spacetime().get_edge_list().to_vector())
                 with self.assertRaises(ValueError) as refusal:
                     tessera.cobordism.ProtonSynthesis.drive_node(node, **self.TINY)
@@ -89,13 +89,13 @@ class ProtonSynthesisModeTest(unittest.TestCase):
                 self.assertEqual(
                     len(node.spacetime().get_edge_list().to_vector()), edges_before)
                 self.assertEqual(node.simulation_mode,
-                                 MC.SimulationMode.EMERGENCE)
+                                 tessera.cobordism.multicobordism.SimulationMode.EMERGENCE)
 
     def test_the_mode_check_refuses_emergence_and_replay(self):
         require = tessera.cobordism.ProtonSynthesis.require_synthesis_mode
         node = self.synthesis.recombination_node(1)
         require(node)  # the factory's label passes
-        for mode in (MC.SimulationMode.EMERGENCE, MC.SimulationMode.REPLAY):
+        for mode in (tessera.cobordism.multicobordism.SimulationMode.EMERGENCE, tessera.cobordism.multicobordism.SimulationMode.REPLAY):
             with self.subTest(mode=mode):
                 node.set_simulation_mode(mode)
                 with self.assertRaises(ValueError):
@@ -104,7 +104,7 @@ class ProtonSynthesisModeTest(unittest.TestCase):
     def test_drive_runs_a_synthesis_node(self):
         node = self.synthesis.formation_node(1)
         tessera.cobordism.ProtonSynthesis.drive_node(node, **self.TINY)
-        self.assertEqual(node.simulation_mode, MC.SimulationMode.SYNTHESIS)
+        self.assertEqual(node.simulation_mode, tessera.cobordism.multicobordism.SimulationMode.SYNTHESIS)
         self.assertTrue(math.isfinite(node.objective()))
 
 

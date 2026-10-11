@@ -10,6 +10,7 @@ organised into submodules whose names match their C++ namespaces:
 * ``tessera.simulations``  — CDT, ReggeSolver, InteractionSimulation, Simulation base
 * ``tessera.quantum``      — Schwinger model, DMRG, TDVP, holography
 * ``tessera.cobordism``    — cobordisms between PL manifolds
+* ``tessera.cobordism.multicobordism`` — MultiCobordism's records and enums
 * ``tessera.chainhodge``   — the chain-level Whitney Hodge pencil
 
 The files directly under ``include/`` and ``src/`` bind into the root
@@ -59,6 +60,7 @@ for _submodule in (mesh, spacetime, matter, observables, simulations, cobordism,
                    chainhodge):
     _sys.modules[f"tessera.{_submodule.__name__.rsplit('.', 1)[-1]}"] = _submodule
 del _submodule
+_sys.modules["tessera.cobordism.multicobordism"] = cobordism.multicobordism
 
 # Backward-compat re-exports at top level. Star-import each submodule so
 # existing scripts that do `from tessera import Spacetime`, `tessera.CDT`,

@@ -37,9 +37,8 @@ class TestBindingNamespaces(unittest.TestCase):
         self.assertTrue(hasattr(tessera._tessera, "matter"))
 
 
-    def test_objective_terms_is_a_cobordism_record_aliased_on_multicobordism(self):
-        cobordism = tessera.cobordism
-        self.assertIs(cobordism.MultiCobordism.ObjectiveTerms, cobordism.ObjectiveTerms)
+    def test_objective_terms_is_a_cobordism_record(self):
+        self.assertTrue(hasattr(tessera.cobordism, "ObjectiveTerms"))
 
     def test_the_seeds_are_surface_seed_constructors_and_a_solid_simplex(self):
         cobordism = tessera.cobordism
@@ -49,6 +48,22 @@ class TestBindingNamespaces(unittest.TestCase):
                 self.assertFalse(hasattr(cobordism.MultiCobordism, "seed_" + name))
         self.assertTrue(hasattr(tessera.SolidSimplex, "spacetime"))
         self.assertFalse(hasattr(cobordism.MultiCobordism, "seed_simplex"))
+
+    def test_multicobordism_records_and_enums_are_in_their_namespace(self):
+        import tessera.cobordism.multicobordism as multicobordism
+        cobordism = tessera.cobordism
+        self.assertIs(multicobordism, cobordism.multicobordism)
+        for name in ("BoundaryBlock", "BlockFrame", "BlockMarking", "DerivedFrame",
+                     "BlockSurface", "InputStateRead", "TwoBodyRead", "TwoBodyTarget",
+                     "ReadoutMode", "WholePairing", "BuildAction", "HolePlacementStrategy",
+                     "SimulationMode", "EmergenceSubmode", "ObjectiveContribution",
+                     "RefinementIndicators", "RefinementDecision", "AnalysisConfig"):
+            with self.subTest(name=name):
+                self.assertTrue(hasattr(multicobordism, name))
+                self.assertFalse(hasattr(cobordism, name))
+                self.assertFalse(hasattr(cobordism.MultiCobordism, name))
+        self.assertFalse(hasattr(cobordism, "BoundaryBlock"))
+        self.assertFalse(hasattr(cobordism.MultiCobordism, "ObjectiveTerms"))
 
 if __name__ == "__main__":
     unittest.main()

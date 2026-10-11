@@ -44,7 +44,7 @@ def _node():
 
 
 def _config(frame_history=4, closure="none"):
-    cfg = MC.AnalysisConfig()
+    cfg = cob.multicobordism.AnalysisConfig()
     cfg.enabled = True
     cfg.cadence = 1
     cfg.degrees = [1]

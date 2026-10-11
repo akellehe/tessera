@@ -19,7 +19,7 @@ class MultiCobordism;  // returned (seeded, not run) by the node factories below
 /// # ProtonSynthesis
 ///
 /// Controlled synthesis of a proton: a labelled
-/// `MultiCobordism::SimulationMode::Synthesis` experiment that composes
+/// `multicobordism::SimulationMode::Synthesis` experiment that composes
 /// `MultiCobordism` without modifying it. The synthesis pins colour targets —
 /// the output is driven toward the singlet `{1, ω, ω²}` — and accepts an
 /// attempt only if it carries that singlet on at least `minEmergentHoles`

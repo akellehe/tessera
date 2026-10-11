@@ -145,6 +145,29 @@ struct FiberLevel {
 ///
 /// Every pairing is the transpose; no conjugation enters. Dense below the
 /// crossover of the underlying `ChainHodge`.
+/// Which band of a pencil a fiber is fitted in when its residual, or the
+/// residual's gradient, is read on that pencil.
+/// A marking of a boundary surface, in host vertex ids: cycles, each a closed
+/// walk of directed steps \f$ (u \to v) \f$ over edges of the host. A step
+/// contributes \f$ +h(u,v) \f$ to a period when \f$ u < v \f$ (the
+/// ascending-id reference orientation of `ChainComplex`) and \f$ -h(u,v) \f$
+/// otherwise — the `Edge::walkLoop` convention. A `SimplicialQubit` cycle
+/// (edge index, sign) becomes a step by taking the edge's \f$ (i, j) \f$ as
+/// \f$ (i \to j) \f$ for \f$ +1 \f$ and \f$ (j \to i) \f$ for \f$ -1 \f$,
+/// mapped through `SurfaceSeed::vertexIds`.
+using Marking = std::vector<chainhodge::Connection::Walk>;
+
+enum class FiberBand {
+  /// The contour stored on the fiber when it names one, else the lowest
+  /// band above the zero mode (`PencilLayer::bandContour(…, 1)`): the read
+  /// of a whole-complex target and of an ordinary block's sub-complex.
+  AsStored,
+  /// The zero mode of the pencil the fiber is read on — the harmonic contour
+  /// of that pencil (`PencilLayer::harmonicContour`), whatever contour the
+  /// fiber stores. This is a surface block's own Laplacian.
+  ZeroMode,
+};
+
 class PencilLayer {
  public:
   using Cell = std::vector<std::uint64_t>;
@@ -220,6 +243,117 @@ class PencilLayer {
   [[nodiscard]] static chainhodge::Contour harmonicContour(const AssembledPencil &assembled,
                                                            int k, int nodeCount = 64);
 
+  /// The monodromy of a drawn cobordism between two marked surfaces. The whole
+  /// complex's degree-1 zero mode — the harmonic band of the chain-level
+  /// Whitney pencil on `PencilLayer::harmonicContour`, bulk and boundary edges
+  /// in one operator — is read on the edges of both markings, giving periods
+  /// \f$ P_A \f$ (\f$ |A| \times r \f$) and \f$ P_B \f$ and the matrix
+  /// \f$ M \f$ with \f$ P_B = M P_A \f$: \f$ M = P_B P_A^{-1} \f$ for a rank-2
+  /// zero mode, the least-squares fit otherwise.
+  ///
+  /// That restriction is topological, so \f$ M \f$ is rational, and integral
+  /// when the restriction to \f$ T_A \f$ is unimodular — an element of
+  /// \f$ SL(2,\mathbb Z) \f$ when \f$ W \f$ is an \f$ I \f$-bundle. A read
+  /// that cannot be made (no zero mode, a marking edge absent from the whole, a
+  /// rank-deficient \f$ P_A \f$, or a pencil that refuses the geometry) reports
+  /// an `obstruction` instead.
+  struct MonodromyRead {
+    /// Betti numbers of the whole complex.
+    std::vector<int> betti;
+    /// \f$ r = \dim \ker L_1 \f$ of the whole, the zero mode's rank.
+    int harmonicRank{0};
+    /// \f$ P_A \f$, \f$ |A| \times r \f$.
+    Eigen::MatrixXcd periodsA;
+    /// \f$ P_B \f$, \f$ |B| \times r \f$.
+    Eigen::MatrixXcd periodsB;
+    /// \f$ M \f$ (\f$ |B| \times |A| \f$); empty when obstructed before the fit.
+    Eigen::MatrixXcd monodromy;
+    /// \f$ \operatorname{round}(\operatorname{Re} M) \f$, row-major.
+    std::vector<std::vector<long>> rounded;
+    /// \f$ \max_{ij} |M_{ij} - \operatorname{round}(M_{ij})| \f$ (NaN when obstructed).
+    double roundingResidual{std::numeric_limits<double>::quiet_NaN()};
+    /// \f$ \|M P_A - P_B\|_F / \|P_B\|_F \f$ (zero to rounding when the relation is exact).
+    double fitResidual{std::numeric_limits<double>::quiet_NaN()};
+    /// Empty when the read succeeded; otherwise why it could not be made.
+    std::string obstruction;
+  };
+  /// The monodromy read of \p spacetime between \p markingA and \p markingB.
+  /// Read-only on the geometry; the metric source is the Whitney pencil.
+  [[nodiscard]] static MonodromyRead monodromy(const std::shared_ptr<Spacetime> &spacetime,
+                                               const Marking &markingA, const Marking &markingB);
+
+  /// The whole complex's degree-1 zero mode read on every marking at once: one
+  /// harmonic basis \f$ Z \f$ and its periods over each marking, all from that
+  /// same basis. `monodromy` is the two-marking case with the fit
+  /// \f$ P_B = M P_A \f$ added. Comparisons across markings need one basis,
+  /// since two separate reads may return the zero mode in different ones.
+  struct RestrictionRead {
+    std::vector<int> betti;
+    /// \f$ r = \dim \ker L_1 \f$ of the whole, the zero mode's rank.
+    int harmonicRank{0};
+    /// \f$ Z \f$, \f$ n_1 \times r \f$, in the assembled pencil's degree-1 cell
+    /// order (`AssembledPencil::cellIndex(1, edge)` maps a sorted edge to its row).
+    Eigen::MatrixXcd images;
+    /// \f$ P_i \f$ (\f$ |\text{marking}_i| \times r \f$): the transported periods
+    /// of `images` over marking \f$ i \f$, in the order the markings were given.
+    std::vector<Eigen::MatrixXcd> periods;
+    /// \f$ \Phi \f$, the band's frame on chains, \f$ n_1 \times r \f$, with
+    /// `images` \f$ = G_1^U \Phi \f$. Co-closedness is a statement about
+    /// \f$ \Phi \f$ (\f$ \partial_1^U \Phi = 0 \f$) and closedness one about
+    /// `images` (\f$ (\partial_2^{U^{-1}})^T Z = 0 \f$), so certifying the band
+    /// as harmonic needs both representations.
+    Eigen::MatrixXcd frame;
+    /// The band's certificate: contour node count, projector idempotency, rank
+    /// and its tolerance, singular gap, resolvent bound. Rank alone does not
+    /// make a spectral band the harmonic kernel.
+    chainhodge::BandCertificate certificate;
+    /// Empty when the read succeeded; otherwise why it could not be made.
+    std::string obstruction;
+  };
+  /// The restriction read of \p spacetime over \p markings (see
+  /// `RestrictionRead`). Read-only on the geometry; the Whitney pencil is the
+  /// metric source by construction. Every marking edge must be an edge of the
+  /// whole, and every marking must order into closed walks from one base
+  /// point, or the read names the obstruction and returns nothing else.
+  [[nodiscard]] static RestrictionRead restriction(const std::shared_ptr<Spacetime> &spacetime,
+                                                   const std::vector<Marking> &markings);
+
+  /// The least-squares leak of \p target's images in the band read on
+  /// \p spacetime's pencil at the target's cells, relative to the target's
+  /// norm: 0 when the band carries the target, 1 when nothing does. The band is
+  /// chosen by \p band (`fiberContour`). A geometry the pencil refuses (a
+  /// singular dressed metric, a branch or allowability failure, a cell outside
+  /// the complex), or no complex at all, scores as the full leak 1.
+  /// @throws std::logic_error for a target with no images or a zero target.
+  [[nodiscard]] static double fiberResidual(const std::shared_ptr<Spacetime> &spacetime,
+                                            const BoundaryFiber &target,
+                                            FiberBand band = FiberBand::AsStored);
+  /// The contour a fiber is read at on \p assembled under \p band: the
+  /// harmonic contour of \p assembled for `ZeroMode`; the fiber's stored
+  /// contour, else the lowest band above the zero mode, for `AsStored`.
+  [[nodiscard]] static chainhodge::Contour fiberContour(const AssembledPencil &assembled,
+                                                          const BoundaryFiber &fiber, FiberBand band);
+  /// The dual of a frame under the transpose pairing of \p complex's own
+  /// chain-level Whitney pencil at degree \p degree. With \f$ M_k \f$ the
+  /// pencil's chain-metric inverse (`CovariantChainHodge::Minv`, the Whitney
+  /// mass matrix) restricted to \p cells, and \f$ B = Z^T M_k Z \f$ the frame's
+  /// pairing, the dual is \f$ Z^\vee = Z\,B^{-T} \f$, so that
+  /// \f$ (Z^\vee)^T M_k Z = I \f$ as `BlockFrame` requires.
+  ///
+  /// `chainhodge::PencilSchur::transfer` normalizes nothing, so a frame paired
+  /// with its plain images gives the bilinear form \f$ Z_A^T \tilde A Z_B \f$,
+  /// which transforms by \f$ g_A^T T g_B \f$. Under this dual it instead gives
+  /// the matrix of the operator block in the frames' coordinates,
+  /// \f$ g_A^{-1} T g_B \f$, which is what a target written in those
+  /// coordinates compares with. Read-only on \p complex.
+  /// @throws std::invalid_argument on a null complex, a degree above its
+  ///   dimension, a frame without columns, a row count other than the cell
+  ///   count, or a cell absent from the complex at that degree
+  ///   (`PencilLayer::indicesOf`, by name); std::runtime_error when the
+  ///   pairing is singular (an isotropic frame).
+  [[nodiscard]] static Eigen::MatrixXcd dualFrame(const std::shared_ptr<Spacetime> &complex, int degree,
+                                                  const std::vector<std::vector<std::uint64_t>> &cells,
+                                                  const Eigen::MatrixXcd &images);
   /// Read the fiber form of a block's target: the band of \p contour on the
   /// assembled pencil, restricted to \p cells.
   [[nodiscard]] static BoundaryFiber readBoundaryFiber(const AssembledPencil &assembled, int k,

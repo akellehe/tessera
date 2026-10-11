@@ -452,4 +452,220 @@ chainhodge::TransferResult PencilLayer::transfer(const AssembledPencil &assemble
                                            place(B, true), tolerance);
 }
 
+double PencilLayer::fiberResidual(const std::shared_ptr<Spacetime> &spacetime,
+                                  const BoundaryFiber &target, FiberBand band) {
+  if (target.images.cols() == 0)
+    throw std::logic_error("PencilLayer::fiberResidual: the fiber target has no images");
+  const double targetNorm = target.images.squaredNorm();
+  if (!(targetNorm > 0.0))
+    throw std::logic_error("PencilLayer::fiberResidual: the fiber target is zero");
+  if (!spacetime) return 1.0;  // no complex to read: the target leaks in full
+  // A candidate geometry the pencil refuses (a singular dressed metric, a
+  // branch or allowability failure, a cell outside the complex) cannot carry
+  // the state: it scores as the full leak, exactly as a block with no emerged
+  // register does under the period residual. Contract errors still propagate.
+  BoundaryFiber read;
+  try {
+    const AssembledPencil assembled = assemble({spacetime});
+    if (assembled.dimension() < target.degree) return 1.0;
+    const std::vector<int> idx = indicesOf(assembled, target.degree, target.cells);
+    if (idx.size() != target.cells.size()) return 1.0;
+    const chainhodge::Contour contour = fiberContour(assembled, target, band);
+    read = readBoundaryFiber(assembled, target.degree, contour, target.cells);
+  } catch (const std::runtime_error &) {
+    return 1.0;
+  } catch (const std::invalid_argument &) {
+    return 1.0;
+  }
+  if (read.images.cols() == 0 || read.images.rows() != target.images.rows()) return 1.0;
+  // Least-squares fit of the target images in the band's images on the cells.
+  const Eigen::MatrixXcd coefficients = read.images.colPivHouseholderQr().solve(target.images);
+  const double leak = (read.images * coefficients - target.images).squaredNorm();
+  return leak / targetNorm;
+}
+
+chainhodge::Contour PencilLayer::fiberContour(const AssembledPencil &assembled,
+                                              const BoundaryFiber &target, FiberBand band) {
+  switch (band) {
+    case FiberBand::ZeroMode:
+      // The zero mode of this pencil: the block's own Laplacian's harmonic
+      // space, whatever contour the fiber stores (see `MultiCobordism::fiberBandFor`).
+      return harmonicContour(assembled, target.degree);
+    case FiberBand::AsStored:
+      break;
+  }
+  return target.contour.nodes.empty() ? bandContour(assembled, target.degree, 1)
+                                      : target.contour;
+}
+
+Eigen::MatrixXcd PencilLayer::dualFrame(const std::shared_ptr<Spacetime> &complex, int degree,
+                                        const std::vector<std::vector<std::uint64_t>> &cells,
+                                        const Eigen::MatrixXcd &images) {
+  if (!complex) throw std::invalid_argument("PencilLayer::dualFrame: null complex");
+  if (images.cols() == 0) throw std::invalid_argument("PencilLayer::dualFrame: the frame has no columns");
+  if (static_cast<std::size_t>(images.rows()) != cells.size())
+    throw std::invalid_argument("PencilLayer::dualFrame: one image row per cell (" +
+                                std::to_string(images.rows()) + " rows, " + std::to_string(cells.size()) + " cells)");
+  const AssembledPencil assembled = assemble({complex});
+  if (degree < 0 || degree > assembled.dimension())
+    throw std::invalid_argument("PencilLayer::dualFrame: degree " + std::to_string(degree) +
+                                " is outside the complex's dimension " + std::to_string(assembled.dimension()));
+  std::vector<std::vector<std::uint64_t>> sorted = cells;
+  for (auto &c : sorted) std::sort(c.begin(), c.end());
+  // A cell absent from the complex at this degree is refused by name here.
+  const std::vector<int> idx = indicesOf(assembled, degree, sorted);
+  // B = Z^T M_k Z on the cells: the frame's pairing under the transpose pairing
+  // of the complex's own pencil (M_k the Whitney mass matrix, the chain
+  // metric's inverse, as PencilLayer::readBoundaryFiber's Gram uses it).
+  const Eigen::MatrixXcd M(assembled.op->Minv(degree));
+  const auto n = static_cast<Eigen::Index>(idx.size());
+  Eigen::MatrixXcd MBB(n, n);
+  for (Eigen::Index i = 0; i < n; ++i)
+    for (Eigen::Index j = 0; j < n; ++j)
+      MBB(i, j) = M(idx[static_cast<std::size_t>(i)], idx[static_cast<std::size_t>(j)]);
+  const Eigen::MatrixXcd pairing = images.transpose() * MBB * images;
+  Eigen::FullPivLU<Eigen::MatrixXcd> lu(pairing);
+  if (!lu.isInvertible())
+    throw std::runtime_error("PencilLayer::dualFrame: the frame's pairing Z^T M Z is singular (an isotropic "
+                             "frame); no dual under the transpose pairing exists");
+  // Z^vee = Z B^{-T}, i.e. (Z^vee)^T = B^{-1} Z^T, so that (Z^vee)^T M Z = B^{-1} B = I.
+  return lu.solve(images.transpose()).transpose();
+}
+
+PencilLayer::RestrictionRead PencilLayer::restriction(const std::shared_ptr<Spacetime> &spacetime,
+                                                            const std::vector<Marking> &markings) {
+  RestrictionRead read;
+  if (!spacetime) {
+    read.obstruction = "no spacetime";
+    return read;
+  }
+  read.betti = spacetime->getBettiNumbers();
+  // The edges every marking walks, as sorted tuples: each must be an edge of
+  // the whole before any operator is built.
+  std::set<std::vector<std::uint64_t>> seen;
+  std::vector<std::vector<std::uint64_t>> cells;
+  for (const Marking &marking : markings)
+    for (const auto &cycle : marking)
+      for (const auto &[u, v] : cycle) {
+        if (u == v) {
+          read.obstruction = "a marking step is a self-loop";
+          return read;
+        }
+        std::vector<std::uint64_t> edge = {std::min(u, v), std::max(u, v)};
+        if (seen.insert(edge).second) cells.push_back(std::move(edge));
+      }
+  if (cells.empty()) {
+    read.obstruction = "empty markings";
+    return read;
+  }
+  // A marking is stated on the surfaces' edges, which every engine move
+  // keeps; a step off the whole is named before any operator is built.
+  {
+    std::set<std::vector<std::uint64_t>> edges;
+    for (auto edge : ChainComplex::fromSpacetime(*spacetime).kSimplexVertices(1)) edges.insert(std::move(edge));
+    for (const auto &cell : cells)
+      if (!edges.count(cell)) {
+        read.obstruction = "marking edge (" + std::to_string(cell[0]) + "," + std::to_string(cell[1]) +
+                           ") is not an edge of the whole";
+        return read;
+      }
+  }
+  // Each marking's cycles as closed walks from that marking's common base
+  // point (`Connection::commonBasePoint`), so that
+  // the periods are taken with parallel transport: on zero phases the
+  // transported period is the plain signed sum in the walk's order.
+  std::vector<Marking> walks;
+  walks.reserve(markings.size());
+  for (std::size_t i = 0; i < markings.size(); ++i) {
+    Marking ordered = markings[i];
+    std::uint64_t base = 0;
+    std::string why;
+    if (!chainhodge::Connection::orderWalks(ordered, base, why)) {
+      read.obstruction = "marking " + std::to_string(i) + ": " + why;
+      return read;
+    }
+    walks.push_back(std::move(ordered));
+  }
+  chainhodge::Band zeroMode;
+  std::shared_ptr<const chainhodge::CovariantChainHodge> op;
+  try {
+    const AssembledPencil assembled = assemble({spacetime});
+    if (assembled.dimension() < 1) {
+      read.obstruction = "the whole has no edges";
+      return read;
+    }
+    zeroMode = assembled.op->band(1, harmonicContour(assembled, 1));
+    op = assembled.op;
+  } catch (const std::exception &e) {
+    read.obstruction = std::string("the pencil refused the whole: ") + e.what();
+    return read;
+  }
+  read.harmonicRank = zeroMode.rank();
+  if (read.harmonicRank == 0) {
+    read.obstruction = "the whole has no degree-1 zero mode";
+    return read;
+  }
+  read.images = zeroMode.images;
+  read.frame = zeroMode.frame;
+  read.certificate = zeroMode.certificate;
+  for (const Marking &walk : walks) {
+    Eigen::MatrixXcd periods = Eigen::MatrixXcd::Zero(static_cast<Eigen::Index>(walk.size()),
+                                                      zeroMode.images.cols());
+    for (std::size_t c = 0; c < walk.size(); ++c)
+      for (Eigen::Index a = 0; a < zeroMode.images.cols(); ++a)
+        periods(static_cast<Eigen::Index>(c), a) =
+            op->connection().transportedPeriod(zeroMode.images.col(a), walk[c]);
+    if (periods.rows() == 0) {
+      read.obstruction = "a marking has no cycles";
+      return read;
+    }
+    read.periods.push_back(std::move(periods));
+  }
+  return read;
+}
+
+PencilLayer::MonodromyRead PencilLayer::monodromy(const std::shared_ptr<Spacetime> &spacetime,
+                                                        const Marking &markingA,
+                                                        const Marking &markingB) {
+  MonodromyRead read;
+  const RestrictionRead restricted = restriction(spacetime, {markingA, markingB});
+  read.betti = restricted.betti;
+  read.harmonicRank = restricted.harmonicRank;
+  if (!restricted.obstruction.empty()) {
+    read.obstruction = restricted.obstruction;
+    return read;
+  }
+  read.periodsA = restricted.periods[0];
+  read.periodsB = restricted.periods[1];
+  // P_B = M P_A, least squares over the zero mode's columns (exact for a rank-2
+  // zero mode with invertible P_A); M is |B| x |A|.
+  const Eigen::JacobiSVD<Eigen::MatrixXcd> svd(read.periodsA);
+  const double tolerance = 1e-9 * std::max(1.0, svd.singularValues()(0));
+  Eigen::Index rank = 0;
+  for (Eigen::Index i = 0; i < svd.singularValues().size(); ++i)
+    if (svd.singularValues()(i) > tolerance) ++rank;
+  const Eigen::MatrixXcd transposed =
+      read.periodsA.transpose().colPivHouseholderQr().solve(read.periodsB.transpose());
+  read.monodromy = transposed.transpose();
+  const double normB = read.periodsB.norm();
+  read.fitResidual = normB > 0.0 ? (read.monodromy * read.periodsA - read.periodsB).norm() / normB
+                                 : std::numeric_limits<double>::quiet_NaN();
+  read.rounded.assign(static_cast<std::size_t>(read.monodromy.rows()),
+                      std::vector<long>(static_cast<std::size_t>(read.monodromy.cols()), 0));
+  double roundingResidual = 0.0;
+  for (Eigen::Index i = 0; i < read.monodromy.rows(); ++i)
+    for (Eigen::Index j = 0; j < read.monodromy.cols(); ++j) {
+      const long nearest = std::lround(read.monodromy(i, j).real());
+      read.rounded[static_cast<std::size_t>(i)][static_cast<std::size_t>(j)] = nearest;
+      roundingResidual = std::max(
+          roundingResidual, std::abs(read.monodromy(i, j) - std::complex<double>(static_cast<double>(nearest), 0.0)));
+    }
+  read.roundingResidual = roundingResidual;
+  if (rank < read.periodsA.rows())
+    read.obstruction = "the zero mode's periods over marking A have rank " + std::to_string(rank) +
+                       " below the marking's " + std::to_string(read.periodsA.rows()) +
+                       " cycles: the whole does not carry that marking independently";
+  return read;
+}
+
 }  // namespace tessera::cobordism

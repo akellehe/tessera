@@ -119,8 +119,8 @@ def test_the_search_offers_no_surgical_move():
     assert not node.should_propose_surgery
     node.set_objective(cob.JointStationarityObjective())
     node.set_hodge_degrees(list(R.PACHNER_HODGE_DEGREES))
-    node.set_simulation_mode(MC.SimulationMode.EMERGENCE,
-                             MC.EmergenceSubmode.STRICT)
+    node.set_simulation_mode(cob.multicobordism.SimulationMode.EMERGENCE,
+                             cob.multicobordism.EmergenceSubmode.STRICT)
     before = {frozenset(int(v) for v in f)
               for f in node.spacetime().get_boundary()}
     list(node.run_stage1(max_steps=3, n_candidate_moves=0))

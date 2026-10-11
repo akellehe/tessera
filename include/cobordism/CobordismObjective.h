@@ -31,7 +31,7 @@ using ::tessera::spacetime::Spacetime;
 /// channel.
 ///
 /// At namespace scope, so an objective can be written without depending on
-/// `MultiCobordism`, which aliases it as `MultiCobordism::ObjectiveTerms`.
+/// `MultiCobordism`.
 struct ObjectiveTerms {
   /// \f$\beta_R\|\nabla_zS_{\rm Regge}\|^2\f$ — 0 when the Einstein-Hilbert
   /// term is deselected.
@@ -188,7 +188,7 @@ struct ObjectiveContext {
 ///
 /// One degree's share of the Hodge stationarity term, so a reader can tell
 /// which degree the descent came from rather than only the total — the same
-/// discipline `MultiCobordism::ObjectiveContribution` applies to bulk versus
+/// discipline `multicobordism::ObjectiveContribution` applies to bulk versus
 /// pinned-region objectives.
 struct HodgeDegreeContribution {
   /// The Laplacian degree \f$k\f$.

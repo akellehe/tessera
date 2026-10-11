@@ -9,6 +9,7 @@
 #include "cobordism/MultiCobordism.h"
 #include "cobordism/ProtonSynthesis.h"
 #include "spacetime/Spacetime.h"
+#include "cobordism/EigenstateSynthesis.h"
 
 namespace tessera::observables {
 using ::tessera::cobordism::MultiCobordism;
@@ -25,19 +26,19 @@ std::vector<std::complex<double>> conjugateSinglet() {
 }  // namespace
 
 double SingletResidual::computeHeadline(const RegisterContext &ctx) const {
-  return MultiCobordism::residualOfTargetStateAgainstHarmonic(
+  return ::tessera::cobordism::EigenstateSynthesis::targetStateResidual(
       ctx.spacetime(), ctx.degree(), ProtonSynthesis::singlet());
 }
 
 double SingletResidual::conjugateResidual(const RegisterContext &ctx) const {
-  return MultiCobordism::residualOfTargetStateAgainstHarmonic(
+  return ::tessera::cobordism::EigenstateSynthesis::targetStateResidual(
       ctx.spacetime(), ctx.degree(), conjugateSinglet());
 }
 
 Record SingletResidual::record(const RegisterContext &ctx) const {
   const std::vector<std::complex<double>> singlet = ProtonSynthesis::singlet();
   Record::Map m;
-  m["singlet_residual"] = MultiCobordism::residualOfTargetStateAgainstHarmonic(
+  m["singlet_residual"] = ::tessera::cobordism::EigenstateSynthesis::targetStateResidual(
       ctx.spacetime(), ctx.degree(), singlet);
   m["holes_used"] = ctx.holesUsed();
   m["holes_total"] = ctx.holesTotal();

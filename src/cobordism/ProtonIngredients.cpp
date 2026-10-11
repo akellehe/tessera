@@ -18,6 +18,7 @@
 #include "spacetime/Spacetime.h"
 #include "spacetime/topologies/SolidSimplex.h"
 #include "spacetime/topologies/Topology.h"
+#include "cobordism/EigenstateSynthesis.h"
 
 namespace tessera::cobordism {
 
@@ -197,7 +198,7 @@ void ProtonIngredients::build(int maxRestarts, int initSteps, int evolveSteps,
       keptSeed_ = seedA;
       spacetime_ = whole;
       emergentHoles_ = whole->getHoles(registerDegree_);
-      singletResidual_ = MultiCobordism::residualOfTargetStateAgainstHarmonic(
+      singletResidual_ = EigenstateSynthesis::targetStateResidual(
           whole, registerDegree_, ProtonSynthesis::singlet());  // diagnostic read, after the fact
       inputResidual_ = stepB->rU(whole);
       finalObjective_ = finalObjective;

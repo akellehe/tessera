@@ -144,7 +144,7 @@ def _host():
     if not _HOST:
         args = qa.build_parser().parse_args(["verify"])
         tori, _, seed, ids, markings = qa.seed_qubit_host(qa._verify_config(args))
-        read = qa.MC.restriction(seed.host, markings)
+        read = qa.cob.PencilLayer.restriction(seed.host, markings)
         assert read.obstruction == "", read.obstruction
         _HOST["read"] = read
         _HOST["op"] = qa.cob.PencilLayer.assemble([seed.host]).op

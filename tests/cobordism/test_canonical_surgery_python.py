@@ -30,12 +30,12 @@ class CanonicalSurgeryApiTest(unittest.TestCase):
                             f"MultiCobordism.{name} missing")
 
     def test_build_action_enum_has_every_solve_action(self):
-        ba = cob.MultiCobordism.BuildAction
+        ba = cob.multicobordism.BuildAction
         for name in ("GROW", "EVOLVE", "RELAX", "CONE_OUT", "CONE_IN"):
             self.assertTrue(hasattr(ba, name), f"BuildAction.{name} missing")
 
     def test_hole_placement_strategy_enum(self):
-        hp = cob.MultiCobordism.HolePlacementStrategy
+        hp = cob.multicobordism.HolePlacementStrategy
         for name in ("ADJACENT_HOLES_FIRST", "ADJACENT_HOLES_LAST"):
             self.assertTrue(hasattr(hp, name), f"HolePlacementStrategy.{name} missing")
 
@@ -65,8 +65,8 @@ class DirectedProbeInvariantTest(unittest.TestCase):
     action without raising."""
 
     def test_probes_are_ru_monotone_and_build_step_dispatches(self):
-        BA = cob.MultiCobordism.BuildAction
-        HP = cob.MultiCobordism.HolePlacementStrategy
+        BA = cob.multicobordism.BuildAction
+        HP = cob.multicobordism.HolePlacementStrategy
         node = cob.ProtonSynthesis(seed=0).formation_node(1)   # a seeded single-Δ⁴ node
         # A small grow keeps the eigensolve-heavy probe scans cheap; the invariant holds
         # at any size.

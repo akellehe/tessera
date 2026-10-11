@@ -10,6 +10,7 @@
 #include "mesh/Simplex.h"
 #include "mesh/Vertex.h"
 #include "spacetime/Spacetime.h"
+#include "cobordism/EigenstateSynthesis.h"
 
 namespace tessera::observables {
 using ::tessera::cobordism::MultiCobordism;
@@ -55,7 +56,7 @@ double BlockResiduals::blockResidual(const RegisterContext &ctx,
   // The block's sub-complex is a selection of existing cells re-instantiated
   // with a uniform metric.
   auto sub = Spacetime::fromVertexTuples(ctx.dimensions(), cellsInside, 1.0, 0.0);
-  return MultiCobordism::residualOfTargetStateAgainstHarmonic(
+  return ::tessera::cobordism::EigenstateSynthesis::targetStateResidual(
       sub, ctx.degree(), block.target);
 }
 

@@ -12,30 +12,6 @@ namespace tessera::cobordism {
 
 // ---- the marking, the derived frame and the state at a block ----
 
-bool MultiCobordism::orderMarking(Marking &cycles, std::uint64_t &baseVertex, std::string &obstruction) {
-  for (std::size_t c = 0; c < cycles.size(); ++c) {
-    if (cycles[c].empty()) {
-      obstruction = "cycle " + std::to_string(c) + " has no steps";
-      return false;
-    }
-    chainhodge::Connection::Walk walk = chainhodge::Connection::closedWalkOf(cycles[c]);
-    if (walk.size() != cycles[c].size()) {
-      obstruction = "cycle " + std::to_string(c) +
-                    " does not form one closed walk (a vertex with unequal in- and out-degrees, or steps in "
-                    "more than one connected component)";
-      return false;
-    }
-    cycles[c] = std::move(walk);
-  }
-  const std::optional<std::uint64_t> base = chainhodge::Connection::commonBasePoint(cycles);
-  if (!base) {
-    obstruction = "the cycles share no vertex, so their transported periods have no common base point";
-    return false;
-  }
-  baseVertex = *base;
-  return true;
-}
-
 void MultiCobordism::setInputMarking(std::size_t index, Marking cycles,
                                      std::vector<std::complex<double>> coefficients) {
   if (index >= inputBlocks_.size())
@@ -80,7 +56,7 @@ void MultiCobordism::setInputMarking(std::size_t index, Marking cycles,
     }
   std::uint64_t base = 0;
   std::string why;
-  if (!orderMarking(cycles, base, why)) throw std::invalid_argument("MultiCobordism::setInputMarking: " + why);
+  if (!chainhodge::Connection::orderWalks(cycles, base, why)) throw std::invalid_argument("MultiCobordism::setInputMarking: " + why);
   BlockMarking marking;
   marking.cycles = std::move(cycles);
   marking.coefficients = Eigen::Map<const Eigen::VectorXcd>(coefficients.data(),
@@ -89,7 +65,7 @@ void MultiCobordism::setInputMarking(std::size_t index, Marking cycles,
   block.marking = std::move(marking);
 }
 
-const std::optional<MultiCobordism::BlockMarking> &MultiCobordism::inputMarking(std::size_t index) const {
+const std::optional<multicobordism::BlockMarking> &MultiCobordism::inputMarking(std::size_t index) const {
   if (index >= inputBlocks_.size())
     throw std::out_of_range("MultiCobordism::inputMarking: input block index out of range");
   return inputBlocks_[index].marking;
@@ -101,90 +77,13 @@ void MultiCobordism::clearInputMarking(std::size_t index) {
   inputBlocks_[index].marking.reset();
 }
 
-MultiCobordism::DerivedFrame MultiCobordism::deriveFrame(const BoundaryBlock &block,
-                                                         const std::shared_ptr<Spacetime> &spacetime) {
-  if (!block.marking) throw std::logic_error("MultiCobordism::deriveFrame: the block carries no marking");
-  const BlockMarking &marking = *block.marking;
-  DerivedFrame out;
-  const auto own = blockComplexWithGeometry(block, spacetime);
-  if (!own) {
-    out.obstruction = "the block has no own complex (a torn surface carries no frame)";
-    return out;
-  }
-  try {
-    const AssembledPencil assembled = PencilLayer::assemble({own});
-    if (assembled.dimension() < 1) {
-      out.obstruction = "the block's own complex has no edges";
-      return out;
-    }
-    // The zero mode of the block's own covariant pencil: its harmonic contour,
-    // recomputed here as the lengths move, with the phases entering through
-    // the dressed pencil.
-    const chainhodge::Contour contour = PencilLayer::harmonicContour(assembled, 1);
-    const chainhodge::Band band = assembled.op->band(1, contour);
-    out.kernelRank = band.rank();
-    if (band.rank() != marking.rank()) {
-      out.obstruction = "the block's own kernel has rank " + std::to_string(band.rank()) + " for a marking of " +
-                        std::to_string(marking.rank()) +
-                        " cycles (a torn surface, or link phases that are not a pure gauge)";
-      return out;
-    }
-    const auto rank = static_cast<Eigen::Index>(marking.rank());
-    // Pi_{ca}: the transported period of zero-mode column a over cycle c from
-    // the common base point (a marking step absent from the own complex is
-    // refused by name by the connection, and read as an obstruction here).
-    Eigen::MatrixXcd periods(rank, rank);
-    for (Eigen::Index c = 0; c < rank; ++c)
-      for (Eigen::Index a = 0; a < rank; ++a)
-        periods(c, a) = assembled.op->connection().transportedPeriod(
-            band.images.col(a), marking.cycles[static_cast<std::size_t>(c)]);
-    Eigen::FullPivLU<Eigen::MatrixXcd> lu(periods);
-    if (!lu.isInvertible()) {
-      out.obstruction = "the periods of the block's own kernel over the marking are singular: the cycles do not "
-                        "span the block's homology";
-      return out;
-    }
-    // F = Z Pi^{-1}: column b has period delta_{cb} over cycle c.
-    const Eigen::MatrixXcd F = band.images * lu.inverse();
-    // F^vee = Z~ (Z~^T M_1^U F)^{-T} with Z~ the dual kernel's images (the
-    // zero mode under the inverse links) and M_1^U the dressed Whitney mass
-    // matrix: (F^vee)^T M_1^U F = I, the BlockFrame contract paired between
-    // the kernel and the dual kernel.
-    const Eigen::MatrixXcd dualImages = assembled.dual->applyG(1, band.dualFrame);
-    const Eigen::MatrixXcd M(assembled.op->Minv(1));
-    const Eigen::MatrixXcd pairing = dualImages.transpose() * M * F;
-    Eigen::FullPivLU<Eigen::MatrixXcd> pairingLu(pairing);
-    if (!pairingLu.isInvertible()) {
-      out.obstruction = "the pairing of the block's dual kernel against its frame is singular (an isotropic frame)";
-      return out;
-    }
-    out.frame.cells = assembled.complex().kSimplexVertices(1);
-    out.frame.images = F;
-    out.frame.dualImages = pairingLu.solve(dualImages.transpose()).transpose();
-    out.periods = periods;
-  } catch (const std::runtime_error &e) {
-    out.obstruction = std::string("the block's own pencil refused the read: ") + e.what();
-  } catch (const std::invalid_argument &e) {
-    out.obstruction = std::string("the block's own pencil refused the read: ") + e.what();
-  }
-  return out;
-}
-
-MultiCobordism::DerivedFrame MultiCobordism::deriveInputFrame(std::size_t index) const {
+multicobordism::DerivedFrame MultiCobordism::deriveInputFrame(std::size_t index) const {
   if (index >= inputBlocks_.size())
     throw std::out_of_range("MultiCobordism::deriveInputFrame: input block index out of range");
   if (!inputBlocks_[index].marking)
     throw std::logic_error("MultiCobordism::deriveInputFrame: input block " + std::to_string(index) +
                            " carries no marking (setInputMarking)");
-  return deriveFrame(inputBlocks_[index], spacetime_);
-}
-
-BoundaryFiber MultiCobordism::stateTargetOf(const BlockMarking &marking, const BlockFrame &frame) {
-  BoundaryFiber target;
-  target.degree = 1;
-  target.cells = frame.cells;
-  target.images = frame.images * marking.coefficients;
-  return target;
+  return inputBlocks_[index].deriveFrame(spacetime_);
 }
 
 double MultiCobordism::inputStateResidualOn(const BoundaryBlock &block,
@@ -195,11 +94,11 @@ double MultiCobordism::inputStateResidualOn(const BoundaryBlock &block,
     throw std::logic_error("MultiCobordism::inputStateResidualOn: the block residual is read on the chain-level "
                            "Whitney pencil; this node uses the diagonal-weight metric");
   if (!spacetime) return 1.0;
-  const DerivedFrame derived = deriveFrame(block, spacetime);
+  const DerivedFrame derived = block.deriveFrame(spacetime);
   if (!derived.derived()) return 1.0;  // no frame: the state leaks in full
   // The whole's zero mode at the whole's harmonic contour (R7), on the
   // block's edges; the leak of the target there.
-  return fiberResidualOn(spacetime, stateTargetOf(*block.marking, derived.frame), FiberBand::ZeroMode);
+  return fiberResidualOn(spacetime, block.marking->stateTarget(derived.frame), FiberBand::ZeroMode);
 }
 
 double MultiCobordism::inputStateResidual(std::size_t index) const {
@@ -211,65 +110,9 @@ double MultiCobordism::inputStateResidual(std::size_t index) const {
   return inputStateResidualOn(inputBlocks_[index], spacetime_);
 }
 
-observables::SimplicialQubit MultiCobordism::blockQubit(const BoundaryBlock &block,
-                                                        const std::shared_ptr<Spacetime> &spacetime) {
-  if (!block.marking) throw std::logic_error("MultiCobordism::blockQubit: the block carries no marking (setInputMarking)");
-  if (block.marking->rank() != 2)
-    throw std::invalid_argument("MultiCobordism::blockQubit: a qubit torus is marked by two cycles; this marking has " +
-                                std::to_string(block.marking->rank()));
-  if (!spacetime) throw std::invalid_argument("MultiCobordism::blockQubit: null spacetime");
-  const std::shared_ptr<Spacetime> surface = blockSurfaceWithGeometry(block, spacetime);
-  if (!surface)
-    throw std::runtime_error("MultiCobordism::blockQubit: the block has no surface (a face of the torus lost an "
-                             "edge, so it carries no state)");
-  // The surface as SimplicialQubit's Spacetime constructor indexes it:
-  // Vertices by ascending id, edges by ascending index pair. The marking's
-  // steps (host ids, u -> v) become (edge index, sign) with the sign of the
-  // step against the edge's stored orientation (min -> max).
-  std::vector<std::uint64_t> ids;
-  for (const auto *vertex : surface->getVertexList()->liveVector()) ids.push_back(vertex->getId());
-  std::sort(ids.begin(), ids.end());
-  std::map<std::uint64_t, std::uint64_t> indexOfId;
-  for (std::size_t n = 0; n < ids.size(); ++n) indexOfId[ids[n]] = n;
-  std::vector<std::pair<std::uint64_t, std::uint64_t>> pairs;
-  for (const mesh::Edge *edge : surface->getEdgeList()->toVector()) {
-    const std::uint64_t a = indexOfId.at(edge->getSource()->getId());
-    const std::uint64_t b = indexOfId.at(edge->getTarget()->getId());
-    pairs.emplace_back(std::min(a, b), std::max(a, b));
-  }
-  std::sort(pairs.begin(), pairs.end());
-  std::map<std::pair<std::uint64_t, std::uint64_t>, std::size_t> indexOfPair;
-  for (std::size_t n = 0; n < pairs.size(); ++n) indexOfPair[pairs[n]] = n;
-  auto cycleOf = [&](const std::vector<std::pair<std::uint64_t, std::uint64_t>> &steps, const char *name) {
-    observables::SimplicialQubit::Cycle cycle;
-    for (const auto &[u, v] : steps) {
-      const auto iu = indexOfId.find(u), iv = indexOfId.find(v);
-      if (iu == indexOfId.end() || iv == indexOfId.end())
-        throw std::runtime_error(std::string("MultiCobordism::blockQubit: a step of cycle ") + name + " (" +
-                                 std::to_string(u) + " -> " + std::to_string(v) +
-                                 ") leaves the block's live surface");
-      const auto found = indexOfPair.find({std::min(iu->second, iv->second), std::max(iu->second, iv->second)});
-      if (found == indexOfPair.end())
-        throw std::runtime_error(std::string("MultiCobordism::blockQubit: the marking edge (") + std::to_string(u) +
-                                 ", " + std::to_string(v) + ") of cycle " + name +
-                                 " is not an edge of the block's live surface");
-      cycle.emplace_back(found->second, iu->second < iv->second ? 1 : -1);
-    }
-    return cycle;
-  };
-  const observables::SimplicialQubit::Cycle cycleA = cycleOf(block.marking->cycles[0], "A");
-  const observables::SimplicialQubit::Cycle cycleB = cycleOf(block.marking->cycles[1], "B");
-  // The orientation the marking fixes, A . B = +1. The
-  // container stores none; the fundamental class picks one of the two, and
-  // the intersection number says whether it is the marking's.
-  observables::SimplicialQubit read(surface, cycleA, cycleB, /*reversed=*/false);
-  if (read.intersectionNumber() < 0.0) return observables::SimplicialQubit(surface, cycleA, cycleB, /*reversed=*/true);
-  return read;
-}
-
 observables::SimplicialQubit MultiCobordism::blockQubit(std::size_t index) const {
   if (index >= inputBlocks_.size()) throw std::out_of_range("MultiCobordism::blockQubit: input block index out of range");
-  return blockQubit(inputBlocks_[index], spacetime_);
+  return inputBlocks_[index].qubit(spacetime_);
 }
 
 double MultiCobordism::ownStateLeakOf(std::complex<double> periodA, std::complex<double> periodB,
@@ -291,7 +134,7 @@ double MultiCobordism::ownStateResidualOn(const BoundaryBlock &block,
   if (!spacetime) return 1.0;
   std::optional<observables::SimplicialQubit> read;
   try {
-    read.emplace(blockQubit(block, spacetime));
+    read.emplace(block.qubit(spacetime));
   } catch (const std::runtime_error &) {
     return 1.0;  // no surface, or a refused read: the state leaks in full
   } catch (const std::invalid_argument &) {
@@ -317,7 +160,7 @@ double MultiCobordism::ownStateResidual(std::size_t index) const {
   return ownStateResidualOn(inputBlocks_[index], spacetime_);
 }
 
-MultiCobordism::ResidualGradient MultiCobordism::ownStateResidualGradientOn(
+multicobordism::ResidualGradient MultiCobordism::ownStateResidualGradientOn(
     const std::shared_ptr<Spacetime> &spacetime, const BoundaryBlock &block) const {
   if (!spacetime) throw std::invalid_argument("MultiCobordism::ownStateResidualGradientOn: null spacetime");
   if (!block.marking)
@@ -328,7 +171,7 @@ MultiCobordism::ResidualGradient MultiCobordism::ownStateResidualGradientOn(
   gradient.phases = Eigen::VectorXcd();  // tau is invariant under the pure gauge the surface carries
   std::optional<observables::SimplicialQubit> read;
   try {
-    read.emplace(blockQubit(block, spacetime));
+    read.emplace(block.qubit(spacetime));
   } catch (const std::runtime_error &) {
     return gradient;  // the full leak has no direction
   } catch (const std::invalid_argument &) {
@@ -378,13 +221,13 @@ MultiCobordism::ResidualGradient MultiCobordism::ownStateResidualGradientOn(
   return gradient;
 }
 
-MultiCobordism::ResidualGradient MultiCobordism::ownStateResidualGradient(std::size_t index) const {
+multicobordism::ResidualGradient MultiCobordism::ownStateResidualGradient(std::size_t index) const {
   if (index >= inputBlocks_.size())
     throw std::out_of_range("MultiCobordism::ownStateResidualGradient: input block index out of range");
   return ownStateResidualGradientOn(spacetime_, inputBlocks_[index]);
 }
 
-MultiCobordism::InputStateRead MultiCobordism::readInputState(std::size_t index) const {
+multicobordism::InputStateRead MultiCobordism::readInputState(std::size_t index) const {
   if (index >= inputBlocks_.size())
     throw std::out_of_range("MultiCobordism::readInputState: input block index out of range");
   const BoundaryBlock &block = inputBlocks_[index];
@@ -402,13 +245,13 @@ MultiCobordism::InputStateRead MultiCobordism::readInputState(std::size_t index)
   read.weight = inputResidualWeight_;
   read.baseVertex = marking.baseVertex;
   read.residual = 1.0;
-  const DerivedFrame derived = deriveFrame(block, spacetime_);
+  const DerivedFrame derived = block.deriveFrame(spacetime_);
   read.frameRank = derived.kernelRank;
   if (!derived.derived()) {
     read.obstruction = derived.obstruction;
     return read;
   }
-  const BoundaryFiber target = stateTargetOf(marking, derived.frame);
+  const BoundaryFiber target = marking.stateTarget(derived.frame);
   try {
     const AssembledPencil assembled = PencilLayer::assemble({spacetime_});
     const std::vector<int> idx = PencilLayer::indicesOf(assembled, 1, target.cells);

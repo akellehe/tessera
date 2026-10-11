@@ -174,7 +174,7 @@ def test_seed_from_surfaces_holds_the_tori():
     for block, q, ids in zip(node.inputs, (qa, qb), (ids_a, ids_b)):
         assert block.surface
         assert sorted(block.vertices) == sorted(ids.values())
-        surface = MC.block_surface(block, st)
+        surface = block.own_surface(st)
         assert sorted(tuple(f) for f in surface.faces) == mapped_faces(q, ids)
         assert sorted(tuple(e) for e in surface.edges) == mapped_edges(q, ids)
     assert len(node.uncovered_input_faces()) == 18 + 32
@@ -307,7 +307,7 @@ def test_collar_seed_is_the_manifold_between_the_tori(n, whitney_default):
     assert node.bridge_phase_complete()
     assert node.uncovered_input_faces() == []
     for block, q, ids in zip(node.inputs, (qa, qb), (ids_a, ids_b)):
-        surface = MC.block_surface(block, st)
+        surface = block.own_surface(st)
         assert sorted(tuple(f) for f in surface.faces) == mapped_faces(q, ids), "no chord face"
         assert sorted(tuple(e) for e in surface.edges) == mapped_edges(q, ids), "no chord edge"
         assert not any(set(cell) <= set(block.vertices) for cell in tops(st))
@@ -326,25 +326,25 @@ def test_collar_seed_is_the_manifold_between_the_tori(n, whitney_default):
     # Betti numbers and the monodromy of the seed: the collar, identity for matched markings
     assert cob.ChainComplex.from_spacetime(st).betti_numbers() == [1, 2, 1, 0]
     marking_a, marking_b = host_marking(qa, ids_a), host_marking(qb, ids_b)
-    read = MC.monodromy(st, marking_a, marking_b)
+    read = cob.PencilLayer.monodromy(st, marking_a, marking_b)
     assert read.obstruction == "", read.obstruction
     assert read.betti == [1, 2, 1, 0] and read.harmonic_rank == 2
     np.testing.assert_allclose(np.asarray(read.monodromy), np.eye(2), atol=1e-9)
     assert read.rounded == [[1, 0], [0, 1]]
     assert read.rounding_residual < 1e-9 and read.fit_residual < 1e-9
     a, b = marking_b
-    swapped = MC.monodromy(st, marking_a, [b, a])
+    swapped = cob.PencilLayer.monodromy(st, marking_a, [b, a])
     assert swapped.rounded == [[0, 1], [1, 0]] and swapped.rounding_residual < 1e-9
-    flipped = MC.monodromy(st, marking_a, [a, [(v, u) for (u, v) in reversed(b)]])
+    flipped = cob.PencilLayer.monodromy(st, marking_a, [a, [(v, u) for (u, v) in reversed(b)]])
     assert flipped.rounded == [[1, 0], [0, -1]] and flipped.rounding_residual < 1e-9
     # the periods are taken with parallel transport (T2-bis), so a cycle must be one closed
     # walk: a single step is refused by name before any operator is built ...
-    absent = MC.monodromy(st, marking_a, [[(0, 2 * n * n - 1)], b])
+    absent = cob.PencilLayer.monodromy(st, marking_a, [[(0, 2 * n * n - 1)], b])
     assert "does not form one closed walk" in absent.obstruction, absent.obstruction
     # ... and a closed walk across a pair that is not an edge of the whole is named as such
     edges = {tuple(int(v) for v in e) for e in cob.ChainComplex.from_spacetime(st).k_simplex_vertices(1)}
     u, v = next((u, v) for u in range(2 * n * n) for v in range(u + 1, 2 * n * n) if (u, v) not in edges)
-    missing = MC.monodromy(st, marking_a, [[(u, v), (v, u)], b])
+    missing = cob.PencilLayer.monodromy(st, marking_a, [[(u, v), (v, u)], b])
     assert "not an edge of the whole" in missing.obstruction, missing.obstruction
     print(f"\n[bridge T1] collar {n}x{n}: cells={len(tops(st))} betti={read.betti} monodromy rounded={read.rounded} "
           f"rounding residual={read.rounding_residual:.1e} fit residual={read.fit_residual:.1e}")
@@ -361,7 +361,7 @@ def test_collar_with_interior_layers(whitney_default):
     assert boundary(st) == sorted(mapped_faces(qa, ids_a) + mapped_faces(qb, ids_b))
     assert node.bridge_phase_complete() and len(tops(st)) == 2 * 54
     assert cob.ChainComplex.from_spacetime(st).betti_numbers() == [1, 2, 1, 0]
-    read = MC.monodromy(st, host_marking(qa, ids_a), host_marking(qb, ids_b))
+    read = cob.PencilLayer.monodromy(st, host_marking(qa, ids_a), host_marking(qb, ids_b))
     assert read.obstruction == "" and read.rounded == [[1, 0], [0, 1]] and read.rounding_residual < 1e-9
 
 
@@ -422,7 +422,7 @@ def test_bridge_on_the_collar(whitney_default):
     node.run_stage1(max_steps=2, n_candidate_moves=6)
     st2 = node.spacetime()
     for block, q, ids in zip(node.inputs, (qa, qb), (ids_a, ids_b)):
-        assert sorted(tuple(e) for e in MC.block_surface(block, st2).edges) == mapped_edges(q, ids)
+        assert sorted(tuple(e) for e in block.own_surface(st2).edges) == mapped_edges(q, ids)
     # ... and a cone-out dent reopens the phase: the dented torus face leaves W
     # and its edges persist; rolling the dent back restores completion. The
     # gate decides which cells may be dented (removing a cell can pinch a
@@ -440,7 +440,7 @@ def test_bridge_on_the_collar(whitney_default):
             refusals.append(reason)
             continue
         assert not node.bridge_phase_complete()
-        assert sorted(tuple(e) for e in MC.block_surface(node.inputs[0], st).edges) == mapped_edges(qa, ids_a)
+        assert sorted(tuple(e) for e in node.inputs[0].own_surface(st).edges) == mapped_edges(qa, ids_a)
         assert sc.rollback()
         assert node.bridge_phase_complete() == complete_before
         break
@@ -458,7 +458,7 @@ def test_ordinary_nodes_are_untouched_and_rebuilds_keep_the_tori(whitney_default
     assert not ordinary.inputs[0].surface
     assert not ordinary.bridge_phase_complete()
     assert ordinary.uncovered_input_faces() == []
-    assert not hasattr(MC.BuildAction, "BRIDGE")
+    assert not hasattr(cob.multicobordism.BuildAction, "BRIDGE")
     with pytest.raises(ValueError, match="not a vertex of the host"):
         ordinary.seed_inputs([[0, 99]])
 
@@ -471,7 +471,7 @@ def test_ordinary_nodes_are_untouched_and_rebuilds_keep_the_tori(whitney_default
     face = mapped_faces(qa, ids_a)[0]
     ok, reason = cob.SurgicalCone(node.spacetime()).bridge(list(face) + [ids_b[0]])
     assert ok, reason
-    faces = [sorted(tuple(f) for f in MC.block_surface(b, node.spacetime()).faces) for b in node.inputs]
+    faces = [sorted(tuple(f) for f in b.own_surface(node.spacetime()).faces) for b in node.inputs]
     assert faces == [mapped_faces(qa, ids_a), mapped_faces(qb, ids_b)]
     uncovered = sorted(tuple(f) for f in node.uncovered_input_faces())
     assert len(uncovered) == 50 - 1
@@ -479,7 +479,7 @@ def test_ordinary_nodes_are_untouched_and_rebuilds_keep_the_tori(whitney_default
     # one is allowed: a node with a declared boundary refuses cone-ins by
     # default (#997), so the old behaviour is asked for by name here.
     node.set_boundary_may_extend(True)
-    thresholds = MC.RefinementIndicators()
+    thresholds = cob.multicobordism.RefinementIndicators()
     thresholds.mesh_quality = 2.0  # a lower bound every mesh crosses: refine now
     node.set_refinement_thresholds(thresholds)
     assert node.refine_geometry(1) == 1
@@ -487,4 +487,4 @@ def test_ordinary_nodes_are_untouched_and_rebuilds_keep_the_tori(whitney_default
     assert len(tops(st)) == 2 and len(vertex_ids(st)) == 26
     assert sorted(tuple(f) for f in node.uncovered_input_faces()) == uncovered
     assert set(uncovered) <= set(registered(st, 3)), "the uncovered torus faces are registered cells of the rebuilt host"
-    assert [sorted(tuple(f) for f in MC.block_surface(b, st).faces) for b in node.inputs] == faces
+    assert [sorted(tuple(f) for f in b.own_surface(st).faces) for b in node.inputs] == faces

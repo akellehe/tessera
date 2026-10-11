@@ -229,8 +229,8 @@ class TestStoredOrientations:
         order. The pencil is defined in the reference orientation; the operator
         reported in the stored basis is D h D with D the per-cell signs, and
         every identity (scaling, gauge) survives the conjugation."""
-        BA = MC.BuildAction
-        HP = MC.HolePlacementStrategy
+        BA = cob.multicobordism.BuildAction
+        HP = cob.multicobordism.HolePlacementStrategy
         node = cob.ProtonSynthesis(seed=0).formation_node(1)
         node.build_step(BA.GROW, max_steps=25, n_candidate_moves=6)
         node.directed_cone_out(HP.ADJACENT_HOLES_LAST)

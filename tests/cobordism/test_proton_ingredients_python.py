@@ -79,7 +79,7 @@ class ProtonIngredientsNodesTest(unittest.TestCase):
         # Step A pins the diquark and antidiquark outputs, so it carries the
         # controlled-synthesis label; step B pins no output and is left in the
         # node's default mode.
-        modes = cob.MultiCobordism.SimulationMode
+        modes = cob.multicobordism.SimulationMode
         ingredients = cob.ProtonIngredients(seed=5)
         self.assertEqual(ingredients.recombination_node(5).simulation_mode,
                          modes.SYNTHESIS)

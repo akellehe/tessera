@@ -160,10 +160,10 @@ void CobordismDAG::setTwoBodyTarget(int node, Eigen::MatrixXcd chi, bool choiDec
     throw std::out_of_range("CobordismDAG::setTwoBodyTarget: node index out of range");
   if (twoBodyTargets_.size() < nodes_.size()) twoBodyTargets_.resize(nodes_.size());
   twoBodyTargets_[static_cast<std::size_t>(node)] =
-      MultiCobordism::TwoBodyTarget{std::move(chi), choiDecomposed};
+      multicobordism::TwoBodyTarget{std::move(chi), choiDecomposed};
 }
 
-const MultiCobordism::TwoBodyRead &CobordismDAG::twoBodyRead(int node) const {
+const multicobordism::TwoBodyRead &CobordismDAG::twoBodyRead(int node) const {
   if (!hasTwoBodyRead(node))
     throw std::logic_error("CobordismDAG::twoBodyRead: the node carries no two-body reading");
   return *twoBodyReads_[static_cast<std::size_t>(node)];

@@ -63,7 +63,7 @@ double MultiCobordism::rU(const std::shared_ptr<Spacetime> &spacetime) const {
     // (and sizes expectedRegisterCount), never a scored prescription.
     if (!singularValueRatio_)
       for (int registerDegree : registerDegrees_)
-        totalResidual += residualOfTargetStateAgainstHarmonicWithDistinctMatching(
+        totalResidual += EigenstateSynthesis::targetStateResidual(
             spacetime, registerDegree, outputTargets_.front(), claimedMatchings);
   } else {
     // Multiple outputs (e.g. a 2->2 recombination → diquark ⊔ antidiquark) live in
@@ -78,7 +78,7 @@ double MultiCobordism::rU(const std::shared_ptr<Spacetime> &spacetime) const {
     if (inputBlocks_.empty() && outputBlocks_.empty())  // bare objective, nothing built yet
       for (int registerDegree : registerDegrees_)
         for (const auto &outputTarget : outputTargets_)
-          totalResidual += residualOfTargetStateAgainstHarmonicWithDistinctMatching(
+          totalResidual += EigenstateSynthesis::targetStateResidual(
               spacetime, registerDegree, outputTarget, claimedMatchings);
   }
   if (singularValueRatio_) {
@@ -158,7 +158,7 @@ double MultiCobordism::nearKernelResidual(
       L(static_cast<Eigen::Index>(i), static_cast<Eigen::Index>(j)) =
           flat[i * n + j];
   // Total over every configuration: a non-finite operator evaluates to
-  // +inf (see bestRelabelingOfTarget) rather than reaching BDCSVD.
+  // +inf (see EigenstateSynthesis::targetStateResidual) rather than reaching BDCSVD.
   if (!L.allFinite()) return std::numeric_limits<double>::infinity();
   // Singular values of the non-normal signed operator: the smooth surrogate for
   // the eigenvalue magnitudes (they share the kernel exactly).
@@ -618,7 +618,7 @@ double MultiCobordism::objectiveOf(const ObjectiveTerms &terms) {
   return CobordismObjective::total(terms);
 }
 
-std::vector<MultiCobordism::ObjectiveContribution>
+std::vector<multicobordism::ObjectiveContribution>
 MultiCobordism::objectiveContributionsFor(
     const std::shared_ptr<Spacetime> &spacetime) const {
   // One contribution per objective, in evaluation order, so a reader can tell
@@ -636,12 +636,12 @@ MultiCobordism::objectiveContributionsFor(
   return contributions;
 }
 
-std::vector<MultiCobordism::ObjectiveContribution>
+std::vector<multicobordism::ObjectiveContribution>
 MultiCobordism::objectiveContributions() const {
   return objectiveContributionsFor(spacetime_);
 }
 
-MultiCobordism::ObjectiveTerms MultiCobordism::objectiveTermsFor(
+ObjectiveTerms MultiCobordism::objectiveTermsFor(
     const std::shared_ptr<Spacetime> &spacetime) const {
   // The engine does not know which functional it is scoring: it assembles the
   // firewalled context and the injected objective decomposes itself.
@@ -663,7 +663,7 @@ MultiCobordism::ObjectiveTerms MultiCobordism::objectiveTermsFor(
   return terms;
 }
 
-MultiCobordism::ObjectiveTerms MultiCobordism::objectiveTerms() const {
+ObjectiveTerms MultiCobordism::objectiveTerms() const {
   return objectiveTermsFor(spacetime_);
 }
 

@@ -14,6 +14,7 @@
 #include "mesh/VertexList.h"
 #include "spacetime/Spacetime.h"
 #include "simulations/ReggeSolver.h"
+#include "cobordism/EigenstateSynthesis.h"
 
 namespace tessera::rl {
 
@@ -50,7 +51,7 @@ CobordismObjectiveEnv::Metrics CobordismObjectiveEnv::computeMetrics() const {
       st->getHoles(config_.registerDegree).size());
   m.rstate = target_.empty()
                  ? std::numeric_limits<double>::quiet_NaN()
-                 : MultiCobordism::residualOfTargetStateAgainstHarmonic(
+                 : cob::EigenstateSynthesis::targetStateResidual(
                        st, config_.registerDegree, target_);
   m.nVertices = static_cast<int>(st->getVertexList()->toVector().size());
   m.nEdges = static_cast<int>(st->getEdgeList()->toVector().size());
@@ -109,14 +110,14 @@ StepResult CobordismObjectiveEnv::step(Move move, std::array<float, kParamDim> p
     if (move == Move::Grow) {
       const int maxSteps = static_cast<int>(std::lround(
           lerp(config_.growSteps.first, config_.growSteps.second, intensity)));
-      node_->buildStep(MultiCobordism::BuildAction::Grow, std::max(1, maxSteps),
+      node_->buildStep(multicobordism::BuildAction::Grow, std::max(1, maxSteps),
                        config_.nCandidateMoves);
       if (config_.directedGrow)  // finish a register the random draws left short
         (void)node_->directedConeOut();
     } else if (move == Move::Evolve) {
       const int maxSteps = static_cast<int>(std::lround(
           lerp(config_.evolveSteps.first, config_.evolveSteps.second, intensity)));
-      node_->buildStep(MultiCobordism::BuildAction::Evolve, std::max(1, maxSteps),
+      node_->buildStep(multicobordism::BuildAction::Evolve, std::max(1, maxSteps),
                        config_.nCandidateMoves);
       if (config_.directedGrow)  // select the register (drop a hole that hurts the carry)
         (void)node_->directedConeIn();
@@ -126,7 +127,7 @@ StepResult CobordismObjectiveEnv::step(Move move, std::array<float, kParamDim> p
       const double beta = lerp(config_.betaRange.first, config_.betaRange.second, knob);
       const double alpha0 =
           lerp(config_.alphaRange.first, config_.alphaRange.second, intensity);
-      node_->buildStep(MultiCobordism::BuildAction::Relax, /*maxSteps=*/30,
+      node_->buildStep(multicobordism::BuildAction::Relax, /*maxSteps=*/30,
                        config_.nCandidateMoves, beta,
                        std::max(1, maxIters), alpha0);
     }

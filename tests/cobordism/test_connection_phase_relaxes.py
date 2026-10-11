@@ -373,8 +373,8 @@ class StageTwoMovesThePhaseTest(unittest.TestCase):
     def _node(self, spacetime, connection_weight):
         node = MC(spacetime, [], [], [1], 1.0, 7)
         node.set_objective(cob.JointStationarityObjective())
-        node.set_simulation_mode(MC.SimulationMode.EMERGENCE,
-                                 MC.EmergenceSubmode.STRICT)
+        node.set_simulation_mode(cob.multicobordism.SimulationMode.EMERGENCE,
+                                 cob.multicobordism.EmergenceSubmode.STRICT)
         node.set_connection_entropy_weight(connection_weight)
         return node
 

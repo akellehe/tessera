@@ -1,4 +1,4 @@
-"""`MultiCobordism.restriction`: one harmonic basis, every marking's periods.
+"""`PencilLayer.restriction`: one harmonic basis, every marking's periods.
 
 `monodromy` reads two markings and fits `P_B = M P_A`; `restriction` reads
 any number of markings and returns the basis `Z` those periods were taken
@@ -42,9 +42,9 @@ def _monodromy_from(periods_a, periods_b):
 
 def test_the_two_reads_agree_on_everything_basis_independent():
     _, inputs, st = _seeded()
-    restricted = MC.restriction(st, inputs.markings)
+    restricted = T.cobordism.PencilLayer.restriction(st, inputs.markings)
     assert restricted.obstruction == "", restricted.obstruction
-    direct = MC.monodromy(st, inputs.markings[0], inputs.markings[1])
+    direct = T.cobordism.PencilLayer.monodromy(st, inputs.markings[0], inputs.markings[1])
     assert direct.obstruction == "", direct.obstruction
     assert list(restricted.betti) == list(direct.betti)
     assert restricted.harmonic_rank == direct.harmonic_rank == 2
@@ -60,7 +60,7 @@ def test_the_periods_are_the_periods_of_the_returned_basis():
     `images` over the ordered marking reproduces `periods`, column by column,
     with the same transport `monodromy` uses."""
     _, inputs, st = _seeded()
-    restricted = MC.restriction(st, inputs.markings)
+    restricted = T.cobordism.PencilLayer.restriction(st, inputs.markings)
     assert restricted.obstruction == "", restricted.obstruction
     images = np.asarray(restricted.images)
     assert images.shape[1] == restricted.harmonic_rank
@@ -93,7 +93,7 @@ def test_the_periods_are_the_periods_of_the_returned_basis():
 def test_a_marking_off_the_whole_is_named():
     _, inputs, st = _seeded()
     bogus = [[(10**9, 10**9 + 1)]]
-    read = MC.restriction(st, inputs.markings + [bogus])
+    read = T.cobordism.PencilLayer.restriction(st, inputs.markings + [bogus])
     assert "is not an edge of the whole" in read.obstruction
     assert len(read.periods) == 0
 
@@ -102,7 +102,7 @@ def test_the_swap_collar_reads_the_swap():
     """The one projectively non-trivial simplicial mapping class of the grid
     torus: `M` is the swap, integer, det -1, from the restriction's periods."""
     _, inputs, st = _seeded("swap")
-    restricted = MC.restriction(st, inputs.markings)
+    restricted = T.cobordism.PencilLayer.restriction(st, inputs.markings)
     assert restricted.obstruction == "", restricted.obstruction
     fitted = _monodromy_from(np.asarray(restricted.periods[0]),
                              np.asarray(restricted.periods[1]))

@@ -78,7 +78,7 @@ def _node(seed=_NODE_SEED, refine=_REFINE, degrees=(1,), metric_source=None):
 
 def _overlay_config(enabled=True, cadence=1, degrees=(1,), resolutions=(1.0,),
                     cold=False, fock=False):
-    cfg = MC.AnalysisConfig()
+    cfg = cob.multicobordism.AnalysisConfig()
     cfg.enabled = enabled
     cfg.cadence = cadence
     cfg.degrees = list(degrees)
@@ -235,14 +235,14 @@ class ObjectiveFirewallStructureTest(unittest.TestCase):
                     (name, word))
 
     def test_refinement_indicator_record_exposes_no_other_field(self):
-        exposed = {a for a in dir(MC.RefinementIndicators)
+        exposed = {a for a in dir(cob.multicobordism.RefinementIndicators)
                    if not a.startswith("_")}
         self.assertEqual(exposed, set(MC.refinement_indicator_names()))
 
     def test_refinement_decision_is_static_over_two_indicator_records(self):
-        indicators = MC.RefinementIndicators()
+        indicators = cob.multicobordism.RefinementIndicators()
         indicators.mesh_quality = 0.1
-        thresholds = MC.RefinementIndicators()
+        thresholds = cob.multicobordism.RefinementIndicators()
         thresholds.mesh_quality = 0.5
         thresholds.regge_stationarity_residual = 0.0
         thresholds.hodge_stationarity_residual = 0.0
@@ -522,7 +522,7 @@ class AdversarialFeedbackTest(unittest.TestCase):
 
     def test_running_the_overlay_never_changes_the_refinement_decision(self):
         node = _node()
-        thresholds = MC.RefinementIndicators()
+        thresholds = cob.multicobordism.RefinementIndicators()
         thresholds.mesh_quality = 0.0
         thresholds.regge_stationarity_residual = 0.0
         thresholds.hodge_stationarity_residual = 0.0
@@ -580,16 +580,16 @@ class EmergenceSubmodeTest(unittest.TestCase):
 
     def test_default_mode_is_strict_emergence(self):
         node = _node()
-        self.assertEqual(node.simulation_mode, MC.SimulationMode.EMERGENCE)
-        self.assertEqual(node.emergence_submode, MC.EmergenceSubmode.STRICT)
+        self.assertEqual(node.simulation_mode, cob.multicobordism.SimulationMode.EMERGENCE)
+        self.assertEqual(node.emergence_submode, cob.multicobordism.EmergenceSubmode.STRICT)
 
     def test_mode_names_are_the_checkpoint_labels(self):
-        self.assertEqual(MC.mode_name(MC.SimulationMode.EMERGENCE), "emergence")
-        self.assertEqual(MC.mode_name(MC.SimulationMode.SYNTHESIS), "synthesis")
-        self.assertEqual(MC.mode_name(MC.SimulationMode.REPLAY), "replay")
-        self.assertEqual(MC.submode_name(MC.EmergenceSubmode.STRICT), "strict")
+        self.assertEqual(MC.mode_name(cob.multicobordism.SimulationMode.EMERGENCE), "emergence")
+        self.assertEqual(MC.mode_name(cob.multicobordism.SimulationMode.SYNTHESIS), "synthesis")
+        self.assertEqual(MC.mode_name(cob.multicobordism.SimulationMode.REPLAY), "replay")
+        self.assertEqual(MC.submode_name(cob.multicobordism.EmergenceSubmode.STRICT), "strict")
         self.assertEqual(
-            MC.submode_name(MC.EmergenceSubmode.CERTIFICATES_BLIND_MEAN_FIELD),
+            MC.submode_name(cob.multicobordism.EmergenceSubmode.CERTIFICATES_BLIND_MEAN_FIELD),
             "certificates_blind_mean_field")
 
     def test_strict_mode_refuses_the_state_energy_coupling(self):
@@ -606,8 +606,8 @@ class EmergenceSubmodeTest(unittest.TestCase):
 
     def test_backreaction_submode_admits_only_the_energy_density(self):
         node = _node()
-        node.set_simulation_mode(MC.SimulationMode.EMERGENCE,
-                                 MC.EmergenceSubmode.CERTIFICATES_BLIND_MEAN_FIELD)
+        node.set_simulation_mode(cob.multicobordism.SimulationMode.EMERGENCE,
+                                 cob.multicobordism.EmergenceSubmode.CERTIFICATES_BLIND_MEAN_FIELD)
         self._carried(node)
         node.set_carried_state_energy_weight(0.25)
         energy = node.carried_state_energy(node.st)
@@ -619,14 +619,14 @@ class EmergenceSubmodeTest(unittest.TestCase):
 
     def test_deselecting_the_coupling_selects_the_strict_submode(self):
         node = _node()
-        node.set_simulation_mode(MC.SimulationMode.EMERGENCE,
-                                 MC.EmergenceSubmode.CERTIFICATES_BLIND_MEAN_FIELD)
+        node.set_simulation_mode(cob.multicobordism.SimulationMode.EMERGENCE,
+                                 cob.multicobordism.EmergenceSubmode.CERTIFICATES_BLIND_MEAN_FIELD)
         self._carried(node)
         node.set_carried_state_energy_weight(0.25)
         backreaction_objective = node.objective()
-        node.set_simulation_mode(MC.SimulationMode.EMERGENCE,
-                                 MC.EmergenceSubmode.STRICT)
-        self.assertEqual(node.emergence_submode, MC.EmergenceSubmode.STRICT)
+        node.set_simulation_mode(cob.multicobordism.SimulationMode.EMERGENCE,
+                                 cob.multicobordism.EmergenceSubmode.STRICT)
+        self.assertEqual(node.emergence_submode, cob.multicobordism.EmergenceSubmode.STRICT)
         self.assertEqual(node.carried_state_energy_weight, 0.0)
         self.assertNotEqual(backreaction_objective, node.objective())
         self.assertEqual(node.objective_terms().carried_state_energy, 0.0)
@@ -640,8 +640,8 @@ class EmergenceSubmodeTest(unittest.TestCase):
         self._carried(strict)
         backreaction = _node()
         backreaction.set_simulation_mode(
-            MC.SimulationMode.EMERGENCE,
-            MC.EmergenceSubmode.CERTIFICATES_BLIND_MEAN_FIELD)
+            cob.multicobordism.SimulationMode.EMERGENCE,
+            cob.multicobordism.EmergenceSubmode.CERTIFICATES_BLIND_MEAN_FIELD)
         self._carried(backreaction)
         backreaction.set_carried_state_energy_weight(5.0)
         self.assertNotEqual(strict.objective(), backreaction.objective())
@@ -659,8 +659,8 @@ class EmergenceSubmodeTest(unittest.TestCase):
                        _overlay_config(degrees=(1, 2))):
             node = _node()
             node.set_simulation_mode(
-                MC.SimulationMode.EMERGENCE,
-                MC.EmergenceSubmode.CERTIFICATES_BLIND_MEAN_FIELD)
+                cob.multicobordism.SimulationMode.EMERGENCE,
+                cob.multicobordism.EmergenceSubmode.CERTIFICATES_BLIND_MEAN_FIELD)
             self._carried(node)
             node.set_carried_state_energy_weight(2.0)
             if config is not None:
@@ -672,8 +672,8 @@ class EmergenceSubmodeTest(unittest.TestCase):
     def test_carried_state_energy_is_the_exact_wick_trace(self):
         """E = Re tr(Gamma h): recompute it independently from the bindings."""
         node = _node()
-        node.set_simulation_mode(MC.SimulationMode.EMERGENCE,
-                                 MC.EmergenceSubmode.CERTIFICATES_BLIND_MEAN_FIELD)
+        node.set_simulation_mode(cob.multicobordism.SimulationMode.EMERGENCE,
+                                 cob.multicobordism.EmergenceSubmode.CERTIFICATES_BLIND_MEAN_FIELD)
         cells = self._carried(node, modes=5)
         node.set_carried_state_energy_weight(1.0)
         laplacian = cob.HodgeLaplacian(node.st).laplacian(1, True)
@@ -696,8 +696,8 @@ class EmergenceSubmodeTest(unittest.TestCase):
         """The analytic dE/dz against a central difference (a VALIDATION of
         the closed form, not a fallback for it)."""
         node = _node()
-        node.set_simulation_mode(MC.SimulationMode.EMERGENCE,
-                                 MC.EmergenceSubmode.CERTIFICATES_BLIND_MEAN_FIELD)
+        node.set_simulation_mode(cob.multicobordism.SimulationMode.EMERGENCE,
+                                 cob.multicobordism.EmergenceSubmode.CERTIFICATES_BLIND_MEAN_FIELD)
         self._carried(node, modes=5)
         node.set_carried_state_energy_weight(1.0)
         analytic = node.carried_state_energy_gradient(node.st)
@@ -721,10 +721,10 @@ class EmergenceSubmodeTest(unittest.TestCase):
                                      "central difference by %g" % worst)
 
     def test_both_submodes_report_the_gaussianity_certificate(self):
-        for submode in (MC.EmergenceSubmode.STRICT,
-                        MC.EmergenceSubmode.CERTIFICATES_BLIND_MEAN_FIELD):
+        for submode in (cob.multicobordism.EmergenceSubmode.STRICT,
+                        cob.multicobordism.EmergenceSubmode.CERTIFICATES_BLIND_MEAN_FIELD):
             node = _node()
-            node.set_simulation_mode(MC.SimulationMode.EMERGENCE, submode)
+            node.set_simulation_mode(cob.multicobordism.SimulationMode.EMERGENCE, submode)
             self._carried(node)
             self.assertLess(node.carried_state_purity_defect(), 1e-12)
             self.assertTrue(node.carried_state_purity_holds())
@@ -746,8 +746,8 @@ class EmergenceSubmodeTest(unittest.TestCase):
 
     def test_clearing_the_carried_state_zeroes_the_term(self):
         node = _node()
-        node.set_simulation_mode(MC.SimulationMode.EMERGENCE,
-                                 MC.EmergenceSubmode.CERTIFICATES_BLIND_MEAN_FIELD)
+        node.set_simulation_mode(cob.multicobordism.SimulationMode.EMERGENCE,
+                                 cob.multicobordism.EmergenceSubmode.CERTIFICATES_BLIND_MEAN_FIELD)
         self._carried(node)
         node.set_carried_state_energy_weight(1.0)
         self.assertNotEqual(node.objective_terms().carried_state_energy, 0.0)
@@ -757,7 +757,7 @@ class EmergenceSubmodeTest(unittest.TestCase):
 
     def test_synthesis_mode_carries_no_state_energy_coupling(self):
         node = _node()
-        node.set_simulation_mode(MC.SimulationMode.SYNTHESIS)
+        node.set_simulation_mode(cob.multicobordism.SimulationMode.SYNTHESIS)
         self._carried(node)
         with self.assertRaises(ValueError):
             node.set_carried_state_energy_weight(1.0)
@@ -770,8 +770,8 @@ class EmergenceSubmodeTest(unittest.TestCase):
 
     def test_the_mean_field_loop_stays_inside_the_gaussian_manifold(self):
         node = _node()
-        node.set_simulation_mode(MC.SimulationMode.EMERGENCE,
-                                 MC.EmergenceSubmode.CERTIFICATES_BLIND_MEAN_FIELD)
+        node.set_simulation_mode(cob.multicobordism.SimulationMode.EMERGENCE,
+                                 cob.multicobordism.EmergenceSubmode.CERTIFICATES_BLIND_MEAN_FIELD)
         self._carried(node, modes=5)
         node.set_carried_state_energy_weight(1.0)
         node.set_mean_field_schedule(0.05, 8)
@@ -781,8 +781,8 @@ class EmergenceSubmodeTest(unittest.TestCase):
 
     def test_the_mean_field_schedule_is_checkpointed(self):
         node = _node()
-        node.set_simulation_mode(MC.SimulationMode.EMERGENCE,
-                                 MC.EmergenceSubmode.CERTIFICATES_BLIND_MEAN_FIELD)
+        node.set_simulation_mode(cob.multicobordism.SimulationMode.EMERGENCE,
+                                 cob.multicobordism.EmergenceSubmode.CERTIFICATES_BLIND_MEAN_FIELD)
         self._carried(node)
         node.set_carried_state_energy_weight(0.75)
         node.set_mean_field_schedule(0.02, 4)
@@ -795,11 +795,11 @@ class EmergenceSubmodeTest(unittest.TestCase):
 
     def test_the_submode_is_recorded_in_provenance(self):
         for submode, label in (
-                (MC.EmergenceSubmode.STRICT, "strict"),
-                (MC.EmergenceSubmode.CERTIFICATES_BLIND_MEAN_FIELD,
+                (cob.multicobordism.EmergenceSubmode.STRICT, "strict"),
+                (cob.multicobordism.EmergenceSubmode.CERTIFICATES_BLIND_MEAN_FIELD,
                  "certificates_blind_mean_field")):
             node = _node()
-            node.set_simulation_mode(MC.SimulationMode.EMERGENCE, submode)
+            node.set_simulation_mode(cob.multicobordism.SimulationMode.EMERGENCE, submode)
             node.set_analysis_config(_overlay_config())
             node.run_recursive_analysis()
             doc = json.loads(node.checkpoint_json)
@@ -808,7 +808,7 @@ class EmergenceSubmodeTest(unittest.TestCase):
 
     def test_synthesis_mode_is_stamped_and_never_reads_as_emergence(self):
         node = _node()
-        node.set_simulation_mode(MC.SimulationMode.SYNTHESIS)
+        node.set_simulation_mode(cob.multicobordism.SimulationMode.SYNTHESIS)
         node.set_analysis_config(_overlay_config())
         node.run_recursive_analysis()
         self.assertEqual(json.loads(node.checkpoint_json)["mode"], "synthesis")
@@ -819,8 +819,8 @@ class EmergenceSubmodeTest(unittest.TestCase):
     def test_a_certificate_never_reaches_the_backreaction_term(self):
         """The state energy depends on Gamma and the geometry ONLY."""
         node = _node()
-        node.set_simulation_mode(MC.SimulationMode.EMERGENCE,
-                                 MC.EmergenceSubmode.CERTIFICATES_BLIND_MEAN_FIELD)
+        node.set_simulation_mode(cob.multicobordism.SimulationMode.EMERGENCE,
+                                 cob.multicobordism.EmergenceSubmode.CERTIFICATES_BLIND_MEAN_FIELD)
         self._carried(node)
         node.set_carried_state_energy_weight(1.0)
         before = node.carried_state_energy(node.st)
@@ -876,7 +876,7 @@ class RefinementIndependenceTest(unittest.TestCase):
     def test_refinement_fires_only_when_a_base_indicator_crosses(self):
         node = _node()
         indicators = node.refinement_indicators()
-        thresholds = MC.RefinementIndicators()
+        thresholds = cob.multicobordism.RefinementIndicators()
         thresholds.mesh_quality = 0.0
         thresholds.regge_stationarity_residual = 0.0
         thresholds.hodge_stationarity_residual = 0.0
@@ -899,7 +899,7 @@ class RefinementIndependenceTest(unittest.TestCase):
 
     def test_refine_geometry_uses_the_existing_gated_surgery(self):
         node = _node()
-        thresholds = MC.RefinementIndicators()
+        thresholds = cob.multicobordism.RefinementIndicators()
         thresholds.mesh_quality = 0.0
         thresholds.regge_stationarity_residual = 0.0
         thresholds.hodge_stationarity_residual = 0.0
@@ -918,7 +918,7 @@ class RefinementIndependenceTest(unittest.TestCase):
     def test_a_committed_refinement_cell_counts_as_an_accepted_move(self):
         node = _node()
         node.set_analysis_config(_overlay_config())
-        thresholds = MC.RefinementIndicators()
+        thresholds = cob.multicobordism.RefinementIndicators()
         thresholds.mesh_quality = 0.0
         thresholds.regge_stationarity_residual = 0.0
         thresholds.hodge_stationarity_residual = 0.0
@@ -942,8 +942,8 @@ class RefinementIndependenceTest(unittest.TestCase):
     def test_refinement_thresholds_take_no_analysis_argument(self):
         """`refinement_decision_of` accepts exactly two indicator records."""
         with self.assertRaises(TypeError):
-            MC.refinement_decision_of(MC.RefinementIndicators(),
-                                      MC.RefinementIndicators(),
+            MC.refinement_decision_of(cob.multicobordism.RefinementIndicators(),
+                                      cob.multicobordism.RefinementIndicators(),
                                       "a certificate")
 
 

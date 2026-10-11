@@ -39,7 +39,7 @@ std::vector<std::size_t> canonicalEdgeIndices(const Spacetime &spacetime, const 
 
 }  // namespace
 
-MultiCobordism::ResidualGradient MultiCobordism::fiberResidualGradientOn(
+multicobordism::ResidualGradient MultiCobordism::fiberResidualGradientOn(
     const std::shared_ptr<Spacetime> &spacetime, const BoundaryFiber &target, FiberBand band) const {
   if (metricSource_ != HodgeLaplacian::MetricSource::WhitneyPencil)
     throw std::logic_error("MultiCobordism::fiberResidualGradientOn: read on the chain-level Whitney pencil");
@@ -50,7 +50,7 @@ MultiCobordism::ResidualGradient MultiCobordism::fiberResidualGradientOn(
   if (target.degree == 0) gradient.phases = Eigen::VectorXcd::Zero(static_cast<Eigen::Index>(edges.size()));
   const AssembledPencil assembled = PencilLayer::assemble({spacetime});
   const std::vector<int> idx = PencilLayer::indicesOf(assembled, target.degree, target.cells);
-  const chainhodge::Contour contour = fiberContourOn(assembled, target, band);
+  const chainhodge::Contour contour = PencilLayer::fiberContour(assembled, target, band);
   const chainhodge::Band riesz = assembled.op->band(target.degree, contour);
   if (riesz.rank() == 0) return gradient;  // full leak everywhere: no descent direction
   // The least-squares fit on the cells: u = psi - Z_T c, r = |u|^2 / |psi|^2.
@@ -104,7 +104,7 @@ MultiCobordism::ResidualGradient MultiCobordism::fiberResidualGradientOn(
   return gradient;
 }
 
-std::vector<MultiCobordism::ResidualGradient> MultiCobordism::inputStateResidualGradientsOn(
+std::vector<multicobordism::ResidualGradient> MultiCobordism::inputStateResidualGradientsOn(
     const std::shared_ptr<Spacetime> &spacetime, const std::vector<const BoundaryBlock *> &blocks) const {
   if (metricSource_ != HodgeLaplacian::MetricSource::WhitneyPencil)
     throw std::logic_error("MultiCobordism::inputStateResidualGradientsOn: read on the chain-level Whitney pencil");
@@ -144,10 +144,10 @@ std::vector<MultiCobordism::ResidualGradient> MultiCobordism::inputStateResidual
   for (std::size_t b = 0; b < blocks.size(); ++b) {
     const BoundaryBlock &block = *blocks[b];
     const BlockMarking &marking = *block.marking;
-    const DerivedFrame derived = deriveFrame(block, spacetime);
+    const DerivedFrame derived = block.deriveFrame(spacetime);
     if (!derived.derived()) continue;  // the full leak has no direction
     BlockTerms &term = terms[b];
-    const BoundaryFiber target = stateTargetOf(marking, derived.frame);
+    const BoundaryFiber target = marking.stateTarget(derived.frame);
     term.idx = PencilLayer::indicesOf(assembled, 1, target.cells);
     Eigen::MatrixXcd ZT(static_cast<Eigen::Index>(term.idx.size()), riesz.rank());
     for (std::size_t i = 0; i < term.idx.size(); ++i)
@@ -161,7 +161,7 @@ std::vector<MultiCobordism::ResidualGradient> MultiCobordism::inputStateResidual
     // column per own edge (the frame's rows, the target's rows), mapped to the
     // parent's edges by vertex pair (a surface's edges are host edges); zero
     // on every bulk edge.
-    const auto own = blockComplexWithGeometry(block, spacetime);
+    const auto own = block.fiberComplex(spacetime);
     const AssembledPencil ownAssembled = PencilLayer::assemble({own});
     const chainhodge::Contour ownContour = PencilLayer::harmonicContour(ownAssembled, 1);
     const chainhodge::Band ownBand = ownAssembled.op->band(1, ownContour);
@@ -242,12 +242,12 @@ std::vector<MultiCobordism::ResidualGradient> MultiCobordism::inputStateResidual
   return gradients;
 }
 
-MultiCobordism::ResidualGradient MultiCobordism::inputStateResidualGradientOn(
+multicobordism::ResidualGradient MultiCobordism::inputStateResidualGradientOn(
     const std::shared_ptr<Spacetime> &spacetime, const BoundaryBlock &block) const {
   return inputStateResidualGradientsOn(spacetime, {&block}).front();
 }
 
-MultiCobordism::ResidualGradient MultiCobordism::wholeHarmonicResidualGradientOn(
+multicobordism::ResidualGradient MultiCobordism::wholeHarmonicResidualGradientOn(
     const std::shared_ptr<Spacetime> &spacetime, const TwoBodyTarget &target) const {
   const auto edges = spacetime ? spacetime->getEdgeList()->toVector()
                                : std::vector<::tessera::mesh::Edge *>{};
@@ -403,7 +403,7 @@ MultiCobordism::ResidualGradient MultiCobordism::wholeHarmonicResidualGradientOn
   return gradient;
 }
 
-MultiCobordism::ResidualGradient MultiCobordism::twoBodyResidualGradientOn(
+multicobordism::ResidualGradient MultiCobordism::twoBodyResidualGradientOn(
     const std::shared_ptr<Spacetime> &spacetime, const TwoBodyTarget &target) const {
   const auto [blockA, blockB] = attachedInputBlocks();
   const BoundaryFiber *A = &*blockA->fiber, *B = &*blockB->fiber;
@@ -517,7 +517,7 @@ MultiCobordism::ResidualGradient MultiCobordism::twoBodyResidualGradientOn(
   return gradient;
 }
 
-MultiCobordism::ResidualGradient
+multicobordism::ResidualGradient
 MultiCobordism::selectedTwoBodyResidualGradientOn(
     const std::shared_ptr<Spacetime> &spacetime,
     const TwoBodyTarget &target) const {
@@ -591,7 +591,7 @@ bool MultiCobordism::readoutsHaveAnalyticGradient() const noexcept {
   return attached == 2;
 }
 
-MultiCobordism::ResidualGradient MultiCobordism::fiberModeAscent() const {
+multicobordism::ResidualGradient MultiCobordism::fiberModeAscent() const {
   if ((twoBodyTarget_ || !twoBodyCases_.empty()) &&
       !readoutsHaveAnalyticGradient())
     throw std::logic_error(
@@ -644,7 +644,7 @@ MultiCobordism::ResidualGradient MultiCobordism::fiberModeAscent() const {
   for (const auto &block : inputBlocks_) {
     if (block.marking) continue;
     if (!block.fiber || block.fiber->images.cols() == 0) continue;
-    auto sub = blockComplexWithGeometry(block, spacetime_);
+    auto sub = block.fiberComplex(spacetime_);
     if (!sub) continue;
     try {
       accumulate(fiberResidualGradientOn(sub, *block.fiber, fiberBandFor(block)), *sub, inputResidualWeight_);

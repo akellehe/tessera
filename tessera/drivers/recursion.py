@@ -1058,8 +1058,8 @@ def pachner_stage(cells, z, links, config):
               False)
     node.set_objective(cob.JointStationarityObjective())
     node.set_hodge_degrees(list(PACHNER_HODGE_DEGREES))
-    node.set_simulation_mode(MC.SimulationMode.EMERGENCE,
-                             MC.EmergenceSubmode.STRICT)
+    node.set_simulation_mode(cob.multicobordism.SimulationMode.EMERGENCE,
+                             cob.multicobordism.EmergenceSubmode.STRICT)
     node.should_propose_surgery = False
     record["objective_before"] = float(node.objective())
     record["trace"] = [float(value) for value in node.run_stage1(

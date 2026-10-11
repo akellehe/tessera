@@ -217,6 +217,22 @@ internal interface as well, edit the Doxyfile and comment out its exclusions.
 ```
 ```{doxygenfile} SurfaceSeed.h
 ```
+```{doxygenfile} Blocks.h
+```
+```{doxygenfile} Gradients.h
+```
+```{doxygenfile} InputState.h
+```
+```{doxygenfile} Modes.h
+```
+```{doxygenfile} Moves.h
+```
+```{doxygenfile} Objective.h
+```
+```{doxygenfile} Stages.h
+```
+```{doxygenfile} TwoBody.h
+```
 ```{doxygenfile} CobordismDAG.h
 ```
 ```{doxygenfile} ProtonSynthesis.h

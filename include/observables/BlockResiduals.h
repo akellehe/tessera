@@ -22,7 +22,7 @@ namespace tessera::observables {
 /// `ProtonIngredients::outputBlockResidual` scores it: the ambient top cells all
 /// of whose vertices lie in the region form the block's sub-complex, carrying a
 /// uniform metric, and are scored with
-/// `MultiCobordism::residualOfTargetStateAgainstHarmonic`. An empty region
+/// `EigenstateSynthesis::targetStateResidual`. An empty region
 /// reports the full leak \f$ \|\mathrm{target}\|^2 \f$.
 ///
 /// Blocks are supplied to the constructor from recorded build history, never

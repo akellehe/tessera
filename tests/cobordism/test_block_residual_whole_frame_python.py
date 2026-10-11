@@ -14,7 +14,7 @@ common base point -- the first vertex of A's walk on B's, the
 ``SimplicialQubit.base_vertex`` rule). The engine DERIVES the block's frame at
 every read (``derive_input_frame``): the zero mode of the block's own
 covariant Whitney pencil on its live surface (lengths and phases,
-``block_surface_subcomplex``), normalized to transported periods (1, 0) and
+``BoundaryBlock.own_surface_complex``), normalized to transported periods (1, 0) and
 (0, 1) over the cycles from the base point (``Connection.transported_period``),
 with dual images from the DUAL kernel (the same zero mode under the inverse
 links) so that ``F^vee.T @ M_1^U @ F == I`` on the block's own pencil -- T3's
@@ -199,7 +199,7 @@ def frame_through_ids(q, ids, cells):
 
 
 def own_mass_matrix(node, index, cells):
-    own = MC.block_surface_subcomplex(node.inputs[index], node.spacetime())
+    own = node.inputs[index].own_surface_complex(node.spacetime())
     assembled = cob.PencilLayer.assemble([own])
     idx = cob.PencilLayer.indices_of(assembled, 1, [list(c) for c in cells])
     return np.asarray(cob.PencilLayer.pencil(assembled, 1).B)[np.ix_(idx, idx)]
@@ -332,7 +332,7 @@ def test_derived_frame_equals_the_period_frame_on_the_seed(n, whitney_default):
         print(f"\n[T2-bis] {n}x{n} block {index}: frame vs period_frame {agreement:.2e}, dual contract {contract:.2e}, "
               f"dual vs T3 {np.abs(Fd - t3).max():.2e}, base vertex {marking.base_vertex}")
     # the static form on the block reads the same frame
-    static = MC.derive_frame(node.inputs[0], node.spacetime())
+    static = node.inputs[0].derive_frame(node.spacetime())
     assert np.array_equal(np.asarray(static.frame.images), np.asarray(node.derive_input_frame(0).frame.images))
 
 
@@ -532,8 +532,8 @@ def test_frames_coefficients_residuals_and_transfer_are_gauge_invariant(whitney_
     assert gauged.read_two_body().reversal_residual < 1e-8
     # the monodromy read with transported periods: invariant up to the same factor
     markings = [host_marking(q, ids[i]) for i, q in enumerate(tori)]
-    m_plain = MC.monodromy(plain.spacetime(), markings[0], markings[1])
-    m_gauged = MC.monodromy(gauged.spacetime(), markings[0], markings[1])
+    m_plain = cob.PencilLayer.monodromy(plain.spacetime(), markings[0], markings[1])
+    m_gauged = cob.PencilLayer.monodromy(gauged.spacetime(), markings[0], markings[1])
     assert m_plain.obstruction == "" and m_gauged.obstruction == ""
     assert m_plain.rounded == [[1, 0], [0, 1]] and m_plain.rounding_residual < 1e-9
     M_gauged = np.asarray(m_gauged.monodromy) * np.exp(1j * (g[plain.input_marking(1).base_vertex] - g[plain.input_marking(0).base_vertex]))
@@ -745,7 +745,7 @@ def pristine_dump():
     }
     qa, qb, seed, node = collar(3)
     markings = [host_marking(q, seed.vertex_ids[i]) for i, q in enumerate((qa, qb))]
-    m = MC.monodromy(node.spacetime(), markings[0], markings[1])
+    m = cob.PencilLayer.monodromy(node.spacetime(), markings[0], markings[1])
     monodromy = {
         "periods_a": vector_hex(m.periods_a), "periods_b": vector_hex(m.periods_b),
         "monodromy": vector_hex(m.monodromy), "rounded": [[int(x) for x in row] for row in m.rounded],

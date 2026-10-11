@@ -163,7 +163,7 @@ def surface_cycles(marking, surface):
 def qubit_read(node, index, st, marking):
     """The qubit read of block ``index``'s live surface: its own faces with the
     host's live lengths and phases (spec S6)."""
-    own = MC.block_surface_subcomplex(node.inputs[index], st)
+    own = node.inputs[index].own_surface_complex(st)
     cycles = surface_cycles(marking, own)
     return quiet(lambda: obs.SimplicialQubit(own, cycles[0], cycles[1]))
 
@@ -172,7 +172,7 @@ def leak_without_phases(node, index, st):
     """What the block's residual would be if the rebuild dropped the phases:
     the block's fiber (the TWISTED zero mode) read on its own surface with
     every phase zeroed."""
-    own = MC.block_surface_subcomplex(node.inputs[index], st)
+    own = node.inputs[index].own_surface_complex(st)
     for e in own.get_edge_list().to_vector():
         e.set_phase(0j)
     fiber = node.inputs[index].fiber
@@ -342,7 +342,7 @@ def test_committed_cone_in_keeps_every_surviving_edge_bit_exactly(whitney_defaul
     # one is allowed: a node with a declared boundary refuses cone-ins by
     # default (#997), so the old behaviour is asked for by name here.
     node.set_boundary_may_extend(True)
-    thresholds = MC.RefinementIndicators()
+    thresholds = cob.multicobordism.RefinementIndicators()
     thresholds.mesh_quality = 2.0  # a lower bound every mesh crosses: refine now
     node.set_refinement_thresholds(thresholds)
     assert node.refine_geometry(1) == 1
@@ -481,7 +481,7 @@ def ordinary_node_dump():
     # one is allowed: a node with a declared boundary refuses cone-ins by
     # default (#997), so the old behaviour is asked for by name here.
     node.set_boundary_may_extend(True)
-    thresholds = MC.RefinementIndicators()
+    thresholds = cob.multicobordism.RefinementIndicators()
     thresholds.mesh_quality = 2.0
     node.set_refinement_thresholds(thresholds)
     committed = node.refine_geometry(1)
