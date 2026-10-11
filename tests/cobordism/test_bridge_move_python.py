@@ -326,25 +326,25 @@ def test_collar_seed_is_the_manifold_between_the_tori(n, whitney_default):
     # Betti numbers and the monodromy of the seed: the collar, identity for matched markings
     assert cob.ChainComplex.from_spacetime(st).betti_numbers() == [1, 2, 1, 0]
     marking_a, marking_b = host_marking(qa, ids_a), host_marking(qb, ids_b)
-    read = MC.monodromy(st, marking_a, marking_b)
+    read = cob.PencilLayer.monodromy(st, marking_a, marking_b)
     assert read.obstruction == "", read.obstruction
     assert read.betti == [1, 2, 1, 0] and read.harmonic_rank == 2
     np.testing.assert_allclose(np.asarray(read.monodromy), np.eye(2), atol=1e-9)
     assert read.rounded == [[1, 0], [0, 1]]
     assert read.rounding_residual < 1e-9 and read.fit_residual < 1e-9
     a, b = marking_b
-    swapped = MC.monodromy(st, marking_a, [b, a])
+    swapped = cob.PencilLayer.monodromy(st, marking_a, [b, a])
     assert swapped.rounded == [[0, 1], [1, 0]] and swapped.rounding_residual < 1e-9
-    flipped = MC.monodromy(st, marking_a, [a, [(v, u) for (u, v) in reversed(b)]])
+    flipped = cob.PencilLayer.monodromy(st, marking_a, [a, [(v, u) for (u, v) in reversed(b)]])
     assert flipped.rounded == [[1, 0], [0, -1]] and flipped.rounding_residual < 1e-9
     # the periods are taken with parallel transport (T2-bis), so a cycle must be one closed
     # walk: a single step is refused by name before any operator is built ...
-    absent = MC.monodromy(st, marking_a, [[(0, 2 * n * n - 1)], b])
+    absent = cob.PencilLayer.monodromy(st, marking_a, [[(0, 2 * n * n - 1)], b])
     assert "does not form one closed walk" in absent.obstruction, absent.obstruction
     # ... and a closed walk across a pair that is not an edge of the whole is named as such
     edges = {tuple(int(v) for v in e) for e in cob.ChainComplex.from_spacetime(st).k_simplex_vertices(1)}
     u, v = next((u, v) for u in range(2 * n * n) for v in range(u + 1, 2 * n * n) if (u, v) not in edges)
-    missing = MC.monodromy(st, marking_a, [[(u, v), (v, u)], b])
+    missing = cob.PencilLayer.monodromy(st, marking_a, [[(u, v), (v, u)], b])
     assert "not an edge of the whole" in missing.obstruction, missing.obstruction
     print(f"\n[bridge T1] collar {n}x{n}: cells={len(tops(st))} betti={read.betti} monodromy rounded={read.rounded} "
           f"rounding residual={read.rounding_residual:.1e} fit residual={read.fit_residual:.1e}")
@@ -361,7 +361,7 @@ def test_collar_with_interior_layers(whitney_default):
     assert boundary(st) == sorted(mapped_faces(qa, ids_a) + mapped_faces(qb, ids_b))
     assert node.bridge_phase_complete() and len(tops(st)) == 2 * 54
     assert cob.ChainComplex.from_spacetime(st).betti_numbers() == [1, 2, 1, 0]
-    read = MC.monodromy(st, host_marking(qa, ids_a), host_marking(qb, ids_b))
+    read = cob.PencilLayer.monodromy(st, host_marking(qa, ids_a), host_marking(qb, ids_b))
     assert read.obstruction == "" and read.rounded == [[1, 0], [0, 1]] and read.rounding_residual < 1e-9
 
 

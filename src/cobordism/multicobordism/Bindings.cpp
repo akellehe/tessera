@@ -235,38 +235,6 @@ void register_cobordism_multicobordism(py::module_ &m) {
       "edges inside its vertex set, as sorted vertex-id tuples.")
       .def_readonly("faces", &MultiCobordism::BlockSurface::faces)
       .def_readonly("edges", &MultiCobordism::BlockSurface::edges);
-  py::class_<MultiCobordism::MonodromyRead>(m, "MonodromyRead",
-      "The monodromy of a drawn cobordism between two marked surfaces: the "
-      "whole's degree-1 ZERO MODE (the harmonic contour of the Whitney pencil, bulk and "
-      "boundary edges in one operator) read on both markings' edges, its periods "
-      "periods_a (|A| x rank) and periods_b, and the matrix M with P_B = M P_A "
-      "(M = P_B P_A^-1 for a rank-2 zero mode, least squares otherwise), with its integer "
-      "rounding and rounding residual; Betti numbers of the whole come with it. A read that "
-      "cannot be made names its `obstruction` instead of guessing.")
-      .def_readonly("betti", &MultiCobordism::MonodromyRead::betti)
-      .def_readonly("harmonic_rank", &MultiCobordism::MonodromyRead::harmonicRank)
-      .def_readonly("periods_a", &MultiCobordism::MonodromyRead::periodsA)
-      .def_readonly("periods_b", &MultiCobordism::MonodromyRead::periodsB)
-      .def_readonly("monodromy", &MultiCobordism::MonodromyRead::monodromy)
-      .def_readonly("rounded", &MultiCobordism::MonodromyRead::rounded)
-      .def_readonly("rounding_residual", &MultiCobordism::MonodromyRead::roundingResidual)
-      .def_readonly("fit_residual", &MultiCobordism::MonodromyRead::fitResidual)
-      .def_readonly("obstruction", &MultiCobordism::MonodromyRead::obstruction);
-  py::class_<MultiCobordism::RestrictionRead>(m, "RestrictionRead",
-      "The whole's degree-1 zero mode read on every marking at once: ONE harmonic basis "
-      "`images` (n_1 x rank, in the assembled pencil's degree-1 cell order) and its periods "
-      "over each marking (`periods[i]`, |marking_i| x rank) from that same basis. `monodromy` "
-      "is the two-marking case with the fit added. Betti numbers of the whole come with it; "
-      "a read that cannot be made names its `obstruction` instead of guessing.")
-      .def_readonly("betti", &MultiCobordism::RestrictionRead::betti)
-      .def_readonly("harmonic_rank", &MultiCobordism::RestrictionRead::harmonicRank)
-      .def_readonly("images", &MultiCobordism::RestrictionRead::images)
-      .def_readonly("periods", &MultiCobordism::RestrictionRead::periods)
-      .def_readonly("frame", &MultiCobordism::RestrictionRead::frame,
-                    "The band's frame on chains, n_1 x rank; `images` = G_1^U frame.")
-      .def_readonly("certificate", &MultiCobordism::RestrictionRead::certificate,
-                    "The band's BandCertificate: node count, idempotency, rank, gap, resolvent bound.")
-      .def_readonly("obstruction", &MultiCobordism::RestrictionRead::obstruction);
   py::class_<MultiCobordism::TwoBodyRead>(m, "TwoBodyRead",
       "The reading of the bulk between two attached input frames: the frame transfer "
       "T_AB (operator reading), vec(T_AB) (Choi-decomposed state reading), its Schmidt spectrum "
@@ -832,16 +800,6 @@ void register_cobordism_multicobordism(py::module_ &m) {
            "edge with the host's current length and phase. Its Laplacian is the block's own Laplacian: "
            "the block's fiber residual is read in its zero mode and the residual's gradient is taken on "
            "it (mapped back to the host's edges by vertex pair). None when the block has no face.")
-      .def_static("monodromy", &MultiCobordism::monodromy, py::arg("spacetime"), py::arg("marking_a"),
-           py::arg("marking_b"), py::call_guard<py::gil_scoped_release>(),
-           "The MonodromyRead of `spacetime` between two markings given in host vertex ids as "
-           "cycles of directed steps (u, v): a step contributes +h(u,v) when u < v and -h(u,v) "
-           "otherwise. Read-only; the Whitney pencil's harmonic contour is the zero mode.")
-      .def_static("restriction", &MultiCobordism::restriction, py::arg("spacetime"), py::arg("markings"),
-           py::call_guard<py::gil_scoped_release>(),
-           "The RestrictionRead of `spacetime` over a list of markings, each given in host vertex "
-           "ids as cycles of directed steps (u, v) with the same step convention as `monodromy`: "
-           "one harmonic basis and every marking's periods from it. Read-only.")
       .def("set_input_fiber", &MultiCobordism::setInputFiber, py::arg("index"), py::arg("fiber"),
            "Attach the fiber form of an input block's target.")
       .def("set_output_fiber", &MultiCobordism::setOutputFiber, py::arg("index"), py::arg("fiber"))

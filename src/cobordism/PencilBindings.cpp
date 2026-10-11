@@ -67,6 +67,39 @@ contour, certificate, and the Lorentzian rotation epsilon).)doc")
       .def_readonly("block_ranks", &FiberLevel::blockRanks)
       .def_readonly("fibers_disjoint", &FiberLevel::fibersDisjoint);
 
+  py::class_<PencilLayer::RestrictionRead>(m, "RestrictionRead",
+      "The whole's degree-1 zero mode read on every marking at once: ONE harmonic basis "
+      "`images` (n_1 x rank, in the assembled pencil's degree-1 cell order) and its periods "
+      "over each marking (`periods[i]`, |marking_i| x rank) from that same basis. `monodromy` "
+      "is the two-marking case with the fit added. Betti numbers of the whole come with it; "
+      "a read that cannot be made names its `obstruction` instead of guessing.")
+      .def_readonly("betti", &PencilLayer::RestrictionRead::betti)
+      .def_readonly("harmonic_rank", &PencilLayer::RestrictionRead::harmonicRank)
+      .def_readonly("images", &PencilLayer::RestrictionRead::images)
+      .def_readonly("periods", &PencilLayer::RestrictionRead::periods)
+      .def_readonly("frame", &PencilLayer::RestrictionRead::frame,
+                    "The band's frame on chains, n_1 x rank; `images` = G_1^U frame.")
+      .def_readonly("certificate", &PencilLayer::RestrictionRead::certificate,
+                    "The band's BandCertificate: node count, idempotency, rank, gap, resolvent bound.")
+      .def_readonly("obstruction", &PencilLayer::RestrictionRead::obstruction);
+  py::class_<PencilLayer::MonodromyRead>(m, "MonodromyRead",
+      "The monodromy of a drawn cobordism between two marked surfaces: the "
+      "whole's degree-1 ZERO MODE (the harmonic contour of the Whitney pencil, bulk and "
+      "boundary edges in one operator) read on both markings' edges, its periods "
+      "periods_a (|A| x rank) and periods_b, and the matrix M with P_B = M P_A "
+      "(M = P_B P_A^-1 for a rank-2 zero mode, least squares otherwise), with its integer "
+      "rounding and rounding residual; Betti numbers of the whole come with it. A read that "
+      "cannot be made names its `obstruction` instead of guessing.")
+      .def_readonly("betti", &PencilLayer::MonodromyRead::betti)
+      .def_readonly("harmonic_rank", &PencilLayer::MonodromyRead::harmonicRank)
+      .def_readonly("periods_a", &PencilLayer::MonodromyRead::periodsA)
+      .def_readonly("periods_b", &PencilLayer::MonodromyRead::periodsB)
+      .def_readonly("monodromy", &PencilLayer::MonodromyRead::monodromy)
+      .def_readonly("rounded", &PencilLayer::MonodromyRead::rounded)
+      .def_readonly("rounding_residual", &PencilLayer::MonodromyRead::roundingResidual)
+      .def_readonly("fit_residual", &PencilLayer::MonodromyRead::fitResidual)
+      .def_readonly("obstruction", &PencilLayer::MonodromyRead::obstruction);
+
   py::class_<PencilLayer>(m, "PencilLayer",
       R"doc(Continuation of a relaxed cobordism's boundary fibers into the next pencil level: exact assembly of cobordisms along shared cells (one epsilon per assembly), boundary
 responses and their star-product composition, fiber reads from certified Riesz bands, the
@@ -104,6 +137,16 @@ assertion. Every pairing is the transpose.)doc")
            py::arg("band_index"), py::arg("node_count") = 64,
            "A circle around the band_index-th distinct eigenvalue cluster (by modulus; 0 is the harmonic "
            "cluster when zero is an eigenvalue, 1 the lowest band above it), radius a quarter of the gap.")
+      .def_static("monodromy", &PencilLayer::monodromy, py::arg("spacetime"), py::arg("marking_a"),
+           py::arg("marking_b"), py::call_guard<py::gil_scoped_release>(),
+           "The MonodromyRead of `spacetime` between two markings given in host vertex ids as "
+           "cycles of directed steps (u, v): a step contributes +h(u,v) when u < v and -h(u,v) "
+           "otherwise. Read-only; the Whitney pencil's harmonic contour is the zero mode.")
+      .def_static("restriction", &PencilLayer::restriction, py::arg("spacetime"), py::arg("markings"),
+           py::call_guard<py::gil_scoped_release>(),
+           "The RestrictionRead of `spacetime` over a list of markings, each given in host vertex "
+           "ids as cycles of directed steps (u, v) with the same step convention as `monodromy`: "
+           "one harmonic basis and every marking's periods from it. Read-only.")
       .def_static("dual_frame", &PencilLayer::dualFrame, py::arg("complex"), py::arg("degree"),
            py::arg("cells"), py::arg("images"),
            "The dual of a frame under the transpose pairing of `complex`'s own chain-level Whitney "

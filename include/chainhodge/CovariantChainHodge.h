@@ -71,7 +71,7 @@ class Connection {
   /// consecutive steps chain (the target of one step is the source of the
   /// next) and the last target is the first source, the walk's base point.
   /// The engine's loop convention (`mesh::Edge::walkLoop`, the cycles of a
-  /// `cobordism::MultiCobordism::Marking`): a step \f$ u \to v \f$ traverses
+  /// `cobordism::Marking`): a step \f$ u \to v \f$ traverses
   /// the canonical edge \f$ [\min(u,v) < \max(u,v)] \f$ with sign \f$ +1 \f$
   /// when \f$ u < v \f$ (along the reference orientation) and \f$ -1 \f$
   /// otherwise.
@@ -108,7 +108,7 @@ class Connection {
   /// With the trivial connection this is the plain signed sum
   /// \f$ \sum_k s_k\,\omega_{\sigma_k} \f$ of
   /// `cobordism::EigenstateSynthesis::periodsOfCochainOverLoops` and
-  /// `cobordism::MultiCobordism::monodromy`. Under a pure gauge
+  /// `cobordism::PencilLayer::monodromy`. Under a pure gauge
   /// \f$ U = 1^g \f$, \f$ U_{xy} = g_x^{-1}g_y \f$, on a cochain of the twisted
   /// kernel (\f$ \omega^U = \rho_1\omega \f$, \f$ \omega^U_\sigma =
   /// g_{b(\sigma)}^{-1}\omega_\sigma \f$) every term collapses to
@@ -133,7 +133,7 @@ class Connection {
   ///
   /// A marking's cycles are stated as edge steps whose order is a convenience
   /// (`observables::SimplicialQubit`'s cycles;
-  /// `cobordism::MultiCobordism::Marking`), while `transportedPeriod`
+  /// `cobordism::Marking`), while `transportedPeriod`
   /// walks the cycle in the order it is traversed, so every reader orders
   /// the steps by this one rule and two readers of one marking walk it the
   /// same way.

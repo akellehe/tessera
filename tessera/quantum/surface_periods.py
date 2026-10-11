@@ -56,7 +56,7 @@ class SurfacePeriods:
         The marking: ``g`` cycles each, as lists of directed steps
         ``(u, v)`` along edges of the surface, in the order ``A_i`` pairs
         with ``B_i``. A step contributes ``+omega(u, v)`` when ``u < v`` and
-        ``-omega(u, v)`` otherwise, the ``MultiCobordism.monodromy``
+        ``-omega(u, v)`` otherwise, the ``PencilLayer.monodromy``
         convention.
     root_face
         A triple ``(u, v, w)`` naming a face WITH the cyclic order that is

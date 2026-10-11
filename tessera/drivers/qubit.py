@@ -942,7 +942,7 @@ def _collar_twist(config, grid):
 def _host_marking(torus, ids):
     """The torus's marking as cycles of directed host steps `(u, v)`.
 
-    `MultiCobordism.monodromy`'s convention: a step contributes `+h(u, v)`
+    `PencilLayer.monodromy`'s convention: a step contributes `+h(u, v)`
     when `u < v` and `-h(u, v)` otherwise, so a torus step (edge index, sign)
     becomes the edge's `(i, j)` as `(i -> j)` for +1 and `(j -> i)` for -1,
     mapped through the id map.
@@ -1624,7 +1624,7 @@ class QubitFrame(ea.AnimationFrame):
         for left, right in pairs:
             label = "%s -> %s" % (inputs.labels[left], inputs.labels[right])
             try:
-                read = MC.monodromy(spacetime, inputs.markings[left],
+                read = cob.PencilLayer.monodromy(spacetime, inputs.markings[left],
                                     inputs.markings[right])
             except Exception as error:                    # noqa: BLE001
                 rows.append(Absent("%s monodromy refused: %s" % (label, error)))
@@ -2934,7 +2934,7 @@ def _dense(matrix):
 
 
 def _numeric_rank(matrix):
-    """Rank by SVD under `MultiCobordism.monodromy`'s tolerance rule."""
+    """Rank by SVD under `PencilLayer.monodromy`'s tolerance rule."""
     import numpy as np
     singular = np.linalg.svd(np.asarray(matrix), compute_uv=False)
     if singular.size == 0:
@@ -2945,7 +2945,7 @@ def _numeric_rank(matrix):
 def _fit_monodromy(periods_a, periods_b):
     """`M` with `P_B = M P_A` (least squares, exact when `P_A` is invertible),
     its integer rounding, the rounding residual, and the fit residual: the
-    same numbers `MultiCobordism.monodromy` reports, from given periods."""
+    same numbers `PencilLayer.monodromy` reports, from given periods."""
     import numpy as np
     periods_a = np.asarray(periods_a)
     periods_b = np.asarray(periods_b)
@@ -3163,11 +3163,11 @@ def _exactness_check(delta, reference, coboundary, tolerance):
 
 
 def _read_restriction(spacetime, markings):
-    """`MultiCobordism.restriction`, refusing by name rather than guessing.
+    """`PencilLayer.restriction`, refusing by name rather than guessing.
     Returns the unpacked read and the read itself, whose frame and
     certificate the harmonic checks need."""
     import numpy as np
-    read = MC.restriction(spacetime, markings)
+    read = cob.PencilLayer.restriction(spacetime, markings)
     if read.obstruction:
         raise RuntimeError("restriction refused: %s" % read.obstruction)
     return (list(int(b) for b in read.betti), int(read.harmonic_rank),
@@ -3934,7 +3934,7 @@ def _theta_native(config, register, tolerance):
     fits = {}
     for a, b in pairs:
         name = "%s->%s" % (labels[a], labels[b])
-        read = MC.monodromy(host, markings[a], markings[b])
+        read = cob.PencilLayer.monodromy(host, markings[a], markings[b])
         if read.obstruction:
             checks.append(_check("T8:" + name, "the monodromy is read", {"refusal": read.obstruction}, tolerance, False))
             continue
@@ -3978,7 +3978,7 @@ def _theta_native(config, register, tolerance):
             other = dict(config)
             other["far_flips"] = ",".join(reversed(passes))
             _, _, seed_r, _, markings_r = seed_qubit_host(other)
-            read_r = MC.monodromy(seed_r.host, markings_r[a], markings_r[b])
+            read_r = cob.PencilLayer.monodromy(seed_r.host, markings_r[a], markings_r[b])
             fit_r = register.weil(np.asarray(read_r.rounded, dtype=float), tau, rng)
             apart = register.projective_distance(fit.matrix, fit_r.matrix)
             commute = (np.asarray(read.rounded, dtype=int) == np.asarray(read_r.rounded, dtype=int)).all()

@@ -210,7 +210,7 @@ class SymmetricGenusTwo:
 
     def marking(self):
         """``[A_1, B_1, A_2, B_2]`` as closed walks of vertex steps (the
-        pair ordering `MultiCobordism.restriction` takes)."""
+        pair ordering `PencilLayer.restriction` takes)."""
         return [self.a_cycles[0], self.b_cycles[0], self.a_cycles[1], self.b_cycles[1]]
 
     def induced_map(self, k=1):

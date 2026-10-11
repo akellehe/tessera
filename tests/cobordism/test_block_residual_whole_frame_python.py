@@ -532,8 +532,8 @@ def test_frames_coefficients_residuals_and_transfer_are_gauge_invariant(whitney_
     assert gauged.read_two_body().reversal_residual < 1e-8
     # the monodromy read with transported periods: invariant up to the same factor
     markings = [host_marking(q, ids[i]) for i, q in enumerate(tori)]
-    m_plain = MC.monodromy(plain.spacetime(), markings[0], markings[1])
-    m_gauged = MC.monodromy(gauged.spacetime(), markings[0], markings[1])
+    m_plain = cob.PencilLayer.monodromy(plain.spacetime(), markings[0], markings[1])
+    m_gauged = cob.PencilLayer.monodromy(gauged.spacetime(), markings[0], markings[1])
     assert m_plain.obstruction == "" and m_gauged.obstruction == ""
     assert m_plain.rounded == [[1, 0], [0, 1]] and m_plain.rounding_residual < 1e-9
     M_gauged = np.asarray(m_gauged.monodromy) * np.exp(1j * (g[plain.input_marking(1).base_vertex] - g[plain.input_marking(0).base_vertex]))
@@ -745,7 +745,7 @@ def pristine_dump():
     }
     qa, qb, seed, node = collar(3)
     markings = [host_marking(q, seed.vertex_ids[i]) for i, q in enumerate((qa, qb))]
-    m = MC.monodromy(node.spacetime(), markings[0], markings[1])
+    m = cob.PencilLayer.monodromy(node.spacetime(), markings[0], markings[1])
     monodromy = {
         "periods_a": vector_hex(m.periods_a), "periods_b": vector_hex(m.periods_b),
         "monodromy": vector_hex(m.monodromy), "rounded": [[int(x) for x in row] for row in m.rounded],
