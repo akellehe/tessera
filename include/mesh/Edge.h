@@ -373,6 +373,10 @@ class Edge {
     /// I ≤ 0. Pass epsilon ≤ 0 to opt out of the floor, in which case a
     /// vanishing mutual information gives the divergent +∞ the law implies.
     /// Always real and ≥ 0, i.e. spacelike.
+    ///
+    /// ``quantum::MutualInformation::edgeLength`` is a different convention:
+    /// −log(I) with no iMax normalization, and +∞ rather than a cap below its
+    /// epsilon.
     [[nodiscard]] static double
     vanRaamsdonkLength(double I, double iMax,
                        double epsilon = 1e-10) noexcept;
