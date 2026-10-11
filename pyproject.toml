@@ -22,8 +22,10 @@ dependencies = [
 ]
 optional-dependencies.examples = [
     "matplotlib>=3.8",
+    "mpmath>=1.3",
     "networkx>=3.0",
     "scipy>=1.11",
+    "sympy>=1.12",
     "tqdm>=4.66",
 ]
 # Reinforcement-learning harness for the cobordism objective search: a libtorch C++
