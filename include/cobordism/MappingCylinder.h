@@ -74,10 +74,28 @@ struct MappingCylinderRead {
   /// \f$ [v_0,\dots,v_i,r_i,\dots,r_d] \f$ for \f$ i=0,\dots,d \f$, which is
   /// the standard triangulation of the prism \f$ \sigma\times[0,1] \f$ with the
   /// top face identified along \f$ r \f$. A staircase simplex whose response
-  /// vertices repeat is degenerate and is dropped; when \f$ r \f$ carries the
-  /// whole cell to one response vertex, exactly one survives and it is the cone
-  /// \f$ \sigma * r \f$, which is the mapping cylinder of a constant map.
+  /// vertices repeat is degenerate and is not a top cell; it is read in its
+  /// non-degenerate form, the repeats removed. That form lies in the next
+  /// step's whenever \f$ r_i \f$ recurs among \f$ r_{i+1},\dots,r_d \f$, so
+  /// when \f$ r \f$ carries the whole cell to one response vertex exactly one
+  /// top cell survives and every form is a face of it: the cone
+  /// \f$ \sigma * r \f$, which is the mapping cylinder of a constant map. When
+  /// \f$ r \f$ is neither injective nor constant on the cell a form can lie in
+  /// no other cell: \f$ (v_0,v_1,v_2) \mapsto (a,b,b) \f$ gives the top cell
+  /// \f$ [v_0,v_1,v_2,b] \f$ and leaves \f$ [v_0,a,b] \f$, the only cell
+  /// through the fiber edge \f$ (v_0,a) \f$ and the image edge \f$ [a,b] \f$.
+  /// Those forms are `cylinderCollapsedCells`.
   std::vector<std::vector<std::uint64_t>> cylinderTopCells;
+
+  /// The maximal cells of \f$ W^\ell \f$ below the top dimension, sorted
+  /// within the tuple and ascending over the list: the non-degenerate forms of
+  /// the degenerate staircase simplices that no other cell of the cylinder
+  /// contains, whether a top cell or another form, of the same prism or of a
+  /// neighbouring one. Each holds a vertex of \f$ K^\ell \f$ and at least two
+  /// response vertices. Every cell of \f$ W^\ell \f$ is a face of a top cell
+  /// or of one of these, and the list is empty when \f$ r \f$ is injective or
+  /// constant on every incoming top cell.
+  std::vector<std::vector<std::uint64_t>> cylinderCollapsedCells;
 
   /// The fiber edges \f$ (v, r(v)) \f$, one per vertex of \f$ K^\ell \f$: the
   /// edges joining each certified cluster's cells to its response vertex. They
@@ -85,10 +103,11 @@ struct MappingCylinderRead {
   /// protocol applies to them alone.
   std::vector<std::pair<std::uint64_t, std::uint64_t>> fiberEdges;
 
-  /// Every edge of \f$ W^\ell \f$ with one endpoint at each end, ascending. It
-  /// contains the fiber edges and, where the reduction map is not constant on a
-  /// cell, the diagonals of that cell's prism, which join a vertex to a
-  /// response vertex other than its own.
+  /// Every edge of \f$ W^\ell \f$ with one endpoint at each end, ascending,
+  /// read off the top cells and the collapsed cells alike. It contains the
+  /// fiber edges and, where the reduction map is not constant on a cell, the
+  /// diagonals of that cell's prism, which join a vertex to a response vertex
+  /// other than its own.
   std::vector<std::pair<std::uint64_t, std::uint64_t>> crossEdges;
 
   /// The maximal image cells \f$ r(\sigma) \f$ over the incoming top cells,
@@ -101,6 +120,15 @@ struct MappingCylinderRead {
   /// The facets of \f$ W^\ell \f$ carried by exactly one top cell, split by
   /// which end they sit at: every vertex in \f$ K^\ell \f$, every vertex a
   /// response vertex, or one of each.
+  ///
+  /// A collapsed cell lies below the top dimension, so it carries no facet of
+  /// \f$ W^\ell \f$, and it enters neither these lists nor the checks below.
+  /// The faces only it carries are where the staircase collapsed a prism, not
+  /// the cylinder over a boundary of \f$ K^\ell \f$: the closed sphere
+  /// \f$ \partial[v_0,\dots,v_3] \f$ carried to \f$ (a,b,b,b) \f$ has the
+  /// cone over the sphere with apex \f$ b \f$ as its top cells, and the
+  /// collapsed cell \f$ [v_0,a,b] \f$ alone carries \f$ (v_0,a) \f$, though
+  /// the sphere has no boundary for a side wall to stand over.
   std::vector<std::vector<std::uint64_t>> incomingFreeFacets;
   std::vector<std::vector<std::uint64_t>> outgoingFreeFacets;
   std::vector<std::vector<std::uint64_t>> sideFreeFacets;
