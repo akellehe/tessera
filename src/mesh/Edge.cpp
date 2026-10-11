@@ -64,6 +64,10 @@ class Simplex;
       return length_;
     }
 
+    [[nodiscard]] std::complex<double> Edge::squaredLength() const noexcept {
+      return length_ * length_;
+    }
+
     namespace {
     /// An angle folded back into (-pi, pi]. The declared argument folded this way
     /// is what a causal bucket is a function of: the two roots +/-l of one l^2
