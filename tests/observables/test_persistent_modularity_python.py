@@ -122,6 +122,36 @@ def _make_spacetime(n_simplices=120):
     return st
 
 
+def _planted_residue_graph(n=400, M=6, p_intra=0.08, p_inter=0.004, seed=1):
+    """Seeded planted partition on ids 0..n-1: denser inside the residue
+    classes id % M, closed by the ring i -- i+1 so no vertex is isolated (a
+    one-dimensional Spacetime holds only the vertices of its cells)."""
+    rng = random.Random(seed)
+    edges = {(min(i, (i + 1) % n), max(i, (i + 1) % n)) for i in range(n)}
+    for i in range(n):
+        for j in range(i + 1, n):
+            if rng.random() < (p_intra if i % M == j % M else p_inter):
+                edges.add((i, j))
+    return sorted(edges)
+
+
+def _three_modularities(st, M):
+    """Q of the partition label(v) = v.id() % M of the one-skeleton of ``st``,
+    from each implementation: ``Spacetime.modularity_on_skeleton``,
+    ``SparseGraph.modularity`` on the same edges, and
+    ``PersistentModularity.modularity_gamma`` at gamma = 1 on unit weights."""
+    ids = [v.get_id() for v in st.get_vertex_list().to_vector()]
+    index = {vid: i for i, vid in enumerate(ids)}
+    edges = [(index[e.get_source().get_id()], index[e.get_target().get_id()])
+             for e in st.get_edge_list().to_vector()]
+    sg = tessera.SparseGraph.from_coo([a for a, _ in edges],
+                                      [b for _, b in edges], len(ids))
+    g = PM.from_spacetime(st, PM.WeightMap.Unit)
+    return (st.modularity_on_skeleton(M),
+            sg.modularity([vid % M for vid in ids]),
+            g.modularity_gamma([vid % M for vid in g.cell_ids()], 1.0))
+
+
 # ---------------------------------------------------------------------------
 # planted fixtures are recovered
 # ---------------------------------------------------------------------------
@@ -538,6 +568,82 @@ class TestFixedPartitionContinuity(unittest.TestCase):
         self.assertLessEqual(
             abs(g.modularity_gamma(labels, 1.0) - st.modularity_on_skeleton(M)),
             1e-15)
+
+    def _assert_three_agree(self, st, moduli):
+        # The three share one summation (graph::modularityInLabelOrder): per-
+        # community totals, exact integers at unit weight, combined in
+        # ascending label order with Kahan compensation.
+        for M in moduli:
+            q_st, q_sg, q_pm = _three_modularities(st, M)
+            with self.subTest(M=M):
+                self.assertEqual(q_pm.imag, 0.0)
+                self.assertLessEqual(abs(q_st - q_sg), 1e-15)
+                self.assertLessEqual(abs(q_st - q_pm.real), 1e-15)
+                self.assertLessEqual(abs(q_sg - q_pm.real), 1e-15)
+
+    def test_three_implementations_agree_on_the_cdt_skeleton(self):
+        # The lattices of the skeleton identity above (120 simplices) and of
+        # test_sparse_graph_modularity.py (200).
+        for n_simplices in (120, 200):
+            self._assert_three_agree(_make_spacetime(n_simplices),
+                                     (1, 2, 3, 4, 8))
+
+    def test_three_implementations_agree_on_two_triangles(self):
+        # test_sparse_graph_modularity.py's disjoint triangles {0,1,2}, {3,4,5}.
+        st = tessera.Spacetime.from_vertex_tuples(
+            1, [[0, 1], [1, 2], [0, 2], [3, 4], [4, 5], [3, 5]], 1.0, 0.0)
+        self._assert_three_agree(st, (1, 2, 3, 4))
+
+    def test_three_implementations_agree_on_the_random_graph(self):
+        # The 30-vertex, 60-edge graph of the SparseGraph identity above.
+        rng = random.Random(5)
+        edges = set()
+        while len(edges) < 60:
+            a, b = rng.sample(range(30), 2)
+            edges.add((min(a, b), max(a, b)))
+        st = tessera.Spacetime.from_vertex_tuples(
+            1, [list(e) for e in sorted(edges)], 1.0, 0.0)
+        self._assert_three_agree(st, (1, 2, 3, 4))
+
+    def test_three_implementations_agree_on_a_planted_partition(self):
+        # 400 vertices in six planted communities, 1738 edges. Under the
+        # summation orders used before the three shared one, the skeleton and
+        # SparseGraph values of this graph differed in the last bits (by
+        # 1.1e-16 at M = 6). M = 5000 and 2**31 - 1 exceed n + 2m, the hashed
+        # path of modularity_on_skeleton; the smaller ones index its table.
+        st = tessera.Spacetime.from_vertex_tuples(
+            1, [list(e) for e in _planted_residue_graph()], 1.0, 0.0)
+        self.assertEqual(st.get_vertex_count(), 400)
+        self.assertEqual(st.get_edge_list().size(), 1738)
+        self._assert_three_agree(
+            st, (2, 3, 5, 6, 7, 8, 12, 16, 50, 401, 1000, 5000, 2**31 - 1))
+
+    def test_sparsegraph_agrees_with_gamma_one_on_arbitrary_labels(self):
+        # Labels that are not residues, negative, sparse or merged: only the
+        # two label-taking implementations apply.
+        rng = random.Random(9)
+        triangles = [(0, 1), (1, 2), (0, 2), (3, 4), (4, 5), (3, 5)]
+        cases = [(triangles, 6, labels) for labels in (
+            [0, 0, 0, 1, 1, 1], [10, 10, 10, 99, 99, 99], [0] * 6,
+            [0, 1, 0, 1, 0, 1])]
+        planted = _planted_residue_graph(n=120, M=4, seed=3)
+        cases += [(planted, 120, labels) for labels in (
+            [(v % 4) * 1000 - 1500 for v in range(120)],
+            [rng.randrange(-7, 7) for _ in range(120)],
+            [v // 3 for v in range(120)])]
+        for edges, n, labels in cases:
+            rows = [a for a, _ in edges]
+            cols = [b for _, b in edges]
+            sg = tessera.SparseGraph.from_coo(rows, cols, n)
+            g = PM.from_weighted_edges(rows, cols, [1.0] * len(rows))
+            pos = {cid: i for i, cid in enumerate(g.cell_ids())}
+            labels_pm = [0] * g.n_cells()
+            for v in range(n):
+                labels_pm[pos[v]] = labels[v]
+            with self.subTest(n=n, labels=labels[:6]):
+                self.assertLessEqual(
+                    abs(sg.modularity(labels)
+                        - g.modularity_gamma(labels_pm, 1.0)), 1e-15)
 
     def test_label_length_mismatch_raises(self):
         src, tgt = _ring(10)
