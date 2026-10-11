@@ -65,7 +65,7 @@ class ConstantObjective(cob.CobordismObjective):
 
     def terms(self, context):
         self.contexts_seen += 1
-        out = cob.MultiCobordism.ObjectiveTerms()
+        out = cob.ObjectiveTerms()
         out.regge_stationarity = self.value
         return out
 
@@ -209,7 +209,7 @@ class FirewallTest(unittest.TestCase):
             self.assertNotIn(forbidden, seen["attrs"])
 
     def test_the_static_collapse_still_takes_no_instance(self):
-        terms = cob.MultiCobordism.ObjectiveTerms()
+        terms = cob.ObjectiveTerms()
         terms.regge_stationarity = 2.0
         terms.hodge_stationarity = 0.5
         self.assertEqual(cob.CobordismObjective.total(terms), 2.5)
@@ -300,7 +300,7 @@ class QuadraticObjective(cob.CobordismObjective):
         return cob.CobordismObjective.declared_term_names()
 
     def terms(self, context):
-        out = cob.MultiCobordism.ObjectiveTerms()
+        out = cob.ObjectiveTerms()
         out.regge_stationarity = sum(
             abs(z - 1.0) ** 2 for z in self._squared_lengths(context.spacetime))
         return out

@@ -269,7 +269,7 @@ class CellCountObjective(cob.CobordismObjective):
         return [cob.ObjectiveTermName.REGGE_STATIONARITY]
 
     def terms(self, context):
-        out = MC.ObjectiveTerms()
+        out = cob.ObjectiveTerms()
         out.regge_stationarity = self.sign * float(len(context.spacetime.getTopSimplices()))
         return out
 
@@ -303,7 +303,7 @@ class UncoveredTorusFacesObjective(cob.CobordismObjective):
         return [cob.ObjectiveTermName.REGGE_STATIONARITY]
 
     def terms(self, context):
-        out = MC.ObjectiveTerms()
+        out = cob.ObjectiveTerms()
         out.regge_stationarity = -float(len(self.uncovered(context.spacetime)))
         return out
 

@@ -24,8 +24,8 @@ endif()
 
 # ---- Build resource limits (memory-aware Ninja job pools) ----
 # A full tessera build is memory-bound, not CPU-bound. The template-heavy
-# translation units (src/cobordism/MultiCobordism.cpp, the per-subsystem
-# Bindings.cpp, the Eigen-dense chainhodge sources) each peak near 4.7 GB in
+# translation units (the per-subsystem Bindings.cpp, the Eigen-dense
+# chainhodge sources) each peak near 4.7 GB in
 # cc1plus at -O3 -march=native. Ninja's default parallelism is (cores + 2), so
 # on a 16-core box a plain `pip install -e ".[dev]"` launches 18 of those at
 # once — tens of GB of demand against whatever the machine actually has. The
@@ -364,21 +364,49 @@ list(FILTER TESSERA_CORE_SOURCES EXCLUDE REGEX
     "/src/observables/IsospinDoublet\\.cpp$")
 # bindings.cpp is the pybind11 entry point — goes into _tessera, not tessera_core.
 list(FILTER TESSERA_CORE_SOURCES EXCLUDE REGEX "/src/bindings\\.cpp$")
-# Per-subsystem Bindings.cpp files also belong to _tessera, not tessera_core
-# (they include pybind11 / Python.h).
-list(FILTER TESSERA_CORE_SOURCES EXCLUDE REGEX "/src/[^/]+/Bindings\\.cpp$")
-list(FILTER TESSERA_CORE_SOURCES EXCLUDE REGEX
-    "/src/observables/IsospinDoubletBindings\\.cpp$")
+# Every binding translation unit belongs to _tessera too, not tessera_core
+# (they include pybind11 / Python.h): a file whose name ends in Bindings.cpp,
+# in a subsystem's directory or below it, binds the things declared there.
+list(FILTER TESSERA_CORE_SOURCES EXCLUDE REGEX "/src/.+Bindings\\.cpp$")
 
 # Sources for the pybind11 module. The quantum bindings are always built.
 set(TESSERA_PYBIND_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/bindings.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/mesh/Bindings.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/spacetime/Bindings.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/matter/Bindings.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/observables/Bindings.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/observables/EffectiveTopologyBindings.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/observables/GraphModularityBindings.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/observables/SpectralFiberBindings.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/observables/ModularityVolumeSimplicialQubitBindings.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/observables/SpectralGapWilsonBindings.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/observables/RegisterObservableBindings.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/observables/DualVolumeSheetBindings.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/observables/ComplexTransportMonopoleBindings.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/observables/ColorFiberBindings.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/observables/ExchangeHolonomyBindings.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/observables/FiberConnectionBindings.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/observables/ParticleClustersBindings.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/observables/CrossingRegisterLineageBindings.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/observables/IsospinDoubletBindings.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/simulations/Bindings.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/cobordism/Bindings.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/cobordism/ChainComplexBindings.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/cobordism/HodgeBindings.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/cobordism/IntegerLinalgBindings.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/cobordism/PencilBindings.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/cobordism/ObjectiveBindings.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/cobordism/multicobordism/Bindings.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/cobordism/DagProtonCertificateBindings.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/cobordism/AnalyticCacheBindings.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/cobordism/RecursiveQuotientBindings.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/cobordism/JointActionBindings.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/cobordism/HolomorphicRelaxationBindings.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/cobordism/SelfConsistentMeanFieldBindings.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/cobordism/WardFluxBoundStateBindings.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/cobordism/DressedFluctuationBindings.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/cobordism/LevelRecursionBindings.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/chainhodge/Bindings.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/quantum/Bindings.cpp")
 # ---- </Define source partitions> -----------------------------------------

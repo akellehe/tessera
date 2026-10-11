@@ -178,16 +178,18 @@ References
 # Declared once: bound below when the subsystem is available, and used to
 # raise a build-aware error when it is not.
 _EXPORTS = (
-    # Data classes (configs, results, labels, posets)
+    # Data classes (configs, results, labels). Poset, OrderAgreement and
+    # compareOrders are in the root namespace (tessera.Poset), the interaction
+    # simulation in tessera.simulations.
     "QuantumConfig", "GroundStateResult", "Interval", "SchmidtSpectra",
-    "Poset", "GroundStateMajorizationResult", "TDVPConfig", "TDVPSnapshot",
-    "QuenchResult", "InteractionConfig", "InitialChargeMode", "LabelSpacetime",
-    "CausalOrders", "OrderAgreement", "CausalComparisonReport", "CausetChain",
+    "GroundStateMajorizationResult", "TDVPConfig", "TDVPSnapshot",
+    "QuenchResult", "LabelSpacetime",
+    "CausalOrders", "CausalComparisonReport", "CausetChain",
     # MajorizationPredicate hierarchy
     "MajorizationPredicate", "StandardMajorization", "LogConcaveMajorization",
     "PeakRadialMajorization",
     # Coarse-grained workflow classes
-    "SchwingerModel", "SchwingerQuench", "InteractionSimulation",
+    "SchwingerModel", "SchwingerQuench",
     "Majorization", "Causet", "MutualInformation", "ChoiJamiolkowski",
     # Exterior-algebra / graded-tensor primitives: occupation
     # bitsets with the prefix-popcount sign rule, the CAR operator layer,
@@ -225,9 +227,6 @@ _EXPORTS = (
     "KoashiImotoResult", "KoashiImotoBlock", "KoashiImotoTolerances",
     "koashiImotoDecompose", "partialTraceA", "partialTraceB",
     "mutualInformation", "partialTrace", "randomCorrelatedState",
-    # Free functions — compareOrders: pairwise agreement statistics between
-    # two Posets on a shared label set (see docs/source/causal_sets.md).
-    "compareOrders",
 )
 
 _UNAVAILABLE_MESSAGE = (

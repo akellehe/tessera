@@ -35,6 +35,7 @@ import cmath
 import copy
 import json
 import math
+import glob
 import os
 import sys
 import time
@@ -185,11 +186,11 @@ class ObjectiveFirewallStructureTest(unittest.TestCase):
                     (name, word))
 
     def test_objective_terms_record_exposes_no_other_field(self):
-        exposed = {a for a in dir(MC.ObjectiveTerms) if not a.startswith("_")}
+        exposed = {a for a in dir(cob.ObjectiveTerms) if not a.startswith("_")}
         self.assertEqual(exposed, set(MC.objective_term_names()))
 
     def test_objective_of_is_static_and_sums_only_the_declared_terms(self):
-        terms = MC.ObjectiveTerms()
+        terms = cob.ObjectiveTerms()
         terms.regge_stationarity = 2.0
         terms.hodge_stationarity = 3.0
         terms.register_residual = 5.0
@@ -1340,15 +1341,19 @@ class AnalysisOverlayTest(unittest.TestCase):
             os.path.abspath(__file__))))
         overlay = os.path.join(root, "src", "cobordism",
                                "RecursiveFiberSimulation.cpp")
-        engine = os.path.join(root, "src", "cobordism", "MultiCobordism.cpp")
         if not os.path.exists(overlay):     # installed wheel, not a checkout
             self.skipTest("source tree not available")
+        engine = sorted(glob.glob(os.path.join(root, "src", "cobordism",
+                                               "multicobordism", "*")))
+        self.assertTrue(engine)
         with open(overlay) as handle:
             overlay_text = handle.read()
         self.assertIn("classifyBoundSupercomponents", overlay_text)
         self.assertIn("boundSupercomponentSearch", overlay_text)
-        with open(engine) as handle:
-            self.assertNotIn("classifyBoundSupercomponents", handle.read())
+        for path in engine:
+            with open(path) as handle:
+                self.assertNotIn("classifyBoundSupercomponents", handle.read(),
+                                 msg=path)
 
     def test_the_baryon_writer_emits_every_declared_field(self):
         """The `particles.baryons` record is the BaryonRead, whole: the

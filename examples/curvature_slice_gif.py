@@ -626,8 +626,8 @@ def main():
     verts = st.getVertexList().toVector()
     center = max(verts, key=lambda v: v.degree())
 
-    matter = tessera.MatterConfiguration()
-    worldline = tessera.MatterConfiguration.buildWorldline(center, st)
+    matter = tessera.matter.MatterConfiguration()
+    worldline = tessera.matter.MatterConfiguration.buildWorldline(center, st)
     matter.setWorldlineMass(center, args.mass, st)
 
     solver = tessera.ReggeSolver(st, matter)

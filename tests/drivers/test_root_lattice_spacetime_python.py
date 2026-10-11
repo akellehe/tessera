@@ -142,9 +142,9 @@ class TestCausalOrder(unittest.TestCase):
         self.assertEqual(rls.depths(np.zeros((0, 0), dtype=bool)).tolist(), [])
 
     def test_the_poset_holds_the_covers(self):
-        from tessera import quantum
+        from tessera import Poset
         ps, P, covers = rls.poset(EVENTS)
-        self.assertIsInstance(ps, quantum.Poset)
+        self.assertIsInstance(ps, Poset)
         self.assertEqual(ps.getCoverCount(), len(covers))
         self.assertEqual(sorted(tuple(c) for c in ps.covers), sorted(covers))
 

@@ -41,7 +41,7 @@ import unittest
 import numpy as np
 
 try:
-    import tessera.quantum as q
+    import tessera.simulations as q
     HAVE_QUANTUM = True
 except ImportError:
     HAVE_QUANTUM = False

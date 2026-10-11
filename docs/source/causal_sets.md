@@ -17,11 +17,11 @@ time-dependent variational principle (TDVP) quench run.
 
 | Concept                       | Class                                | Header                              |
 |-------------------------------|--------------------------------------|-------------------------------------|
-| Partial order (Hasse covers)  | `tessera.quantum.Poset`              | `include/Poset.h`                   |
+| Partial order (Hasse covers)  | `tessera.Poset`                      | `include/Poset.h`                   |
 | Spacetime → 1D causet adapter | `tessera.quantum.Causet`             | `include/quantum/CausetChain.hpp`  |
 | Causet-as-data                | `tessera.quantum.CausetChain`        | `include/quantum/CausetChain.hpp`  |
-| Pairwise order agreement      | `tessera.quantum.OrderAgreement`     | `include/Poset.h`                   |
-| `compareOrders(a, b, nLabels)`| free fn in `tessera.quantum`         | `include/Poset.h`                   |
+| Pairwise order agreement      | `tessera.OrderAgreement`             | `include/Poset.h`                   |
+| `compareOrders(a, b, nLabels)`| free fn in `tessera`                 | `include/Poset.h`                   |
 | (cut, time) label             | `tessera.quantum.LabelSpacetime`     | `include/quantum/CausalCompare.hpp`|
 | Three orders bundle           | `tessera.quantum.CausalOrders`       | `include/quantum/CausalCompare.hpp`|
 | End-to-end comparison report  | `tessera.quantum.CausalComparisonReport` | `include/quantum/CausalCompare.hpp` |
@@ -36,15 +36,15 @@ relation. `a → b` in the cover graph means "$a$ strictly precedes $b$
 with no intermediate", and the full order is the transitive closure of
 the covers.
 
-All classes named `tessera.X` below live under `tessera.quantum.X`; the
-bindings are co-located with the quantum subsystem, alongside the
-causal-comparison harness. Examples below use
-`from tessera.quantum import Poset, ...`.
+`Poset`, `OrderAgreement` and `compareOrders` are declared in the top-level
+`include/Poset.h` and live in the root namespace: `from tessera import Poset`.
+The causet adapters and the causal-comparison harness are declared under
+`include/quantum/` and live in `tessera.quantum`.
 
 ### Constructing a poset by hand
 
 ```python
-from tessera.quantum import Poset
+from tessera import Poset
 
 p = Poset(4)              # 4 nodes: 0, 1, 2, 3
 p.addCover(0, 1)
@@ -78,7 +78,7 @@ cover. Suitable for visual checks at $\lvert V \rvert \lesssim 100$.
 ### Comparing two posets on a shared label set
 
 ```python
-from tessera.quantum import Poset, compareOrders
+from tessera import Poset, compareOrders
 
 a = Poset(4); a.addCover(0, 1); a.addCover(1, 2); a.addCover(2, 3)
 b = Poset(4); b.addCover(0, 2); b.addCover(2, 1); b.addCover(1, 3)

@@ -45,7 +45,6 @@
 #include "quantum/GradedFock.h"
 #include "quantum/Holography.hpp"
 #include "quantum/LazyFock.h"
-#include "simulations/InteractionSimulation.h"
 #include "quantum/Majorization.hpp"
 #include "quantum/MutualInformation.hpp"
 #include "quantum/KoashiImoto.hpp"
@@ -143,11 +142,6 @@ tessera::observables::Record quantumPythonToRecord(const py::handle& o) {
 
 void register_quantum(py::module_ m) {
     using namespace tessera::quantum;
-    // InteractionSimulation lives in the top-level tessera namespace; its
-    // Python module path stays tessera.quantum.InteractionSimulation.
-    using ::tessera::InitialChargeMode;
-    using ::tessera::InteractionConfig;
-    using ::tessera::InteractionSimulation;
 
     m.doc() = R"doc(
 Schwinger model, density-matrix renormalization group (DMRG), time-dependent
@@ -310,72 +304,6 @@ truncationErr : float
         .def_readonly("N",         &SchmidtSpectra::N)
         .def_readonly("intervals", &SchmidtSpectra::intervals)
         .def_readonly("spectra",   &SchmidtSpectra::spectra);
-
-    py::class_<Poset>(m, "Poset",
-            R"doc(Hasse / cover representation of a finite partial order.
-
-Nodes are integers ``0 .. getNodeCount - 1``. ``covers`` lists the cover
-edges: each entry ``(a, b)`` means ``a`` strictly precedes ``b`` with no
-intermediate node. The full strict order is the transitive closure of
-the covers; see :func:`compareOrders` for pairwise statistics derived
-from that closure.
-
-Construct empty (``Poset()``) and resize via the ``getNodeCount``
-setter, or pass an integer to pre-populate node count
-(``Poset(4)``). Mutate via :meth:`addCover` (single edge) or the
-``covers`` setter (whole list). The class makes no internal
-consistency checks; callers are responsible for transitivity and
-acyclicity.
-
-See ``docs/source/causal_sets.md`` for the conceptual background.
-)doc")
-        .def(py::init<>())
-        .def(py::init<int>(), py::arg("nodeCount"),
-            "Construct with the node count pre-set to ``nodeCount``.")
-        .def("addCover", &Poset::addCover, py::arg("a"), py::arg("b"),
-            R"doc(Add the cover edge ``a -> b`` (a strictly precedes b, no intermediate).
-
-Both endpoints must already exist (call the int constructor or the
-``getNodeCount`` setter first). No deduplication is performed — adding
-the same cover twice creates two parallel edges. Covers normally come
-from a transitive reduction, where duplicates cannot arise.
-)doc")
-        .def_property("getNodeCount",
-            [](Poset const& p) { return p.getNodeCount(); },
-            [](Poset& p, int n) { p.setNodeCount(n); },
-            "Number of nodes. Setting grows the node set; nodes are not "
-            "removed if you set a smaller value, and cover edges are "
-            "preserved across resizes.")
-        .def("getCoverCount", &Poset::getCoverCount,
-            "Number of cover edges currently registered.")
-        .def_property("covers",
-            [](Poset const& p) { return p.covers(); },
-            [](Poset& p, std::vector<std::pair<int, int>> const& covers) {
-                p.setCovers(covers);
-            },
-            "Cover edges as a list of ``(a, b)`` pairs. Setting replaces "
-            "the entire cover list in one pass.")
-        .def("toDot", &Poset::toDot,
-            "Graphviz DOT representation of the Hasse diagram. "
-            "Nodes labelled by their integer id; one directed edge per "
-            "cover. Suitable for ``dot -Tsvg`` rendering.")
-        .def_static("fromSpacetime",
-            [](py::object spacetime_obj) {
-                auto const* st = spacetime_obj.cast<tessera::spacetime::Spacetime const*>();
-                return tessera::Poset::fromSpacetime(*st);
-            }, py::arg("spacetime"),
-            R"doc(Build the causet partial order on a Spacetime's vertices.
-
-Reads the directed-edge / timelike-edge subgraph as the strict
-``precedes`` relation, then takes the transitive reduction to recover
-cover edges. The result has one node per Spacetime vertex (in
-ascending ID order); cover edges are between strictly comparable
-vertices with no intermediate.
-)doc")
-        .def("__repr__", [](Poset const& p) {
-            return "Poset(getNodeCount=" + std::to_string(p.getNodeCount()) +
-                   ", covers=" + std::to_string(p.getCoverCount()) + " edges)";
-        });
 
     py::class_<GroundStateMajorizationResult>(m, "GroundStateMajorizationResult",
             R"doc(Result of :meth:`SchwingerModel.solveWithMajorization`.
@@ -564,47 +492,6 @@ underlying SchwingerQuench pipeline; most users go through
             },
             py::arg("snapshots"), py::arg("vLr"), py::arg("predicate") = nullptr,
             R"doc(Build the three orders from a list of TDVP snapshots.)doc");
-
-    py::class_<OrderAgreement>(m, "OrderAgreement",
-            R"doc(Pairwise agreement statistics between two posets.
-
-Counted over unordered pairs (i, j) with i < j:
-* concordant — both orders relate the pair, in the same direction.
-* discordant — both orders relate the pair, in opposite directions.
-* only_a / only_b — exactly one order relates the pair.
-
-Build via :meth:`Majorization.agreement(a, b, n_labels)`.
-)doc")
-        .def_readonly("kendallTau",         &OrderAgreement::kendallTau)
-        .def_readonly("discordantFraction", &OrderAgreement::discordantFraction)
-        .def_readonly("hasseEditDistance",  &OrderAgreement::hasseEditDistance)
-        .def_readonly("nConcordant",        &OrderAgreement::nConcordant)
-        .def_readonly("nDiscordant",        &OrderAgreement::nDiscordant)
-        .def_readonly("nComparableBoth",    &OrderAgreement::nComparableBoth)
-        .def_readonly("nOnlyA",             &OrderAgreement::nOnlyA)
-        .def_readonly("nOnlyB",             &OrderAgreement::nOnlyB);
-
-    m.def("compareOrders", &tessera::compareOrders,
-        py::arg("a"), py::arg("b"), py::arg("nLabels"),
-        R"doc(Pairwise agreement statistics between two posets on a shared label set.
-
-Counts unordered pairs (i, j) with i < j in five disjoint buckets via
-Floyd–Warshall transitive closures of `a` and `b`:
-
-* concordant   — both orders relate the pair the same way
-* discordant   — both orders relate the pair, opposite ways
-* only-a       — `a` relates the pair, `b` does not
-* only-b       — `b` relates the pair, `a` does not
-* neither      — neither order relates the pair
-
-Returns an :class:`OrderAgreement` with ``kendallTau``,
-``discordantFraction``, ``hasseEditDistance``, and the five counts.
-
-Complexity: O(nLabels^3) for the transitive closure, O(nLabels^2) for
-the pair counts. Practical up to a few thousand labels.
-
-See ``docs/source/causal_sets.md`` for the methodology context.
-)doc");
 
     py::class_<CausalComparisonReport>(m, "CausalComparisonReport",
             R"doc(Pairwise agreement statistics across the three causal orders (≼_maj, ≼_LR, ≼_cs).
@@ -947,148 +834,6 @@ operator up to the global phase the state carries.)doc")
             py::arg("U"), py::arg("d"),
             R"doc(Choi matrix J(U) = |state⟩⟨state| of a square d×d operator
 (flat row-major (d·d)×(d·d); Tr J = 1 for unitary U).)doc");
-
-    // ─── InteractionSimulation: interaction-history Monte Carlo ────────
-    // See docs/source/interaction-history-monte-carlo.md.
-    py::class_<InteractionConfig>(m, "InteractionConfig",
-        R"doc(Configuration for an interaction-history Monte Carlo run.
-
-nSystems randomized correlated mixed-state systems on a Poisson-Delaunay
-initial layer (delaunayEdges is the connectivity, supplied by the
-caller); the Schwinger two-site unitary exp(-i H_XY dt) drives each
-interaction; beta is the inverse temperature in e^{-beta S}.
-)doc")
-        .def(py::init<>())
-        .def_readwrite("nSystems",           &InteractionConfig::nSystems)
-        .def_readwrite("a",                  &InteractionConfig::a)
-        .def_readwrite("g",                  &InteractionConfig::g)
-        .def_readwrite("m",                  &InteractionConfig::m)
-        .def_readwrite("dt",                 &InteractionConfig::dt)
-        .def_readwrite("beta",               &InteractionConfig::beta)
-        .def_readwrite("epsilonI",           &InteractionConfig::epsilonI)
-        .def_readwrite("targetInteractions",
-                       &InteractionConfig::targetInteractions)
-        .def_readwrite("delaunayEdges",      &InteractionConfig::delaunayEdges)
-        .def_readwrite("useCharges",         &InteractionConfig::useCharges)
-        .def_readwrite("featureCharges",
-                       &InteractionConfig::featureCharges)
-        .def_readwrite("featureDeactivateOnAnnihilate",
-                       &InteractionConfig::featureDeactivateOnAnnihilate)
-        .def_readwrite("featurePhotonOnAnnihilate",
-                       &InteractionConfig::featurePhotonOnAnnihilate)
-        .def_readwrite("featureQuditBasis",
-                       &InteractionConfig::featureQuditBasis)
-        .def_readwrite("featureChoiSigmaAB",
-                       &InteractionConfig::featureChoiSigmaAB)
-        .def_readwrite("j_chargeCharge",
-                       &InteractionConfig::j_chargeCharge)
-        .def_readwrite("j_spinSpin",
-                       &InteractionConfig::j_spinSpin)
-        .def_readwrite("massShift",
-                       &InteractionConfig::massShift)
-        .def_readwrite("gammaCpViolation",
-                       &InteractionConfig::gammaCpViolation)
-        .def_readwrite("dtPair",
-                       &InteractionConfig::dtPair)
-        .def_readwrite("cpBias",             &InteractionConfig::cpBias)
-        .def_readwrite("initialChargeMode",
-                       &InteractionConfig::initialChargeMode)
-        .def_readwrite("seed",               &InteractionConfig::seed)
-        .def_readwrite("quiet",              &InteractionConfig::quiet);
-
-    py::enum_<tessera::simulations::InitialChargeMode>(m, "InitialChargeMode")
-        .value("ALTERNATING",
-               tessera::simulations::InitialChargeMode::ALTERNATING)
-        .value("RANDOM",
-               tessera::simulations::InitialChargeMode::RANDOM);
-
-    py::class_<InteractionSimulation>(m, "InteractionSimulation",
-        R"doc(Metropolis Monte Carlo over interaction histories, weighted by
-the geometric Regge action on the dual lattice.
-
-Mirrors tessera.CDT: the move primitives interact() / unInteract(), the
-driving loop sweep() / thermalize() / tune(), and the diagnostics
-computeAction() / getSpectralDimension() / getAcceptanceRates(). The
-object of the search is the beta at which the emergent spectral
-dimension reaches 4.
-)doc")
-        .def(py::init<InteractionConfig>(), py::arg("config"))
-        .def("interact",   &InteractionSimulation::interact,
-             R"doc(Propose + Metropolis-accept one interaction. Returns acceptance.)doc")
-        .def("unInteract", &InteractionSimulation::unInteract,
-             R"doc(Propose + Metropolis-accept one un-interaction. Returns acceptance.)doc")
-        .def("sweep",      &InteractionSimulation::sweep,
-             R"doc(One Monte Carlo sweep; returns the number of accepted moves.)doc")
-        .def("thermalize", &InteractionSimulation::thermalize,
-             R"doc(Tune to the target volume, then sweep to equilibrium.)doc")
-        .def("tune",       &InteractionSimulation::tune,
-             py::arg("progress") = nullptr,
-             R"doc(Grow the complex toward targetInteractions.)doc")
-        .def("computeAction", &InteractionSimulation::computeAction,
-             R"doc(The geometric Regge action S = sum_h A_h eps_h.)doc")
-        .def("getSpectralDimension",
-             &InteractionSimulation::getSpectralDimension,
-             py::arg("sigmas"), py::arg("krylovDim") = 30,
-             R"doc(Heat-kernel spectral dimension D_S(sigma) of the MI-weighted complex.)doc")
-        .def("getDeficitAngleDistribution",
-             &InteractionSimulation::getDeficitAngleDistribution,
-             R"doc(Deficit angles over the interior hinges.)doc")
-        .def("getVolumeProfile", &InteractionSimulation::getVolumeProfile,
-             R"doc(Interaction-count profile by time slice.)doc")
-        .def("getAcceptanceRates",
-             &InteractionSimulation::getAcceptanceRates,
-             R"doc(Accepted / attempted ratio per move type.)doc")
-        .def("annihilate", &InteractionSimulation::annihilate,
-             R"doc(Spontaneous partial annihilation of a (+, -) frontier pair.)doc")
-        .def("pairCreate", &InteractionSimulation::pairCreate,
-             R"doc(Spontaneous (+, -) pair creation with a Bell joint.)doc")
-        .def("getGlobalCharge", &InteractionSimulation::getGlobalCharge,
-             R"doc(Total signed charge across the complex.)doc")
-        .def("getChargeProfile", &InteractionSimulation::getChargeProfile,
-             R"doc(Per-time-slice (n_+, n_0, n_-, sum_q).)doc")
-        .def("getChargeCorrelation",
-             &InteractionSimulation::getChargeCorrelation,
-             py::arg("maxDist"),
-             R"doc(<q_v . q_w> as a function of graph distance.)doc")
-        .def("quditChargeOf", &InteractionSimulation::quditChargeOf,
-             py::arg("vertex"),
-             R"doc(A single vertex's continuous charge via Tr[ρ · Q̂].
-
-Q̂ = diag(+1, +1, -1, -1) on the {|+0⟩, |+1⟩, |−0⟩, |−1⟩} basis.
-For an integer-charge eigenstate this returns ±1; for the maximally-mixed
-I/4 proxy it returns 0; for an arbitrary mixed state, the value sits in
-[−1, +1]. Requires ``featureQuditBasis = True``. Returns 0.0 for vertices
-the simulation has no qudit state for.)doc")
-        .def("quditStateOf",
-             [](const InteractionSimulation &self, tessera::mesh::VertexPtr v)
-                 -> py::object {
-               const auto &m = self.quditStateOfMap();
-               auto it = m.find(v);
-               if (it == m.end()) return py::none();
-               return py::cast(it->second);
-             },
-             py::arg("vertex"),
-             R"doc(A single vertex's 4×4 qudit density matrix, or ``None`` if
-no qudit state is stored. Exposes per-vertex purity, charge content and
-basis populations directly, rather than through the projected
-``Tr[ρ · Q̂]`` accessor. Requires ``featureQuditBasis = True``.)doc")
-        .def("quditJointStateFor",
-             &InteractionSimulation::quditJointStateFor,
-             py::arg("x"), py::arg("y"),
-             R"doc(16×16 joint qudit state ρ_XY for a pair.
-
-Returns the stored correlated joint when (x, y) share an interaction
-history or are initial-layer Delaunay neighbours; otherwise the
-uncorrelated product ρ_x ⊗ ρ_y.)doc")
-        .def("getSpacetime", &InteractionSimulation::getSpacetime,
-             R"doc(The interaction-history simplicial complex (the primal).)doc")
-        .def_property_readonly("interactionCount",
-             &InteractionSimulation::interactionCount)
-        .def_property_readonly("frontierSize",
-             &InteractionSimulation::frontierSize)
-        .def_property("beta", &InteractionSimulation::getBeta,
-             &InteractionSimulation::setBeta)
-        .def("setSeed", &InteractionSimulation::setSeed, py::arg("seed"));
 
     // ─── Holography submodule: emergent spectral dimension ─────────────
     auto holo = m.def_submodule("holography",

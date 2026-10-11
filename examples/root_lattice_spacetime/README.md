@@ -5,7 +5,7 @@ SWAP^α interactions, three views of the same data side by side and one path
 traversed on all three. It is a thin script over
 `tessera.drivers.root_lattice_spacetime`, which builds the network with
 `tessera.drivers.entanglement_complex` and stores the order of the
-interactions in a `tessera.quantum.Poset`.
+interactions in a `tessera.Poset`.
 
 ```
 python examples/root_lattice_spacetime/root_lattice_spacetime.py --save out.png

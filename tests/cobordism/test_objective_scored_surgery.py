@@ -144,7 +144,7 @@ class ConstantObjective(cob.CobordismObjective):
         return [cob.ObjectiveTermName.REGGE_STATIONARITY]
 
     def terms(self, context):
-        return MC.ObjectiveTerms()
+        return cob.ObjectiveTerms()
 
     def direction(self, context):
         return cob.ObjectiveDirection()
