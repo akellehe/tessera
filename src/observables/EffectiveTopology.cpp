@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cmath>
 #include <map>
+#include <optional>
 #include <set>
 #include <stdexcept>
 #include <utility>
@@ -301,45 +302,15 @@ struct RegionOrientation {
 
 RegionOrientation orientCells(const cobordism::ChainComplex &K, int d, const std::vector<std::size_t> &cells) {
   RegionOrientation out;
-  const std::size_t total = K.numSimplices(d);
-  out.coefficients = Eigen::VectorXcd::Zero(static_cast<Eigen::Index>(total));
-  std::vector<int> position(total, -1);
-  for (std::size_t i = 0; i < cells.size(); ++i) position[cells[i]] = static_cast<int>(i);
-  // The incidences of each member cell, and the members incident to each face.
-  std::vector<std::vector<std::pair<int, int>>> incidences(cells.size());  // (face row, +-1)
-  std::map<int, std::vector<std::pair<std::size_t, int>>> byFace;          // face row -> (member, +-1)
-  for (const auto &entry : K.boundaryEntries(d)) {
-    const int member = position[static_cast<std::size_t>(entry.column)];
-    if (member < 0) continue;
-    incidences[static_cast<std::size_t>(member)].emplace_back(entry.row, entry.value);
-    byFace[entry.row].emplace_back(static_cast<std::size_t>(member), entry.value);
-  }
-  std::vector<int> sign(cells.size(), 0);
-  for (std::size_t seed = 0; seed < cells.size(); ++seed) {
-    if (sign[seed] != 0) continue;
-    sign[seed] = 1;
-    std::vector<std::size_t> frontier{seed};
-    while (!frontier.empty()) {
-      const std::size_t here = frontier.back();
-      frontier.pop_back();
-      for (const auto &[row, value] : incidences[here])
-        for (const auto &[there, otherValue] : byFace[row]) {
-          if (there == here) continue;
-          const int wanted = -sign[here] * value * otherValue;
-          if (sign[there] == 0) {
-            sign[there] = wanted;
-            frontier.push_back(there);
-          } else if (sign[there] != wanted) {
-            out.coefficients.setZero();
-            out.reason = "the region's cells admit no consistent orientation, so its enclosing surface "
-                         "has no coorientation";
-            return out;
-          }
-        }
-    }
+  out.coefficients = Eigen::VectorXcd::Zero(static_cast<Eigen::Index>(K.numSimplices(d)));
+  const std::optional<std::vector<int>> sign = K.coherentOrientation(d, cells);
+  if (!sign) {
+    out.reason = "the region's cells admit no consistent orientation, so its enclosing surface "
+                 "has no coorientation";
+    return out;
   }
   for (std::size_t i = 0; i < cells.size(); ++i)
-    out.coefficients(static_cast<Eigen::Index>(cells[i])) = Complex(sign[i], 0.0);
+    out.coefficients(static_cast<Eigen::Index>(cells[i])) = Complex((*sign)[i], 0.0);
   return out;
 }
 
