@@ -2774,11 +2774,6 @@ class MultiCobordism {
   /// The transfer operand of \p block on \p spacetime.
   [[nodiscard]] TransferOperand transferOperand(const BoundaryBlock &block,
                                                 const std::shared_ptr<Spacetime> &spacetime) const;
-  /// Order every cycle of \p cycles into one closed walk and rotate all of
-  /// them to their common base point (`chainhodge::Connection::closedWalkOf`,
-  /// `commonBasePoint`); false with \p obstruction named when a cycle is
-  /// empty, does not form one closed walk, or the cycles share no vertex.
-  [[nodiscard]] static bool orderMarking(Marking &cycles, std::uint64_t &baseVertex, std::string &obstruction);
   /// The target edge values of a marked block through a frame: a degree-1
   /// fiber on the frame's cells with images \f$ F\,(a, b)^T \f$.
   [[nodiscard]] static BoundaryFiber stateTargetOf(const BlockMarking &marking, const BlockFrame &frame);

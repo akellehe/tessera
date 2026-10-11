@@ -145,6 +145,12 @@ class Connection {
   /// gauge factor and their ratios are gauge invariant. None when no vertex
   /// of the first walk lies on all the others (the walks are left as given).
   [[nodiscard]] static std::optional<std::uint64_t> commonBasePoint(std::vector<Walk> &walks);
+  /// Order every walk of \p cycles into one closed walk (`closedWalkOf`) and
+  /// rotate all of them to their common base point (`commonBasePoint`), which
+  /// is written to \p baseVertex. False, with \p obstruction naming why, when a
+  /// walk is empty, does not form one closed walk, or the walks share no vertex.
+  [[nodiscard]] static bool orderWalks(std::vector<Walk> &cycles, std::uint64_t &baseVertex,
+                                     std::string &obstruction);
   /// True when every link has unit modulus (a U(1) connection).
   [[nodiscard]] bool isUnitary(double tolerance = 1e-12) const;
 

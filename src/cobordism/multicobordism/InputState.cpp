@@ -12,30 +12,6 @@ namespace tessera::cobordism {
 
 // ---- the marking, the derived frame and the state at a block ----
 
-bool MultiCobordism::orderMarking(Marking &cycles, std::uint64_t &baseVertex, std::string &obstruction) {
-  for (std::size_t c = 0; c < cycles.size(); ++c) {
-    if (cycles[c].empty()) {
-      obstruction = "cycle " + std::to_string(c) + " has no steps";
-      return false;
-    }
-    chainhodge::Connection::Walk walk = chainhodge::Connection::closedWalkOf(cycles[c]);
-    if (walk.size() != cycles[c].size()) {
-      obstruction = "cycle " + std::to_string(c) +
-                    " does not form one closed walk (a vertex with unequal in- and out-degrees, or steps in "
-                    "more than one connected component)";
-      return false;
-    }
-    cycles[c] = std::move(walk);
-  }
-  const std::optional<std::uint64_t> base = chainhodge::Connection::commonBasePoint(cycles);
-  if (!base) {
-    obstruction = "the cycles share no vertex, so their transported periods have no common base point";
-    return false;
-  }
-  baseVertex = *base;
-  return true;
-}
-
 void MultiCobordism::setInputMarking(std::size_t index, Marking cycles,
                                      std::vector<std::complex<double>> coefficients) {
   if (index >= inputBlocks_.size())
@@ -80,7 +56,7 @@ void MultiCobordism::setInputMarking(std::size_t index, Marking cycles,
     }
   std::uint64_t base = 0;
   std::string why;
-  if (!orderMarking(cycles, base, why)) throw std::invalid_argument("MultiCobordism::setInputMarking: " + why);
+  if (!chainhodge::Connection::orderWalks(cycles, base, why)) throw std::invalid_argument("MultiCobordism::setInputMarking: " + why);
   BlockMarking marking;
   marking.cycles = std::move(cycles);
   marking.coefficients = Eigen::Map<const Eigen::VectorXcd>(coefficients.data(),

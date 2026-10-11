@@ -230,6 +230,31 @@ std::optional<std::uint64_t> Connection::commonBasePoint(std::vector<Walk> &walk
   return base;
 }
 
+bool Connection::orderWalks(std::vector<Walk> &cycles, std::uint64_t &baseVertex,
+                            std::string &obstruction) {
+  for (std::size_t c = 0; c < cycles.size(); ++c) {
+    if (cycles[c].empty()) {
+      obstruction = "cycle " + std::to_string(c) + " has no steps";
+      return false;
+    }
+    Walk walk = closedWalkOf(cycles[c]);
+    if (walk.size() != cycles[c].size()) {
+      obstruction = "cycle " + std::to_string(c) +
+                    " does not form one closed walk (a vertex with unequal in- and out-degrees, or steps in "
+                    "more than one connected component)";
+      return false;
+    }
+    cycles[c] = std::move(walk);
+  }
+  const std::optional<std::uint64_t> base = commonBasePoint(cycles);
+  if (!base) {
+    obstruction = "the cycles share no vertex, so their transported periods have no common base point";
+    return false;
+  }
+  baseVertex = *base;
+  return true;
+}
+
 // ---------------------------------------------------------------- CovariantChainHodge
 
 struct CovariantChainHodge::Factorization {

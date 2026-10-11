@@ -58,7 +58,7 @@ MultiCobordism::RestrictionRead MultiCobordism::restriction(const std::shared_pt
     Marking ordered = markings[i];
     std::uint64_t base = 0;
     std::string why;
-    if (!orderMarking(ordered, base, why)) {
+    if (!chainhodge::Connection::orderWalks(ordered, base, why)) {
       read.obstruction = "marking " + std::to_string(i) + ": " + why;
       return read;
     }
