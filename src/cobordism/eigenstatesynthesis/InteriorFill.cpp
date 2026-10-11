@@ -82,9 +82,9 @@ void EigenstateSynthesis::setInteriorPhases(
     edges_[interiorEdgeIdx_[k]]->setPhase(theta[k]);
 }
 
-std::vector<std::pair<std::uint64_t, std::uint64_t>>
+std::vector<::tessera::mesh::VertexIdPair>
 EigenstateSynthesis::boundaryEdges() const {
-  std::vector<std::pair<std::uint64_t, std::uint64_t>> out;
+  std::vector<::tessera::mesh::VertexIdPair> out;
   out.reserve(boundaryEdgeIdx_.size());
   for (const auto i : boundaryEdgeIdx_) {
     out.push_back(edges_[i]->ascendingIds());
@@ -92,9 +92,9 @@ EigenstateSynthesis::boundaryEdges() const {
   return out;
 }
 
-std::vector<std::pair<std::uint64_t, std::uint64_t>>
+std::vector<::tessera::mesh::VertexIdPair>
 EigenstateSynthesis::interiorEdges() const {
-  std::vector<std::pair<std::uint64_t, std::uint64_t>> out;
+  std::vector<::tessera::mesh::VertexIdPair> out;
   out.reserve(interiorEdgeIdx_.size());
   for (const auto i : interiorEdgeIdx_) {
     out.push_back(edges_[i]->ascendingIds());

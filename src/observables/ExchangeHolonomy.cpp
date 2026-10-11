@@ -4,6 +4,7 @@
 #include "observables/ExchangeHolonomy.h"
 
 #include "cobordism/IntegerLinalg.h"
+#include "mesh/VertexIdPair.h"
 #include "quantum/GradedFock.h"
 
 #include <Eigen/Dense>
@@ -29,6 +30,8 @@ using cd = std::complex<double>;
 using cobordism::Certificate;
 using cobordism::CertificateDomain;
 using cobordism::CertificateRegime;
+using ::tessera::mesh::ascendingIds;
+using ::tessera::mesh::VertexIdPair;
 
 constexpr double kNaN = std::numeric_limits<double>::quiet_NaN();
 
@@ -1156,7 +1159,7 @@ SpinLiftRead ExchangeHolonomy::spinLift(
   if (edges.size() != edgeRotations.size())
     throw std::invalid_argument(
         "ExchangeHolonomy::spinLift: one rotation per edge required");
-  std::map<std::pair<std::uint64_t, std::uint64_t>, std::size_t> edgeIndex;
+  std::map<VertexIdPair, std::size_t> edgeIndex;
   for (std::size_t e = 0; e < edges.size(); ++e) {
     if (edges[e].first == edges[e].second)
       throw std::invalid_argument(
@@ -1164,8 +1167,7 @@ SpinLiftRead ExchangeHolonomy::spinLift(
     if (edgeRotations[e].rows() != d || edgeRotations[e].cols() != d)
       throw std::invalid_argument(
           "ExchangeHolonomy::spinLift: edge rotations must be d x d");
-    const auto key = std::minmax(edges[e].first, edges[e].second);
-    if (!edgeIndex.emplace(std::make_pair(key.first, key.second), e).second)
+    if (!edgeIndex.emplace(ascendingIds(edges[e].first, edges[e].second), e).second)
       throw std::invalid_argument(
           "ExchangeHolonomy::spinLift: duplicate unordered edge");
   }
@@ -1173,8 +1175,7 @@ SpinLiftRead ExchangeHolonomy::spinLift(
   // The directed transition g(i -> j) and its principal lift. g(j -> i) is
   // the transpose, lifted independently by the same principal rule.
   const auto directedRotation = [&](std::uint64_t i, std::uint64_t j) {
-    const auto key = std::minmax(i, j);
-    const auto hit = edgeIndex.find(std::make_pair(key.first, key.second));
+    const auto hit = edgeIndex.find(ascendingIds(i, j));
     if (hit == edgeIndex.end())
       throw std::invalid_argument(
           "ExchangeHolonomy::spinLift: a triangle edge is missing from the "
@@ -1229,10 +1230,8 @@ SpinLiftRead ExchangeHolonomy::spinLift(
   for (int t = 0; t < rows; ++t) {
     const auto &tri = triangles[static_cast<std::size_t>(t)];
     for (int corner = 0; corner < 3; ++corner) {
-      const auto key = std::minmax(tri[static_cast<std::size_t>(corner)],
-                                   tri[(corner + 1) % 3]);
-      const std::size_t e =
-          edgeIndex.at(std::make_pair(key.first, key.second));
+      const std::size_t e = edgeIndex.at(
+          ascendingIds(tri[static_cast<std::size_t>(corner)], tri[(corner + 1) % 3]));
       incidence[static_cast<std::size_t>(t) * cols + static_cast<int>(e)] ^=
           1;
     }

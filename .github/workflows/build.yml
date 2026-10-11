@@ -461,3 +461,47 @@ jobs:
           path: .test_durations
           include-hidden-files: true
           if-no-files-found: error
+
+  # src/rl/ is compiled only when the configuring Python can import torch, and
+  # the test jobs above build without it, so this job is the only place CI
+  # parses those files (see .github/scripts/check-torch-sources.sh; a namespace
+  # move broke CobordismObjectiveEnv.cpp unnoticed until
+  # https://github.com/akellehe/tessera/pull/1530). It writes no object file,
+  # so it needs none of our runners: GitHub's hosted runner, in the same pinned
+  # 24.04 image as the test jobs so the compiler and headers match, alongside
+  # the shards rather than in front of them.
+  torch-sources:
+    name: syntax-check the Torch-only sources
+    runs-on: ubuntu-latest
+    container:
+      image: ubuntu:24.04
+    timeout-minutes: 20
+    steps:
+      - name: Install the toolchain and Python
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            ca-certificates curl git \
+            build-essential cmake ninja-build mold \
+            libeigen3-dev liblapack-dev libblas-dev zlib1g-dev \
+            python3 python3-dev python3-venv
+
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Trust the workspace repository
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      # The CPU wheel: libtorch's headers and CMake package without CUDA's
+      # several gigabytes. CMakeLists.txt asks the configuring Python for
+      # pybind11 (3.0 or later, as pyproject.toml's build requirements say;
+      # 24.04's pybind11-dev is 2.11), so it goes into the same venv.
+      - name: Install torch and pybind11
+        run: |
+          python3 -m venv /opt/torch-venv
+          /opt/torch-venv/bin/pip install --quiet --index-url https://download.pytorch.org/whl/cpu torch
+          /opt/torch-venv/bin/pip install --quiet "pybind11>=3.0"
+
+      - name: Syntax-check src/rl/
+        run: .github/scripts/check-torch-sources.sh /opt/torch-venv/bin/python

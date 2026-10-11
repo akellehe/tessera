@@ -216,7 +216,7 @@ std::complex<double> ReggeSolver::dualReggeActionOverHinges(
     return S;
 }
 
-std::vector<std::pair<std::uint64_t, std::uint64_t>>
+std::vector<VertexIdPair>
 ReggeSolver::affectedEdgesOfCells(
     const std::vector<std::vector<std::uint64_t>> &cells) const {
     // A move changes ∂S/∂ℓ²_e only where an affected hinge contributes to e, i.e.
@@ -520,8 +520,7 @@ ReggeSolver::actionHessianExact() const {
 std::vector<std::tuple<std::size_t, std::size_t, std::complex<double>>>
 ReggeSolver::hingeHessianEntries(
     const SimplexPtr &hinge,
-    const std::map<std::pair<std::uint64_t, std::uint64_t>, std::size_t> &eidx)
-    const {
+    const std::map<VertexIdPair, std::size_t> &eidx) const {
     using cd = std::complex<double>;
     // d^2 S/dl^2_e dl^2_f = d2V_ef*eps + dV_e*dEps_f + dV_f*dEps_e + V*d2Eps_ef,
     // summed over the hinges that couple e and f. This emits one hinge's

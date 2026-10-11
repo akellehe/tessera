@@ -77,7 +77,7 @@ Connection Connection::fromSpacetime(const spacetime::Spacetime &st,
 Complex Connection::link(std::uint64_t x, std::uint64_t y) const {
   if (x == y) return Complex(1.0, 0.0);
   const bool forward = x < y;
-  const auto it = index_.find(forward ? std::make_pair(x, y) : std::make_pair(y, x));
+  const auto it = index_.find(::tessera::mesh::ascendingIds(x, y));
   if (it == index_.end())
     throw std::invalid_argument("Connection::link: (" + std::to_string(x) + "," +
                                 std::to_string(y) + ") is not an edge");
@@ -122,7 +122,7 @@ std::vector<std::pair<int, double>> Connection::checkWalk(const Walk &walk, cons
     if (u == v)
       throw std::invalid_argument(std::string(who) + ": step " + std::to_string(k) + " is a self-loop at vertex " +
                                   std::to_string(u));
-    const auto it = index_.find(u < v ? std::make_pair(u, v) : std::make_pair(v, u));
+    const auto it = index_.find(::tessera::mesh::ascendingIds(u, v));
     if (it == index_.end())
       throw std::invalid_argument(std::string(who) + ": step " + std::to_string(k) + " (" + std::to_string(u) +
                                   " -> " + std::to_string(v) + ") is not an edge");

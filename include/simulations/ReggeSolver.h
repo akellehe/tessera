@@ -2,6 +2,7 @@
 #pragma once
 
 #include "mesh/ForwardDeclarations.h"
+#include "mesh/VertexIdPair.h"
 #include "matter/MatterConfiguration.h"
 #include <complex>
 #include <cstdint>
@@ -139,7 +140,7 @@ class ReggeSolver {
     /// `(a,b)` id pairs (deduped). Cells are both added and removed by a move, so
     /// take the union of this set evaluated before and after it, then use that
     /// fixed set for both legs of `gradientNorm2OverEdges`.
-    [[nodiscard]] std::vector<std::pair<std::uint64_t, std::uint64_t>>
+    [[nodiscard]] std::vector<mesh::VertexIdPair>
     affectedEdgesOfCells(
         const std::vector<std::vector<std::uint64_t>> &cells) const;
 
@@ -237,8 +238,7 @@ class ReggeSolver {
         std::tuple<std::size_t, std::size_t, std::complex<double>>>
     hingeHessianEntries(
         const SimplexPtr &hinge,
-        const std::map<std::pair<std::uint64_t, std::uint64_t>, std::size_t>
-            &eidx) const;
+        const std::map<mesh::VertexIdPair, std::size_t> &eidx) const;
 
     /// Compute the gradient of the total action: ∂S/∂ℓ²_e for each edge.
     [[nodiscard]] std::vector<std::complex<double>> actionGradient() const;

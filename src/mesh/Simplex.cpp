@@ -1059,15 +1059,15 @@ std::complex<double> Simplex::deficitAngle(const DihedralSheets &sheets) const {
     return twoPi - sum;
 }
 
-std::map<std::pair<std::uint64_t, std::uint64_t>, std::complex<double>>
+std::map<VertexIdPair, std::complex<double>>
 Simplex::deficitAngleGradient() const {
     return deficitAngleGradient(DihedralSheets{});
 }
 
-std::map<std::pair<std::uint64_t, std::uint64_t>, std::complex<double>>
+std::map<VertexIdPair, std::complex<double>>
 Simplex::deficitAngleGradient(const DihedralSheets &sheets) const {
     using cd = std::complex<double>;
-    std::map<std::pair<std::uint64_t, std::uint64_t>, cd> grad;
+    std::map<VertexIdPair, cd> grad;
     if (!spacetime || vertices.empty()) return grad;
     const int topSize =
         spacetime->getMetric()->getSignature()->getDimensions() + 1;
@@ -1131,17 +1131,14 @@ Simplex::deficitAngleGradient(const DihedralSheets &sheets) const {
                 // without a sign flag.
                 const cd ddenom = denom * 0.5 * (dCii / Cii + dCjj / Cjj);
                 const cd dr = -(dCij * denom - Cij * ddenom) / (denom * denom);
-                const std::uint64_t va = tv[a]->getId(), vb = tv[b]->getId();
-                grad[{std::min(va, vb), std::max(va, vb)}] -= dthetaDr * dr;
+                grad[ascendingIds(tv[a]->getId(), tv[b]->getId())] -= dthetaDr * dr;
             }
         }
     }
     return grad;
 }
 
-std::map<std::pair<std::pair<std::uint64_t, std::uint64_t>,
-                   std::pair<std::uint64_t, std::uint64_t>>,
-         std::complex<double>>
+std::map<std::pair<VertexIdPair, VertexIdPair>, std::complex<double>>
 Simplex::deficitAngleHessian() const {
     using cd = std::complex<double>;
     std::map<std::pair<VertexIdPair, VertexIdPair>, cd> hess;
@@ -1262,8 +1259,8 @@ Simplex::deficitAngleHessian() const {
                      - 2.0 * (Ne * Den - N * De) * Df) / (Den * Den * Den);
 
                 const cd d2theta = d2thetaDr2 * e.dr * f.dr + dthetaDr * d2r;
-                const VertexIdPair ke{std::min(e.va, e.vb), std::max(e.va, e.vb)};
-                const VertexIdPair kf{std::min(f.va, f.vb), std::max(f.va, f.vb)};
+                const VertexIdPair ke = ascendingIds(e.va, e.vb);
+                const VertexIdPair kf = ascendingIds(f.va, f.vb);
                 hess[{ke, kf}] -= d2theta;      // eps = 2pi - sum theta
             }
         }
@@ -1445,11 +1442,10 @@ std::complex<double> dCircumR2(const ::tessera::mesh::Simplex* s,
         for (int j = 0; j < d; ++j) a += cofG[j * d + i] * h[j];
         beta[i] = a / detG;
     }
-    const std::uint64_t lo = std::min(ea, eb), hi = std::max(ea, eb);
+    const VertexIdPair edge = ascendingIds(ea, eb);
     auto ind = [&](int p, int q) -> double {
         if (p == q) return 0.0;
-        const std::uint64_t a = sv[p]->getId(), b = sv[q]->getId();
-        return (std::min(a, b) == lo && std::max(a, b) == hi) ? 1.0 : 0.0;
+        return ascendingIds(sv[p]->getId(), sv[q]->getId()) == edge ? 1.0 : 0.0;
     };
     std::vector<std::complex<double>> dG(static_cast<std::size_t>(d) * d), dh(d);
     for (int i = 0; i < d; ++i)
@@ -1494,11 +1490,10 @@ std::complex<double> d2CircumR2(const ::tessera::mesh::Simplex* s,
     }
     auto indMat = [&](std::uint64_t e0, std::uint64_t e1,
                       std::vector<std::complex<double>>& dG, std::vector<std::complex<double>>& dh) {
-        const std::uint64_t lo = std::min(e0, e1), hi = std::max(e0, e1);
+        const VertexIdPair edge = ascendingIds(e0, e1);
         auto ind = [&](int p, int q) -> double {
             if (p == q) return 0.0;
-            const std::uint64_t a = sv[p]->getId(), b = sv[q]->getId();
-            return (std::min(a, b) == lo && std::max(a, b) == hi) ? 1.0 : 0.0;
+            return ascendingIds(sv[p]->getId(), sv[q]->getId()) == edge ? 1.0 : 0.0;
         };
         dG.assign(static_cast<std::size_t>(d) * d, 0.0);
         dh.assign(d, 0.0);
@@ -1593,13 +1588,13 @@ std::complex<double> Simplex::dualVolume() const {
     return dualVolRec(this, ambientTopDimension());
 }
 
-std::map<std::pair<std::uint64_t, std::uint64_t>, std::complex<double>>
+std::map<VertexIdPair, std::complex<double>>
 Simplex::volumeGradient() const {
     // dV/dl^2_e = (V/2) tr(G^-1 dG_e), Jacobi's formula on the Gram determinant
     // (V = sgn sqrt(|det G|)/d!, G linear in l^2 so dG_e is an indicator matrix, the
     // same dG dCircumR2 uses). G^-1 via the adjugate (cofactor^T/det),
     // Eigen-free, matching circumFromGram / volume().
-    std::map<std::pair<std::uint64_t, std::uint64_t>, std::complex<double>> grad;
+    std::map<VertexIdPair, std::complex<double>> grad;
     const int d = static_cast<int>(size()) - 1;
     if (d < 1) return grad;
     const GeomCache &gc = gramCofCache();
@@ -1612,14 +1607,11 @@ Simplex::volumeGradient() const {
     const auto &sv = vertices;
     for (std::size_t p = 0; p < sv.size(); ++p)
         for (std::size_t q = p + 1; q < sv.size(); ++q) {
-            const std::uint64_t a = sv[p]->getId(), b = sv[q]->getId();
-            const std::pair<std::uint64_t, std::uint64_t> ek{std::min(a, b),
-                                                             std::max(a, b)};
+            const VertexIdPair ek = ascendingIds(sv[p]->getId(), sv[q]->getId());
             auto ind = [&](int i, int j) -> double {
                 if (i == j) return 0.0;
-                const std::uint64_t x = sv[static_cast<std::size_t>(i)]->getId();
-                const std::uint64_t y = sv[static_cast<std::size_t>(j)]->getId();
-                return (std::min(x, y) == ek.first && std::max(x, y) == ek.second)
+                return ascendingIds(sv[static_cast<std::size_t>(i)]->getId(),
+                                    sv[static_cast<std::size_t>(j)]->getId()) == ek
                            ? 1.0 : 0.0;
             };
             // tr(G^-1 dG) = sum_ij (G^-1)_ij dG_ji; dG symmetric, (G^-1)_ij=cof_ji/det.
@@ -1637,14 +1629,13 @@ Simplex::volumeGradient() const {
     return grad;
 }
 
-std::map<std::pair<std::uint64_t, std::uint64_t>, std::complex<double>>
+std::map<VertexIdPair, std::complex<double>>
 Simplex::volumeGradientDirectionalDerivative(
-    const std::map<std::pair<std::uint64_t, std::uint64_t>,
-                   std::complex<double>> &direction) const {
+    const std::map<VertexIdPair, std::complex<double>> &direction) const {
     // Jacobi's formula differentiated a second time. G is linear in l^2, so the
     // d^2G/dl^2 dl^2 term vanishes identically and the entire second derivative
     // is carried by the two first-order pieces assembled below.
-    std::map<std::pair<std::uint64_t, std::uint64_t>, std::complex<double>> out;
+    std::map<VertexIdPair, std::complex<double>> out;
     const int d = static_cast<int>(size()) - 1;
     if (d < 1) return out;
     const GeomCache &gc = gramCofCache();
@@ -1671,7 +1662,7 @@ Simplex::volumeGradientDirectionalDerivative(
         if (x == y) return zero;
         const std::uint64_t a = sv[static_cast<std::size_t>(x)]->getId();
         const std::uint64_t b = sv[static_cast<std::size_t>(y)]->getId();
-        const auto found = direction.find({std::min(a, b), std::max(a, b)});
+        const auto found = direction.find(ascendingIds(a, b));
         return found == direction.end() ? zero : found->second;
     };
 
@@ -1716,14 +1707,11 @@ Simplex::volumeGradientDirectionalDerivative(
 
     for (std::size_t p = 0; p < sv.size(); ++p)
         for (std::size_t q = p + 1; q < sv.size(); ++q) {
-            const std::uint64_t a = sv[p]->getId(), b = sv[q]->getId();
-            const std::pair<std::uint64_t, std::uint64_t> ek{std::min(a, b),
-                                                             std::max(a, b)};
+            const VertexIdPair ek = ascendingIds(sv[p]->getId(), sv[q]->getId());
             auto ind = [&](int i, int j) -> double {
                 if (i == j) return 0.0;
-                const std::uint64_t x = sv[static_cast<std::size_t>(i)]->getId();
-                const std::uint64_t y = sv[static_cast<std::size_t>(j)]->getId();
-                return (std::min(x, y) == ek.first && std::max(x, y) == ek.second)
+                return ascendingIds(sv[static_cast<std::size_t>(i)]->getId(),
+                                    sv[static_cast<std::size_t>(j)]->getId()) == ek
                            ? 1.0 : 0.0;
             };
             std::complex<double> traceGinv{0.0, 0.0};  // t_e = tr(G^-1 dG_e)
@@ -1820,7 +1808,7 @@ enum class HeightOrder { Value, Gradient, Hessian };
 
 struct CircumcentricHeight {
     /// The edges of `cf`, as sorted vertex-id pairs (empty for HeightOrder::Value).
-    std::vector<std::pair<std::uint64_t, std::uint64_t>> edges;
+    std::vector<VertexIdPair> edges;
     /// The signed height.
     std::complex<double> value{0.0, 0.0};
     /// d h / d l^2, one entry per edge of `edges`.
@@ -1848,7 +1836,7 @@ struct CircumcentricHeight {
                 local.emplace_back(p, q);
                 const std::uint64_t a = cv[static_cast<std::size_t>(p)]->getId();
                 const std::uint64_t b = cv[static_cast<std::size_t>(q)]->getId();
-                out.edges.emplace_back(std::min(a, b), std::max(a, b));
+                out.edges.push_back(ascendingIds(a, b));
             }
     const std::size_t nE = local.size();
     out.gradient.assign(nE, cd{0.0, 0.0});
@@ -2072,7 +2060,7 @@ bool Simplex::dualGeometryIsDegenerate() const {
     return false;
 }
 
-std::map<std::pair<std::uint64_t, std::uint64_t>, std::complex<double>>
+std::map<VertexIdPair, std::complex<double>>
 Simplex::dualVolumeGradient() const {
     using cd = std::complex<double>;
     std::map<VertexIdPair, cd> grad;
@@ -2110,9 +2098,7 @@ Simplex::dualVolumeGradient() const {
     return grad;
 }
 
-std::map<std::pair<std::pair<std::uint64_t, std::uint64_t>,
-                   std::pair<std::uint64_t, std::uint64_t>>,
-         std::complex<double>>
+std::map<std::pair<VertexIdPair, VertexIdPair>, std::complex<double>>
 Simplex::dualVolumeHessian() const {
     using cd = std::complex<double>;
     std::map<std::pair<VertexIdPair, VertexIdPair>, cd> hess;
@@ -2127,10 +2113,8 @@ Simplex::dualVolumeHessian() const {
         for (const auto& tp : cf->getCofaces()) {
             const auto& tv = tp->getVertices();
             for (std::size_t i = 0; i < tv.size(); ++i)
-                for (std::size_t j = i + 1; j < tv.size(); ++j) {
-                    const std::uint64_t a = tv[i]->getId(), b = tv[j]->getId();
-                    edgeSet.insert({std::min(a, b), std::max(a, b)});
-                }
+                for (std::size_t j = i + 1; j < tv.size(); ++j)
+                    edgeSet.insert(ascendingIds(tv[i]->getId(), tv[j]->getId()));
         }
     const std::vector<VertexIdPair> ev(edgeSet.begin(), edgeSet.end());
     const std::size_t nE = ev.size();
