@@ -1059,15 +1059,15 @@ std::complex<double> Simplex::deficitAngle(const DihedralSheets &sheets) const {
     return twoPi - sum;
 }
 
-std::map<std::pair<std::uint64_t, std::uint64_t>, std::complex<double>>
+std::map<VertexIdPair, std::complex<double>>
 Simplex::deficitAngleGradient() const {
     return deficitAngleGradient(DihedralSheets{});
 }
 
-std::map<std::pair<std::uint64_t, std::uint64_t>, std::complex<double>>
+std::map<VertexIdPair, std::complex<double>>
 Simplex::deficitAngleGradient(const DihedralSheets &sheets) const {
     using cd = std::complex<double>;
-    std::map<std::pair<std::uint64_t, std::uint64_t>, cd> grad;
+    std::map<VertexIdPair, cd> grad;
     if (!spacetime || vertices.empty()) return grad;
     const int topSize =
         spacetime->getMetric()->getSignature()->getDimensions() + 1;
@@ -1138,9 +1138,7 @@ Simplex::deficitAngleGradient(const DihedralSheets &sheets) const {
     return grad;
 }
 
-std::map<std::pair<std::pair<std::uint64_t, std::uint64_t>,
-                   std::pair<std::uint64_t, std::uint64_t>>,
-         std::complex<double>>
+std::map<std::pair<VertexIdPair, VertexIdPair>, std::complex<double>>
 Simplex::deficitAngleHessian() const {
     using cd = std::complex<double>;
     std::map<std::pair<VertexIdPair, VertexIdPair>, cd> hess;
@@ -1590,13 +1588,13 @@ std::complex<double> Simplex::dualVolume() const {
     return dualVolRec(this, ambientTopDimension());
 }
 
-std::map<std::pair<std::uint64_t, std::uint64_t>, std::complex<double>>
+std::map<VertexIdPair, std::complex<double>>
 Simplex::volumeGradient() const {
     // dV/dl^2_e = (V/2) tr(G^-1 dG_e), Jacobi's formula on the Gram determinant
     // (V = sgn sqrt(|det G|)/d!, G linear in l^2 so dG_e is an indicator matrix, the
     // same dG dCircumR2 uses). G^-1 via the adjugate (cofactor^T/det),
     // Eigen-free, matching circumFromGram / volume().
-    std::map<std::pair<std::uint64_t, std::uint64_t>, std::complex<double>> grad;
+    std::map<VertexIdPair, std::complex<double>> grad;
     const int d = static_cast<int>(size()) - 1;
     if (d < 1) return grad;
     const GeomCache &gc = gramCofCache();
@@ -1631,14 +1629,13 @@ Simplex::volumeGradient() const {
     return grad;
 }
 
-std::map<std::pair<std::uint64_t, std::uint64_t>, std::complex<double>>
+std::map<VertexIdPair, std::complex<double>>
 Simplex::volumeGradientDirectionalDerivative(
-    const std::map<std::pair<std::uint64_t, std::uint64_t>,
-                   std::complex<double>> &direction) const {
+    const std::map<VertexIdPair, std::complex<double>> &direction) const {
     // Jacobi's formula differentiated a second time. G is linear in l^2, so the
     // d^2G/dl^2 dl^2 term vanishes identically and the entire second derivative
     // is carried by the two first-order pieces assembled below.
-    std::map<std::pair<std::uint64_t, std::uint64_t>, std::complex<double>> out;
+    std::map<VertexIdPair, std::complex<double>> out;
     const int d = static_cast<int>(size()) - 1;
     if (d < 1) return out;
     const GeomCache &gc = gramCofCache();
@@ -1811,7 +1808,7 @@ enum class HeightOrder { Value, Gradient, Hessian };
 
 struct CircumcentricHeight {
     /// The edges of `cf`, as sorted vertex-id pairs (empty for HeightOrder::Value).
-    std::vector<std::pair<std::uint64_t, std::uint64_t>> edges;
+    std::vector<VertexIdPair> edges;
     /// The signed height.
     std::complex<double> value{0.0, 0.0};
     /// d h / d l^2, one entry per edge of `edges`.
@@ -2063,7 +2060,7 @@ bool Simplex::dualGeometryIsDegenerate() const {
     return false;
 }
 
-std::map<std::pair<std::uint64_t, std::uint64_t>, std::complex<double>>
+std::map<VertexIdPair, std::complex<double>>
 Simplex::dualVolumeGradient() const {
     using cd = std::complex<double>;
     std::map<VertexIdPair, cd> grad;
@@ -2101,9 +2098,7 @@ Simplex::dualVolumeGradient() const {
     return grad;
 }
 
-std::map<std::pair<std::pair<std::uint64_t, std::uint64_t>,
-                   std::pair<std::uint64_t, std::uint64_t>>,
-         std::complex<double>>
+std::map<std::pair<VertexIdPair, VertexIdPair>, std::complex<double>>
 Simplex::dualVolumeHessian() const {
     using cd = std::complex<double>;
     std::map<std::pair<VertexIdPair, VertexIdPair>, cd> hess;

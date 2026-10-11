@@ -20,6 +20,7 @@
 #include "mesh/EdgeList.h"
 #include "mesh/Fingerprint.h"
 #include "mesh/TemporalOrientation.h"
+#include "mesh/VertexIdPair.h"
 #include "utils.h"
 
 // === tessera subsystem ns fwd-decls ===
@@ -448,8 +449,7 @@ class Simplex {
     /// \f$ d\theta/dy = -i/\sqrt{1+y^2} \f$ (never singular). Keyed by sorted
     /// vertex-id edge; only the edges of the top cells touching the hinge
     /// appear. Complex (the boost part is carried, not truncated).
-    [[nodiscard]] std::map<std::pair<std::uint64_t, std::uint64_t>,
-                           std::complex<double>>
+    [[nodiscard]] std::map<VertexIdPair, std::complex<double>>
     deficitAngleGradient() const;
 
     /// ``deficitAngleGradient`` with every dihedral angle on its declared sheet
@@ -458,8 +458,7 @@ class Simplex {
     /// constant sign times the principal one and
     /// \f$ d\theta/dr = -1/\sin\theta \f$ holds on every sheet of the
     /// inverse cosine with \f$ \theta \f$ the declared value.
-    [[nodiscard]] std::map<std::pair<std::uint64_t, std::uint64_t>,
-                           std::complex<double>>
+    [[nodiscard]] std::map<VertexIdPair, std::complex<double>>
     deficitAngleGradient(const DihedralSheets &sheets) const;
 
     /// Exact analytic Hessian of this hinge's deficit angle:
@@ -475,9 +474,7 @@ class Simplex {
     /// \f$ d^2\theta/dy^2 = +i\,y/(1+y^2)^{3/2} \f$ with \f$ y = C_{ij}/D \f$.
     /// Keyed by the (sorted) edge pair; symmetric. Complex (the boost part is
     /// carried, not truncated).
-    [[nodiscard]] std::map<std::pair<std::pair<std::uint64_t, std::uint64_t>,
-                                     std::pair<std::uint64_t, std::uint64_t>>,
-                           std::complex<double>>
+    [[nodiscard]] std::map<std::pair<VertexIdPair, VertexIdPair>, std::complex<double>>
     deficitAngleHessian() const;
 
     /// Area of this simplex read as a triangular hinge (3 vertices), from Heron's
@@ -510,7 +507,7 @@ class Simplex {
     /// volumes), from which the arbitrary-degree analytic
     /// \f$ \partial L_k/\partial\ell^2 \f$ and the general-k \f$ r_U \f$ gradient
     /// follow.
-    [[nodiscard]] std::map<std::pair<std::uint64_t, std::uint64_t>, std::complex<double>>
+    [[nodiscard]] std::map<VertexIdPair, std::complex<double>>
     volumeGradient() const;
 
     /// Exact directional second derivative of the signed `volume()`:
@@ -531,10 +528,9 @@ class Simplex {
     /// \f$ \partial^2 L_k/\partial\ell^2\partial\ell^2 \f$ contraction that the joint
     /// Regge-Hodge descent direction needs. Uses the same
     /// `gramMatrix`/`determinant`/`cofactorMatrix` cache as `volumeGradient()`.
-    [[nodiscard]] std::map<std::pair<std::uint64_t, std::uint64_t>, std::complex<double>>
+    [[nodiscard]] std::map<VertexIdPair, std::complex<double>>
     volumeGradientDirectionalDerivative(
-        const std::map<std::pair<std::uint64_t, std::uint64_t>,
-                       std::complex<double>> &direction) const;
+        const std::map<VertexIdPair, std::complex<double>> &direction) const;
 
     /// Fail-loudly admissibility check for a purely-spacelike simplex.
     ///
@@ -607,7 +603,7 @@ class Simplex {
     /// being the two-level edge→facet→top recursion. Keyed by sorted vertex-id
     /// edge over the top cells touching the hinge. Returns an empty map for other
     /// codimensions.
-    [[nodiscard]] std::map<std::pair<std::uint64_t, std::uint64_t>, std::complex<double>>
+    [[nodiscard]] std::map<VertexIdPair, std::complex<double>>
     dualVolumeGradient() const;
 
     /// Do two successive circumcentres of this hinge's dual coincide?
@@ -638,9 +634,7 @@ class Simplex {
     /// logarithm of a Gram determinant,
     /// \f$ -\mathrm{tr}(G^{-1}\partial_f G\,G^{-1}\partial_e G) \f$. Finite where
     /// circumcentres coincide. Keyed by the (sorted) edge pair; symmetric.
-    [[nodiscard]] std::map<std::pair<std::pair<std::uint64_t, std::uint64_t>,
-                                     std::pair<std::uint64_t, std::uint64_t>>,
-                           std::complex<double>>
+    [[nodiscard]] std::map<std::pair<VertexIdPair, VertexIdPair>, std::complex<double>>
     dualVolumeHessian() const;
 
     /// Diagonal Hodge-star ratio ⋆ = |★σ| / |σ| (dual content over primal

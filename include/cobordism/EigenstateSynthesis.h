@@ -17,6 +17,7 @@
 
 #include "cobordism/HodgeLaplacian.h"
 #include "mesh/Edge.h"
+#include "mesh/VertexIdPair.h"
 
 // === tessera subsystem ns fwd-decls ===
 namespace tessera::mesh { class Edge; class Vertex; class Simplex; }
@@ -346,12 +347,12 @@ class EigenstateSynthesis {
     /// The boundary tunable edges as sorted \f$ (\min\text{id},\max\text{id}) \f$
     /// endpoint pairs — the fixed \f$ \partial W \f$ edge set, for asserting it is
     /// untouched through an interior fill / growth sweep.
-    [[nodiscard]] std::vector<std::pair<std::uint64_t, std::uint64_t>>
+    [[nodiscard]] std::vector<::tessera::mesh::VertexIdPair>
     boundaryEdges() const;
 
     /// The interior tunable edges as sorted \f$ (\min\text{id},\max\text{id}) \f$
     /// endpoint pairs (the complement of `boundaryEdges()`).
-    [[nodiscard]] std::vector<std::pair<std::uint64_t, std::uint64_t>>
+    [[nodiscard]] std::vector<::tessera::mesh::VertexIdPair>
     interiorEdges() const;
 
     /// Cone a fresh interior vertex into a top cell via the boundary-fixed
