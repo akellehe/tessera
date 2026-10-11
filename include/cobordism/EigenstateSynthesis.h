@@ -122,6 +122,113 @@ struct GeometricOperatorReadout {
   std::vector<std::complex<double>> operatorMatrix;
 };
 
+/// A caller-declared pinned region: a named set of vertices held fixed. The
+/// name is its identity, so a region can be re-declared, referred to and
+/// reported on. The region carries no target, no state and no objective.
+struct PinnedRegion {
+  /// Identity. Re-declaring a region with an existing name replaces it.
+  std::string name;
+  /// The vertices held fixed. An edge relaxes unless both endpoints are
+  /// pinned.
+  std::set<std::uint64_t> vertices;
+};
+
+/// Result of the fixed-boundary spectral relaxation: an inverse-eigenvector
+/// synthesis in which selected cochain components hold the fixed relative
+/// amplitudes `target`, all other amplitudes are free, and only interior edge
+/// geometry varies. The assembled cochain is globally normalized before
+/// evaluation, so the selected block represents a ray rather than an absolute
+/// norm.
+struct FixedBoundaryEigenstateResult {
+  bool converged{false};
+  double residual{0.0};
+  double eigenvalue{0.0};
+  int degree{0};
+  int growthSteps{0};
+  std::size_t interiorVertexCount{0};
+  std::size_t interiorEdgeCount{0};
+  std::size_t auxiliaryCellCount{0};
+  std::vector<std::vector<std::uint64_t>> supportCells;
+  std::vector<std::complex<double>> target;
+  std::vector<std::complex<double>> state;
+};
+
+/// Result of a boundary-value spectral transfer solve. Each witness carries
+/// one independently prepared input/output pair on two distinct components of
+/// \f$ \partial W \f$. Boundary amplitudes and geometry are fixed; only bulk
+/// geometry and interior cochain amplitudes vary.
+struct BoundaryStateTransferResult {
+  bool converged{false};
+  bool commonEigenvalue{true};
+  double residual{0.0};
+  double eigenvalue{0.0};
+  int degree{0};
+  int growthSteps{0};
+  std::size_t freeEdgeCount{0};
+  std::size_t auxiliaryCellCount{0};
+  std::string inputRegion;
+  std::string outputRegion;
+  std::vector<std::vector<std::uint64_t>> inputCells;
+  std::vector<std::vector<std::uint64_t>> outputCells;
+  std::vector<std::vector<std::complex<double>>> inputStates;
+  std::vector<std::vector<std::complex<double>>> outputStates;
+  std::vector<std::vector<std::complex<double>>> states;
+  std::vector<double> stateResiduals;
+  std::vector<double> stateEigenvalues;
+  std::vector<double> inputBoundaryResiduals;
+  std::vector<double> outputBoundaryResiduals;
+  /// Best coupled residual after each relaxation/growth pass.
+  std::vector<double> residualTrace;
+};
+
+/// A formal complex-coefficient degree-\f$k\f$ chain on the live complex. Its
+/// readout of a \f$k\f$-cochain \f$\psi\f$ is the chain-cochain pairing
+/// \f$\langle c,\psi\rangle=\sum_\sigma c_\sigma\,\psi(\sigma)\f$ over the
+/// listed cells, whose values are taken on the ascending-order cell.
+using ReadoutChain =
+    std::vector<std::pair<std::vector<std::uint64_t>, std::complex<double>>>;
+
+/// Result of a whole-complex readout relaxation: a spanning set of coupled
+/// eigenstate witnesses, each with both boundary components' amplitudes fixed
+/// as inputs and its whole-complex readouts fixed to the algebraic output.
+/// The readout constraints hold exactly on every witness, so the residual
+/// measures only whether the whole complex carries them as eigenstates at the
+/// common eigenvalue.
+struct WholeComplexReadoutResult {
+  bool converged{false};
+  bool commonEigenvalue{true};
+  double residual{0.0};
+  double eigenvalue{0.0};
+  int degree{0};
+  int growthSteps{0};
+  std::size_t freeEdgeCount{0};
+  /// Free amplitude coordinates per witness after the readout constraints
+  /// are eliminated (interior cells minus the readout rank).
+  std::size_t auxiliaryCellCount{0};
+  std::size_t readoutRank{0};
+  std::string regionA;
+  std::string regionB;
+  std::vector<std::vector<std::uint64_t>> cellsA;
+  std::vector<std::vector<std::uint64_t>> cellsB;
+  /// The fixed boundary amplitudes after the joint per-witness
+  /// normalization (component A, then component B).
+  std::vector<std::vector<std::complex<double>>> statesA;
+  std::vector<std::vector<std::complex<double>>> statesB;
+  /// The readout targets scaled by the same per-witness factor.
+  std::vector<std::vector<std::complex<double>>> targets;
+  /// The readouts of the returned witnesses; `readoutDeviation` is their
+  /// largest absolute difference from `targets` (round-off only).
+  std::vector<std::vector<std::complex<double>>> readouts;
+  double readoutDeviation{0.0};
+  std::vector<std::vector<std::complex<double>>> states;
+  std::vector<double> stateResiduals;
+  std::vector<double> stateEigenvalues;
+  std::vector<double> boundaryResidualsA;
+  std::vector<double> boundaryResidualsB;
+  /// Best coupled residual after each relaxation/growth pass.
+  std::vector<double> residualTrace;
+};
+
 class EigenstateSynthesis {
   public:
     /// Construct over a fixed triangulation at degree `k` (default \f$ 0 \f$, the
@@ -707,6 +814,123 @@ class EigenstateSynthesis {
       std::vector<std::vector<std::uint64_t>> frameCells = {}, double tol = 1e-9,
       bool metric = true,
       HodgeLaplacian::MetricSource metricSource = HodgeLaplacian::defaultMetricSource());
+
+
+  /// Run the fixed-boundary inverse-eigenvector relaxation. Before global state
+  /// normalization, `supportCells[i]` is pinned to `target[i]` and every other
+  /// cochain component is an optimized auxiliary amplitude, so the normalized
+  /// witness restricts to the target ray while its support norm may be less
+  /// than one. The target block is normalized once before optimization.
+  ///
+  /// Only `EigenstateSynthesis` interior weights and, at degree zero, interior
+  /// U(1) phases are varied, so the geometric boundary is held fixed. If the
+  /// Rayleigh residual \f$\|L\psi-\langle\psi,L\psi\rangle\psi\|^2\f$ does not
+  /// fall below `epsilon`, a boundary-preserving stellar subdivision is
+  /// attempted and the relaxation repeats, up to `maxGrowth` times. No Regge
+  /// term, period residual, charge constraint or harmonic condition enters this
+  /// mode.
+  ///
+  /// Mutates \p spacetime in place.
+  [[nodiscard]] static FixedBoundaryEigenstateResult relaxFixedBoundaryEigenstate(
+      const std::shared_ptr<Spacetime> &spacetime,
+      HodgeLaplacian::MetricSource metricSource,
+      int degree,
+      std::vector<std::vector<std::uint64_t>> supportCells,
+      std::vector<std::complex<double>> target, double epsilon = 1e-10,
+      int restarts = 64, int maxGrowth = 4, std::uint64_t seed = 0,
+      int maxIterations = 200);
+  /// Fit one shared bulk geometry to independently prepared boundary-state
+  /// pairs. `inputRegionName` and `outputRegionName` must name two regions of
+  /// \p pinnedRegions whose vertex sets are exactly the two connected components
+  /// of \f$\partial W\f$. `inputCells` and `outputCells` must enumerate every
+  /// degree-`degree` cell of the corresponding component; each row of
+  /// `inputStates` is normalized once and its paired output is scaled by the
+  /// same factor, preserving the relative amplitudes of the supplied linear
+  /// map. Both restrictions are then fixed on their ordered cell frames.
+  ///
+  /// Before fitting, every supplied state must have isolated-boundary
+  /// eigenresidual below \p boundaryEpsilon. Those boundary amplitudes remain
+  /// exact in the returned, unnormalized witness cochains, and every other
+  /// cochain component is an independent auxiliary amplitude for that pair.
+  /// Edges held by one of \p pinnedRegions (both endpoints in one region) are unchanged; all other edge
+  /// weights and, at degree zero, connection phases may vary.
+  ///
+  /// With `commonEigenvalue = true`, the objective is
+  /// \f[
+  ///   R=\sum_j\|L_W\widehat\psi_j-\bar\lambda\widehat\psi_j\|^2,
+  ///   \qquad
+  ///   \bar\lambda=\frac1m\sum_j
+  ///     \langle\widehat\psi_j,L_W\widehat\psi_j\rangle .
+  /// \f]
+  /// A converged witness span is therefore closed under linear combinations:
+  /// attaching a new input in the fitted input span produces the same linear
+  /// combination of the fitted outputs. When false, each pair uses its own
+  /// Rayleigh quotient. No Regge, period, harmonic-eigenvalue or charge term is
+  /// added. Boundary-preserving stellar growth is retried up to `maxGrowth`
+  /// times.
+  ///
+  /// Mutates \p spacetime in place.
+  [[nodiscard]] static BoundaryStateTransferResult relaxBoundaryStatePairs(
+      const std::shared_ptr<Spacetime> &spacetime,
+      HodgeLaplacian::MetricSource metricSource,
+      const std::vector<PinnedRegion> &pinnedRegions,
+      int degree, std::string inputRegionName,
+      std::vector<std::vector<std::uint64_t>> inputCells,
+      std::vector<std::vector<std::complex<double>>> inputStates,
+      std::string outputRegionName,
+      std::vector<std::vector<std::uint64_t>> outputCells,
+      std::vector<std::vector<std::complex<double>>> outputStates,
+      bool commonEigenvalue = true, double epsilon = 1e-10,
+      double boundaryEpsilon = 1e-10, int restarts = 64,
+      int maxGrowth = 4, std::uint64_t seed = 0,
+      int maxIterations = 200);
+  /// Fit one shared bulk geometry so the whole complex carries a spanning set
+  /// of eigenstates whose boundary restrictions are prepared input pairs and
+  /// whose whole-complex readouts are prescribed outputs. `regionAName` and
+  /// `regionBName` must name two regions of \p pinnedRegions whose vertex sets are
+  /// exactly the two connected components of \f$\partial W\f$; `cellsA` and
+  /// `cellsB` must enumerate every degree-`degree` cell of the corresponding
+  /// component. Witness `j` has boundary data `statesA[j]` on A and
+  /// `statesB[j]` on B; the joint boundary vector is normalized once and
+  /// `targets[j]` is scaled by the same factor. Each nonzero component
+  /// restriction must be an isolated-boundary eigenstate (residual below
+  /// `boundaryEpsilon`); an exactly zero restriction is admitted as the zero
+  /// input on that component.
+  ///
+  /// `readouts[r]` is a formal chain on the live complex; the readout
+  /// constraint \f$\langle c_r,\psi_j\rangle=\text{targets}[j][r]\f$ is imposed
+  /// exactly: the free amplitudes of witness `j` are parametrized on the
+  /// affine solution set of its readout system (particular solution plus the
+  /// readout null space), so no penalty weight enters. A readout system that
+  /// the fixed boundary amplitudes make inconsistent is refused by name. The
+  /// residual is the common-eigenvalue Rayleigh residual of
+  /// `relaxBoundaryStatePairs`; bulk edge weights and, at degree zero,
+  /// connection phases vary; every edge held by one of \p pinnedRegions (both endpoints in one region) is
+  /// bit-identical. Boundary-preserving stellar growth is retried up to
+  /// `maxGrowth` times; existing cells persist under it, so readout chains
+  /// survive. After the first pass, each pass descends first from the previous
+  /// pass's witnesses and live geometry (cells created by growth start at zero)
+  /// and then from `restarts - 1` fresh random draws, so growth never discards
+  /// progress. The first pass draws `restarts` random starts, as
+  /// `relaxBoundaryStatePairs` does on every pass.
+  ///
+  /// Mutates \p spacetime in place.
+  [[nodiscard]] static WholeComplexReadoutResult relaxWholeComplexReadoutTargets(
+      const std::shared_ptr<Spacetime> &spacetime,
+      HodgeLaplacian::MetricSource metricSource,
+      const std::vector<PinnedRegion> &pinnedRegions,
+      int degree, std::string regionAName,
+      std::vector<std::vector<std::uint64_t>> cellsA,
+      std::vector<std::vector<std::complex<double>>> statesA,
+      std::string regionBName,
+      std::vector<std::vector<std::uint64_t>> cellsB,
+      std::vector<std::vector<std::complex<double>>> statesB,
+      std::vector<ReadoutChain> readouts,
+      std::vector<std::vector<std::complex<double>>> targets,
+      bool commonEigenvalue = true, double epsilon = 1e-10,
+      double boundaryEpsilon = 1e-10, int restarts = 64,
+      int maxGrowth = 4, std::uint64_t seed = 0,
+      int maxIterations = 200);
 
   private:
     /// The degree-1 setup both edge-loop gradients build before they diverge.

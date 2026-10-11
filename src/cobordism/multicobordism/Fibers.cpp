@@ -223,7 +223,7 @@ const std::optional<BoundaryFiber> &MultiCobordism::outputFiber(std::size_t inde
   return outputBlocks_[index].fiber;
 }
 
-MultiCobordism::FixedBoundaryEigenstateResult MultiCobordism::pinInputFibers(
+FixedBoundaryEigenstateResult MultiCobordism::pinInputFibers(
     int degree, double epsilon, int restarts, int maxGrowth, std::uint64_t seed, int maxIterations) {
   if (inputBlocks_.size() != 2 || !inputBlocks_[0].fiber || !inputBlocks_[1].fiber)
     throw std::invalid_argument(

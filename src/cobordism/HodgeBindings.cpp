@@ -369,6 +369,151 @@ ChainComplex omits.)doc")
       .def_readonly("operator_matrix",
                     &GeometricOperatorReadout::operatorMatrix);
 
+  py::class_<FixedBoundaryEigenstateResult>(
+      m, "FixedBoundaryEigenstateResult",
+      "Witness from the historical fixed-boundary Rayleigh-residual "
+      "relaxation. This is direct eigenstate synthesis, not a period r_U "
+      "constraint or target-free operator readout.")
+      .def_readonly(
+          "converged",
+          &FixedBoundaryEigenstateResult::converged)
+      .def_readonly(
+          "residual",
+          &FixedBoundaryEigenstateResult::residual)
+      .def_readonly(
+          "eigenvalue",
+          &FixedBoundaryEigenstateResult::eigenvalue)
+      .def_readonly("degree",
+                    &FixedBoundaryEigenstateResult::degree)
+      .def_readonly(
+          "growth_steps",
+          &FixedBoundaryEigenstateResult::growthSteps)
+      .def_readonly(
+          "interior_vertex_count",
+          &FixedBoundaryEigenstateResult::interiorVertexCount)
+      .def_readonly(
+          "interior_edge_count",
+          &FixedBoundaryEigenstateResult::interiorEdgeCount)
+      .def_readonly(
+          "auxiliary_cell_count",
+          &FixedBoundaryEigenstateResult::auxiliaryCellCount)
+      .def_readonly(
+          "support_cells",
+          &FixedBoundaryEigenstateResult::supportCells)
+      .def_readonly("target",
+                    &FixedBoundaryEigenstateResult::target)
+      .def_readonly("state",
+                    &FixedBoundaryEigenstateResult::state);
+  py::class_<BoundaryStateTransferResult>(
+      m, "BoundaryStateTransferResult",
+      "Coupled full-cobordism eigenstate witnesses with exact input/output "
+      "restrictions on two independently prepared, geometrically pinned "
+      "boundary components.")
+      .def_readonly(
+          "converged",
+          &BoundaryStateTransferResult::converged)
+      .def_readonly(
+          "common_eigenvalue",
+          &BoundaryStateTransferResult::commonEigenvalue)
+      .def_readonly(
+          "residual",
+          &BoundaryStateTransferResult::residual)
+      .def_readonly(
+          "eigenvalue",
+          &BoundaryStateTransferResult::eigenvalue)
+      .def_readonly("degree",
+                    &BoundaryStateTransferResult::degree)
+      .def_readonly(
+          "growth_steps",
+          &BoundaryStateTransferResult::growthSteps)
+      .def_readonly(
+          "free_edge_count",
+          &BoundaryStateTransferResult::freeEdgeCount)
+      .def_readonly(
+          "auxiliary_cell_count",
+          &BoundaryStateTransferResult::auxiliaryCellCount)
+      .def_readonly(
+          "input_region",
+          &BoundaryStateTransferResult::inputRegion)
+      .def_readonly(
+          "output_region",
+          &BoundaryStateTransferResult::outputRegion)
+      .def_readonly(
+          "input_cells",
+          &BoundaryStateTransferResult::inputCells)
+      .def_readonly(
+          "output_cells",
+          &BoundaryStateTransferResult::outputCells)
+      .def_readonly(
+          "input_states",
+          &BoundaryStateTransferResult::inputStates)
+      .def_readonly(
+          "output_states",
+          &BoundaryStateTransferResult::outputStates)
+      .def_readonly(
+          "states",
+          &BoundaryStateTransferResult::states)
+      .def_readonly(
+          "state_residuals",
+          &BoundaryStateTransferResult::stateResiduals)
+      .def_readonly(
+          "state_eigenvalues",
+          &BoundaryStateTransferResult::stateEigenvalues)
+      .def_readonly(
+          "input_boundary_residuals",
+          &BoundaryStateTransferResult::
+              inputBoundaryResiduals)
+      .def_readonly(
+          "output_boundary_residuals",
+          &BoundaryStateTransferResult::
+              outputBoundaryResiduals)
+      .def_readonly(
+          "residual_trace",
+          &BoundaryStateTransferResult::residualTrace);
+  py::class_<WholeComplexReadoutResult>(
+      m, "WholeComplexReadoutResult",
+      "Coupled full-cobordism eigenstate witnesses whose boundary "
+      "restrictions on BOTH components are fixed inputs and whose "
+      "whole-complex readouts are fixed exactly to the prescribed outputs.")
+      .def_readonly("converged",
+                    &WholeComplexReadoutResult::converged)
+      .def_readonly("common_eigenvalue",
+                    &WholeComplexReadoutResult::commonEigenvalue)
+      .def_readonly("residual",
+                    &WholeComplexReadoutResult::residual)
+      .def_readonly("eigenvalue",
+                    &WholeComplexReadoutResult::eigenvalue)
+      .def_readonly("degree", &WholeComplexReadoutResult::degree)
+      .def_readonly("growth_steps",
+                    &WholeComplexReadoutResult::growthSteps)
+      .def_readonly("free_edge_count",
+                    &WholeComplexReadoutResult::freeEdgeCount)
+      .def_readonly("auxiliary_cell_count",
+                    &WholeComplexReadoutResult::auxiliaryCellCount)
+      .def_readonly("readout_rank",
+                    &WholeComplexReadoutResult::readoutRank)
+      .def_readonly("region_a", &WholeComplexReadoutResult::regionA)
+      .def_readonly("region_b", &WholeComplexReadoutResult::regionB)
+      .def_readonly("cells_a", &WholeComplexReadoutResult::cellsA)
+      .def_readonly("cells_b", &WholeComplexReadoutResult::cellsB)
+      .def_readonly("states_a", &WholeComplexReadoutResult::statesA)
+      .def_readonly("states_b", &WholeComplexReadoutResult::statesB)
+      .def_readonly("targets", &WholeComplexReadoutResult::targets)
+      .def_readonly("readouts", &WholeComplexReadoutResult::readouts)
+      .def_readonly("readout_deviation",
+                    &WholeComplexReadoutResult::readoutDeviation)
+      .def_readonly("states", &WholeComplexReadoutResult::states)
+      .def_readonly("state_residuals",
+                    &WholeComplexReadoutResult::stateResiduals)
+      .def_readonly("state_eigenvalues",
+                    &WholeComplexReadoutResult::stateEigenvalues)
+      .def_readonly("boundary_residuals_a",
+                    &WholeComplexReadoutResult::boundaryResidualsA)
+      .def_readonly("boundary_residuals_b",
+                    &WholeComplexReadoutResult::boundaryResidualsB)
+      .def_readonly("residual_trace",
+                    &WholeComplexReadoutResult::residualTrace);
+
   auto eigenstateSynthesis = py::class_<EigenstateSynthesis>(m, "EigenstateSynthesis",
       R"doc(Inverse eigenvector problem on a fixed complex, degree-k.
 
