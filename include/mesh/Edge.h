@@ -127,6 +127,15 @@ class Edge {
     /// \f$ \arg(l^2) \f$; see the predicates below.
     [[nodiscard]] std::complex<double> getLength() const noexcept;
 
+    /// The complex squared length \f$ l^2 \f$, derived from `getLength()`.
+    ///
+    /// Defined out of line, so every caller reads the one compiled evaluation. A check that
+    /// snapshots \f$ l^2 \f$ and later compares it bit for bit must read it here on both
+    /// sides: an inline `l * l` at each site may be contracted into a fused multiply-add at
+    /// one and not the other (`-O3 -march=native`), and then an unchanged complex edge
+    /// compares unequal in its last bit.
+    [[nodiscard]] std::complex<double> squaredLength() const noexcept;
+
     /// # Causal character from the argument of the squared length
     ///
     /// Classifying on \f$ \mathrm{Re}(l^2) \f$ alone would discard

@@ -97,7 +97,7 @@ bool EigenstateSynthesis::attachInteriorVertex(
     const std::uint64_t a = edges_[i]->getSource()->getId();
     const std::uint64_t b = edges_[i]->getTarget()->getId();
     boundaryBefore[{std::min(a, b), std::max(a, b)}] = {
-        (edges_[i]->getLength() * edges_[i]->getLength()), edges_[i]->getPhase()};
+        edges_[i]->squaredLength(), edges_[i]->getPhase()};
   }
 
   // Fresh interior vertex with the largest id, so it sorts last and preserves
@@ -156,7 +156,7 @@ bool EigenstateSynthesis::attachInteriorVertex(
       const auto it =
           boundaryBefore.find({std::min(a, b), std::max(a, b)});
       if (it == boundaryBefore.end() ||
-          it->second.first != (edges_[i]->getLength() * edges_[i]->getLength()) ||
+          it->second.first != edges_[i]->squaredLength() ||
           it->second.second != edges_[i]->getPhase()) {
         valid = false;
         break;

@@ -155,7 +155,7 @@ bool EigenstateSynthesis::removeInteriorCell(
     const std::uint64_t a = edges_[i]->getSource()->getId();
     const std::uint64_t b = edges_[i]->getTarget()->getId();
     boundaryBefore[{std::min(a, b), std::max(a, b)}] = {
-        (edges_[i]->getLength() * edges_[i]->getLength()), edges_[i]->getPhase()};
+        edges_[i]->squaredLength(), edges_[i]->getPhase()};
   }
 
   // Mutate: drop the top cell, then its orphaned edges.
@@ -179,7 +179,7 @@ bool EigenstateSynthesis::removeInteriorCell(
     const std::uint64_t b = e->getTarget()->getId();
     const std::pair<std::uint64_t, std::uint64_t> key{std::min(a, b),
                                                       std::max(a, b)};
-    liveWeights[key] = {(e->getLength() * e->getLength()), e->getPhase()};
+    liveWeights[key] = {e->squaredLength(), e->getPhase()};
   }
   for (const auto &[key, wp] : boundaryBefore) {
     const auto it = liveWeights.find(key);
