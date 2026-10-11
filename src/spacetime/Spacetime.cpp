@@ -23,6 +23,7 @@
 #include "graph/CSRBuilder.hpp"
 #include "graph/DualGraph.hpp"
 #include "graph/IndexByKey.hpp"
+#include "graph/Modularity.hpp"
 #include "graph/SpectralGraph.hpp"
 #include "graph/WeightedCsrGraph.hpp"
 #include "mesh/SimplexFilter.h"
@@ -1598,65 +1599,71 @@ Spacetime::getSpectralDimensionOnSkeleton(
 
 double Spacetime::modularityOnSkeleton(int M) const {
   if (M < 1) return 0.0;
-  std::size_t n = getVertexCount();
+  const std::size_t n = getVertexCount();
   if (n == 0) return 0.0;
-
-  // Per-vertex degree and label.
-  std::vector<std::uint32_t> deg(0);
-  std::vector<int> label(0);
-  // Build a vertex-id → contiguous-index map so we can index into
-  // arrays of size n.  (Vertex IDs aren't necessarily dense.)
-  std::unordered_map<std::uint64_t, std::uint32_t> idToIdx;
-  idToIdx.reserve(n);
-  std::vector<std::uint64_t> idsByIdx;
-  idsByIdx.reserve(n);
-  for (const auto &v : vertexList->toVector()) {
-    auto id = v->getId();
-    idToIdx.emplace(id, static_cast<std::uint32_t>(idsByIdx.size()));
-    idsByIdx.push_back(id);
-  }
-  deg.assign(idsByIdx.size(), 0);
-  label.assign(idsByIdx.size(), 0);
-  for (std::size_t i = 0; i < idsByIdx.size(); ++i) {
-    label[i] = static_cast<int>(idsByIdx[i] % static_cast<std::uint64_t>(M));
-  }
-
-  std::size_t m = edgeList->size();
+  const std::size_t m = edgeList->size();
   if (m == 0) return 0.0;
 
-  // L_c (intra-community edge count) and D_c (sum of degrees) per
-  // community label.
-  std::unordered_map<int, double> L_c;
-  std::unordered_map<int, double> D_c;
-  for (const auto &e : edgeList->toVector()) {
-    auto srcId = e->getSource()->getId();
-    auto tgtId = e->getTarget()->getId();
-    auto si = idToIdx[srcId];
-    auto ti = idToIdx[tgtId];
-    deg[si]++;
-    deg[ti]++;
-    if (label[si] == label[ti]) {
-      // Each within-community edge contributes 2 to ``L_c`` in the
-      // canonical formula (sum over ordered pairs).  We mirror
-      // examples/modularity.py which uses
-      // ``A[np.ix_(nodes, nodes)].sum()`` — that double-counts each
-      // within-edge — so we add 2 here.
-      L_c[label[si]] += 2.0;
+  // Per-community totals under label(v) = v.id() % M. Sigma_in(c) counts each
+  // edge inside c from both ends, as examples/modularity.py's
+  // ``A[np.ix_(nodes, nodes)].sum()`` does, and S_c = D_c is the summed
+  // degree. Every total is an integer, exact in double whatever order it
+  // accumulates in. A community exists when some vertex carries its label.
+  const auto modulus = static_cast<std::uint64_t>(M);
+  const auto labelOf = [modulus](const Vertex *v) {
+    return static_cast<int>(v->getId() % modulus);
+  };
+  // `totalsOf` maps a vertex to its community's totals; two endpoints share a
+  // community exactly when they map to the same entry.
+  const auto accumulateEdges = [&](auto &&totalsOf) {
+    for (const Edge *e : edgeList->toVector()) {
+      CommunityTotals &a = totalsOf(e->getSource());
+      CommunityTotals &b = totalsOf(e->getTarget());
+      a.strength += 1.0;
+      b.strength += 1.0;
+      if (&a == &b) a.internal += 2.0;
     }
-  }
-  for (std::size_t i = 0; i < deg.size(); ++i) {
-    D_c[label[i]] += deg[i];
-  }
+  };
 
-  double m2 = 2.0 * static_cast<double>(m);
-  double Q = 0.0;
-  for (const auto &[c, dc] : D_c) {
-    double lc = 0.0;
-    auto it = L_c.find(c);
-    if (it != L_c.end()) lc = it->second;
-    Q += lc / m2 - (dc / m2) * (dc / m2);
+  LabelledCommunities communities;
+  if (static_cast<std::size_t>(M) <= n + 2 * m) {
+    // The labels index a table of M entries directly, read straight off the
+    // ids with no hashing; the table is no larger than the n + 2m label reads
+    // that fill it, so clearing and compacting it costs no more than they do.
+    // Label -1 marks a residue no vertex carries, dropped before the sum.
+    communities.assign(static_cast<std::size_t>(M), {-1, CommunityTotals{}});
+    for (const Vertex *v : vertexList->liveVector()) {
+      const int c = labelOf(v);
+      communities[static_cast<std::size_t>(c)].first = c;
+    }
+    accumulateEdges([&](const Vertex *v) -> CommunityTotals & {
+      return communities[static_cast<std::size_t>(labelOf(v))].second;
+    });
+    std::erase_if(communities,
+                  [](const auto &entry) { return entry.first < 0; });
+  } else {
+    // Too many residues to tabulate (M > n + 2m): give each community a slot
+    // and each vertex id the slot of its label, then sort by label.
+    std::unordered_map<int, std::uint32_t> slotOfLabel;
+    std::unordered_map<std::uint64_t, std::uint32_t> slotOfId;
+    slotOfLabel.reserve(n);
+    slotOfId.reserve(n);
+    communities.reserve(n);
+    for (const Vertex *v : vertexList->liveVector()) {
+      const int c = labelOf(v);
+      const auto [it, fresh] = slotOfLabel.try_emplace(
+          c, static_cast<std::uint32_t>(communities.size()));
+      if (fresh) communities.push_back({c, CommunityTotals{}});
+      slotOfId.emplace(v->getId(), it->second);
+    }
+    accumulateEdges([&](const Vertex *v) -> CommunityTotals & {
+      return communities[slotOfId[v->getId()]].second;
+    });
+    sortByLabel(communities);
   }
-  return Q;
+  // Summed in ascending label order, as SparseGraph::modularity and
+  // PersistentModularity::modularityGamma are, so the three agree to the bit.
+  return modularityInLabelOrder(communities, 2.0 * static_cast<double>(m));
 }
 
 void Spacetime::removeSimplex(const SimplexPtr &simplex) {
