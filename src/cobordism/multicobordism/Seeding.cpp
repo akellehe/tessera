@@ -550,25 +550,6 @@ bool MultiCobordism::hasFixedBoundary() const noexcept {
   return false;
 }
 
-std::set<std::vector<std::uint64_t>> MultiCobordism::boundaryFacetsOf(const Spacetime &spacetime) {
-  std::map<std::vector<std::uint64_t>, int> incidence;
-  for (const auto &topSimplex : spacetime.getTopSimplices()) {
-    if (topSimplex == nullptr) continue;
-    const auto cell = topSimplex->topTuple();
-    for (std::size_t omit = 0; omit < cell.size(); ++omit) {
-      std::vector<std::uint64_t> facet;
-      facet.reserve(cell.size() - 1);
-      for (std::size_t i = 0; i < cell.size(); ++i)
-        if (i != omit) facet.push_back(cell[i]);
-      ++incidence[facet];
-    }
-  }
-  std::set<std::vector<std::uint64_t>> boundary;
-  for (auto &[facet, count] : incidence)
-    if (count == 1) boundary.insert(facet);
-  return boundary;
-}
-
 MultiCobordism::SurfaceInventory MultiCobordism::surfaceInventoryOf(
     const Spacetime &spacetime) const {
   SurfaceInventory inventory;

@@ -44,9 +44,9 @@ CobordismObjectiveEnv::Metrics CobordismObjectiveEnv::computeMetrics() const {
   m.gradN2 = MultiCobordism::reggeActionGradient(st);
   m.rU = node_->rU(st);
   m.F = m.gradN2 + config_.gamma * m.rU;
-  m.betti = MultiCobordism::betti(*st);
+  m.betti = st->getBettiNumbers();
   m.holes = static_cast<int>(
-      MultiCobordism::emergentHoles(*st, config_.registerDegree).size());
+      st->getHoles(config_.registerDegree).size());
   m.rstate = target_.empty()
                  ? std::numeric_limits<double>::quiet_NaN()
                  : MultiCobordism::residualOfTargetStateAgainstHarmonic(

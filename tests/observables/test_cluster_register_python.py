@@ -217,7 +217,7 @@ class TestFiberOnACluster(ClusterRegisterCase):
     def test_a_filled_complex_has_no_hole_and_still_carries_a_register(self):
         """The acceptance criterion of the ticket: a register is constructed
         and ACCEPTED from a certified cluster with NO hole in the complex."""
-        holes = cob.MultiCobordism.emergent_holes(self.st, 0)
+        holes = self.st.get_holes(0)
         self.assertEqual(list(holes), [],
                          "fixture must have no emergent hole at all")
         read = self.read()
@@ -652,7 +652,7 @@ class TestRealHost(unittest.TestCase):
     def test_a_real_host_with_no_hole_still_measures_every_conjunct(self):
         st = self._host()
         self.assertEqual(
-            len(list(cob.MultiCobordism.emergent_holes(st, 1))), 0,
+            len(list(st.get_holes(1))), 0,
             "the acceptance criterion needs a host with NO hole")
 
         pm = obs.PersistentModularity.from_spacetime(st)

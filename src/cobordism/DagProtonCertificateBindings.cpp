@@ -163,7 +163,7 @@ holes. The accessors lazily trigger build() on first use, so
       .def("block", &ProtonSynthesis::block,
            "The synthesized proton: the relaxed step-B cobordism as a whole.")
       .def("emergent_holes", &ProtonSynthesis::emergentHoles,
-           "The holes (MultiCobordism.emergent_holes) of the synthesized proton over "
+           "The holes (Spacetime.get_holes) of the synthesized proton over "
            "which the singlet periods are read (>=3 when converged). A topological "
            "observable, not a quark count.")
       .def("color_residual", &ProtonSynthesis::colorResidual,

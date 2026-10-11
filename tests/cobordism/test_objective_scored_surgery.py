@@ -115,8 +115,8 @@ def _node(st, gamma=0.0):
 def _topology(st):
     """The topological facts a Pachner move cannot change but surgery can."""
     return (len(st.get_top_simplices()),
-            tuple(MC.betti(st)),
-            len(MC.emergent_holes(st, DEGREE)))
+            tuple(st.get_betti_numbers()),
+            len(st.get_holes(DEGREE)))
 
 
 BUILTINS = (
@@ -274,11 +274,11 @@ class TopologyIndifferentObjectiveCommitsNothingTest(unittest.TestCase):
         """Pachner moves and relaxation cannot move `b_k`, and this objective
         refuses every surgery, so the topology cannot move at all."""
         node, st = self._indifferent_node()
-        before = tuple(MC.betti(st))
+        before = tuple(st.get_betti_numbers())
         for _ in range(3):
             node.directed_cone_out()
             node.directed_cone_in()
-        self.assertEqual(tuple(MC.betti(st)), before)
+        self.assertEqual(tuple(st.get_betti_numbers()), before)
 
 
 class BettiIsPermittedToEmergeTest(unittest.TestCase):
@@ -288,10 +288,10 @@ class BettiIsPermittedToEmergeTest(unittest.TestCase):
         st = _refined_host()
         node = _node(st, gamma=1.0)
         node.set_objective(cob.JointStationarityObjective())
-        holes_before = len(MC.emergent_holes(st, DEGREE))
+        holes_before = len(st.get_holes(DEGREE))
         self.assertEqual(holes_before, 0)
         self.assertGreater(node.directed_cone_out(), 0)
-        self.assertGreater(len(MC.emergent_holes(st, DEGREE)), holes_before)
+        self.assertGreater(len(st.get_holes(DEGREE)), holes_before)
 
     def test_the_same_host_stays_flat_under_an_indifferent_objective(self):
         """The controlled comparison: identical host, identical probe, and the
@@ -300,7 +300,7 @@ class BettiIsPermittedToEmergeTest(unittest.TestCase):
         node = _node(st, gamma=0.0)
         node.set_objective(ConstantObjective())
         self.assertEqual(node.directed_cone_out(), 0)
-        self.assertEqual(len(MC.emergent_holes(st, DEGREE)), 0)
+        self.assertEqual(len(st.get_holes(DEGREE)), 0)
 
 
 class TheDecisionFollowsTheInjectedObjectiveTest(unittest.TestCase):

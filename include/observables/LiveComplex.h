@@ -80,7 +80,7 @@ class LiveComplex {
     /// (weight 1.0). The uniform metric is part of the definition of the carry
     /// diagnostic: it matches how the drive's `r_U` scored the block, which is
     /// metric-independent by design. The result is identical to
-    /// `MultiCobordism::subcomplexWithinVertexSet`, duplicated here so a reader
+    /// `Spacetime::getRegion`, duplicated here so a reader
     /// can score a block without constructing the build driver. The skeleton is
     /// not materialized; the `r_state` read this feeds builds only what it needs.
     /// `dimensions` is the ambient complex's canonical dimension (from

@@ -43,8 +43,8 @@ class MultiCobordismCxxTest(unittest.TestCase):
         # are exact run-to-run; the FP tolerance only covers cross-machine round-off.
         CXX, w = self.CXX, self.w
         tgt = [1, w, w * w]
-        self.assertEqual(list(CXX.betti(self.host)), [1, 0, 0, 0, 1])       # closed S⁴
-        self.assertEqual(list(CXX.emergent_holes(self.host, 3)), [])        # no holes (closed)
+        self.assertEqual(list(self.host.get_betti_numbers()), [1, 0, 0, 0, 1])       # closed S⁴
+        self.assertEqual(list(self.host.get_holes(3)), [])        # no holes (closed)
         self.assertAlmostEqual(CXX.regge_action_gradient(self.host),
                                499.9710921237928, places=6)
         self.assertAlmostEqual(CXX.r_state(self.host, 3, tgt), 3.0, places=10)  # the leak
@@ -79,7 +79,7 @@ class MultiCobordismCxxTest(unittest.TestCase):
         # so every run; so try a few surgery seeds with a healthy budget and require one to
         # emerge (short-circuits on the first seed that grows one).
         CXX, w = self.CXX, self.w
-        self.assertEqual(list(CXX.betti(_closed_s4(n_refine=20, seed=3)))[4], 1)  # bare S⁴
+        self.assertEqual(list(_closed_s4(n_refine=20, seed=3).get_betti_numbers())[4], 1)  # bare S⁴
         grew = False
         for seed in range(3, 11):
             host = _closed_s4(n_refine=20, seed=3)
@@ -88,7 +88,7 @@ class MultiCobordismCxxTest(unittest.TestCase):
             sv = [v.get_id() for v in host.get_vertex_list().to_vector()][:2]
             opt.seed_inputs(sv)
             opt.run_stage1(max_steps=25, n_candidate_moves=8)
-            if list(CXX.betti(opt.st))[3] >= 1:
+            if list(opt.st.get_betti_numbers())[3] >= 1:
                 grew = True
                 break
         self.assertTrue(grew, "no b₃ register emerged across surgery seeds 3..10")

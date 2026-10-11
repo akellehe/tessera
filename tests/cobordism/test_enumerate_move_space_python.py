@@ -74,7 +74,7 @@ def expected_counts(spacetime):
         "flip_at": sum(len(c.get_vertices()) for c in big),
         "iflip_at": sum(len(c.get_edges()) for c in big),
         "cone_out": len(cells),
-        "cone_in": len(MC.boundary_facets(spacetime)),
+        "cone_in": len(spacetime.get_boundary()),
     }
 
 

@@ -564,6 +564,22 @@ materialized facets. A closed manifold returns an empty list.
 Unlike get_external_simplices (which returns whole boundary top cells and
 materializes facets as a side-effect), this returns the boundary faces
 themselves and leaves the complex untouched.)doc")
+      .def("get_holes", &Spacetime::getHoles, py::arg("degree"),
+           R"doc(The holes of the given degree k, read off get_boundary: the
+(k+2)-vertex tuples all of whose drop-one facets are boundary facets,
+sorted. Empty when the boundary's facets are not k-cells.)doc")
+      .def("get_betti_numbers", &Spacetime::getBettiNumbers,
+           R"doc(The Betti numbers b_0..b_d: combinatorial, read from the cells
+alone with no geometry. Computed once per structural revision.)doc")
+      .def("copy_edge_geometry_from", &Spacetime::copyEdgeGeometryFrom,
+           py::arg("source"),
+           R"doc(Copy every edge's length and connection phase from source, matched
+by vertex pair, with the phase carried across on each edge's own
+orientation. False when an edge of this complex is absent from source.)doc")
+      .def("get_region", &Spacetime::getRegion, py::arg("vertex_set"),
+           R"doc(The region spanned by vertex_set: a new Spacetime of exactly the
+top cells all of whose vertices lie in the set, carrying their edges'
+lengths and phases. None when the set spans no full cell.)doc")
       .def("materialize_facets",
            static_cast<void (Spacetime::*)() noexcept>(
                &Spacetime::materializeFacets),

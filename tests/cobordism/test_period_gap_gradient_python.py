@@ -91,7 +91,7 @@ class PeriodGapGradientDegreeTwoTest(unittest.TestCase):
     def test_the_fixture_is_not_degenerate(self):
         # The trap this fixture exists to avoid: holes that BOUND have periods
         # of ~1e-16, and a gradient checked against them proves nothing.
-        self.assertEqual(list(cobordism.MultiCobordism.betti(self.spacetime))[2], 1)
+        self.assertEqual(list(self.spacetime.get_betti_numbers())[2], 1)
         self.assertEqual(len(self.holes), 2)
         flat = np.array(self.synthesis.cycle_periods(self.holes), complex)
         self.assertGreater(np.abs(flat).max(), 1e-3)

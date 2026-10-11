@@ -122,8 +122,8 @@ def test_the_search_offers_no_surgical_move():
     node.set_simulation_mode(MC.SimulationMode.EMERGENCE,
                              MC.EmergenceSubmode.STRICT)
     before = {frozenset(int(v) for v in f)
-              for f in MC.boundary_facets(node.spacetime())}
+              for f in node.spacetime().get_boundary()}
     list(node.run_stage1(max_steps=3, n_candidate_moves=0))
     after = {frozenset(int(v) for v in f)
-             for f in MC.boundary_facets(node.spacetime())}
+             for f in node.spacetime().get_boundary()}
     assert after == before

@@ -36,7 +36,7 @@ double ObservableGates::relabelDelta(const RegisterObservable &observable,
   // permuted vertex set; a missing image throws, since the gate has to compare
   // like with like.
   const std::vector<std::vector<std::uint64_t>> rederived =
-      MultiCobordism::emergentHoles(*rel.spacetime, ctx.degree());
+      rel.spacetime->getHoles(ctx.degree());
   std::map<std::set<std::uint64_t>, std::vector<std::uint64_t>> found;
   for (const auto &h : rederived) {
     found[std::set<std::uint64_t>(h.begin(), h.end())] = h;

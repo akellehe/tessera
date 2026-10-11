@@ -72,7 +72,7 @@ void register_cobordism_multicobordism(py::module_ &m) {
       "An emergent boundary block of a MultiCobordism (an input or output): the "
       "vertex set whose own sub-complex carries the block, and its target period "
       "vector. Read the block's sub-complex with Spacetime.from_vertex_tuples over the "
-      "cells inside `vertices`, then its holes with MultiCobordism.emergent_holes.")
+      "cells inside `vertices`, then its holes with Spacetime.get_holes.")
       .def_property_readonly(
           "vertices",
           [](const MultiCobordism::BoundaryBlock &block) {
@@ -439,9 +439,6 @@ void register_cobordism_multicobordism(py::module_ &m) {
       .def("geometry_admissible", &MultiCobordism::geometryAdmissible, py::arg("spacetime"),
            "Whitney pencil: whether the geometry lies in the closure of the Kontsevich-Segal "
            "allowable domain (margin >= 0); always true under DiagonalWeights.")
-      .def_static("betti", &MultiCobordism::betti, py::arg("st"))
-      .def_static("emergent_holes", &MultiCobordism::emergentHoles,
-                  py::arg("st"), py::arg("k"))
       .def_static("regge_action_gradient", &MultiCobordism::reggeActionGradient, py::arg("st"))
       .def_static("near_kernel_residual_gradient",
            [](const std::shared_ptr<Spacetime> &st, int k, std::size_t n,
@@ -642,17 +639,6 @@ void register_cobordism_multicobordism(py::module_ &m) {
                   "and come back unchanged. Every entry is a candidate to "
                   "SCORE, not a promise that it applies -- the gates still "
                   "refuse what they always refused.")
-      .def_static("boundary_facets",
-                  [](const Spacetime &spacetime) {
-                    // A list, not a set: a Python set cannot hold an
-                    // unhashable list, so the std::set's order (ascending
-                    // vertex tuples) is handed over as a sequence.
-                    const auto facets = MultiCobordism::boundaryFacetsOf(spacetime);
-                    return std::vector<std::vector<std::uint64_t>>(facets.begin(), facets.end());
-                  },
-                  py::arg("spacetime"), py::call_guard<py::gil_scoped_release>(),
-                  "The boundary of `spacetime` as sorted vertex tuples in ascending order: every "
-                  "codimension-one face carried by exactly one top cell.")
       .def("use_fiber_residuals", &MultiCobordism::useFiberResiduals, py::arg("enabled"),
            "Score blocks carrying a fiber-form target by the fiber residual (least-squares leak of the "
            "target images in the band read on the block's own pencil, restricted to the fiber's cells) "
@@ -1271,13 +1257,13 @@ Wrong -- st describes the pre-drive complex, so every later read is stale:
 
     st = node.st
     node.run_stage1(180, 8, 15, True)
-    holes = len(MultiCobordism.emergent_holes(st, 3))   # the OLD complex
+    holes = len(st.get_holes(3))   # the OLD complex
 
 Right -- re-read after each drive call:
 
     node.run_stage1(180, 8, 15, True)
     st = node.st
-    holes = len(MultiCobordism.emergent_holes(st, 3))   # the node's complex
+    holes = len(st.get_holes(3))   # the node's complex
 )doc")
       .def_property_readonly("inputs", &MultiCobordism::inputs,
                              py::return_value_policy::reference_internal,

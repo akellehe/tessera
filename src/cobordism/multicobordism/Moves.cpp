@@ -48,7 +48,8 @@ complexd MultiCobordism::inverseLinkPhase(complexd phase) noexcept {
 MultiCobordism::BoundaryRecord MultiCobordism::boundaryRecordOf(
     const Spacetime &spacetime) {
   BoundaryRecord record;
-  record.facets = boundaryFacetsOf(spacetime);
+  const auto boundary = spacetime.getBoundary();
+  record.facets = {boundary.begin(), boundary.end()};
   if (record.facets.empty() || spacetime.getEdgeList() == nullptr) return record;
   // Every vertex pair of every boundary facet: an edge is on the boundary when
   // some boundary facet contains both its endpoints, which is the same

@@ -3397,7 +3397,7 @@ def _flip_checks(config, tori, host, ids, markings, monodromy, lattice, predicte
     layers = int(config["layers"])
     checks = []
     rounded = np.asarray(monodromy["rounded"], dtype=int)
-    betti = MC.betti(host)
+    betti = host.get_betti_numbers()
     cells = len(host.get_top_simplices())
     expected_cells = 6 * n * n * layers + n * n * len(passes)
     checks.append(_check(

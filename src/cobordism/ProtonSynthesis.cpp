@@ -233,7 +233,7 @@ void ProtonSynthesis::buildDirect(int maxRestarts, int initSteps,
     auto whole = node->spacetime();
     const double colorR = MultiCobordism::residualOfTargetStateAgainstHarmonic(
         whole, registerDegree_, protonSinglet, node->metricSource());
-    auto holes = MultiCobordism::emergentHoles(*whole, registerDegree_);
+    auto holes = whole->getHoles(registerDegree_);
     const bool ok = colorR < colorTolerance &&
                     static_cast<int>(holes.size()) >= minEmergentHoles;
 
@@ -291,7 +291,7 @@ void ProtonSynthesis::build(int maxRestarts, int initSteps, int evolveSteps,
     auto whole = stepB->spacetime();
     const double colorR = MultiCobordism::residualOfTargetStateAgainstHarmonic(
         whole, registerDegree_, protonSinglet, stepB->metricSource());
-    auto holes = MultiCobordism::emergentHoles(*whole, registerDegree_);
+    auto holes = whole->getHoles(registerDegree_);
     const bool ok = colorR < colorTolerance &&
                     static_cast<int>(holes.size()) >= minEmergentHoles;
 

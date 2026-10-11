@@ -16,6 +16,7 @@
 #include <stdexcept>
 #include <string>
 #include "spacetime/Spacetime.h"
+#include "cobordism/ChainComplex.h"
 #include <cstdio>
 #include "graph/CSRBuilder.hpp"
 #include "graph/DualGraph.hpp"
@@ -484,7 +485,7 @@ std::shared_ptr<Spacetime> Spacetime::fromVertexTuples(
   return st;
 }
 
-std::shared_ptr<Spacetime> Spacetime::subcomplexWithinVertexSet(
+std::shared_ptr<Spacetime> Spacetime::getRegion(
     const std::set<std::uint64_t> &vertexSet) const {
   std::vector<SimplexPtr> cellsInsideVertexSet;
   for (const auto &topSimplex : getTopSimplices()) {
@@ -503,6 +504,84 @@ std::shared_ptr<Spacetime> Spacetime::subcomplexWithinVertexSet(
   // every edge to unit length, handing back a different geometry wearing the
   // same connectivity.
   return Spacetime::fromSimplices(getDimensions(), cellsInsideVertexSet);
+}
+
+std::vector<int> Spacetime::getBettiNumbers() const {
+  // Betti numbers are purely combinatorial, and the residual path calls this on
+  // every objective evaluation while only edge lengths move, so Smith normal
+  // form dominates the profile. The spacetime's structural revision shows when
+  // the last computation is still exact.
+  if (const auto *cached = cachedBettiNumbers()) return *cached;
+  auto numbers = ::tessera::cobordism::ChainComplex::fromSpacetime(*this).bettiNumbers();
+  storeBettiNumbers(numbers);
+  return numbers;
+}
+
+std::vector<std::vector<std::uint64_t>> Spacetime::getHoles(int degree) const {
+  // The (k+2)-vertex tuples all of whose drop-one facets are boundary facets.
+  std::set<std::vector<std::uint64_t>> boundaryFacets;
+  for (auto boundaryFacet : getBoundary()) {
+    std::sort(boundaryFacet.begin(), boundaryFacet.end());
+    boundaryFacets.insert(std::move(boundaryFacet));
+  }
+  std::vector<std::vector<std::uint64_t>> emergentHoleTuples;
+  if (boundaryFacets.empty() ||
+      static_cast<int>(boundaryFacets.begin()->size()) !=
+          degree + 1)  // facets must be k-cells
+    return emergentHoleTuples;
+  std::set<std::uint64_t> boundaryVertexIds;
+  for (const auto &boundaryFacet : boundaryFacets)
+    for (auto vertexId : boundaryFacet) boundaryVertexIds.insert(vertexId);
+  std::set<std::vector<std::uint64_t>> emergentHoleSet;
+  for (const auto &boundaryFacet : boundaryFacets) {
+    for (auto candidateVertexId : boundaryVertexIds) {
+      if (std::find(boundaryFacet.begin(), boundaryFacet.end(),
+                    candidateVertexId) != boundaryFacet.end())
+        continue;
+      std::vector<std::uint64_t> candidateHole = boundaryFacet;
+      candidateHole.push_back(candidateVertexId);
+      std::sort(candidateHole.begin(), candidateHole.end());
+      bool allFacetsAreBoundary = true;
+      for (std::size_t droppedIndex = 0; droppedIndex < candidateHole.size();
+           ++droppedIndex) {
+        std::vector<std::uint64_t> dropOneFacet;
+        for (std::size_t copyIndex = 0; copyIndex < candidateHole.size();
+             ++copyIndex)
+          if (copyIndex != droppedIndex)
+            dropOneFacet.push_back(candidateHole[copyIndex]);
+        if (!boundaryFacets.count(dropOneFacet)) {
+          allFacetsAreBoundary = false;
+          break;
+        }
+      }
+      if (allFacetsAreBoundary) emergentHoleSet.insert(candidateHole);
+    }
+  }
+  emergentHoleTuples.assign(emergentHoleSet.begin(), emergentHoleSet.end());
+  return emergentHoleTuples;
+}
+
+bool Spacetime::copyEdgeGeometryFrom(const Spacetime &source) {
+  std::map<std::pair<std::uint64_t, std::uint64_t>, const Edge *> sourceEdges;
+  for (const auto *edge : source.getEdgeList()->toVector()) {
+    const auto a = edge->getSource()->getId();
+    const auto b = edge->getTarget()->getId();
+    sourceEdges.emplace(std::make_pair(std::min(a, b), std::max(a, b)), edge);
+  }
+  for (auto *edge : getEdgeList()->toVector()) {
+    const auto a = edge->getSource()->getId();
+    const auto b = edge->getTarget()->getId();
+    const auto found = sourceEdges.find({std::min(a, b), std::max(a, b)});
+    if (found == sourceEdges.end()) return false;
+    const Edge &from = *found->second;
+    edge->setLength(from.getLength());
+    // The phase is orientation-dependent: an edge stored the other way round
+    // carries 0 - phi, as in fromSimplices.
+    edge->setPhase(from.getSource()->getId() == a
+                       ? from.getPhase()
+                       : std::complex<double>{0.0, 0.0} - from.getPhase());
+  }
+  return true;
 }
 
 int Spacetime::getDimensions() const noexcept {

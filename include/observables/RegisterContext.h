@@ -52,7 +52,7 @@ class InteriorHinges;  // the shared 4D hinge-selection core (InteriorHinges.h)
 ///     rehydration and the RELABEL-gate rebuild — is the job of `LiveComplex`.
 ///   * Hole selection is validated at one entry point. The selected holes are the
 ///     emergent `(degree+2)`-vertex removed top cells
-///     (`cobordism::MultiCobordism::emergentHoles`), in emergent-hole order. A
+///     (`spacetime::Spacetime::getHoles`), in emergent-hole order. A
 ///     deficit throws `std::invalid_argument` naming the holes found. A surplus
 ///     is a recorded truncation naming the dropped holes in `selectionWarning()`
 ///     (the Python binding emits it as a `UserWarning`), never a silent slice.

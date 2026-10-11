@@ -554,7 +554,7 @@ class Spacetime {
     ///
     /// A served entry cannot answer for the wrong sub-complex: a sub-complex is
     /// fixed by the parent's cells and the vertex set alone
-    /// (`subcomplexWithinVertexSet` takes the parent's top cells whose vertices
+    /// (`getRegion` takes the parent's top cells whose vertices
     /// all lie in the set), the revision match fixes the former and the key
     /// match the latter. Identifiers can be retired and reissued, but any such
     /// change registers or removes cells and so moves the revision first.
@@ -858,13 +858,33 @@ class Spacetime {
         int topK = 4,
         int skeletonDim = 1) const;
 
-    /// The sub-complex carried by a boundary block: a freshly-built `Spacetime` of
-    /// exactly the top cells of `spacetime` all of whose vertices lie in `vertexSet`
-    /// (the block's region). Returns `nullptr` when the region contains no full cell.
-    /// This is where a block's vertex-set becomes an actual complex — the block itself
-    /// only stores the vertex-set and target, never the cells.
-    [[nodiscard]] std::shared_ptr<Spacetime> subcomplexWithinVertexSet(
+    /// The region of this complex spanned by \p vertexSet: a freshly built
+    /// `Spacetime` of exactly the top cells all of whose vertices lie in the set,
+    /// carrying their edges' lengths and phases (`fromSimplices`). Returns
+    /// `nullptr` when the set spans no full cell. A cobordism block is a region
+    /// plus its marking, frame and targets; this is where its vertex set
+    /// becomes a complex.
+    [[nodiscard]] std::shared_ptr<Spacetime> getRegion(
       const std::set<std::uint64_t> &vertexSet) const;
+
+    /// The Betti numbers \f$ b_0, \dots, b_d \f$: combinatorial, read from the
+    /// cells alone with no geometry (`cobordism::ChainComplex::bettiNumbers`).
+    /// Computed once per structural revision and held in `cachedBettiNumbers`,
+    /// since a run asks for them on every objective evaluation while only edge
+    /// lengths move.
+    [[nodiscard]] std::vector<int> getBettiNumbers() const;
+
+    /// The holes of degree \f$ k \f$ = \p degree, read off `getBoundary`: the
+    /// \f$ (k+2) \f$-vertex tuples all of whose drop-one facets are boundary
+    /// facets, sorted. Empty when the boundary's facets are not \f$ k \f$-cells.
+    [[nodiscard]] std::vector<std::vector<std::uint64_t>> getHoles(int degree) const;
+
+    /// Copy every edge's length and connection phase from \p source, matched
+    /// by vertex pair, with the phase carried across on each edge's own
+    /// orientation. False, after copying the edges before it, when an edge of
+    /// this complex is absent from \p source: this complex is then not a
+    /// sub-complex of \p source and its geometry is meaningless.
+    bool copyEdgeGeometryFrom(const Spacetime &source);
 
     /// Newman-Girvan modularity Q on the vertex/edge 1-skeleton, with
     /// implicit labels ``label(v) = v.id() % M``.

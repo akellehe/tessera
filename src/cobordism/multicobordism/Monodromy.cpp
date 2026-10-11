@@ -17,7 +17,7 @@ MultiCobordism::RestrictionRead MultiCobordism::restriction(const std::shared_pt
     read.obstruction = "no spacetime";
     return read;
   }
-  read.betti = betti(*spacetime);
+  read.betti = spacetime->getBettiNumbers();
   // The edges every marking walks, as sorted tuples: each must be an edge of
   // the whole before any operator is built.
   std::set<std::vector<std::uint64_t>> seen;

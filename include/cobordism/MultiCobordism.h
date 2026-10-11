@@ -145,7 +145,7 @@ class MultiCobordism {
   /// is not itself a complex: it stores the vertex set it occupies plus the
   /// target period vector its own \f$ L_k \f$ sub-complex must carry. The
   /// sub-complex is recovered on demand from `vertices` by
-  /// `subcomplexWithinVertexSet`, the ambient complex's top cells whose
+  /// `getRegion`, the ambient complex's top cells whose
   /// vertices all lie in the set.
   struct BoundaryBlock {
     /// Host vertex ids the block occupies.
@@ -352,12 +352,6 @@ class MultiCobordism {
   /// or output block, whose own triangles are a component of the boundary. A
   /// pinned region is not one (see `setBoundaryMayExtend`).
   [[nodiscard]] bool hasFixedBoundary() const noexcept;
-  /// The boundary of \p spacetime as a set of facets: every codimension-one
-  /// face carried by exactly one top cell, as sorted vertex-id tuples. This
-  /// is \f$ \partial W \f$ read from the cells alone, the same incidence
-  /// count `surfaceInventoryOf` takes, with no geometry and no orientation.
-  [[nodiscard]] static std::set<std::vector<std::uint64_t>> boundaryFacetsOf(
-      const Spacetime &spacetime);
 
   /// \param host              Bare host complex the register is grown from.
   /// \param inputTargets      One target period vector per input boundary block.
@@ -756,13 +750,6 @@ class MultiCobordism {
   }
 
   // ---- module-level helpers (static) ----
-  /// Betti numbers (combinatorial, geometry-free).
-  [[nodiscard]] static std::vector<int> betti(const Spacetime &st);
-  /// The emergent \f$k\f$-register, read off `getBoundary`: the
-  /// \f$(k+2)\f$-vertex tuples all of whose drop-one facets are boundary
-  /// facets.
-  [[nodiscard]] static std::vector<std::vector<std::uint64_t>> emergentHoles(
-      const Spacetime &st, int k);
   /// `Σ_e |actionGradientExact_e|²` — the full-complex Regge extremization term.
   [[nodiscard]] static double reggeActionGradient(const std::shared_ptr<Spacetime> &st);
 
@@ -2708,7 +2695,7 @@ class MultiCobordism {
   using Snapshot =
       std::pair<std::vector<std::vector<std::uint64_t>>,
                 std::map<std::pair<std::uint64_t, std::uint64_t>, EdgeGeometry>>;
-  /// The fixed boundary as the gate reads it: `boundaryFacetsOf` together
+  /// The fixed boundary as the gate reads it: `Spacetime::getBoundary` together
   /// with the `EdgeGeometry` of every edge lying inside one of those facets.
   /// Both halves come from one pass, because the gate takes this record twice
   /// per candidate — once before the move and once after — and reading the
@@ -2763,7 +2750,7 @@ class MultiCobordism {
 
   /// One boundary block's `r_U` term: the sum over the register degrees of
   /// `residualOfTargetStateAgainstHarmonic` evaluated on the block's own
-  /// sub-complex (`subcomplexWithinVertexSet`) against the block's target. When the
+  /// sub-complex (`Spacetime::getRegion`) against the block's target. When the
   /// block has no full sub-complex yet, the full leak summed over the degrees.
   [[nodiscard]] double residualForBoundaryBlock(
       const BoundaryBlock &boundaryBlock,
@@ -3171,11 +3158,9 @@ class MultiCobordism {
   /// contour, else the lowest band above the zero mode, for `AsStored`.
   [[nodiscard]] static chainhodge::Contour fiberContourOn(const AssembledPencil &assembled,
                                                           const BoundaryFiber &fiber, FiberBand band);
-  /// The block's sub-complex carrying the parent's geometry.
-  /// `subcomplexWithinVertexSet` builds it at unit lengths, since its period
-  /// residual is combinatorial, so the fiber reads copy every edge's length and
-  /// phase from \p spacetime by vertex pair. Null when the region holds no top
-  /// cell.
+  /// The block's region of \p spacetime (`Spacetime::getRegion`), which carries
+  /// the parent's edge lengths and phases, with its facets materialized for the
+  /// fiber reads. Null when the region holds no top cell.
   [[nodiscard]] static std::shared_ptr<Spacetime> blockSubcomplexWithGeometry(
       const BoundaryBlock &block, const std::shared_ptr<Spacetime> &spacetime);
   /// The complex a block's fiber is read on: a surface block's own surface
@@ -3183,11 +3168,6 @@ class MultiCobordism {
   /// (`blockSubcomplexWithGeometry`). Null when there is nothing to read.
   [[nodiscard]] static std::shared_ptr<Spacetime> blockComplexWithGeometry(
       const BoundaryBlock &block, const std::shared_ptr<Spacetime> &spacetime);
-  /// Copy every edge's length and phase of \p parent onto \p child, matched by
-  /// vertex pair: the shared tail of both block materializations. False when
-  /// a child edge is absent from the parent (the child is then not a
-  /// sub-complex of the parent and its geometry is meaningless).
-  [[nodiscard]] static bool adoptParentEdgeGeometry(Spacetime &child, const Spacetime &parent);
   /// An input region stops growing once its residual drops below this, i.e.
   /// once it carries its state.
   double inputCarriedTolerance_ = 1e-12;

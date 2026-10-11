@@ -59,7 +59,7 @@ class PreconeMultiCobordismTest(unittest.TestCase):
         # precone=0 leaves the single-Δ⁴ seed untouched: exactly one top cell.
         mc = self._mc(seed=1, precone=0)
         self.assertEqual(_n_cells(mc.st), 1)
-        self.assertEqual(list(cob.MultiCobordism.betti(mc.st)), [1, 0, 0, 0, 0])
+        self.assertEqual(list(mc.st.get_betti_numbers()), [1, 0, 0, 0, 0])
 
     def test_precone_grows_the_complex(self):
         # precone=N cones N fresh top cells into the seed (gated; best-effort), so the
@@ -74,7 +74,7 @@ class PreconeMultiCobordismTest(unittest.TestCase):
         # stays contractible (Betti [1,0,0,0,0]) — no hole is created.
         mc = self._mc(seed=2, precone=10)
         self.assertTrue(_is_manifold(mc.st))
-        self.assertEqual(list(cob.MultiCobordism.betti(mc.st)), [1, 0, 0, 0, 0])
+        self.assertEqual(list(mc.st.get_betti_numbers()), [1, 0, 0, 0, 0])
 
     def test_more_precone_grows_at_least_as_much(self):
         small = _n_cells(self._mc(seed=4, precone=3).st)

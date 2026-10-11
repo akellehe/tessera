@@ -664,7 +664,7 @@ int MultiCobordism::directedConeOut(HolePlacementStrategy strategy, int maxOpen)
   auto spacetime = spacetime_;
   int opened = 0;
   for (int iteration = 0; iteration < maxOpen; ++iteration) {
-    const auto holesBefore = emergentHoles(*spacetime, registerDegree);
+    const auto holesBefore = spacetime->getHoles(registerDegree);
     const std::size_t holeCountBefore = holesBefore.size();
     std::set<std::uint64_t> holeVertices;
     for (const auto &hole : holesBefore) holeVertices.insert(hole.begin(), hole.end());
@@ -715,7 +715,7 @@ int MultiCobordism::directedConeOut(HolePlacementStrategy strategy, int maxOpen)
       // removed a pinned vertex, which is a legitimate topology change.
       if (!cone.coneOut(cell).first) continue;  // gate rejected; nothing applied
       const bool opensHole =
-          emergentHoles(*spacetime, registerDegree).size() > holeCountBefore;
+          spacetime->getHoles(registerDegree).size() > holeCountBefore;
       if (opensHole) {
         const double candidateObjective = objectiveFor(spacetime);
         if (candidateObjective < bestObjective) {
@@ -777,7 +777,7 @@ int MultiCobordism::directedConeIn(int maxClose) {
   auto spacetime = spacetime_;
   int closed = 0;
   for (int iteration = 0; iteration < maxClose; ++iteration) {
-    const auto holesBefore = emergentHoles(*spacetime, registerDegree);
+    const auto holesBefore = spacetime->getHoles(registerDegree);
     const std::size_t holeCountBefore = holesBefore.size();
     if (holeCountBefore == 0) break;
     const auto boundary = boundaryFacetSet(*spacetime);
@@ -806,7 +806,7 @@ int MultiCobordism::directedConeIn(int maxClose) {
     for (const auto &facet : capFacets) {
       if (candidatesScanned++ >= kMaxCandidates) break;
       if (!cone.coneIn(facet).first) continue;
-      if (emergentHoles(*spacetime, registerDegree).size() < holeCountBefore) {
+      if (spacetime->getHoles(registerDegree).size() < holeCountBefore) {
         const double candidateObjective = objectiveFor(spacetime);
         if (candidateObjective < bestObjective) {
           bestObjective = candidateObjective;

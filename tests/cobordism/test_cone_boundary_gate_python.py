@@ -40,7 +40,7 @@ def simplex_node(seed=0, precone=0):
 
 
 def boundary(node):
-    return {tuple(f) for f in MC.boundary_facets(node.spacetime())}
+    return {tuple(f) for f in node.spacetime().get_boundary()}
 
 
 def cells(node):

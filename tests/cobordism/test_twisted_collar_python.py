@@ -102,7 +102,7 @@ def test_the_twist_reverses_orientation(twisted):
 
 def test_the_twist_leaves_the_topology_count_alone(product, twisted):
     for node, _, _ in (product, twisted):
-        assert node.betti(node.spacetime()) == [1, 2, 1, 0]
+        assert node.spacetime().get_betti_numbers() == [1, 2, 1, 0]
 
 
 @pytest.mark.parametrize("name", ["product", "twisted"])
