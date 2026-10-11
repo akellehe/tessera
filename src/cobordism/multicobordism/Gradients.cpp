@@ -359,10 +359,7 @@ multicobordism::ResidualGradient MultiCobordism::wholeHarmonicResidualGradientOn
           dPi.row(periodFrame.rows[static_cast<std::size_t>(frameRow)]);
     const Eigen::VectorXcd dstate =
         dFrame * bandState + periodFrame.block * dBandState;
-    const complexd s1 = wanted.dot(dstate);   // <w, dc>
-    const complexd s2 = state.dot(dstate);    // <c, dc>
-    return 2.0 * (-(overlap * s1 * ss - std::norm(overlap) * s2) /
-                  (ss * ss * ww)).real();
+    return 2.0 * quantum::projectiveLeakSensitivity(state, wanted, dstate, overlap, ss, ww).real();
   };
   const auto sensitivity = [&](const Eigen::MatrixXcd &dZ) {
     return complexd(along(dZ), along(complexd(0.0, 1.0) * dZ));
@@ -464,6 +461,9 @@ multicobordism::ResidualGradient MultiCobordism::twoBodyResidualGradientOn(
   // so dr = 2 Re(dF · dcoord) with
   //   dF = -( <T,chi> <chi,dT> |T|^2 - |<T,chi>|^2 <T,dT> ) / (|T|^4 |chi|^2).
   const auto sensitivity = [&](const Eigen::MatrixXcd &dA) {
+    // `quantum::projectiveLeakSensitivity` written out: through the helper the
+    // complex products here vectorize differently and the last bit moves under
+    // -march=native.
     const Eigen::MatrixXcd dT = block(dA);
     const complexd s1 = (target.chi.conjugate().cwiseProduct(dT)).sum();  // <chi, dT>
     const complexd s2 = (T.conjugate().cwiseProduct(dT)).sum();           // <T, dT>

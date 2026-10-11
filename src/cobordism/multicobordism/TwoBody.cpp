@@ -458,13 +458,10 @@ double MultiCobordism::bulkOperatorResidualOn(
   const Eigen::Map<const Eigen::VectorXcd> choi(readout.choiState.data(),
                                                 static_cast<Eigen::Index>(readout.choiState.size()));
   const Eigen::Map<const Eigen::VectorXcd> chi(target.chi.data(), target.chi.size());
-  const double cc = choi.squaredNorm();
-  if (!(cc > 0.0)) return 1.0;
   // The same projective Frobenius leak the transfer reading takes, so the two
-  // readings are on one scale and a selected readout set may sum them.
-  const complexd overlap = choi.dot(chi);
-  const double leak = chi.squaredNorm() - std::norm(overlap) / cc;
-  return std::max(0.0, leak / chi.squaredNorm());
+  // readings are on one scale and a selected readout set may sum them. A zero
+  // Choi state spans no ray and leaks in full.
+  return quantum::projectiveLeak(choi, chi);
 }
 
 void MultiCobordism::setWholePairing(WholePairing pairing) { wholePairing_ = pairing; }
@@ -662,7 +659,9 @@ double MultiCobordism::wholeHarmonicResidualOn(
   const double ss = state.squaredNorm();
   if (!(ss > 0.0)) return refuse("the inputs determine the zero harmonic form");
   // The same projective Frobenius leak the other readings take, so all are on
-  // one scale and a set of them may be summed.
+  // one scale and a set of them may be summed. It is `quantum::projectiveLeak`
+  // written out: through the helper this function's dot product is no longer
+  // inlined, and the leak's last bit moves under -march=native.
   const complexd overlap = state.dot(wanted);
   const double leak = wanted.squaredNorm() - std::norm(overlap) / ss;
   return std::max(0.0, leak / wanted.squaredNorm());
@@ -735,13 +734,9 @@ double MultiCobordism::operatorResidualOn(const std::shared_ptr<Spacetime> &spac
                            std::to_string(wanted.rows()) + "x" + std::to_string(wanted.cols()) +
                            " but the paired frames give " + std::to_string(T.rows()) + "x" +
                            std::to_string(T.cols()));
-  const double tt = T.squaredNorm();
-  if (!(tt > 0.0)) return 1.0;
   // The same projective Frobenius leak every other reading takes, so all are
-  // on one scale and a set of them may be summed.
-  const complexd overlap = (T.conjugate().cwiseProduct(wanted)).sum();
-  const double leak = wanted.squaredNorm() - std::norm(overlap) / tt;
-  return std::max(0.0, leak / wanted.squaredNorm());
+  // on one scale and a set of them may be summed. A zero operator leaks in full.
+  return quantum::projectiveLeak(T, wanted);
 }
 
 double MultiCobordism::transferResidualOn(const std::shared_ptr<Spacetime> &spacetime,
@@ -767,12 +762,9 @@ double MultiCobordism::transferResidualOn(const std::shared_ptr<Spacetime> &spac
                            std::to_string(target.chi.cols()) + " but the attached frames give " +
                            std::to_string(T.rows()) + "x" + std::to_string(T.cols()));
   // Projective Frobenius leak: min_c ||c T - chi||^2 / ||chi||^2 (the same in
-  // the state and operator readings, vec being linear).
-  const double tt = T.squaredNorm();
-  if (!(tt > 0.0)) return 1.0;
-  const complexd overlap = (T.conjugate().cwiseProduct(target.chi)).sum();
-  const double leak = target.chi.squaredNorm() - std::norm(overlap) / tt;
-  return std::max(0.0, leak / target.chi.squaredNorm());
+  // the state and operator readings, vec being linear). A zero transfer leaks
+  // in full.
+  return quantum::projectiveLeak(T, target.chi);
 }
 
 double MultiCobordism::twoBodyResidual() const {

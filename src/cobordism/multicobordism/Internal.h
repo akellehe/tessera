@@ -50,6 +50,7 @@
 #include "mesh/Vertex.h"
 #include "mesh/VertexList.h"
 #include "quantum/ChoiJamiolkowski.h"
+#include "quantum/ProjectiveLeak.hpp"
 #include "simulations/ReggeSolver.h"
 #include "spacetime/Spacetime.h"
 #include "spacetime/topologies/SolidSimplex.h"

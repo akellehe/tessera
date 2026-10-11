@@ -348,6 +348,8 @@ internal interface as well, edit the Doxyfile and comment out its exclusions.
 ```
 ```{doxygenfile} DensityMatrix.hpp
 ```
+```{doxygenfile} ProjectiveLeak.hpp
+```
 ```{doxygenfile} Schmidt.hpp
 ```
 ```{doxygenfile} CausalCompare.hpp

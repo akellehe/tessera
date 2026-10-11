@@ -124,6 +124,8 @@ double MultiCobordism::ownStateLeakOf(std::complex<double> periodA, std::complex
   const double pp = p.squaredNorm(), cc = c.squaredNorm();
   if (!(pp > 0.0) || !(cc > 0.0)) return 1.0;
   const std::complex<double> overlap = c.dot(p);  // c^H p: Eigen's dot conjugates its first argument
+  // The leak of `quantum::projectiveLeak` in its symmetric form, which rounds
+  // differently from the helper's, so the two are not interchanged.
   return std::max(0.0, 1.0 - std::norm(overlap) / (cc * pp));
 }
 
