@@ -379,6 +379,8 @@ internal interface as well, edit the Doxyfile and comment out its exclusions.
 ```
 ```{doxygenfile} IndexByKey.hpp
 ```
+```{doxygenfile} Modularity.hpp
+```
 
 ## Matter
 

@@ -710,7 +710,10 @@ public:
   /// ``labels[i]`` labels cell ``cellIds()[i]``, and distinct values are
   /// distinct communities. At \f$ \gamma = 1 \f$ on a `Unit`-weight graph this
   /// is the Newman-Girvan score. Community terms are combined in ascending
-  /// label order.
+  /// label order with Kahan compensation; on a nonnegative real graph through
+  /// `graph::modularityInLabelOrder`, the summation `SparseGraph::modularity`
+  /// and `Spacetime::modularityOnSkeleton` share, so at unit weight and
+  /// \f$ \gamma = 1 \f$ the three give the same value.
   ///
   /// Complex in general: \f$ |Q| \f$ is how much structure the partition has
   /// and \f$ \arg Q \f$ is what kind. Exactly real on a real graph, where the
