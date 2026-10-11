@@ -50,6 +50,7 @@
 #include "mesh/Vertex.h"
 #include "mesh/VertexList.h"
 #include "quantum/ChoiJamiolkowski.h"
+#include "quantum/ProjectiveLeak.hpp"
 #include "simulations/ReggeSolver.h"
 #include "spacetime/Spacetime.h"
 #include "spacetime/topologies/SolidSimplex.h"
@@ -61,6 +62,8 @@
 namespace tessera::cobordism {
 
 using ::tessera::matter::MatterConfiguration;
+using ::tessera::mesh::ascendingIds;
+using ::tessera::mesh::VertexIdPair;
 using ::tessera::simulations::ReggeSolver;
 using complexd = std::complex<double>;
 
@@ -193,14 +196,6 @@ inline PeriodFrameSelection selectPeriodFrame(
   selection.block = std::move(candidates.front().block);
   selection.rows = std::move(candidates.front().rows);
   return selection;
-}
-
-inline std::pair<std::uint64_t, std::uint64_t> edgeKey(
-    const ::tessera::mesh::Edge *edge) {
-  const auto sourceVertexId = edge->getSource()->getId();
-  const auto targetVertexId = edge->getTarget()->getId();
-  return {std::min(sourceVertexId, targetVertexId),
-          std::max(sourceVertexId, targetVertexId)};
 }
 
 // z=l^2 is the optimization coordinate, while Edge stores l. Both square roots

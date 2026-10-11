@@ -10,6 +10,7 @@
 #include "observables/SparseGraph.h"
 
 #include "graph/CSRBuilder.hpp"
+#include "graph/Modularity.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -131,29 +132,23 @@ double SparseGraph::modularity(const std::vector<int> &labels) const {
   // denominator.
   const double twoM = 2.0 * static_cast<double>(nEdges_);
 
-  // Intra-community edge contribution. The CSR stores each undirected edge in
-  // both directions, so this directed scan counts 2·L_c summed over communities,
-  // i.e. twoM · Σ_c (L_c/m).
-  double intra = 0.0;
+  // Per-community totals. The CSR stores each undirected edge in both
+  // directions, so this directed scan counts each internal edge from both
+  // ends, Sigma_in(c) = 2 L_c; S_c = D_c is the summed degree. Every total is
+  // an integer, exact in double whatever order it accumulates in.
+  std::unordered_map<int, CommunityTotals> byLabel;
   for (std::size_t i = 0; i < nNodes_; ++i) {
     const int ci = labels[i];
+    CommunityTotals &c = byLabel[ci];
     for (auto k = indptr_[i]; k < indptr_[i + 1]; ++k) {
-      if (labels[indices_[k]] == ci) intra += 1.0;
+      if (labels[indices_[k]] == ci) c.internal += 1.0;
     }
+    c.strength += static_cast<double>(degree(static_cast<std::uint32_t>(i)));
   }
 
-  // Summed degree D_c per community.
-  std::unordered_map<int, double> degByComm;
-  for (std::size_t i = 0; i < nNodes_; ++i) {
-    degByComm[labels[i]] += static_cast<double>(degree(static_cast<std::uint32_t>(i)));
-  }
-
-  double Q = intra / twoM;
-  for (const auto &[comm, dc] : degByComm) {
-    const double frac = dc / twoM;
-    Q -= frac * frac;
-  }
-  return Q;
+  // Summed in ascending label order, as Spacetime::modularityOnSkeleton and
+  // PersistentModularity::modularityGamma are, so the three agree to the bit.
+  return modularityInLabelOrder(sortedByLabel(byLabel), twoM);
 }
 
 std::vector<double> SparseGraph::diagonalHeatKernel(

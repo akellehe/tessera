@@ -29,6 +29,8 @@ internal interface as well, edit the Doxyfile and comment out its exclusions.
 ```
 ```{doxygenfile} Foliation.h
 ```
+```{doxygenfile} Staircase.h
+```
 
 ## Simplicial complex
 
@@ -43,6 +45,8 @@ internal interface as well, edit the Doxyfile and comment out its exclusions.
 ```{doxygenfile} Edge.h
 ```
 ```{doxygenfile} EdgeKey.h
+```
+```{doxygenfile} VertexIdPair.h
 ```
 ```{doxygenfile} EdgeList.h
 ```
@@ -348,6 +352,8 @@ internal interface as well, edit the Doxyfile and comment out its exclusions.
 ```
 ```{doxygenfile} DensityMatrix.hpp
 ```
+```{doxygenfile} ProjectiveLeak.hpp
+```
 ```{doxygenfile} Schmidt.hpp
 ```
 ```{doxygenfile} CausalCompare.hpp
@@ -378,6 +384,8 @@ internal interface as well, edit the Doxyfile and comment out its exclusions.
 ```{doxygenfile} COO.hpp
 ```
 ```{doxygenfile} IndexByKey.hpp
+```
+```{doxygenfile} Modularity.hpp
 ```
 
 ## Matter

@@ -28,10 +28,11 @@ namespace tessera::chainhodge {
 namespace {
 
 using Cell = std::vector<std::uint64_t>;
-using EdgeKey = std::pair<std::uint64_t, std::uint64_t>;
+using ::tessera::mesh::ascendingIds;
+using ::tessera::mesh::VertexIdPair;
 
-struct EdgeKeyHash {
-  std::size_t operator()(const EdgeKey &e) const noexcept {
+struct VertexIdPairHash {
+  std::size_t operator()(const VertexIdPair &e) const noexcept {
     return std::hash<std::uint64_t>{}(e.first * 1000003ULL ^ (e.second + 0x9e3779b97f4a7c15ULL));
   }
 };
@@ -61,7 +62,7 @@ double principalArg(Complex z) {
 // Index maps from sorted vertex tuples to canonical C_k indices.
 struct CellIndex {
   std::vector<std::map<Cell, int>> byDegree;   // byDegree[k][tuple] = index
-  std::unordered_map<EdgeKey, int, EdgeKeyHash> edges;
+  std::unordered_map<VertexIdPair, int, VertexIdPairHash> edges;
 
   explicit CellIndex(const cobordism::ChainComplex &K) {
     const int d = K.dimension();
@@ -74,16 +75,16 @@ struct CellIndex {
     if (d >= 1) {
       const auto es = K.kSimplexVertices(1);
       for (int j = 0; j < static_cast<int>(es.size()); ++j)
-        edges[EdgeKey{es[static_cast<std::size_t>(j)][0], es[static_cast<std::size_t>(j)][1]}] = j;
+        edges[VertexIdPair{es[static_cast<std::size_t>(j)][0], es[static_cast<std::size_t>(j)][1]}] = j;
     }
   }
 
   [[nodiscard]] int edge(std::uint64_t a, std::uint64_t b) const {
-    if (a > b) std::swap(a, b);
-    const auto it = edges.find(EdgeKey{a, b});
+    const VertexIdPair key = ascendingIds(a, b);
+    const auto it = edges.find(key);
     if (it == edges.end())
-      throw std::invalid_argument("WhitneyMass: vertex pair (" + std::to_string(a) + "," +
-                                  std::to_string(b) + ") is not an edge of the complex");
+      throw std::invalid_argument("WhitneyMass: vertex pair (" + std::to_string(key.first) + "," +
+                                  std::to_string(key.second) + ") is not an edge of the complex");
     return it->second;
   }
 
@@ -525,22 +526,19 @@ cobordism::ChainComplex WhitneyMass::complexOf(const spacetime::Spacetime &st) {
 
 SquaredLengths WhitneyMass::squaredLengthsOf(const spacetime::Spacetime &st,
                                              const cobordism::ChainComplex &K) {
-  std::unordered_map<EdgeKey, Complex, EdgeKeyHash> byPair;
+  std::unordered_map<VertexIdPair, Complex, VertexIdPairHash> byPair;
   if (st.getEdgeList()) {
     for (const auto &e : st.getEdgeList()->toVector()) {
       if (e == nullptr) continue;
-      std::uint64_t a = e->getSource()->getId();
-      std::uint64_t b = e->getTarget()->getId();
-      if (a > b) std::swap(a, b);
       const Complex l = e->getLength();
-      byPair[EdgeKey{a, b}] = l * l;
+      byPair[e->ascendingIds()] = l * l;
     }
   }
   SquaredLengths s;
   const auto edges = K.kSimplexVertices(1);
   s.reserve(edges.size());
   for (const auto &e : edges) {
-    const auto it = byPair.find(EdgeKey{e[0], e[1]});
+    const auto it = byPair.find(VertexIdPair{e[0], e[1]});
     if (it == byPair.end())
       throw std::invalid_argument("WhitneyMass::squaredLengthsOf: complex edge (" +
                                   std::to_string(e[0]) + "," + std::to_string(e[1]) +

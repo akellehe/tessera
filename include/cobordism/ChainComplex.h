@@ -8,6 +8,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -182,6 +183,20 @@ class ChainComplex {
     ///   orientation propagation contradicts itself (non-orientable).
     [[nodiscard]] static std::vector<int> orientationCovector(
         const std::vector<std::vector<std::uint64_t>> &topCells);
+
+    /// A coherent orientation of a set of \f$ k \f$-cells, read from the
+    /// stored \f$ \partial_k \f$: the signs \f$ \varepsilon_t = \pm 1 \f$,
+    /// one per entry of `cells` (indices into \f$ C_k \f$) and in that order,
+    /// that make the two incidences of every \f$ (k{-}1) \f$-face the set
+    /// shares cancel,
+    /// \f$ \varepsilon_t (\partial_k)_{f,t} + \varepsilon_u (\partial_k)_{f,u} = 0 \f$.
+    /// The propagation is orientationCovector()'s: each connected piece of the
+    /// set is rooted at its first entry with \f$ +1 \f$, and a face only one
+    /// of the cells carries imposes nothing.
+    /// @return std::nullopt when no such choice exists: the set is not
+    ///   orientable, or a face is carried by more than two of its cells.
+    [[nodiscard]] std::optional<std::vector<int>> coherentOrientation(
+        int k, const std::vector<std::size_t> &cells) const;
 
     /// The symmetric intersection form \f$ Q_{ij} = \langle \alpha_i \cup
     /// \alpha_j, [K] \rangle \f$ on a basis \f$ \{\alpha_i\} \f$ of the free

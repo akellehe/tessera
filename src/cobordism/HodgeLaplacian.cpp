@@ -44,7 +44,7 @@ using cd = std::complex<double>;
 namespace {
 
 using Face = std::vector<std::uint64_t>;  // sorted vertex ids
-using EdgeKey = std::pair<std::uint64_t, std::uint64_t>;
+using ::tessera::mesh::VertexIdPair;
 
 // Sorted vertex ids of a simplex — the homological reference ordering. Distinct
 // simplices have distinct tuples, so sorting by it reproduces ChainComplex's
@@ -183,7 +183,7 @@ public:
     // needed.
     if (degree_ < 0 || degreeSize_ == 0)
       return result;
-    const EdgeKey edge{std::min(edgeA, edgeB), std::max(edgeA, edgeB)};
+    const VertexIdPair edge{std::min(edgeA, edgeB), std::max(edgeA, edgeB)};
 
     if (const auto *entries = derivativesFor(degreeWeights_, edge)) {
       for (const auto &[index, derivative] : *entries) {
@@ -216,9 +216,9 @@ public:
     Eigen::ArrayXcd lowerVelocity{};   // Wdot_{k-1}
     Eigen::ArrayXcd degreeVelocity{};  // Wdot_k
     Eigen::ArrayXcd upperVelocity{};   // Wdot_{k+1}
-    std::map<EdgeKey, std::vector<std::pair<int, cd>>> lowerSecond{};
-    std::map<EdgeKey, std::vector<std::pair<int, cd>>> degreeSecond{};
-    std::map<EdgeKey, std::vector<std::pair<int, cd>>> upperSecond{};
+    std::map<VertexIdPair, std::vector<std::pair<int, cd>>> lowerSecond{};
+    std::map<VertexIdPair, std::vector<std::pair<int, cd>>> degreeSecond{};
+    std::map<VertexIdPair, std::vector<std::pair<int, cd>>> upperSecond{};
     Eigen::MatrixXcd lowerBaseDot{};   // d_k^T Wdot_{k-1} d_k
     Eigen::MatrixXcd upperBaseDot{};   // -d_{k+1} W^-1 Wdot_{k+1} W^-1 d_{k+1}^T
     Eigen::MatrixXcd lowerLeftDot{};   // d/dt (W_k^-1 d_k^T)
@@ -228,7 +228,7 @@ public:
   // The direction is edge-keyed like `Simplex::volumeGradient` and is handed
   // straight to the simplices.
   [[nodiscard]] DirectionData directionData(
-      const std::map<EdgeKey, cd> &direction) const {
+      const std::map<VertexIdPair, cd> &direction) const {
     DirectionData data;
     data.lowerVelocity = weightVelocity(lowerWeights_, degree_ - 1, direction);
     data.degreeVelocity = weightVelocity(degreeWeights_, degree_, direction);
@@ -270,7 +270,7 @@ public:
     Eigen::MatrixXcd result = Eigen::MatrixXcd::Zero(degreeSize_, degreeSize_);
     if (degree_ < 0 || degreeSize_ == 0)
       return result;
-    const EdgeKey edge{std::min(edgeA, edgeB), std::max(edgeA, edgeB)};
+    const VertexIdPair edge{std::min(edgeA, edgeB), std::max(edgeA, edgeB)};
 
     if (const auto *entries = derivativesFor(degreeWeights_, edge)) {
       const auto *second = secondFor(data.degreeSecond, edge);
@@ -324,12 +324,12 @@ private:
   struct WeightData {
     Eigen::ArrayXcd weights{};
     Eigen::ArrayXcd inverseWeights{};
-    std::map<EdgeKey, std::vector<IndexedDerivative>> derivativesByEdge{};
+    std::map<VertexIdPair, std::vector<IndexedDerivative>> derivativesByEdge{};
   };
 
   [[nodiscard]] static const std::vector<IndexedDerivative> *secondFor(
-      const std::map<EdgeKey, std::vector<IndexedDerivative>> &table,
-      const EdgeKey &edge) {
+      const std::map<VertexIdPair, std::vector<IndexedDerivative>> &table,
+      const VertexIdPair &edge) {
     const auto found = table.find(edge);
     return found == table.end() ? nullptr : &found->second;
   }
@@ -345,7 +345,7 @@ private:
   // Wdot_j = sum_f v_f dW_j/dz_f, over the simplices `buildWeightData` admitted.
   [[nodiscard]] Eigen::ArrayXcd weightVelocity(
       const WeightData &weights, int degree,
-      const std::map<EdgeKey, cd> &direction) const {
+      const std::map<VertexIdPair, cd> &direction) const {
     Eigen::ArrayXcd velocity =
         Eigen::ArrayXcd::Zero(weights.weights.size());
     if (degree < 1 || degree >= static_cast<int>(faces_.size()))
@@ -363,10 +363,10 @@ private:
   // from the simplex volume Hessian. The admission rule mirrors
   // `buildWeightData`, so the first- and second-derivative tables cover the
   // same (edge, index) pairs.
-  [[nodiscard]] std::map<EdgeKey, std::vector<IndexedDerivative>> weightSecond(
+  [[nodiscard]] std::map<VertexIdPair, std::vector<IndexedDerivative>> weightSecond(
       const WeightData &weights, int degree,
-      const std::map<EdgeKey, cd> &direction) const {
-    std::map<EdgeKey, std::vector<IndexedDerivative>> table;
+      const std::map<VertexIdPair, cd> &direction) const {
+    std::map<VertexIdPair, std::vector<IndexedDerivative>> table;
     if (degree < 1 || degree >= static_cast<int>(faces_.size()))
       return table;
     const auto &degreeFaces = faces_[static_cast<std::size_t>(degree)];
@@ -470,7 +470,7 @@ private:
   }
 
   [[nodiscard]] static const std::vector<IndexedDerivative> *
-  derivativesFor(const WeightData &data, const EdgeKey &edge) {
+  derivativesFor(const WeightData &data, const VertexIdPair &edge) {
     const auto found = data.derivativesByEdge.find(edge);
     return found == data.derivativesByEdge.end() ? nullptr : &found->second;
   }
@@ -1716,7 +1716,7 @@ std::vector<std::complex<double>> HodgeLaplacian::spectralMomentStiffnessHessian
                              std::to_string(direction.size()) + " entries, expected " + std::to_string(edges.size()));
   std::vector<cd> product(edges.size(), cd{0.0, 0.0});
   if (!st_ || coefficients.empty()) return product;
-  std::map<EdgeKey, cd> keyedDirection;
+  std::map<VertexIdPair, cd> keyedDirection;
   for (std::size_t e = 0; e < edges.size(); ++e) {
     const auto *edge = edges[e];
     if (edge == nullptr || edge->getSource() == nullptr || edge->getTarget() == nullptr) continue;

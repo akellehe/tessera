@@ -1,11 +1,11 @@
 // Copyright (c) 2026 Twin Vector Labs LLC. All rights reserved.
 //
-// Shared mutual-information normalisation constant, used by every consumer of
+// Shared mutual-information normalisation constant, used by both consumers of
 // the mutual-information-to-length map ℓ = −log(I / I_max):
 //
-//   • InteractionSimulation (Pachner cells, Regge action)
-//   • WeightedSparseGraph::fromSpacetimeSkeleton (heat-kernel weights)
-//   • MutualInformationProfile::buildSpacetime (edge lengths)
+//   • InteractionSimulation (edge lengths of the Pachner cells, Regge action)
+//   • Spacetime::getSpectralDimensionOnSkeleton (its inverse, the heat-kernel
+//     weights I_max · e^{−|ℓ|} of the 1-skeleton)
 
 #pragma once
 

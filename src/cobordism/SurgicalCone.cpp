@@ -69,6 +69,9 @@ bool SurgicalCone::isApplied() const { return !moves_.empty(); }
 
 namespace {
 
+using ::tessera::mesh::ascendingIds;
+using ::tessera::mesh::VertexIdPair;
+
 /// Build {id -> Vertex*} over the live vertex list.
 std::unordered_map<std::uint64_t, ::tessera::mesh::Vertex *> vertexIndex(
     Spacetime *st) {
@@ -78,16 +81,14 @@ std::unordered_map<std::uint64_t, ::tessera::mesh::Vertex *> vertexIndex(
   return idx;
 }
 
-/// Build {min(u,v),max(u,v) -> Edge*} over the live edge list.
-std::map<std::pair<std::uint64_t, std::uint64_t>, ::tessera::mesh::Edge *>
+/// Build {ascending endpoint ids -> Edge*} over the live edge list.
+std::map<VertexIdPair, ::tessera::mesh::Edge *>
 edgeIndex(Spacetime *st) {
-  std::map<std::pair<std::uint64_t, std::uint64_t>, ::tessera::mesh::Edge *> idx;
+  std::map<VertexIdPair, ::tessera::mesh::Edge *> idx;
   for (const auto e : st->getEdgeList()->toVector()) {
     if (e == nullptr || e->getSource() == nullptr || e->getTarget() == nullptr)
       continue;
-    const std::uint64_t a = e->getSource()->getId();
-    const std::uint64_t b = e->getTarget()->getId();
-    idx[{std::min(a, b), std::max(a, b)}] = e;
+    idx[e->ascendingIds()] = e;
   }
   return idx;
 }
@@ -154,7 +155,7 @@ std::pair<bool, std::string> SurgicalCone::coneOut(
     for (std::size_t j = i + 1; j < want.size(); ++j) {
       const std::uint64_t u = want[i], v = want[j];
       if (covered(u, v)) continue;
-      const auto it = eidx.find({std::min(u, v), std::max(u, v)});
+      const auto it = eidx.find(ascendingIds(u, v));
       if (it == eidx.end()) continue;  // already absent
       m.edges.emplace_back(u, v, it->second->getLength(),
                            it->second->getPhase());
@@ -393,7 +394,7 @@ void SurgicalCone::undoBridge(const Move &m) {
   for (const auto &[u, v, w, theta] : m.edges) {
     (void)w;
     (void)theta;
-    const auto it = eidx.find({std::min(u, v), std::max(u, v)});
+    const auto it = eidx.find(ascendingIds(u, v));
     if (it != eidx.end()) st_->removeEdge(it->second);
   }
 }
@@ -419,7 +420,7 @@ void SurgicalCone::undoConeOut(const Move &m) {
 
   auto eidx = edgeIndex(st_);
   for (const auto &[u, v, w, theta] : m.edges) {
-    const auto it = eidx.find({std::min(u, v), std::max(u, v)});
+    const auto it = eidx.find(ascendingIds(u, v));
     if (it != eidx.end()) {
       it->second->setLength(w);  // the recorded complex length, bit-exact
       it->second->setPhase(theta);
@@ -453,7 +454,7 @@ void SurgicalCone::undoConeIn(const Move &m) {
   for (const auto &[u, v, w, theta] : m.edges) {
     (void)w;
     (void)theta;
-    const auto it = eidx.find({std::min(u, v), std::max(u, v)});
+    const auto it = eidx.find(ascendingIds(u, v));
     if (it != eidx.end()) st_->removeEdge(it->second);
   }
   for (const auto &[id, coords] : m.verts) {

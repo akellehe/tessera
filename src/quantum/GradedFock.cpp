@@ -981,11 +981,12 @@ std::size_t EdgeModeRegistry::assignLineageKeys(
                 continue;
             }
             if (owner != assignments.size()) {
+                const mesh::VertexIdPair edge =
+                    mesh::ascendingIds(record.vertexA, record.vertexB);
                 throw std::invalid_argument(
                     "EdgeModeRegistry::assignLineageKeys: the edge {" +
-                    std::to_string(std::min(record.vertexA, record.vertexB)) +
-                    ", " +
-                    std::to_string(std::max(record.vertexA, record.vertexB)) +
+                    std::to_string(edge.first) + ", " +
+                    std::to_string(edge.second) +
                     "} lies in the supports of both lineage '" +
                     assignments[owner].lineageKey + "' and lineage '" +
                     assignments[a].lineageKey +
@@ -1016,14 +1017,12 @@ std::uint64_t EdgeModeRegistry::addEdge(std::uint64_t vertexA,
             "got " +
             std::to_string(orientationSign));
     }
-    const std::uint64_t lo = std::min(vertexA, vertexB);
-    const std::uint64_t hi = std::max(vertexA, vertexB);
+    const mesh::VertexIdPair edge = mesh::ascendingIds(vertexA, vertexB);
     for (const EdgeModeRecord& r : records_) {
-        if (std::min(r.vertexA, r.vertexB) == lo &&
-            std::max(r.vertexA, r.vertexB) == hi) {
+        if (mesh::ascendingIds(r.vertexA, r.vertexB) == edge) {
             throw std::invalid_argument(
-                "EdgeModeRegistry::addEdge: edge {" + std::to_string(lo) +
-                ", " + std::to_string(hi) +
+                "EdgeModeRegistry::addEdge: edge {" + std::to_string(edge.first) +
+                ", " + std::to_string(edge.second) +
                 "} already indexes mode " + std::to_string(r.modeId) +
                 " (one two-level factor per edge)");
         }

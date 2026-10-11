@@ -117,7 +117,7 @@ void EigenstateSynthesis::classifyBoundary() {
   // one top cell. An edge sits on the boundary only once codim-1 faces are at
   // least edges themselves (topVerts >= 3); below that there is no boundary and
   // every tunable edge is interior.
-  std::set<std::pair<std::uint64_t, std::uint64_t>> boundaryEdgeKeys;
+  std::set<::tessera::mesh::VertexIdPair> boundaryEdgeKeys;
   std::unordered_set<std::uint64_t> boundaryVertexIds;
   if (topVerts >= 3) {
     std::map<std::vector<std::uint64_t>, int> facetCount;
@@ -151,11 +151,7 @@ void EigenstateSynthesis::classifyBoundary() {
   // An edge is on ∂W iff some boundary facet contains both endpoints; otherwise
   // it is interior (free).
   for (std::size_t e = 0; e < edges_.size(); ++e) {
-    const std::uint64_t a = edges_[e]->getSource()->getId();
-    const std::uint64_t b = edges_[e]->getTarget()->getId();
-    const std::pair<std::uint64_t, std::uint64_t> key =
-        a < b ? std::make_pair(a, b) : std::make_pair(b, a);
-    if (boundaryEdgeKeys.find(key) != boundaryEdgeKeys.end())
+    if (boundaryEdgeKeys.find(edges_[e]->ascendingIds()) != boundaryEdgeKeys.end())
       boundaryEdgeIdx_.push_back(e);
     else
       interiorEdgeIdx_.push_back(e);

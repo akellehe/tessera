@@ -18,11 +18,13 @@
 #include <stdexcept>
 #include <string>
 #include "spacetime/Spacetime.h"
+#include "spacetime/Staircase.h"
 #include "cobordism/ChainComplex.h"
 #include <cstdio>
 #include "graph/CSRBuilder.hpp"
 #include "graph/DualGraph.hpp"
 #include "graph/IndexByKey.hpp"
+#include "graph/Modularity.hpp"
 #include "graph/SpectralGraph.hpp"
 #include "graph/WeightedCsrGraph.hpp"
 #include "mesh/SimplexFilter.h"
@@ -332,7 +334,7 @@ std::shared_ptr<Spacetime> Spacetime::fromSimplices(
   // shared edge is recognised as one edge. Two cells sharing an edge must agree
   // on it; a disagreement means the caller handed us two different geometries
   // for the same edge, which no choice of winner would make correct.
-  std::map<std::pair<std::uint64_t, std::uint64_t>, EdgeGeometry> geometry;
+  std::map<VertexIdPair, EdgeGeometry> geometry;
   std::vector<std::vector<std::uint64_t>> tuples;
   tuples.reserve(cells.size());
 
@@ -341,9 +343,7 @@ std::shared_ptr<Spacetime> Spacetime::fromSimplices(
       throw std::invalid_argument("Spacetime::fromSimplices: null cell");
     tuples.push_back(cell->topTuple());
     for (const auto &edge : cell->getEdges()) {
-      const auto a = edge->getSource()->getId();
-      const auto b = edge->getTarget()->getId();
-      const auto key = std::make_pair(std::min(a, b), std::max(a, b));
+      const VertexIdPair key = edge->ascendingIds();
       // The U(1) phase is orientation-dependent: normalize it to the ascending
       // orientation here and hand it back on the new edge's own orientation
       // below, so a cell that stores an edge the other way round does not flip
@@ -363,9 +363,7 @@ std::shared_ptr<Spacetime> Spacetime::fromSimplices(
 
   // Transfer what the cells carried, then apply any override.
   for (const auto &edge : st->getEdgeList()->toVector()) {
-    const auto a = edge->getSource()->getId();
-    const auto b = edge->getTarget()->getId();
-    const auto it = geometry.find({std::min(a, b), std::max(a, b)});
+    const auto it = geometry.find(edge->ascendingIds());
     // An edge the cells did not carry cannot happen for a well-formed cell set,
     // since every edge of the new complex is an edge of some cell.
     if (it == geometry.end()) continue;
@@ -552,16 +550,11 @@ std::vector<std::vector<std::uint64_t>> Spacetime::getHoles(int degree) const {
 }
 
 bool Spacetime::copyEdgeGeometryFrom(const Spacetime &source) {
-  std::map<std::pair<std::uint64_t, std::uint64_t>, const Edge *> sourceEdges;
-  for (const auto *edge : source.getEdgeList()->toVector()) {
-    const auto a = edge->getSource()->getId();
-    const auto b = edge->getTarget()->getId();
-    sourceEdges.emplace(std::make_pair(std::min(a, b), std::max(a, b)), edge);
-  }
+  std::map<VertexIdPair, const Edge *> sourceEdges;
+  for (const auto *edge : source.getEdgeList()->toVector())
+    sourceEdges.emplace(edge->ascendingIds(), edge);
   for (auto *edge : getEdgeList()->toVector()) {
-    const auto a = edge->getSource()->getId();
-    const auto b = edge->getTarget()->getId();
-    const auto found = sourceEdges.find({std::min(a, b), std::max(a, b)});
+    const auto found = sourceEdges.find(edge->ascendingIds());
     if (found == sourceEdges.end()) return false;
     setEdgeGeometry(*edge, edgeGeometryOf(*found->second));
   }
@@ -596,11 +589,8 @@ Spacetime::Record Spacetime::record() const {
     }
     out.cells.push_back(std::move(ids));
   }
-  for (const auto *edge : getEdgeList()->toVector()) {
-    const auto a = edge->getSource()->getId();
-    const auto b = edge->getTarget()->getId();
-    out.edges[{std::min(a, b), std::max(a, b)}] = edgeGeometryOf(*edge);
-  }
+  for (const auto *edge : getEdgeList()->toVector())
+    out.edges[edge->ascendingIds()] = edgeGeometryOf(*edge);
   return out;
 }
 
@@ -616,15 +606,14 @@ std::shared_ptr<Spacetime> Spacetime::fromRecord(const Record &record,
       vertexList->get(id)->setTime(time);
   }
   for (auto *edge : st->getEdgeList()->toVector()) {
-    const auto a = edge->getSource()->getId();
-    const auto b = edge->getTarget()->getId();
-    const auto found = record.edges.find({std::min(a, b), std::max(a, b)});
+    const VertexIdPair ids = edge->ascendingIds();
+    const auto found = record.edges.find(ids);
     if (found != record.edges.end()) {
       setEdgeGeometry(*edge, found->second);
     } else if (missing == MissingEdgeGeometry::Throw) {
       throw std::out_of_range(
-          "Spacetime::fromRecord: edge (" + std::to_string(std::min(a, b)) +
-          ", " + std::to_string(std::max(a, b)) +
+          "Spacetime::fromRecord: edge (" + std::to_string(ids.first) +
+          ", " + std::to_string(ids.second) +
           ") of the rebuilt complex has no recorded geometry; a partial record "
           "is never silently defaulted");
     }
@@ -665,7 +654,7 @@ Spacetime::Relabeled Spacetime::relabeled(std::uint64_t seed) const {
     const std::uint64_t b = permutation.at(pair.second);
     // The phase is held on the ascending orientation of the original pair;
     // when the permutation reverses that orientation the link is the inverse.
-    permuted.edges[{std::min(a, b), std::max(a, b)}] =
+    permuted.edges[ascendingIds(a, b)] =
         a < b ? geometry
               : EdgeGeometry{geometry.length,
                              std::complex<double>{0.0, 0.0} - geometry.phase};
@@ -730,11 +719,10 @@ std::vector<std::vector<std::uint64_t>> Spacetime::prismCells(
       std::vector<std::uint64_t> base(cell.begin(), cell.end());
       std::sort(base.begin(), base.end());
       const std::size_t m = base.size();
+      const auto lower = [&](std::size_t i) { return lo[base[i]] + loOff; };
+      const auto upper = [&](std::size_t i) { return hi[base[i]] + hiOff; };
       for (std::size_t j = 0; j < m; ++j) {
-        std::vector<std::uint64_t> s;
-        s.reserve(m + 1);
-        for (std::size_t i = 0; i <= j; ++i) s.push_back(lo[base[i]] + loOff);
-        for (std::size_t i = j; i < m; ++i) s.push_back(hi[base[i]] + hiOff);
+        std::vector<std::uint64_t> s = staircaseCell(m, j, lower, upper);
         std::sort(s.begin(), s.end());
         out.insert(std::move(s));
       }
@@ -752,13 +740,12 @@ std::vector<std::vector<std::uint64_t>> Spacetime::worldprismBoundaryFaces(
   // staircase cell are the boundary of partial(g x I) (the caps g and g_top and
   // the side worldsheets); the shared (interior) face is the staircase diagonal.
   const std::size_t m = facet.size();
+  const auto lower = [&](std::size_t i) { return facet[i] + loOffset; };
+  const auto upper = [&](std::size_t i) { return facet[i] + hiOffset; };
   std::vector<std::vector<std::uint64_t>> staircase;
   staircase.reserve(m);
   for (std::size_t k = 0; k < m; ++k) {
-    std::vector<std::uint64_t> s;
-    s.reserve(m + 1);
-    for (std::size_t i = 0; i <= k; ++i) s.push_back(facet[i] + loOffset);
-    for (std::size_t i = k; i < m; ++i) s.push_back(facet[i] + hiOffset);
+    std::vector<std::uint64_t> s = staircaseCell(m, k, lower, upper);
     std::sort(s.begin(), s.end());
     staircase.push_back(std::move(s));
   }
@@ -1505,14 +1492,6 @@ void Spacetime::updateOrientationCounters(const SimplexPtr &simplex, int delta) 
   return ::tessera::observables::SparseGraph::fromCOO(rows, cols, n);
 }
 
-namespace {
-
-// Private SpectralGraph subclass used only by
-// Spacetime::getSpectralDimensionOnSkeleton — holds the CSR of the
-// weighted 1-skeleton of filtered top simplices and supplies the
-
-}  // anonymous namespace
-
 std::vector<double>
 Spacetime::getSpectralDimensionOnSkeleton(
     std::vector<double> const& sigmas,
@@ -1563,100 +1542,79 @@ Spacetime::getSpectralDimensionOnSkeleton(
     return std::vector<double>(sigmas.size(), 0.0);
   }
 
-  // Build CSR (each undirected edge listed twice).
-  const int n = static_cast<int>(idx.size());
-  std::vector<int>    rows, cols;
-  std::vector<double> ws;
-  rows.reserve(edgeList.size() * 2);
-  cols.reserve(edgeList.size() * 2);
-  ws.reserve(edgeList.size() * 2);
-  for (auto const& [u, v, w] : edgeList) {
-    rows.push_back(u); cols.push_back(v); ws.push_back(w);
-    rows.push_back(v); cols.push_back(u); ws.push_back(w);
-  }
-  std::vector<int>    indptr, indices;
-  std::vector<double> weights;
-  ::tessera::graph::buildCSRFromCOO<int, double, int>(
-      static_cast<std::size_t>(n), rows, cols, ws,
-      indptr, indices, weights);
-
-  std::vector<double> degrees(static_cast<std::size_t>(n), 0.0);
-  for (int v = 0; v < n; ++v) {
-    const int lo = indptr[static_cast<std::size_t>(v)];
-    const int hi = indptr[static_cast<std::size_t>(v) + 1];
-    for (int k = lo; k < hi; ++k) {
-      degrees[static_cast<std::size_t>(v)] +=
-          weights[static_cast<std::size_t>(k)];
-    }
-  }
-
-  ::tessera::graph::WeightedCsrGraph view(n, std::move(indptr), std::move(indices),
-                              std::move(weights), std::move(degrees));
+  const auto view = ::tessera::graph::WeightedCsrGraph::fromWeightedEdges(
+      static_cast<int>(idx.size()), edgeList);
   const std::vector<double> p = view.returnProbability(sigmas, krylovDim);
   return SpectralGraph::spectralDimension(sigmas, p);
 }
 
 double Spacetime::modularityOnSkeleton(int M) const {
   if (M < 1) return 0.0;
-  std::size_t n = getVertexCount();
+  const std::size_t n = getVertexCount();
   if (n == 0) return 0.0;
-
-  // Per-vertex degree and label.
-  std::vector<std::uint32_t> deg(0);
-  std::vector<int> label(0);
-  // Build a vertex-id → contiguous-index map so we can index into
-  // arrays of size n.  (Vertex IDs aren't necessarily dense.)
-  std::unordered_map<std::uint64_t, std::uint32_t> idToIdx;
-  idToIdx.reserve(n);
-  std::vector<std::uint64_t> idsByIdx;
-  idsByIdx.reserve(n);
-  for (const auto &v : vertexList->toVector()) {
-    auto id = v->getId();
-    idToIdx.emplace(id, static_cast<std::uint32_t>(idsByIdx.size()));
-    idsByIdx.push_back(id);
-  }
-  deg.assign(idsByIdx.size(), 0);
-  label.assign(idsByIdx.size(), 0);
-  for (std::size_t i = 0; i < idsByIdx.size(); ++i) {
-    label[i] = static_cast<int>(idsByIdx[i] % static_cast<std::uint64_t>(M));
-  }
-
-  std::size_t m = edgeList->size();
+  const std::size_t m = edgeList->size();
   if (m == 0) return 0.0;
 
-  // L_c (intra-community edge count) and D_c (sum of degrees) per
-  // community label.
-  std::unordered_map<int, double> L_c;
-  std::unordered_map<int, double> D_c;
-  for (const auto &e : edgeList->toVector()) {
-    auto srcId = e->getSource()->getId();
-    auto tgtId = e->getTarget()->getId();
-    auto si = idToIdx[srcId];
-    auto ti = idToIdx[tgtId];
-    deg[si]++;
-    deg[ti]++;
-    if (label[si] == label[ti]) {
-      // Each within-community edge contributes 2 to ``L_c`` in the
-      // canonical formula (sum over ordered pairs).  We mirror
-      // examples/modularity.py which uses
-      // ``A[np.ix_(nodes, nodes)].sum()`` — that double-counts each
-      // within-edge — so we add 2 here.
-      L_c[label[si]] += 2.0;
+  // Per-community totals under label(v) = v.id() % M. Sigma_in(c) counts each
+  // edge inside c from both ends, as examples/modularity.py's
+  // ``A[np.ix_(nodes, nodes)].sum()`` does, and S_c = D_c is the summed
+  // degree. Every total is an integer, exact in double whatever order it
+  // accumulates in. A community exists when some vertex carries its label.
+  const auto modulus = static_cast<std::uint64_t>(M);
+  const auto labelOf = [modulus](const Vertex *v) {
+    return static_cast<int>(v->getId() % modulus);
+  };
+  // `totalsOf` maps a vertex to its community's totals; two endpoints share a
+  // community exactly when they map to the same entry.
+  const auto accumulateEdges = [&](auto &&totalsOf) {
+    for (const Edge *e : edgeList->toVector()) {
+      CommunityTotals &a = totalsOf(e->getSource());
+      CommunityTotals &b = totalsOf(e->getTarget());
+      a.strength += 1.0;
+      b.strength += 1.0;
+      if (&a == &b) a.internal += 2.0;
     }
-  }
-  for (std::size_t i = 0; i < deg.size(); ++i) {
-    D_c[label[i]] += deg[i];
-  }
+  };
 
-  double m2 = 2.0 * static_cast<double>(m);
-  double Q = 0.0;
-  for (const auto &[c, dc] : D_c) {
-    double lc = 0.0;
-    auto it = L_c.find(c);
-    if (it != L_c.end()) lc = it->second;
-    Q += lc / m2 - (dc / m2) * (dc / m2);
+  LabelledCommunities communities;
+  if (static_cast<std::size_t>(M) <= n + 2 * m) {
+    // The labels index a table of M entries directly, read straight off the
+    // ids with no hashing; the table is no larger than the n + 2m label reads
+    // that fill it, so clearing and compacting it costs no more than they do.
+    // Label -1 marks a residue no vertex carries, dropped before the sum.
+    communities.assign(static_cast<std::size_t>(M), {-1, CommunityTotals{}});
+    for (const Vertex *v : vertexList->liveVector()) {
+      const int c = labelOf(v);
+      communities[static_cast<std::size_t>(c)].first = c;
+    }
+    accumulateEdges([&](const Vertex *v) -> CommunityTotals & {
+      return communities[static_cast<std::size_t>(labelOf(v))].second;
+    });
+    std::erase_if(communities,
+                  [](const auto &entry) { return entry.first < 0; });
+  } else {
+    // Too many residues to tabulate (M > n + 2m): give each community a slot
+    // and each vertex id the slot of its label, then sort by label.
+    std::unordered_map<int, std::uint32_t> slotOfLabel;
+    std::unordered_map<std::uint64_t, std::uint32_t> slotOfId;
+    slotOfLabel.reserve(n);
+    slotOfId.reserve(n);
+    communities.reserve(n);
+    for (const Vertex *v : vertexList->liveVector()) {
+      const int c = labelOf(v);
+      const auto [it, fresh] = slotOfLabel.try_emplace(
+          c, static_cast<std::uint32_t>(communities.size()));
+      if (fresh) communities.push_back({c, CommunityTotals{}});
+      slotOfId.emplace(v->getId(), it->second);
+    }
+    accumulateEdges([&](const Vertex *v) -> CommunityTotals & {
+      return communities[slotOfId[v->getId()]].second;
+    });
+    sortByLabel(communities);
   }
-  return Q;
+  // Summed in ascending label order, as SparseGraph::modularity and
+  // PersistentModularity::modularityGamma are, so the three agree to the bit.
+  return modularityInLabelOrder(communities, 2.0 * static_cast<double>(m));
 }
 
 void Spacetime::removeSimplex(const SimplexPtr &simplex) {

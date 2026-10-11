@@ -7,6 +7,7 @@
 #include "mesh/Fingerprint.h"
 #include "mesh/ForwardDeclarations.h"
 #include "mesh/EdgeKey.h"
+#include "mesh/VertexIdPair.h"
 // walkLoop calls Vertex::getId() non-dependently, so Vertex must be complete at
 // its definition. Vertex.h only forward-declares Edge, so this include is acyclic.
 #include "mesh/Vertex.h"
@@ -126,6 +127,15 @@ class Edge {
     /// general complex on the Picard-Lefschetz saddle. Causal character is read from
     /// \f$ \arg(l^2) \f$; see the predicates below.
     [[nodiscard]] std::complex<double> getLength() const noexcept;
+
+    /// The complex squared length \f$ l^2 \f$, derived from `getLength()`.
+    ///
+    /// Defined out of line, so every caller reads the one compiled evaluation. A check that
+    /// snapshots \f$ l^2 \f$ and later compares it bit for bit must read it here on both
+    /// sides: an inline `l * l` at each site may be contracted into a fused multiply-add at
+    /// one and not the other (`-O3 -march=native`), and then an unchanged complex edge
+    /// compares unequal in its last bit.
+    [[nodiscard]] std::complex<double> squaredLength() const noexcept;
 
     /// # Causal character from the argument of the squared length
     ///
@@ -300,6 +310,12 @@ class Edge {
     /// @returns A tuple of {sourceId, targetId}.
     EdgeKey getKey() const noexcept;
 
+    /// The endpoint ids in ascending order, the key of the undirected edge;
+    /// ``getKey`` keeps the stored source → target order instead.
+    [[nodiscard]] VertexIdPair ascendingIds() const noexcept {
+      return mesh::ascendingIds(getSource()->getId(), getTarget()->getId());
+    }
+
     /// Set the complex edge length \f$l\f$ — the edge's one degree of freedom. Real for
     /// spacelike, imaginary for timelike, general complex off the real-Lorentzian locus.
     ///
@@ -373,6 +389,10 @@ class Edge {
     /// I ≤ 0. Pass epsilon ≤ 0 to opt out of the floor, in which case a
     /// vanishing mutual information gives the divergent +∞ the law implies.
     /// Always real and ≥ 0, i.e. spacelike.
+    ///
+    /// ``quantum::MutualInformation::edgeLength`` is a different convention:
+    /// −log(I) with no iMax normalization, and +∞ rather than a cap below its
+    /// epsilon.
     [[nodiscard]] static double
     vanRaamsdonkLength(double I, double iMax,
                        double epsilon = 1e-10) noexcept;

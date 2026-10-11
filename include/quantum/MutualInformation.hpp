@@ -89,9 +89,11 @@ public:
     [[nodiscard]] static Eigen::MatrixXd
     allPairs(itensor::MPS const& psi);
 
-    // Edge length ℓ = -log(I) with infinity floor at -log(epsilon).
-    // Returns +inf when I < epsilon. Used by EmergentGraph to convert
-    // mutual information to a metric weight.
+    // Edge length ℓ = -log(I), +inf when I < epsilon: the unnormalized
+    // convention, with no I_max and no cap, so an uncorrelated pair is
+    // infinitely far apart. The normalized law, ℓ = -log(I/I_max) capped
+    // at -log(epsilon) so the length stays finite, is
+    // mesh::Edge::vanRaamsdonkLength.
     [[nodiscard]] static double
     edgeLength(double I, double epsilon = 1e-10) noexcept;
 

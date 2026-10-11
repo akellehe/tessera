@@ -90,7 +90,12 @@ public:
   /// where \f$ L_c \f$ is the intra-community edge count, \f$ D_c \f$ the
   /// summed degree of community \f$ c \f$, and \f$ m \f$ the total edge count.
   /// Distinct label values are distinct communities; labels need not be dense or
-  /// zero-based. Returns 0 for an empty or edgeless graph.
+  /// zero-based. The community terms are added in ascending label order with
+  /// Kahan compensation (`graph::modularityInLabelOrder`), the order
+  /// `Spacetime::modularityOnSkeleton` and
+  /// `PersistentModularity::modularityGamma` use, so the three give the same
+  /// value on the same graph and partition. Returns 0 for an empty or edgeless
+  /// graph.
   /// @throws std::invalid_argument when ``labels.size() != nNodes()``.
   [[nodiscard]] double modularity(const std::vector<int> &labels) const;
 

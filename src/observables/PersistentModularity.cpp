@@ -19,6 +19,7 @@
 #include <unordered_set>
 #include <utility>
 
+#include "graph/Modularity.hpp"
 #include "mesh/Edge.h"
 #include "mesh/EdgeList.h"
 #include "mesh/Vertex.h"
@@ -54,7 +55,8 @@ using namespace ::tessera::quantum;
 
 namespace {
 
-/// File-local deterministic hashing, pseudo-random and summation utilities.
+/// File-local deterministic hashing and pseudo-random utilities.  The Kahan
+/// accumulator is graph::Kahan, shared with the modularity summation.
 struct Mix {
   static std::uint64_t splitmix64(std::uint64_t x) noexcept {
     x += 0x9E3779B97F4A7C15ULL;
@@ -120,22 +122,6 @@ public:
 
 private:
   std::uint64_t state_;
-};
-
-/// Kahan-compensated accumulator for the incremental delta-Q ledger.
-class Kahan {
-public:
-  void add(double x) noexcept {
-    const double y = x - c_;
-    const double t = s_ + y;
-    c_ = (t - s_) - y;
-    s_ = t;
-  }
-  double value() const noexcept { return s_; }
-
-private:
-  double s_ = 0.0;
-  double c_ = 0.0;
 };
 
 }  // namespace
@@ -472,8 +458,27 @@ std::complex<double> PersistentModularity::modularityGamma(
   }
   const std::complex<double> zero(0.0, 0.0);
   if (twoM_ <= 0.0) return zero;
-  // Ordered map: community terms combine in ascending label order, which is
+  // Ordered maps: community terms combine in ascending label order, which is
   // stable under any relabeling of the underlying cells.
+  if (!signed_) {
+    // Real arithmetic on a nonnegative real graph, kept separate so its score
+    // is bit-identical to the plain real formula rather than merely close.
+    // graph::modularityInLabelOrder is the summation SparseGraph::modularity
+    // and Spacetime::modularityOnSkeleton share, so at unit weight and
+    // gamma = 1 the three agree to the last bit.
+    std::map<int, CommunityTotals> totals;
+    for (std::size_t e = 0; e < nEdges_; ++e) {
+      const int a = labels[orientedSrc_[e]];
+      const int b = labels[orientedTgt_[e]];
+      if (a == b) totals[a].internal += 2.0 * orientedW_[e].real();
+    }
+    for (std::size_t i = 0; i < nNodes_; ++i) {
+      totals[labels[i]].strength += strength_[i].real();
+    }
+    return std::complex<double>(modularityInLabelOrder(totals, twoM_, gamma),
+                                0.0);
+  }
+
   std::map<int, std::complex<double>> in;   // Sigma_in per label
   std::map<int, std::complex<double>> tot;  // S_c per label
   for (std::size_t e = 0; e < nEdges_; ++e) {
@@ -482,20 +487,6 @@ std::complex<double> PersistentModularity::modularityGamma(
     if (a == b) in[a] += 2.0 * orientedW_[e];
   }
   for (std::size_t i = 0; i < nNodes_; ++i) tot[labels[i]] += strength_[i];
-
-  if (!signed_) {
-    // Real arithmetic on a nonnegative real graph, kept separate so its score
-    // is bit-identical to the plain real formula rather than merely close.
-    Kahan q;
-    for (const auto &[label, s] : tot) {
-      double lin = 0.0;
-      auto it = in.find(label);
-      if (it != in.end()) lin = it->second.real();
-      const double frac = s.real() / twoM_;
-      q.add(lin / twoM_ - gamma * frac * frac);
-    }
-    return std::complex<double>(q.value(), 0.0);
-  }
 
   // Q_gamma = sum_c (Sigma_in(c) - gamma S_c^2 / SA) / T.  A vanishing SA
   // leaves the configuration null model undefined, since there is no total

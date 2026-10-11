@@ -43,6 +43,8 @@
 namespace tessera::cobordism {
 
 using cd = std::complex<double>;
+using ::tessera::mesh::ascendingIds;
+using ::tessera::mesh::VertexIdPair;
 
 // === Surgery: the topology-changing interior remove move ===
 
@@ -111,13 +113,8 @@ bool EigenstateSynthesis::removeInteriorCell(
 
   // An edge {u,v} of the cell is orphaned iff no other top cell contains both
   // endpoints. Map endpoint pairs -> Edge* for the orphaned ones.
-  std::map<std::pair<std::uint64_t, std::uint64_t>, ::tessera::mesh::Edge *>
-      edgeByPair;
-  for (const auto e : edges_) {
-    const std::uint64_t a = e->getSource()->getId();
-    const std::uint64_t b = e->getTarget()->getId();
-    edgeByPair[{std::min(a, b), std::max(a, b)}] = e;
-  }
+  std::map<VertexIdPair, ::tessera::mesh::Edge *> edgeByPair;
+  for (const auto e : edges_) edgeByPair[e->ascendingIds()] = e;
   const auto covered = [&](std::uint64_t u, std::uint64_t v) {
     for (const auto &c : otherTop) {
       const bool hu = std::find(c.begin(), c.end(), u) != c.end();
@@ -139,7 +136,7 @@ bool EigenstateSynthesis::removeInteriorCell(
       // leaning on `want` having been sorted fifty lines up. A miss would
       // silently leave an orphaned edge in place and out of removedEdges,
       // so the rollback could not undo the move.
-      const auto it = edgeByPair.find({std::min(u, v), std::max(u, v)});
+      const auto it = edgeByPair.find(ascendingIds(u, v));
       if (it == edgeByPair.end()) continue;  // already absent
       rem.removedEdges.emplace_back(u, v, it->second->getLength(),
                                     it->second->getPhase());
@@ -148,14 +145,11 @@ bool EigenstateSynthesis::removeInteriorCell(
 
   // Snapshot ∂W (id-pair -> (complex w, theta)) for the bit-exact check. The
   // whole complex l2, not (Re, phase): the dW invariant covers Im corruption.
-  std::map<std::pair<std::uint64_t, std::uint64_t>,
-           std::pair<std::complex<double>, std::complex<double>>>
+  std::map<VertexIdPair, std::pair<std::complex<double>, std::complex<double>>>
       boundaryBefore;
   for (const auto i : boundaryEdgeIdx_) {
-    const std::uint64_t a = edges_[i]->getSource()->getId();
-    const std::uint64_t b = edges_[i]->getTarget()->getId();
-    boundaryBefore[{std::min(a, b), std::max(a, b)}] = {
-        (edges_[i]->getLength() * edges_[i]->getLength()), edges_[i]->getPhase()};
+    boundaryBefore[edges_[i]->ascendingIds()] = {
+        edges_[i]->squaredLength(), edges_[i]->getPhase()};
   }
 
   // Mutate: drop the top cell, then its orphaned edges.
@@ -171,16 +165,10 @@ bool EigenstateSynthesis::removeInteriorCell(
   // present with the same weight/phase. Newly exposed boundary edges — the
   // opened hole — are allowed, so this is a subset check, not equality.
   bool valid = true;
-  std::map<std::pair<std::uint64_t, std::uint64_t>,
-           std::pair<std::complex<double>, std::complex<double>>>
+  std::map<VertexIdPair, std::pair<std::complex<double>, std::complex<double>>>
       liveWeights;
-  for (const auto e : edges_) {
-    const std::uint64_t a = e->getSource()->getId();
-    const std::uint64_t b = e->getTarget()->getId();
-    const std::pair<std::uint64_t, std::uint64_t> key{std::min(a, b),
-                                                      std::max(a, b)};
-    liveWeights[key] = {(e->getLength() * e->getLength()), e->getPhase()};
-  }
+  for (const auto e : edges_)
+    liveWeights[e->ascendingIds()] = {e->squaredLength(), e->getPhase()};
   for (const auto &[key, wp] : boundaryBefore) {
     const auto it = liveWeights.find(key);
     if (it == liveWeights.end() || it->second.first != wp.first ||
@@ -217,17 +205,14 @@ bool EigenstateSynthesis::applyRestore(const Removal &rem) {
   // edges (the orphaned ones removed above), leaving surviving edges untouched.
   st_->createSimplexTracked(verts);
   // Restore the removed edges' weights/phases bit-exactly.
-  std::map<std::pair<std::uint64_t, std::uint64_t>, ::tessera::mesh::Edge *>
-      edgeByPair;
+  std::map<VertexIdPair, ::tessera::mesh::Edge *> edgeByPair;
   for (const auto e : st_->getEdgeList()->toVector()) {
     if (e == nullptr || e->getSource() == nullptr || e->getTarget() == nullptr)
       continue;
-    const std::uint64_t a = e->getSource()->getId();
-    const std::uint64_t b = e->getTarget()->getId();
-    edgeByPair[{std::min(a, b), std::max(a, b)}] = e;
+    edgeByPair[e->ascendingIds()] = e;
   }
   for (const auto &[u, v, w, theta] : rem.removedEdges) {
-    const auto it = edgeByPair.find({std::min(u, v), std::max(u, v)});
+    const auto it = edgeByPair.find(ascendingIds(u, v));
     if (it != edgeByPair.end()) {
       it->second->setLength(w);  // the recorded complex LENGTH, bit-exact
       it->second->setPhase(theta);

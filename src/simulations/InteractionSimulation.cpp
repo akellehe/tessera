@@ -263,14 +263,6 @@ double quditJointMI(Eigen::MatrixXcd const& rho) {
     return std::max(sA + sB - sAB, 0.0);
 }
 
-// ℓ = -log(I / I_max), normalised so ℓ ≥ 0; floored when I is tiny so
-// uncorrelated systems are far apart but not infinitely so.
-double edgeLengthFromMI(double mi, double epsilon) {
-    const double x = std::max(mi, 0.0) / kIMax;
-    if (x < epsilon) return -std::log(epsilon);
-    return -std::log(x);
-}
-
 // Wick-rotated to Euclidean signature: every edge contributes +ℓ². The
 // spacelike/timelike flag on each cell edge is now informational only —
 // the Regge action is real and well-defined everywhere with no complex
@@ -481,7 +473,7 @@ void InteractionSimulation::buildInitialLayer() {
     // the epsilon-floored length so the geometry is well-defined. No
     // jointOf_ entries — the default tensor-product fallback in
     // jointStateFor gives the correct separable joint state.
-    const double zeroMiLen = edgeLengthFromMI(0.0, config_.epsilonI);
+    const double zeroMiLen = Edge::vanRaamsdonkLength(0.0, kIMax, config_.epsilonI);
     const double zeroMiSq  = signedSquaredLength(zeroMiLen,
                                                   /*spacelike=*/true);
     for (auto const& [i, j] : config_.delaunayEdges) {
@@ -875,7 +867,7 @@ bool InteractionSimulation::interact() {
         const double mi = config_.featureQuditBasis
                               ? resQudit.edgeMI.at(k)
                               : res.edgeMI.at(k);
-        const double len = edgeLengthFromMI(mi, config_.epsilonI);
+        const double len = Edge::vanRaamsdonkLength(mi, kIMax, config_.epsilonI);
         edgeSq[e] = signedSquaredLength(len, ce.spacelike);
     }
 

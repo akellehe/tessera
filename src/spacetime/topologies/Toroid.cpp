@@ -4,6 +4,7 @@
 #include "mesh/TemporalOrientation.h"
 #include "spacetime/topologies/Toroid.h"
 #include "spacetime/Spacetime.h"
+#include "spacetime/Staircase.h"
 #include "utils.h"
 #include <deque>
 #include <cmath>
@@ -84,11 +85,11 @@ void Toroid::build(Spacetime *spacetime, int nSimplices) {
 
       // Staircase: for k = d-1 down to 0, create one simplex
       // with (k+1) lower vertices and (d-k) upper vertices
+      const auto lower = [&](std::size_t j) { return faceS[j]; };
+      const auto upper = [&](std::size_t j) { return faceN[j]; };
       for (int k = d - 1; k >= 0; --k) {
-        VertexPtrs verts;
-        verts.reserve(dPlus1);
-        for (int j = 0; j <= k; ++j) verts.push_back(faceS[j]);
-        for (int j = k; j < d; ++j) verts.push_back(faceN[j]);
+        const VertexPtrs verts = staircaseCell(
+            static_cast<std::size_t>(d), static_cast<std::size_t>(k), lower, upper);
         spacetime->createSimplex(verts);
       }
     }

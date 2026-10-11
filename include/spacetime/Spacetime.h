@@ -970,11 +970,17 @@ class Spacetime {
     ///
     /// ``Q = sum_c [L_c / m - (D_c / 2m)^2]`` where ``L_c`` is the
     /// number of edges within community c, ``D_c`` the sum of degrees
-    /// of nodes in c, and ``m = |E|``.
+    /// of nodes in c, and ``m = |E|``.  The community terms are added in
+    /// ascending label order with Kahan compensation
+    /// (``graph::modularityInLabelOrder``), the order
+    /// ``SparseGraph::modularity`` and
+    /// ``PersistentModularity::modularityGamma`` use, so the three give
+    /// the same value on the same graph and partition.
     ///
-    /// Returns 0 if M < 2, the graph has no edges, or the spacetime
-    /// has no vertices.  See ``examples/modularity.py:modularity``
-    /// for the reference Python implementation.
+    /// Returns 0 if M < 1, the graph has no edges, or the spacetime
+    /// has no vertices; M = 1 is a single community, whose Q is exactly
+    /// 0 as well.  See ``examples/modularity.py:modularity`` for the
+    /// reference Python implementation.
     [[nodiscard]] double modularityOnSkeleton(int M) const;
 
     /// Computes the connected components of the vertex graph.

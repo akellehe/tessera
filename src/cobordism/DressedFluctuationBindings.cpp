@@ -232,7 +232,15 @@ void register_cobordism_dressed_fluctuation(py::module_ &m) {
       .def_readwrite("cylinder_top_cells",
                      &MappingCylinderRead::cylinderTopCells,
                      "The staircase simplices of the prism over each incoming "
-                     "top cell, with the degenerate ones dropped.")
+                     "top cell that are not degenerate; a degenerate one that "
+                     "no other cell contains is in cylinder_collapsed_cells.")
+      .def_readwrite("cylinder_collapsed_cells",
+                     &MappingCylinderRead::cylinderCollapsedCells,
+                     "The maximal cells of W^l below the top dimension: the "
+                     "degenerate staircase simplices, repeated response "
+                     "vertices removed, that no other cell of the cylinder "
+                     "contains. Empty when r is injective or constant on "
+                     "every incoming top cell.")
       .def_readwrite("fiber_edges", &MappingCylinderRead::fiberEdges,
                      "The edges (v, r(v)), one per vertex of K^l. They are the "
                      "only timelike edges of the history.")
