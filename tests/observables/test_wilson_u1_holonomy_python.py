@@ -146,7 +146,7 @@ def _holonomy(st, cycle):
     # accumulation -- is passed through untouched for the tests that read it.
     v = complex(r.value)
     assert v.imag == 0.0, f"derived residual phase grew an imaginary part: {v}"
-    return types.SimpleNamespace(value=v.real, loopSize=r.loop_size, read=r)
+    return types.SimpleNamespace(value=v.real, loop_size=r.loop_size, read=r)
 
 
 # --------------------------------------------------------------------------- #

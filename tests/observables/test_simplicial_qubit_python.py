@@ -110,10 +110,10 @@ def test_modular_transformations():
     A, B = list(q.cycle_a()), list(q.cycle_b())
     minus_A = [(e, -s) for (e, s) in A]
     # A' = B, B' = -A  ->  -1/tau
-    q_s = rebuilt(q, cycle_a=B, cycle_b=minus_A)
+    q_s = rebuilt(q, cycle_A=B, cycle_B=minus_A)
     assert abs(q_s.tau() - (-1.0 / tau)) < 1e-9
     # B' = A + B  ->  tau + 1
-    q_t = rebuilt(q, cycle_a=A, cycle_b=A + B)
+    q_t = rebuilt(q, cycle_A=A, cycle_B=A + B)
     assert abs(q_t.tau() - (tau + 1.0)) < 1e-9
 
 
@@ -228,9 +228,9 @@ def test_validation_on_load():
     with pytest.raises(ValueError, match="real and positive"):
         rebuilt(q, lengths=[-1.0] + list(q.lengths())[1:])
     with pytest.raises(ValueError, match="not closed"):
-        rebuilt(q, cycle_a=list(q.cycle_a())[:-1])
+        rebuilt(q, cycle_A=list(q.cycle_a())[:-1])
     with pytest.raises(ValueError, match="not independent"):
-        rebuilt(q, cycle_b=list(q.cycle_a()))
+        rebuilt(q, cycle_B=list(q.cycle_a()))
     with pytest.raises(ValueError, match="0 .. nV-1"):
         rebuilt(q, vertices=list(q.vertices())[1:] + [99])
     with pytest.raises(ValueError, match="not in E"):

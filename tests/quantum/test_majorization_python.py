@@ -195,7 +195,7 @@ class TestSolveWithMajorization(unittest.TestCase):
 
     def test_n4_product_state_limit(self) -> None:
         """At m → ∞ the GS is approximately a Néel product state."""
-        cfg = self._basic_config(N=4, m=200.0, maxBondDim=32, n_sweeps=10)
+        cfg = self._basic_config(N=4, m=200.0, maxBondDim=32, nSweeps=10)
         r = SchwingerModel(cfg).solve_with_majorization(tol=1e-3)
         for spec, iv in zip(r.spectra.spectra, r.spectra.intervals):
             self.assertAlmostEqual(

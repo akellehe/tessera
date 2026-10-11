@@ -132,7 +132,7 @@ class TestVariationalDescent(unittest.TestCase):
     dimension, more sweeps) can only lower (or hold) the energy."""
 
     def test_increasing_bond_dim_lowers_energy(self) -> None:
-        cfg = _basic_config(N=10, m=0.25, maxBondDim=4, n_sweeps=8)
+        cfg = _basic_config(N=10, m=0.25, maxBondDim=4, nSweeps=8)
         energies = []
         for D in (4, 8, 16, 32):
             cfg.max_bond_dim = D
@@ -157,7 +157,7 @@ class TestReproducibility(unittest.TestCase):
     """Same config in → same result out."""
 
     def test_two_runs_agree(self) -> None:
-        cfg = _basic_config(N=8, m=0.125, L0=0.2, maxBondDim=32, n_sweeps=8)
+        cfg = _basic_config(N=8, m=0.125, L0=0.2, maxBondDim=32, nSweeps=8)
         a = SchwingerModel(cfg).solve()
         b = SchwingerModel(cfg).solve()
         self.assertAlmostEqual(a.energy, b.energy, places=12)
@@ -214,7 +214,7 @@ class TestAnalyticLimits(unittest.TestCase):
         """g = 0, m = 0: GS energy is the half-filled OBC chain free-fermion
         sum Σ_{j=N/2+1..N} (1/a) cos(πj/(N+1))."""
         for N in (4, 6, 8, 10):
-            cfg = _basic_config(N=N, m=0.0, g=0.0, maxBondDim=32, n_sweeps=10)
+            cfg = _basic_config(N=N, m=0.0, g=0.0, maxBondDim=32, nSweeps=10)
             e_dmrg = SchwingerModel(cfg).solve().energy
             e_analytic = sum(
                 math.cos(math.pi * j / (N + 1))
@@ -230,7 +230,7 @@ class TestAnalyticLimits(unittest.TestCase):
         """m → ∞ limit: GS approaches |↑↓↑↓…⟩, with energy
         E → -mN/2 + g²aN/4 (for L0 = 0, even N)."""
         N, m, g = 6, 50.0, 1.0
-        cfg = _basic_config(N=N, m=m, g=g, maxBondDim=64, n_sweeps=14)
+        cfg = _basic_config(N=N, m=m, g=g, maxBondDim=64, nSweeps=14)
         e_dmrg = SchwingerModel(cfg).solve().energy
         e_asymptotic = -m * N / 2.0 + g * g * 1.0 * N / 4.0
         allowed = (N - 1) / (m * 1.0) * 2.0
