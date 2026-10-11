@@ -335,36 +335,6 @@ void register_cobordism_multicobordism(py::module_ &m) {
       .def_readonly("residual_trace",
                     &MultiCobordism::WholeComplexReadoutResult::residualTrace);
 
-  py::class_<MultiCobordism::GeometricOperatorReadout>(
-      m, "GeometricOperatorReadout",
-      "Target-free promotion of a framed bulk-minus-boundary kernel. "
-      "identifiable is false unless the framed kernel has rank one.")
-      .def_readonly("identifiable",
-                    &MultiCobordism::GeometricOperatorReadout::identifiable)
-      .def_readonly("obstruction",
-                    &MultiCobordism::GeometricOperatorReadout::obstruction)
-      .def_readonly("state_dimension",
-                    &MultiCobordism::GeometricOperatorReadout::stateDimension)
-      .def_readonly("metric", &MultiCobordism::GeometricOperatorReadout::metric)
-      .def_readonly("bulk_cell_count",
-                    &MultiCobordism::GeometricOperatorReadout::bulkCellCount)
-      .def_readonly("kernel_dimension",
-                    &MultiCobordism::GeometricOperatorReadout::kernelDimension)
-      .def_readonly("frame_rank",
-                    &MultiCobordism::GeometricOperatorReadout::frameRank)
-      .def_readonly("unitarity_error",
-                    &MultiCobordism::GeometricOperatorReadout::unitarityError)
-      .def_readonly(
-          "frame_singular_values",
-          &MultiCobordism::GeometricOperatorReadout::frameSingularValues)
-      .def_readonly("bulk_cells",
-                    &MultiCobordism::GeometricOperatorReadout::bulkCells)
-      .def_readonly("frame_cells",
-                    &MultiCobordism::GeometricOperatorReadout::frameCells)
-      .def_readonly("choi_state",
-                    &MultiCobordism::GeometricOperatorReadout::choiState)
-      .def_readonly("operator_matrix",
-                    &MultiCobordism::GeometricOperatorReadout::operatorMatrix);
   auto multiCobordismClass =
       py::class_<MultiCobordism, std::shared_ptr<MultiCobordism>>(m, "MultiCobordism",
       "The fully-emergent MultiCobordism merge optimizer: merge as a "
@@ -472,15 +442,6 @@ void register_cobordism_multicobordism(py::module_ &m) {
       .def("expected_register_count", &MultiCobordism::expectedRegisterCount,
            "The number of registers the targets ask for: the largest component "
            "count over every input and output target vector.")
-      .def_static("r_state",
-                  [](const std::shared_ptr<Spacetime> &st, int k,
-                     const std::vector<std::complex<double>> &target,
-                     std::optional<HodgeLaplacian::MetricSource> source) {
-                    return MultiCobordism::residualOfTargetStateAgainstHarmonic(
-                        st, k, target, source.value_or(HodgeLaplacian::defaultMetricSource()));
-                  },
-                  py::arg("st"), py::arg("k"), py::arg("target"),
-                  py::arg("metric_source") = py::none())
       .def("r_u", &MultiCobordism::rU, py::arg("st"))
       .def("declare_register_constraint",
            [](MultiCobordism &self, const std::string &name, int degree,

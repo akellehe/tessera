@@ -4,6 +4,8 @@
 #ifndef TESSERA_COBORDISM_EIGENSTATESYNTHESIS_H
 #define TESSERA_COBORDISM_EIGENSTATESYNTHESIS_H
 
+#include <string>
+#include <set>
 #include <complex>
 #include <cstddef>
 #include <cstdint>
@@ -95,6 +97,31 @@ using ::tessera::mesh::Edge;
 /// floors at a positive residual, the spectral obstruction the oracle consumes.
 /// The boundary classification needs top cells of \f$ \ge 3 \f$ vertices; on a
 /// pure 1-complex every edge is interior.
+/// Target-free Choi promotion of the live metric
+/// \f$\ker L_1(W-\partial W)\f$ restricted to an ordered \f$d^2\f$ frame.
+/// `identifiable` is true only when that restriction has rank one; a
+/// higher-dimensional restriction is an operator family rather than a Choi
+/// state and is reported as an obstruction.
+struct GeometricOperatorReadout {
+  bool identifiable{false};
+  std::string obstruction;
+  int stateDimension{0};
+  bool metric{true};
+  std::size_t bulkCellCount{0};
+  std::size_t kernelDimension{0};
+  std::size_t frameRank{0};
+  double unitarityError{0.0};
+  std::vector<double> frameSingularValues;
+  std::vector<std::vector<std::uint64_t>> bulkCells;
+  std::vector<std::vector<std::uint64_t>> frameCells;
+  /// Unit-norm, phase-fixed Choi state. Empty unless identifiable.
+  std::vector<std::complex<double>> choiState;
+  /// \f$\sqrt d\,\operatorname{unvec}(|J\rangle)\f$, row-major. This is the
+  /// unitary Choi normalization; unitarityError reports whether the inferred
+  /// ray actually satisfies that assumption. Empty unless identifiable.
+  std::vector<std::complex<double>> operatorMatrix;
+};
+
 class EigenstateSynthesis {
   public:
     /// Construct over a fixed triangulation at degree `k` (default \f$ 0 \f$, the
@@ -637,6 +664,49 @@ class EigenstateSynthesis {
         const std::vector<std::complex<double>> &F,
         const std::vector<std::uint64_t> &enclosedVertices,
         bool electricOnly = true) const;
+
+
+  /// The relabeling-invariant, zero-filled residual of \p targetState against
+  /// the \f$L_k\f$ harmonic of \p spacetime over its emergent holes (`target_state_residual`
+  /// in Python). For each register degree \f$k\f$ it reads the
+  /// emergent holes' cycle periods, least-squares-fits the target against them
+  /// up to a relabeling of the target's components, and returns the smallest
+  /// residual \f$\lVert P c - t\rVert^2\f$. With no emerged register this is
+  /// the full leak \f$\lVert t\rVert^2\f$. `MultiCobordism::residualForBoundaryBlock`
+  /// sums it over a block's register degrees.
+  [[nodiscard]] static double targetStateResidual(
+      const std::shared_ptr<Spacetime> &spacetime, int degree,
+      const std::vector<std::complex<double>> &targetState,
+      HodgeLaplacian::MetricSource metricSource = HodgeLaplacian::defaultMetricSource());
+  /// The same residual, recording the winning relabeling so that no two
+  /// registers in one `MultiCobordism::rU` evaluation are scored against the same one. Scored
+  /// independently, two registers may pick the same argmin relabeling, which
+  /// reads both as carrying the same target component and rewards a complex
+  /// whose registers all carry equal weights. \p claimedMatchings holds the
+  /// relabelings already won by earlier registers; they are skipped here, and
+  /// this register's argmin is inserted on the way out. Once every relabeling
+  /// is claimed — more registers than the \f$d!\f$ the target admits — the set
+  /// is cleared and the exclusion restarts, so the residual is never an empty
+  /// minimum.
+  [[nodiscard]] static double targetStateResidual(
+      const std::shared_ptr<Spacetime> &spacetime, int degree,
+      const std::vector<std::complex<double>> &targetState,
+      std::set<std::vector<int>> &claimedMatchings,
+      HodgeLaplacian::MetricSource metricSource = HodgeLaplacian::defaultMetricSource());
+  /// Read a square operator from the target-free bulk of \p spacetime: the
+  /// framed restriction of \f$\ker L_1(W-\partial W)\f$ promoted to a Choi
+  /// state (`GeometricOperatorReadout`). \p frameCells is the ordered
+  /// row-major Choi frame and must hold exactly \p stateDimension\f$^2\f$
+  /// interior edges; it may be empty only when the bulk itself has that many,
+  /// in which case canonical bulk-cell order is used. Promotion succeeds only
+  /// when the framed restriction has rank one. The returned Choi vector is
+  /// unit-normalized and phase-fixed; the operator uses the unitary scaling
+  /// \f$\sqrt d\f$ and reports its unitarity error.
+  [[nodiscard]] static GeometricOperatorReadout geometricOperator(
+      const std::shared_ptr<Spacetime> &spacetime, int stateDimension,
+      std::vector<std::vector<std::uint64_t>> frameCells = {}, double tol = 1e-9,
+      bool metric = true,
+      HodgeLaplacian::MetricSource metricSource = HodgeLaplacian::defaultMetricSource());
 
   private:
     /// The degree-1 setup both edge-loop gradients build before they diverge.

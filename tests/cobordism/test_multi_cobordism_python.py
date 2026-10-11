@@ -47,7 +47,7 @@ class MultiCobordismCxxTest(unittest.TestCase):
         self.assertEqual(list(self.host.get_holes(3)), [])        # no holes (closed)
         self.assertAlmostEqual(tessera.simulations.ReggeSolver(self.host).action_gradient_exact_norm(),
                                499.9710921237928, places=6)
-        self.assertAlmostEqual(CXX.r_state(self.host, 3, tgt), 3.0, places=10)  # the leak
+        self.assertAlmostEqual(cob.EigenstateSynthesis.target_state_residual(self.host, 3, tgt), 3.0, places=10)  # the leak
         obj = CXX(self.host, [[1, w, w * w], [1, w * w, w]], [tgt], degrees=[3],
                   gamma=1.0, seed=0,
                   metric_source=cob.HodgeMetricSource.DiagonalWeights).objective()

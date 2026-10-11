@@ -10,6 +10,7 @@
 
 #include "chainhodge/RieszBand.h"
 #include "cobordism/CobordismObjective.h"
+#include "cobordism/EigenstateSynthesis.h"
 #include "cobordism/HodgeLaplacian.h"
 #include "cobordism/PencilLayer.h"
 #include "cobordism/SurfaceSeed.h"
@@ -299,30 +300,7 @@ class MultiCobordism {
     std::vector<double> residualTrace;
   };
 
-  /// Target-free Choi promotion of the live metric
-  /// \f$\ker L_1(W-\partial W)\f$ restricted to an ordered \f$d^2\f$ frame.
-  /// `identifiable` is true only when that restriction has rank one; a
-  /// higher-dimensional restriction is an operator family rather than a Choi
-  /// state and is reported as an obstruction.
-  struct GeometricOperatorReadout {
-    bool identifiable{false};
-    std::string obstruction;
-    int stateDimension{0};
-    bool metric{true};
-    std::size_t bulkCellCount{0};
-    std::size_t kernelDimension{0};
-    std::size_t frameRank{0};
-    double unitarityError{0.0};
-    std::vector<double> frameSingularValues;
-    std::vector<std::vector<std::uint64_t>> bulkCells;
-    std::vector<std::vector<std::uint64_t>> frameCells;
-    /// Unit-norm, phase-fixed Choi state. Empty unless identifiable.
-    std::vector<std::complex<double>> choiState;
-    /// \f$\sqrt d\,\operatorname{unvec}(|J\rangle)\f$, row-major. This is the
-    /// unitary Choi normalization; unitarityError reports whether the inferred
-    /// ray actually satisfies that assumption. Empty unless identifiable.
-    std::vector<std::complex<double>> operatorMatrix;
-  };
+
 
   /// Whether a move may extend a boundary the node holds fixed. Default false.
   ///
@@ -827,33 +805,6 @@ class MultiCobordism {
   /// point, or the read names the obstruction and returns nothing else.
   [[nodiscard]] static RestrictionRead restriction(const std::shared_ptr<Spacetime> &spacetime,
                                                    const std::vector<Marking> &markings);
-  /// The relabeling-invariant, zero-filled residual of \p targetState against
-  /// the \f$L_k\f$ harmonic of \p spacetime over its emergent holes (`r_state`
-  /// in the Python bindings). For each register degree \f$k\f$ it reads the
-  /// emergent holes' cycle periods, least-squares-fits the target against them
-  /// up to a relabeling of the target's components, and returns the smallest
-  /// residual \f$\lVert P c - t\rVert^2\f$. With no emerged register this is
-  /// the full leak \f$\lVert t\rVert^2\f$. `residualForBoundaryBlock` sums it
-  /// over the register degrees.
-  [[nodiscard]] static double residualOfTargetStateAgainstHarmonic(
-      const std::shared_ptr<Spacetime> &spacetime, int registerDegree,
-      const std::vector<std::complex<double>> &targetState,
-      HodgeLaplacian::MetricSource metricSource = HodgeLaplacian::defaultMetricSource());
-  /// The same residual, recording the winning relabeling so that no two
-  /// registers in one `rU` evaluation are scored against the same one. Scored
-  /// independently, two registers may pick the same argmin relabeling, which
-  /// reads both as carrying the same target component and rewards a complex
-  /// whose registers all carry equal weights. \p claimedMatchings holds the
-  /// relabelings already won by earlier registers; they are skipped here, and
-  /// this register's argmin is inserted on the way out. Once every relabeling
-  /// is claimed — more registers than the \f$d!\f$ the target admits — the set
-  /// is cleared and the exclusion restarts, so the residual is never an empty
-  /// minimum.
-  [[nodiscard]] static double residualOfTargetStateAgainstHarmonicWithDistinctMatching(
-      const std::shared_ptr<Spacetime> &spacetime, int registerDegree,
-      const std::vector<std::complex<double>> &targetState,
-      std::set<std::vector<int>> &claimedMatchings,
-      HodgeLaplacian::MetricSource metricSource = HodgeLaplacian::defaultMetricSource());
 
   // ---- objective ----
   /// The per-block register residual summed over `registerDegrees_`: the sum of
@@ -2492,50 +2443,8 @@ class MultiCobordism {
   };
   [[nodiscard]] static BoundaryRecord boundaryRecordOf(const Spacetime &spacetime);
 
-  // ---- the pieces of residualOfTargetStateAgainstHarmonic ----
-  /// The target state as a dense complex vector — the `t` the harmonic is fitted to,
-  /// and (as its squared norm) the full leak when no holes have emerged to read over.
-  [[nodiscard]] static Eigen::VectorXcd targetStateVector(
-      const std::vector<std::complex<double>> &targetState);
-  /// The emergent holes that can carry `targetDimension` components: `emergentHoles`
-  /// at this degree, truncated to at most one hole per target component. Empty when
-  /// no holes have emerged.
-  [[nodiscard]] static std::vector<std::vector<std::uint64_t>> holesCarryingTheTarget(
-      const Spacetime &spacetime, int registerDegree, std::size_t targetDimension);
-  /// The period matrix \f$ P^{\top} \f$ of the degree's harmonics over `cycleHoles`:
-  /// `(targetDimension, b_k)`, row = hole, column = harmonic, zero-filled past the
-  /// holes that emerged (a component with no hole to sit in leaks in full).
-  [[nodiscard]] static Eigen::MatrixXcd holePeriodMatrix(
-      const std::shared_ptr<Spacetime> &spacetime, int registerDegree,
-      int degreeBettiNumber,
-      const std::vector<std::vector<std::uint64_t>> &cycleHoles,
-      std::size_t targetDimension,
-      HodgeLaplacian::MetricSource metricSource = HodgeLaplacian::defaultMetricSource());
-  /// The target's components reordered onto the holes by `relabeling`: component
-  /// `relabeling[q]` sits in hole `q`. A relabeling is a bijection, so each hole
-  /// takes exactly one component.
-  [[nodiscard]] static Eigen::VectorXcd relabeledTargetVector(
-      const Eigen::VectorXcd &targetVector, const std::vector<int> &relabeling);
-  /// One register's winning relabeling: which target component each of its holes
-  /// carries, and the least-squares residual \f$ \min_c \lVert P^{\top} c - t \rVert^2 \f$
-  /// that matching leaves. `scored` is false when every relabeling was skipped as
-  /// already claimed, so nothing was evaluated.
-  struct RelabelingMatch {
-    double residual = 0.0;
-    std::vector<int> relabeling;
-    bool scored = false;
-  };
-  /// The argmin over the `d!` relabelings of the target components onto the holes.
-  /// With `skipClaimed` the relabelings in `claimedMatchings` — the ones registers
-  /// scored earlier already won — are passed over, so this register is read against
-  /// a matching of its own.
-  [[nodiscard]] static RelabelingMatch bestRelabelingOfTarget(
-      const Eigen::MatrixXcd &periodMatrixTransposed,
-      const Eigen::VectorXcd &targetVector,
-      const std::set<std::vector<int>> &claimedMatchings, bool skipClaimed);
-
   /// One boundary block's `r_U` term: the sum over the register degrees of
-  /// `residualOfTargetStateAgainstHarmonic` evaluated on the block's own
+  /// `EigenstateSynthesis::targetStateResidual` evaluated on the block's own
   /// sub-complex (`Spacetime::getRegion`) against the block's target. When the
   /// block has no full sub-complex yet, the full leak summed over the degrees.
   [[nodiscard]] double residualForBoundaryBlock(
@@ -2544,7 +2453,7 @@ class MultiCobordism {
   /// The same block term, sharing one `claimedMatchings` set with the rest of the
   /// `r_U` evaluation so this block's register degrees cannot re-use a relabeling
   /// another register already won (see
-  /// `residualOfTargetStateAgainstHarmonicWithDistinctMatching`).
+  /// `EigenstateSynthesis::targetStateResidual`).
   [[nodiscard]] double residualForBoundaryBlockWithDistinctMatchings(
       const BoundaryBlock &boundaryBlock,
       const std::shared_ptr<Spacetime> &spacetime,

@@ -2,7 +2,10 @@
 // All rights reserved.
 
 #include "cobordism/EigenstateSynthesis.h"
+#include "quantum/ChoiJamiolkowski.h"
 
+#include <numeric>
+#include <limits>
 #include <Eigen/Dense>
 
 #include <algorithm>
@@ -2420,6 +2423,303 @@ std::vector<double> EigenstateSynthesis::residualForLoopsGradient(
     const std::vector<EdgeLoop> &loops,
     const std::vector<cd> &targetPeriods) const {
   return periodGradientOverLoops(loops, targetPeriods);
+}
+
+namespace {
+
+using complexd = std::complex<double>;
+
+// One register's winning relabeling: which target component each of its holes
+// carries, and the least-squares residual min_c |P^T c - t|^2 that matching
+// leaves. `scored` is false when every relabeling was skipped as already
+// claimed, so nothing was evaluated.
+struct RelabelingMatch {
+  double residual = 0.0;
+  std::vector<int> relabeling;
+  bool scored = false;
+};
+
+Eigen::VectorXcd targetStateVector(
+    const std::vector<complexd> &targetState) {
+  Eigen::VectorXcd targetVector(targetState.size());
+  for (std::size_t componentIndex = 0; componentIndex < targetState.size();
+       ++componentIndex)
+    targetVector(componentIndex) = targetState[componentIndex];
+  return targetVector;
+}
+
+std::vector<std::vector<std::uint64_t>> holesCarryingTheTarget(
+    const Spacetime &spacetime, int degree, std::size_t targetDimension) {
+  auto emergentHoleTuples = spacetime.getHoles(degree);
+  // One target component per hole: holes beyond the target's width have no component
+  // to carry and take no part in the fit.
+  if (emergentHoleTuples.size() > targetDimension)
+    emergentHoleTuples.resize(targetDimension);
+  return emergentHoleTuples;
+}
+
+Eigen::MatrixXcd holePeriodMatrix(
+    const std::shared_ptr<Spacetime> &spacetime, int degree,
+    int degreeBettiNumber,
+    const std::vector<std::vector<std::uint64_t>> &cycleHoles,
+    std::size_t targetDimension, HodgeLaplacian::MetricSource metricSource) {
+  EigenstateSynthesis eigenstateSynthesis(spacetime, degree, metricSource);
+  std::vector<complexd> flattenedCyclePeriods;  // rank x m, row-major
+  try {
+    flattenedCyclePeriods = eigenstateSynthesis.cyclePeriods(cycleHoles);
+  } catch (const std::exception &) {
+    // An operator this geometry cannot assemble carries no usable harmonic:
+    // the zero-column matrix below, which the caller reads as the full leak.
+    return Eigen::MatrixXcd::Zero(static_cast<int>(targetDimension), 0);
+  }
+  const std::size_t holeCount = cycleHoles.size();
+  // The row count of the flattened periods is the numeric harmonic-kernel
+  // dimension the synthesizer computed (HodgeLaplacian::harmonicMatrix at its
+  // metric-dependent rank threshold), which is not necessarily the integer
+  // Betti number: on geometrically extreme complexes, such as deep-lookahead
+  // candidates near the null-face locus, the numeric rank can fall below the
+  // topological one, and indexing by the Betti count would read past the end of
+  // the vector. Bound every index by the data's own shape instead; fewer usable
+  // harmonics means a larger residual, and a zero-column matrix reads as the
+  // full leak in the caller.
+  const std::size_t periodRowCount =
+      holeCount == 0 ? 0 : flattenedCyclePeriods.size() / holeCount;
+  const int harmonicRank =
+      std::min(degreeBettiNumber, static_cast<int>(periodRowCount));
+  Eigen::MatrixXcd periodMatrixTransposed = Eigen::MatrixXcd::Zero(
+      static_cast<int>(targetDimension), std::max(harmonicRank, 0));
+  for (int harmonicIndex = 0; harmonicIndex < harmonicRank; ++harmonicIndex)
+    for (std::size_t holeIndex = 0; holeIndex < holeCount; ++holeIndex)
+      periodMatrixTransposed(static_cast<int>(holeIndex), harmonicIndex) =
+          flattenedCyclePeriods[static_cast<std::size_t>(harmonicIndex) * holeCount +
+                                holeIndex];
+  return periodMatrixTransposed;
+}
+
+Eigen::VectorXcd relabeledTargetVector(
+    const Eigen::VectorXcd &targetVector, const std::vector<int> &relabeling) {
+  Eigen::VectorXcd relabeled(targetVector.size());
+  for (std::size_t holeIndex = 0; holeIndex < relabeling.size(); ++holeIndex)
+    relabeled(holeIndex) = targetVector(relabeling[holeIndex]);
+  return relabeled;
+}
+
+RelabelingMatch bestRelabelingOfTarget(
+    const Eigen::MatrixXcd &periodMatrixTransposed,
+    const Eigen::VectorXcd &targetVector,
+    const std::set<std::vector<int>> &claimedMatchings, bool skipClaimed) {
+  // Minimum over the relabelings of the target components of
+  // ||pdT c - ts||^2, with c the least-squares solution. Total over every
+  // configuration: a non-finite period matrix — an unbounded stage-2 trial can
+  // overflow the polynomial cell weights, taking the harmonic periods out of
+  // double range — scores +inf, an infinitely bad configuration the line search
+  // rejects, instead of handing non-finite input to BDCSVD, whose compute and
+  // solve are undefined behavior with asserts compiled out.
+  if (!periodMatrixTransposed.allFinite()) {
+    std::vector<int> identityRelabeling(
+        static_cast<std::size_t>(targetVector.size()));
+    std::iota(identityRelabeling.begin(), identityRelabeling.end(), 0);
+    return {std::numeric_limits<double>::infinity(), identityRelabeling, true};
+  }
+  Eigen::BDCSVD<Eigen::MatrixXcd> periodSvd(
+      periodMatrixTransposed, Eigen::ComputeThinU | Eigen::ComputeThinV);
+  RelabelingMatch bestMatch;
+  std::vector<int> relabeling(static_cast<std::size_t>(targetVector.size()));
+  std::iota(relabeling.begin(), relabeling.end(), 0);
+  do {
+    if (skipClaimed && claimedMatchings.count(relabeling)) continue;
+    const Eigen::VectorXcd relabeledTarget =
+        relabeledTargetVector(targetVector, relabeling);
+    const Eigen::VectorXcd leastSquaresCoefficients =
+        periodSvd.solve(relabeledTarget);
+    const double residual =
+        (periodMatrixTransposed * leastSquaresCoefficients - relabeledTarget)
+            .squaredNorm();
+    if (!bestMatch.scored || residual < bestMatch.residual)
+      bestMatch = {residual, relabeling, true};
+  } while (std::next_permutation(relabeling.begin(), relabeling.end()));
+  return bestMatch;
+}
+
+}  // namespace
+
+double EigenstateSynthesis::targetStateResidual(
+    const std::shared_ptr<Spacetime> &spacetime, int degree,
+    const std::vector<complexd> &targetState,
+    HodgeLaplacian::MetricSource metricSource) {
+  // No other register to collide with: an empty claim set excludes nothing, so
+  // this is the unconstrained minimum over the relabelings (`r_state`).
+  std::set<std::vector<int>> claimedMatchings;
+  return targetStateResidual(
+      spacetime, degree, targetState, claimedMatchings, metricSource);
+}
+
+double EigenstateSynthesis::targetStateResidual(
+    const std::shared_ptr<Spacetime> &spacetime, int degree,
+    const std::vector<complexd> &targetState,
+    std::set<std::vector<int>> &claimedMatchings,
+    HodgeLaplacian::MetricSource metricSource) {
+  const Eigen::VectorXcd targetVector = targetStateVector(targetState);
+  const double fullLeakResidual = targetVector.squaredNorm();  // zero-filled leak
+
+  const auto bettiNumbers = spacetime->getBettiNumbers();
+  if (degree < 0) //||  # TODO: why would we exit if degree is higher than betti numbers?
+    return fullLeakResidual;
+  if (degree >= static_cast<int>(bettiNumbers.size())) {
+    CLOG(WARN_LEVEL, "register degree was higher than bettiNumbers!");
+    return fullLeakResidual;
+  }
+  const int degreeBettiNumber = bettiNumbers[degree];
+  if (degreeBettiNumber == 0) return fullLeakResidual;
+
+  const auto cycleHoles =
+      holesCarryingTheTarget(*spacetime, degree, targetState.size());
+  if (cycleHoles.empty()) return fullLeakResidual;
+  const Eigen::MatrixXcd periodMatrixTransposed =
+      holePeriodMatrix(spacetime, degree, degreeBettiNumber, cycleHoles,
+                       targetState.size(), metricSource);
+  // The matrix is bounded by the numeric harmonic rank (see holePeriodMatrix):
+  // Zero usable harmonics on a geometrically extreme candidate means the
+  // register carries nothing, the full leak, rather than an SVD of a 0-column
+  // matrix.
+  if (periodMatrixTransposed.cols() == 0) return fullLeakResidual;
+
+  // The relabeling this register wins is withheld from the registers scored
+  // after it, so no two are read against the same matching of components onto
+  // holes.
+  RelabelingMatch match = bestRelabelingOfTarget(
+      periodMatrixTransposed, targetVector, claimedMatchings, /*skipClaimed=*/true);
+  if (!match.scored) {
+    // Every relabeling is already claimed: more registers than the d! this
+    // target admits. Restart the exclusion rather than return an empty minimum.
+    claimedMatchings.clear();
+    match = bestRelabelingOfTarget(periodMatrixTransposed, targetVector,
+                                   claimedMatchings, /*skipClaimed=*/false);
+  }
+  claimedMatchings.insert(match.relabeling);
+  return match.residual;
+}
+
+GeometricOperatorReadout EigenstateSynthesis::geometricOperator(
+    const std::shared_ptr<Spacetime> &spacetime, int stateDimension,
+    std::vector<std::vector<std::uint64_t>> frameCells, double tol, bool metric,
+    HodgeLaplacian::MetricSource metricSource) {
+  GeometricOperatorReadout result;
+  result.stateDimension = stateDimension;
+  result.metric = metric;
+  const auto obstruct = [&](std::string reason) {
+    result.identifiable = false;
+    result.obstruction = std::move(reason);
+    result.choiState.clear();
+    result.operatorMatrix.clear();
+    return result;
+  };
+  if (!spacetime)
+    return obstruct("the cobordism has no spacetime");
+  if (stateDimension <= 0)
+    return obstruct("state dimension must be positive");
+  if (!(tol > 0.0) || !std::isfinite(tol))
+    return obstruct("kernel tolerance must be finite and positive");
+
+  const std::size_t d = static_cast<std::size_t>(stateDimension);
+  if (d > std::numeric_limits<std::size_t>::max() / d)
+    return obstruct("state dimension overflows the Choi width");
+  const std::size_t choiWidth = d * d;
+  EigenstateSynthesis synthesis(spacetime, 1, metricSource);
+  result.bulkCells = synthesis.bulkMinusBoundaryCells();
+  result.bulkCellCount = result.bulkCells.size();
+  if (result.bulkCells.empty())
+    return obstruct("bulk-minus-boundary has no interior 1-cells");
+
+  if (frameCells.empty()) {
+    if (result.bulkCells.size() != choiWidth)
+      return obstruct(
+          "an ordered d^2 Choi frame is required when the bulk width differs");
+    frameCells = result.bulkCells;
+  }
+  if (frameCells.size() != choiWidth)
+    return obstruct("the Choi frame must contain exactly d^2 interior 1-cells");
+  std::map<std::vector<std::uint64_t>, std::size_t> bulkIndex;
+  for (std::size_t i = 0; i < result.bulkCells.size(); ++i)
+    bulkIndex[result.bulkCells[i]] = i;
+  std::set<std::vector<std::uint64_t>> usedFrameCells;
+  std::vector<std::size_t> frameColumns;
+  frameColumns.reserve(frameCells.size());
+  for (auto &cell : frameCells) {
+    std::sort(cell.begin(), cell.end());
+    if (cell.size() != 2 || cell[0] == cell[1])
+      return obstruct("a Choi frame entry is not an edge");
+    const auto found = bulkIndex.find(cell);
+    if (found == bulkIndex.end())
+      return obstruct("a Choi frame edge is not in the bulk-minus-boundary");
+    if (!usedFrameCells.insert(cell).second)
+      return obstruct("the Choi frame repeats an interior edge");
+    frameColumns.push_back(found->second);
+  }
+  result.frameCells = frameCells;
+
+  const std::vector<complexd> flat =
+      synthesis.bulkMinusBoundaryHarmonicMatrix(tol, metric);
+  if (flat.size() % result.bulkCells.size() != 0)
+    return obstruct("bulk harmonic matrix has an inconsistent shape");
+  result.kernelDimension = flat.size() / result.bulkCells.size();
+  if (result.kernelDimension == 0)
+    return obstruct("bulk-minus-boundary kernel is empty");
+
+  Eigen::MatrixXcd restricted(static_cast<Eigen::Index>(result.kernelDimension),
+                              static_cast<Eigen::Index>(choiWidth));
+  for (std::size_t row = 0; row < result.kernelDimension; ++row)
+    for (std::size_t column = 0; column < choiWidth; ++column)
+      restricted(static_cast<Eigen::Index>(row),
+                 static_cast<Eigen::Index>(column)) =
+          flat[row * result.bulkCells.size() + frameColumns[column]];
+  if (!restricted.allFinite())
+    return obstruct("the framed bulk kernel is non-finite");
+
+  Eigen::JacobiSVD<Eigen::MatrixXcd> svd(restricted, Eigen::ComputeThinU |
+                                                         Eigen::ComputeThinV);
+  const Eigen::VectorXd &singularValues = svd.singularValues();
+  result.frameSingularValues.reserve(
+      static_cast<std::size_t>(singularValues.size()));
+  for (Eigen::Index i = 0; i < singularValues.size(); ++i)
+    result.frameSingularValues.push_back(singularValues[i]);
+  const double leading = singularValues.size() == 0 ? 0.0 : singularValues[0];
+  const double cutoff = tol * std::max(1.0, leading);
+  for (Eigen::Index i = 0; i < singularValues.size(); ++i)
+    if (singularValues[i] > cutoff)
+      ++result.frameRank;
+  if (result.frameRank == 0)
+    return obstruct("the framed bulk kernel carries no Choi component");
+  if (result.frameRank != 1)
+    return obstruct("the framed bulk kernel has rank " +
+                    std::to_string(result.frameRank) +
+                    "; no unique Choi ray exists");
+
+  // A = U Sigma V^H: the direct row-state spanning A is conj(V.col(0)). This
+  // remains invariant under a change of basis among the bulk kernel rows.
+  Eigen::VectorXcd choi = svd.matrixV().col(0).conjugate();
+  for (Eigen::Index i = 0; i < choi.size(); ++i)
+    if (std::abs(choi[i]) > cutoff) {
+      choi *= std::conj(choi[i]) / std::abs(choi[i]);
+      break;
+    }
+  result.choiState.assign(choi.data(), choi.data() + choi.size());
+
+  result.operatorMatrix =
+      ::tessera::quantum::ChoiJamiolkowski::operatorFromChoiState(
+          result.choiState, stateDimension);
+  Eigen::MatrixXcd U(stateDimension, stateDimension);
+  for (int row = 0; row < stateDimension; ++row)
+    for (int column = 0; column < stateDimension; ++column)
+      U(row, column) = result.operatorMatrix[static_cast<std::size_t>(row) * d +
+                                             static_cast<std::size_t>(column)];
+  result.unitarityError =
+      (U.adjoint() * U -
+       Eigen::MatrixXcd::Identity(stateDimension, stateDimension))
+          .norm();
+  result.identifiable = true;
+  result.obstruction.clear();
+  return result;
 }
 
 }  // namespace tessera::cobordism

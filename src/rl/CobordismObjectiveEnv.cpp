@@ -14,6 +14,7 @@
 #include "mesh/VertexList.h"
 #include "spacetime/Spacetime.h"
 #include "simulations/ReggeSolver.h"
+#include "cobordism/EigenstateSynthesis.h"
 
 namespace tessera::rl {
 
@@ -50,7 +51,7 @@ CobordismObjectiveEnv::Metrics CobordismObjectiveEnv::computeMetrics() const {
       st->getHoles(config_.registerDegree).size());
   m.rstate = target_.empty()
                  ? std::numeric_limits<double>::quiet_NaN()
-                 : MultiCobordism::residualOfTargetStateAgainstHarmonic(
+                 : cob::EigenstateSynthesis::targetStateResidual(
                        st, config_.registerDegree, target_);
   m.nVertices = static_cast<int>(st->getVertexList()->toVector().size());
   m.nEdges = static_cast<int>(st->getEdgeList()->toVector().size());

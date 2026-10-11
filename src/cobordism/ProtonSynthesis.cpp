@@ -22,6 +22,7 @@
 #include "spacetime/Spacetime.h"
 #include "spacetime/topologies/SolidSimplex.h"
 #include "spacetime/topologies/Topology.h"
+#include "cobordism/EigenstateSynthesis.h"
 
 namespace tessera::cobordism {
 
@@ -231,7 +232,7 @@ void ProtonSynthesis::buildDirect(int maxRestarts, int initSteps,
       (void)node->directedConeIn();
 
     auto whole = node->spacetime();
-    const double colorR = MultiCobordism::residualOfTargetStateAgainstHarmonic(
+    const double colorR = EigenstateSynthesis::targetStateResidual(
         whole, registerDegree_, protonSinglet, node->metricSource());
     auto holes = whole->getHoles(registerDegree_);
     const bool ok = colorR < colorTolerance &&
@@ -289,7 +290,7 @@ void ProtonSynthesis::build(int maxRestarts, int initSteps, int evolveSteps,
     auto stepB = formationNode(seedB);
     runNode(*stepB);
     auto whole = stepB->spacetime();
-    const double colorR = MultiCobordism::residualOfTargetStateAgainstHarmonic(
+    const double colorR = EigenstateSynthesis::targetStateResidual(
         whole, registerDegree_, protonSinglet, stepB->metricSource());
     auto holes = whole->getHoles(registerDegree_);
     const bool ok = colorR < colorTolerance &&

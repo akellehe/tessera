@@ -66,7 +66,7 @@ class NonfiniteSpectralTotalizationTest(unittest.TestCase):
         # finite full leak when the broken spectrum yields no usable
         # harmonics) — it never reaches Eigen with non-finite input.
         st = _overflowed_holed_surface()
-        r = cob.MultiCobordism.r_state(st, 1, [1 + 0j, -1 + 0j])
+        r = cob.EigenstateSynthesis.target_state_residual(st, 1, [1 + 0j, -1 + 0j])
         self.assertFalse(math.isnan(r))
         self.assertGreaterEqual(r, 0.0)
 
@@ -75,7 +75,7 @@ class NonfiniteSpectralTotalizationTest(unittest.TestCase):
         st, _es, _holes, _periods = _hs.holed_surface(degree=1)
         near = cob.MultiCobordism.near_kernel_residual(st, 1, 3)
         ratio = cob.MultiCobordism.singular_value_half_sum_ratio(st, 1)
-        r_state = cob.MultiCobordism.r_state(st, 1, [1 + 0j, -1 + 0j])
+        r_state = cob.EigenstateSynthesis.target_state_residual(st, 1, [1 + 0j, -1 + 0j])
         for value in (near, ratio, r_state):
             self.assertTrue(math.isfinite(value))
         self.assertEqual(cob.MultiCobordism.near_kernel_residual(st, 1, 1), 0.0)
