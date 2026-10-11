@@ -5,8 +5,8 @@ on:
     branches: [main]
   pull_request:
   schedule:
-    # Nightly full-suite run (07:00 UTC) so the slow tests deselected on PR
-    # pushes still gate the tree at least once a day, independent of merges.
+    # Nightly full-suite run (07:00 UTC) so the slow tests deselected on pull
+    # requests and merges still gate the tree at least once a day.
     - cron: "0 7 * * *"
   workflow_dispatch:
     inputs:
@@ -361,12 +361,15 @@ jobs:
       # TESSERA_TEST_THREADS_PER_WORKER threads inside each test and
       # TESSERA_TEST_CPUS / TESSERA_TEST_THREADS_PER_WORKER tests at once.
       #
-      # PR pushes run only the fast lane (the ``slow`` tests deselected) on
-      # the tests the change can affect (see the selection step below);
-      # merge-to-main, the nightly schedule, and manual dispatch run the FULL
-      # suite (a manual dispatch may select the fast lane through its ``tier``
-      # input; ``inputs.tier`` is empty for every other event). Coverage is
-      # split, never cut — every ``slow`` test still runs on main/nightly.
+      # Pull requests and merges to main run only the fast lane (the ``slow``
+      # tests deselected) on the tests the change can affect (see the
+      # selection step below); the nightly schedule and a manual dispatch run
+      # the FULL suite (a manual dispatch may select the fast lane through its
+      # ``tier`` input; ``inputs.tier`` is empty for every other event).
+      # Coverage is split, never cut: every ``slow`` test still runs nightly.
+      # The full suite takes 43-55 min of test time per shard, most of it in a
+      # few dozen ``slow`` tests (the longest alone takes 20 min); the fast
+      # lane takes 4-5 min, which is what a merge waits for.
       # Both lanes run from the repo root so pytest finds tests/.
       #
       # Both lanes record how long every test took (setup + call + teardown)
@@ -383,20 +386,22 @@ jobs:
       # on purpose: it is a list of options for the shell to split into words.
       # xdist still spreads the shard's tests over the workers above.
       #
-      # A pull request runs only the tests its change can affect.
+      # A pull request or a merge runs only the tests its change can affect.
       # .github/scripts/select_tests.py maps the changed paths to pytest paths
       # from the tree's own import and include graphs, and selects the whole
       # fast tier whenever a path has no known mapping; its log says what it
-      # chose and why. HEAD is the pull request's merge commit, whose first
+      # chose and why. On a pull request HEAD is its merge commit, whose first
       # parent is the base branch tip, so the diff against the base is exactly
-      # the change the pull request makes. The shallow checkout lacks the base
-      # commit, so it is fetched first. When the diff cannot be computed the
-      # list is empty and the selector runs everything. A manual fast-tier
-      # run has no base to diff against and runs the whole tier the same way.
-      - name: Select the tests the change can affect (PR pushes)
-        if: github.event_name == 'pull_request' || inputs.tier == 'fast'
+      # the change the pull request makes; on a push to main the base is the
+      # previous main tip (``github.event.before``), so the diff is exactly
+      # what the merge changed. The shallow checkout lacks the base commit,
+      # so it is fetched first. When the diff cannot be computed the list is
+      # empty and the selector runs everything. A manual fast-tier run has no
+      # base to diff against and runs the whole tier the same way.
+      - name: Select the tests the change can affect (pull requests and merges)
+        if: github.event_name == 'pull_request' || github.event_name == 'push' || inputs.tier == 'fast'
         run: |
-          base="${{ github.event.pull_request.base.sha }}"
+          base="${{ github.event.pull_request.base.sha || github.event.before }}"
           changed="${RUNNER_TEMP}/changed-paths.txt"
           if [ -z "$base" ]; then
             echo "no pull request base; running the full fast tier"
@@ -413,8 +418,8 @@ jobs:
 
       # The selection is one pytest path per line, none containing
       # whitespace; flags appended after it apply to the same selection.
-      - name: Run fast test suite (PR pushes)
-        if: github.event_name == 'pull_request' || inputs.tier == 'fast'
+      - name: Run fast test suite (pull requests and merges)
+        if: github.event_name == 'pull_request' || github.event_name == 'push' || inputs.tier == 'fast'
         env:
           OMP_NUM_THREADS: ${{ env.TESSERA_TEST_THREADS_PER_WORKER }}
           OPENBLAS_NUM_THREADS: ${{ env.TESSERA_TEST_THREADS_PER_WORKER }}
@@ -426,8 +431,8 @@ jobs:
             -n "$(.github/scripts/test-workers.sh)" --dist worksteal \
             --store-durations --clean-durations --durations-path .test_durations
 
-      - name: Run full test suite (main / nightly / manual)
-        if: github.event_name != 'pull_request' && inputs.tier != 'fast'
+      - name: Run full test suite (nightly / manual)
+        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.tier != 'fast')
         env:
           OMP_NUM_THREADS: ${{ env.TESSERA_TEST_THREADS_PER_WORKER }}
           OPENBLAS_NUM_THREADS: ${{ env.TESSERA_TEST_THREADS_PER_WORKER }}
