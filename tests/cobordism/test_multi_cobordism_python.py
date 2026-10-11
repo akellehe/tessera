@@ -4,7 +4,7 @@
 
 Originally a parity oracle against the Python `emergent_optimizer` prototype; that prototype
 has been retired (the C++ engine is the source of truth), so the deterministic objective core
-(betti, emergent_holes, regge_action_gradient, r_state, objective) is now pinned to **golden
+(get_betti_numbers, get_holes, action_gradient_exact_norm, r_state, objective) is now pinned to **golden
 constants** captured from the engine on a fixed host — a regression guard against C++ drift.
 The slow tests exercise the emergent two-stage run (the b₃ register grows), the canonical
 two-step ProtonSynthesis, and a CobordismDAG chaining merges output->input.
@@ -45,7 +45,7 @@ class MultiCobordismCxxTest(unittest.TestCase):
         tgt = [1, w, w * w]
         self.assertEqual(list(self.host.get_betti_numbers()), [1, 0, 0, 0, 1])       # closed S⁴
         self.assertEqual(list(self.host.get_holes(3)), [])        # no holes (closed)
-        self.assertAlmostEqual(CXX.regge_action_gradient(self.host),
+        self.assertAlmostEqual(tessera.simulations.ReggeSolver(self.host).action_gradient_exact_norm(),
                                499.9710921237928, places=6)
         self.assertAlmostEqual(CXX.r_state(self.host, 3, tgt), 3.0, places=10)  # the leak
         obj = CXX(self.host, [[1, w, w * w], [1, w * w, w]], [tgt], degrees=[3],
@@ -55,7 +55,7 @@ class MultiCobordismCxxTest(unittest.TestCase):
         # pre-topological register signal, +0.0093451402 on this closed S⁴ at
         # k=3 for a 3-component target, computed on the METRIC L_3 (geometric
         # by design: the causal-tuning channel is intended) — enters r_u. The
-        # decomposition: regge_action_gradient 499.9710921 + r_u (3.0 leak
+        # decomposition: action_gradient_exact_norm 499.9710921 + r_u (3.0 leak
         # + 0.0093451 near-kernel).
         self.assertAlmostEqual(obj, 502.9804372639758, places=6)
         # Under the chain-level Whitney pencil the

@@ -38,7 +38,7 @@ class ObjectiveSelectionTest(unittest.TestCase):
         node.set_objective(cob.JointStationarityObjective())
         node.set_regge_weight(0.7)
         node.set_hodge_entropy_weight(1.9)
-        expected = (0.7 * cob.MultiCobordism.regge_action_gradient(st)
+        expected = (0.7 * T.simulations.ReggeSolver(st).action_gradient_exact_norm()
                     + 1.9 * node.hodge_entropy_stationarity())
         self.assertAlmostEqual(node.objective(), expected, places=10)
         self.assertTrue(math.isfinite(node.hodge_entropy()))

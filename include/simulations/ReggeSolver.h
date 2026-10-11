@@ -69,7 +69,7 @@ using namespace ::tessera::quantum;
 class ReggeSolver {
   public:
     ReggeSolver(std::shared_ptr<Spacetime> spacetime,
-                ::tessera::matter::MatterConfiguration matter);
+                ::tessera::matter::MatterConfiguration matter = {});
 
     // ==================== Geometry queries ====================
 
@@ -183,6 +183,13 @@ class ReggeSolver {
     /// pass rather than 2·|E| action evaluations. Finite where the circumcentres
     /// of the dual coincide, as on a Kuhn torus (``Simplex::dualVolumeGradient``).
     [[nodiscard]] std::vector<std::complex<double>> actionGradientExact() const;
+
+    /// \f$ \sum_e |\partial S/\partial \ell^2_e|^2 \f$ over the exact gradient
+    /// (`actionGradientExact`): the geometry term \f$ \|\nabla S_{\rm Regge}\|^2 \f$
+    /// of the cobordism objective, zero exactly at a stationary action.
+    /// `actionGradientNorm` is the same sum over the central-difference
+    /// gradient; `gradientNorm2OverEdges` restricts it to a set of edges.
+    [[nodiscard]] double actionGradientExactNorm() const;
 
     /// Exact analytic Hessian ∂²S/∂ℓ²_e∂ℓ²_f of the dual Lorentzian Regge action,
     /// as a dense |E|×|E| complex matrix in ``getEdgeList`` order:

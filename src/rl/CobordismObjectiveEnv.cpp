@@ -13,6 +13,7 @@
 #include "mesh/EdgeList.h"
 #include "mesh/VertexList.h"
 #include "spacetime/Spacetime.h"
+#include "simulations/ReggeSolver.h"
 
 namespace tessera::rl {
 
@@ -41,7 +42,7 @@ CobordismObjectiveEnv::Metrics CobordismObjectiveEnv::computeMetrics() const {
   // eigensolve. r_state is only defined when a whole-cobordism target is set.
   const auto st = node_->spacetime();
   Metrics m;
-  m.gradN2 = MultiCobordism::reggeActionGradient(st);
+  m.gradN2 = ::tessera::simulations::ReggeSolver(st).actionGradientExactNorm();
   m.rU = node_->rU(st);
   m.F = m.gradN2 + config_.gamma * m.rU;
   m.betti = st->getBettiNumbers();

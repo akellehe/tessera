@@ -121,7 +121,7 @@ class ExactnessTest(unittest.TestCase):
         node.set_objective(cob.JointStationarityObjective())
         terms = node.objective_terms()
         reference = (node.regge_weight *
-                     cob.MultiCobordism.regge_action_gradient(st))
+                     T.simulations.ReggeSolver(st).action_gradient_exact_norm())
         self.assertEqual(terms.regge_stationarity, reference)
 
     def test_the_scalar_is_the_sum_of_the_declared_terms(self):

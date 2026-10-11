@@ -123,7 +123,7 @@ bool MultiCobordism::stage1Update(int nCandidateMoves, bool growBoundaries,
   // Growing a region changes F, so it is booked into the trace; with the
   // per-block gate in `growBlockRegions` the booked delta is always <= 0.
   // `growBlockRegions` mutates only the blocks' vertex sets and never touches
-  // `spacetime_`, so `reggeActionGradient` is unchanged and the whole objective
+  // `spacetime_`, so `ReggeSolver::actionGradientExactNorm` is unchanged and the whole objective
   // change is exactly `gamma_ * Δr_U`. Leaving it unbooked would let the
   // accumulated trace drift away from `objective()`, and that same accumulated
   // quantity gates acceptance.

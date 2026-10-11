@@ -43,6 +43,7 @@
 #include "quantum/CovarianceState.h"
 #include "quantum/LazyFock.h"
 #include "spacetime/Spacetime.h"
+#include "simulations/ReggeSolver.h"
 
 namespace tessera::cobordism {
 
@@ -721,7 +722,8 @@ MultiCobordism::RefinementIndicators MultiCobordism::refinementIndicators()
   RefinementIndicators indicators;
   indicators.solverError = lastStage2Improvement_;
   if (!spacetime_) return indicators;
-  indicators.reggeStationarityResidual = reggeActionGradient(spacetime_);
+  indicators.reggeStationarityResidual =
+      ::tessera::simulations::ReggeSolver(spacetime_).actionGradientExactNorm();
   indicators.hodgeStationarityResidual = hodgeEntropyStationarity();
 
   const int dimension = spacetime_->getDimensions();

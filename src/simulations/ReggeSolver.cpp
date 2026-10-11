@@ -635,6 +635,13 @@ ReggeSolver::actionHessianExactSparse() const {
     return H;
 }
 
+double ReggeSolver::actionGradientExactNorm() const {
+    double squaredNorm = 0.0;
+    for (const std::complex<double> &component : actionGradientExact())
+        squaredNorm += std::norm(component);
+    return squaredNorm;
+}
+
 double ReggeSolver::actionGradientNorm() const {
     auto g = actionGradient();
     double F = 0.0;

@@ -416,7 +416,6 @@ void register_cobordism_multicobordism(py::module_ &m) {
       .def("geometry_admissible", &MultiCobordism::geometryAdmissible, py::arg("spacetime"),
            "Whitney pencil: whether the geometry lies in the closure of the Kontsevich-Segal "
            "allowable domain (margin >= 0); always true under DiagonalWeights.")
-      .def_static("regge_action_gradient", &MultiCobordism::reggeActionGradient, py::arg("st"))
       .def_static("near_kernel_residual_gradient",
            [](const std::shared_ptr<Spacetime> &st, int k, std::size_t n,
               std::optional<HodgeLaplacian::MetricSource> source) {

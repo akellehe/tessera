@@ -114,7 +114,7 @@ class SignatureChangeReadersTest(unittest.TestCase):
                            f"signature change: {action_before} -> {action_after}")
 
         # (c) The exact-gradient term and the full objective stay finite.
-        grad_sq = cob.MultiCobordism.regge_action_gradient(st)
+        grad_sq = T.simulations.ReggeSolver(st).action_gradient_exact_norm()
         self.assertTrue(math.isfinite(grad_sq))
         opt = cob.MultiCobordism(st, [[1, w, w * w], [1, w * w, w]], [[1, w, w * w]],
                                  degrees=[3], gamma=1.0, seed=0)

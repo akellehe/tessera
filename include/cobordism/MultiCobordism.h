@@ -751,8 +751,6 @@ class MultiCobordism {
   }
 
   // ---- module-level helpers (static) ----
-  /// `Σ_e |actionGradientExact_e|²` — the full-complex Regge extremization term.
-  [[nodiscard]] static double reggeActionGradient(const std::shared_ptr<Spacetime> &st);
 
 
   /// The monodromy of a drawn cobordism between two marked surfaces. The whole

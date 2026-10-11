@@ -11,15 +11,6 @@
 
 namespace tessera::cobordism {
 
-double MultiCobordism::reggeActionGradient(
-    const std::shared_ptr<Spacetime> &spacetime) {
-  ReggeSolver reggeSolver(spacetime, MatterConfiguration());
-  double squaredGradientNorm = 0.0;
-  for (const auto &gradientComponent : reggeSolver.actionGradientExact())
-    squaredGradientNorm += std::norm(gradientComponent);
-  return squaredGradientNorm;
-}
-
 Eigen::VectorXcd MultiCobordism::targetStateVector(
     const std::vector<complexd> &targetState) {
   Eigen::VectorXcd targetVector(targetState.size());
