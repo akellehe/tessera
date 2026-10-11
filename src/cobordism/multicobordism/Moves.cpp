@@ -2,7 +2,7 @@
 // All rights reserved.
 
 // MultiCobordism (include/cobordism/MultiCobordism.h): the move machinery:
-// snapshots, edge geometry, move specifications and their application, the
+// snapshots, move specifications and their application, the
 // local change of the objective, and one step. One of the translation units
 // that define the class's members by responsibility
 // (https://github.com/akellehe/tessera/issues/1481).
@@ -11,7 +11,7 @@
 
 namespace tessera::cobordism {
 
-MultiCobordism::Snapshot MultiCobordism::snapshotOf(
+Spacetime::Record MultiCobordism::snapshotOf(
     const Spacetime &spacetime) const {
   std::vector<std::vector<std::uint64_t>> cellVertexTuples;
   for (const auto &topSimplex : spacetime.getTopSimplices())
@@ -27,22 +27,16 @@ MultiCobordism::Snapshot MultiCobordism::snapshotOf(
   // Every edge's length and phase, verbatim and branch-exact: the phase is a
   // live field of the geometry (the tori's pure-gauge links), and a record
   // that dropped it would rebuild a different operator.
-  std::map<std::pair<std::uint64_t, std::uint64_t>, EdgeGeometry> geometryByEdge;
+  Spacetime::Record record;
+  record.dimensions = spacetime.getDimensions();
+  record.cells = std::move(cellVertexTuples);
   for (const auto *edge : spacetime.getEdgeList()->toVector())
-    geometryByEdge[edgeKey(edge)] = edgeGeometryOf(*edge);
-  return {std::move(cellVertexTuples), std::move(geometryByEdge)};
+    record.edges[edgeKey(edge)] = Spacetime::edgeGeometryOf(*edge);
+  return record;
 }
 
-MultiCobordism::Snapshot MultiCobordism::snapshot() const {
+Spacetime::Record MultiCobordism::snapshot() const {
   return snapshotOf(*spacetime_);
-}
-
-complexd MultiCobordism::inverseLinkPhase(complexd phase) noexcept {
-  // 0 - phi, not -phi: IEEE negation of +0 is -0, and a -0 phase would make
-  // an untouched all-zero connection differ bit for bit from the rebuilt one
-  // (a signed zero survives exp and prints as such); 0 - x equals -x exactly
-  // for every nonzero x and is +0 for either zero.
-  return complexd(0.0, 0.0) - phase;
 }
 
 MultiCobordism::BoundaryRecord MultiCobordism::boundaryRecordOf(
@@ -65,46 +59,15 @@ MultiCobordism::BoundaryRecord MultiCobordism::boundaryRecordOf(
     const ::tessera::mesh::EdgeKey key(endpoints.first, endpoints.second);
     if (const auto *edge =
             spacetime.getEdgeList()->get(key.fingerprint.fingerprint()))
-      record.edges.emplace(endpoints, edgeGeometryOf(*edge));
+      record.edges.emplace(endpoints, Spacetime::edgeGeometryOf(*edge));
   }
   return record;
 }
 
-MultiCobordism::EdgeGeometry MultiCobordism::edgeGeometryOf(
-    const ::tessera::mesh::Edge &edge) {
-  const auto sourceVertexId = edge.getSource()->getId();
-  const auto targetVertexId = edge.getTarget()->getId();
-  return {edge.getLength(), sourceVertexId < targetVertexId
-                                ? edge.getPhase()
-                                : inverseLinkPhase(edge.getPhase())};
-}
-
-void MultiCobordism::restoreEdgeGeometry(::tessera::mesh::Edge &edge,
-                                         const EdgeGeometry &geometry) {
-  const auto sourceVertexId = edge.getSource()->getId();
-  const auto targetVertexId = edge.getTarget()->getId();
-  edge.setLength(geometry.length);  // verbatim, branch-exact
-  edge.setPhase(sourceVertexId < targetVertexId
-                    ? geometry.phase
-                    : inverseLinkPhase(geometry.phase));
-}
-
-std::shared_ptr<Spacetime> MultiCobordism::rebuild(
-    int dimensions, const Snapshot &complexSnapshot) {
-  auto rebuiltSpacetime =
-      Spacetime::fromVertexTuples(dimensions, complexSnapshot.first, 1.0,
-                           complexd(0.0, 0.0));
-  for (auto *edge : rebuiltSpacetime->getEdgeList()->toVector()) {
-    const auto savedEntry = complexSnapshot.second.find(edgeKey(edge));
-    if (savedEntry != complexSnapshot.second.end())
-      restoreEdgeGeometry(*edge, savedEntry->second);
-  }
-  return rebuiltSpacetime;
-}
-
 std::shared_ptr<Spacetime> MultiCobordism::build(
-    const Snapshot &complexSnapshot) const {
-  auto rebuiltSpacetime = rebuild(spacetime_->getDimensions(), complexSnapshot);
+    const Spacetime::Record &complexSnapshot) const {
+  auto rebuiltSpacetime = Spacetime::fromRecord(
+      complexSnapshot, Spacetime::MissingEdgeGeometry::KeepDefault);
   // Candidate clones inherit the wiring mode so combinatorial moves scored on
   // them wire their new edges under the same convention.
   rebuiltSpacetime->setBalancedEdgeWiring(balancedEdgeWiring_);
@@ -473,8 +436,8 @@ double MultiCobordism::deltaF(
   return reggeWeight_ * gradientDelta + gamma_ * residualUDelta;
 }
 
-std::pair<double, MultiCobordism::Snapshot> MultiCobordism::bestComposition(
-    const Snapshot &fromSnapshot, int remainingMoves, double baseObjective,
+std::pair<double, Spacetime::Record> MultiCobordism::bestComposition(
+    const Spacetime::Record &fromSnapshot, int remainingMoves, double baseObjective,
     double baseResidualU,
     const std::set<std::vector<std::uint64_t>> &baseCellSet) {
   auto fromSpacetime = build(fromSnapshot);
@@ -483,8 +446,8 @@ std::pair<double, MultiCobordism::Snapshot> MultiCobordism::bestComposition(
   if (remainingMoves <= 0)
     return {deltaF(fromSpacetime, baseObjective, baseResidualU, baseCellSet),
             fromSnapshot};
-  std::pair<double, Snapshot> best{std::numeric_limits<double>::infinity(),
-                                   Snapshot{}};
+  std::pair<double, Spacetime::Record> best{std::numeric_limits<double>::infinity(),
+                                   Spacetime::Record{}};
   // Enumerated here, against this level's complex, not against the base one: a
   // move the first move created a site for is a legitimate second move, and a
   // site the first move destroyed is not one.
@@ -537,7 +500,7 @@ double MultiCobordism::step(int nCandidateMoves, int lookaheadDepth,
   // only after a move is committed, bounded by the caller's relaxBudgetPerMove.
   double bestObjectiveDelta = -convergenceTolerance_;
   bool foundImprovingMove = false;
-  Snapshot bestSnapshot;
+  Spacetime::Record bestSnapshot;
   if (lookaheadDepth <= 1) {
     // Depth 1: every candidate starts from the same base complex, so the specs
     // are pre-drawn serially, in the same RNG order as a serial loop, and the
@@ -582,7 +545,7 @@ double MultiCobordism::step(int nCandidateMoves, int lookaheadDepth,
     const int distinctCount = static_cast<int>(specifications.size());
     std::vector<double> deltas(static_cast<std::size_t>(distinctCount),
                                std::numeric_limits<double>::infinity());
-    std::vector<Snapshot> snapshots(static_cast<std::size_t>(distinctCount));
+    std::vector<Spacetime::Record> snapshots(static_cast<std::size_t>(distinctCount));
     std::exception_ptr pending = nullptr;
 #pragma omp parallel for schedule(dynamic)
     for (int candidateIndex = 0; candidateIndex < distinctCount;
@@ -635,7 +598,7 @@ double MultiCobordism::step(int nCandidateMoves, int lookaheadDepth,
     const int firstMoveCount = static_cast<int>(firstMoves.size());
     std::vector<double> deltas(static_cast<std::size_t>(firstMoveCount),
                                std::numeric_limits<double>::infinity());
-    std::vector<Snapshot> snapshots(static_cast<std::size_t>(firstMoveCount));
+    std::vector<Spacetime::Record> snapshots(static_cast<std::size_t>(firstMoveCount));
     std::exception_ptr pending = nullptr;
 #pragma omp parallel for schedule(dynamic)
     for (int candidateIndex = 0; candidateIndex < firstMoveCount;

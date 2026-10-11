@@ -9,7 +9,6 @@
 #include "cobordism/MultiCobordism.h"
 #include "mesh/Simplex.h"
 #include "mesh/Vertex.h"
-#include "observables/LiveComplex.h"
 #include "spacetime/Spacetime.h"
 
 namespace tessera::observables {
@@ -54,8 +53,8 @@ double BlockResiduals::blockResidual(const RegisterContext &ctx,
     return targetNorm2;  // full leak: no cell carries the target
   }
   // The block's sub-complex is a selection of existing cells re-instantiated
-  // with a uniform metric by the loader.
-  auto sub = LiveComplex::subcomplex(cellsInside, ctx.dimensions());
+  // with a uniform metric.
+  auto sub = Spacetime::fromVertexTuples(ctx.dimensions(), cellsInside, 1.0, 0.0);
   return MultiCobordism::residualOfTargetStateAgainstHarmonic(
       sub, ctx.degree(), block.target);
 }

@@ -6,6 +6,8 @@
 //
 
 #include "Logger.h"
+#include <random>
+#include <numeric>
 #include <algorithm>
 #include <bit>
 #include <cmath>
@@ -330,10 +332,6 @@ std::shared_ptr<Spacetime> Spacetime::fromSimplices(
   // shared edge is recognised as one edge. Two cells sharing an edge must agree
   // on it; a disagreement means the caller handed us two different geometries
   // for the same edge, which no choice of winner would make correct.
-  struct EdgeGeometry {
-    std::complex<double> length;
-    std::complex<double> phase;
-  };
   std::map<std::pair<std::uint64_t, std::uint64_t>, EdgeGeometry> geometry;
   std::vector<std::vector<std::uint64_t>> tuples;
   tuples.reserve(cells.size());
@@ -346,17 +344,11 @@ std::shared_ptr<Spacetime> Spacetime::fromSimplices(
       const auto a = edge->getSource()->getId();
       const auto b = edge->getTarget()->getId();
       const auto key = std::make_pair(std::min(a, b), std::max(a, b));
-      // The U(1) phase is orientation-dependent: an edge stored target-to-source
-      // carries the inverse of the phase on the source-to-target orientation.
-      // Normalize to the ascending orientation here, and hand it back on the new
-      // edge's own orientation below, so a cell that happens to store an edge
-      // the other way round does not flip its link. 0 - phi rather than -phi:
-      // IEEE negation turns +0 into -0, and a signed zero would make an
-      // otherwise untouched all-zero connection differ bit for bit.
-      const std::complex<double> ascendingPhase =
-          a < b ? edge->getPhase()
-                : std::complex<double>{0.0, 0.0} - edge->getPhase();
-      const EdgeGeometry here{edge->getLength(), ascendingPhase};
+      // The U(1) phase is orientation-dependent: normalize it to the ascending
+      // orientation here and hand it back on the new edge's own orientation
+      // below, so a cell that stores an edge the other way round does not flip
+      // its link.
+      const EdgeGeometry here = edgeGeometryOf(*edge);
       const auto [it, inserted] = geometry.emplace(key, here);
       if (!inserted &&
           (it->second.length != here.length || it->second.phase != here.phase))
@@ -377,9 +369,7 @@ std::shared_ptr<Spacetime> Spacetime::fromSimplices(
     // An edge the cells did not carry cannot happen for a well-formed cell set,
     // since every edge of the new complex is an edge of some cell.
     if (it == geometry.end()) continue;
-    edge->setLength(it->second.length);
-    edge->setPhase(a < b ? it->second.phase
-                         : std::complex<double>{0.0, 0.0} - it->second.phase);
+    setEdgeGeometry(*edge, it->second);
   }
 
   const auto &liveEdges = st->getEdgeList()->toVector();
@@ -573,15 +563,121 @@ bool Spacetime::copyEdgeGeometryFrom(const Spacetime &source) {
     const auto b = edge->getTarget()->getId();
     const auto found = sourceEdges.find({std::min(a, b), std::max(a, b)});
     if (found == sourceEdges.end()) return false;
-    const Edge &from = *found->second;
-    edge->setLength(from.getLength());
-    // The phase is orientation-dependent: an edge stored the other way round
-    // carries 0 - phi, as in fromSimplices.
-    edge->setPhase(from.getSource()->getId() == a
-                       ? from.getPhase()
-                       : std::complex<double>{0.0, 0.0} - from.getPhase());
+    setEdgeGeometry(*edge, edgeGeometryOf(*found->second));
   }
   return true;
+}
+
+Spacetime::EdgeGeometry Spacetime::edgeGeometryOf(const Edge &edge) {
+  const bool ascending = edge.getSource()->getId() < edge.getTarget()->getId();
+  return {edge.getLength(),
+          ascending ? edge.getPhase()
+                    : std::complex<double>{0.0, 0.0} - edge.getPhase()};
+}
+
+void Spacetime::setEdgeGeometry(Edge &edge, const EdgeGeometry &geometry) {
+  const bool ascending = edge.getSource()->getId() < edge.getTarget()->getId();
+  edge.setLength(geometry.length);  // verbatim, branch-exact
+  edge.setPhase(ascending ? geometry.phase
+                          : std::complex<double>{0.0, 0.0} - geometry.phase);
+}
+
+Spacetime::Record Spacetime::record() const {
+  Record out;
+  out.dimensions = getDimensions();
+  out.cells.reserve(getTopSimplices().size());
+  for (const auto *cell : getTopSimplices()) {
+    std::vector<std::uint64_t> ids;
+    ids.reserve(cell->getVertices().size());
+    for (const auto *vertex : cell->getVertices()) {
+      ids.push_back(vertex->getId());
+      if (!out.vertexTimes.count(vertex->getId()))
+        out.vertexTimes[vertex->getId()] = vertex->getTime();
+    }
+    out.cells.push_back(std::move(ids));
+  }
+  for (const auto *edge : getEdgeList()->toVector()) {
+    const auto a = edge->getSource()->getId();
+    const auto b = edge->getTarget()->getId();
+    out.edges[{std::min(a, b), std::max(a, b)}] = edgeGeometryOf(*edge);
+  }
+  return out;
+}
+
+std::shared_ptr<Spacetime> Spacetime::fromRecord(const Record &record,
+                                                 MissingEdgeGeometry missing) {
+  if (record.cells.empty())
+    throw std::invalid_argument("Spacetime::fromRecord needs at least one cell");
+  auto st = fromVertexTuples(record.dimensions, record.cells, 1.0,
+                             std::complex<double>{0.0, 0.0});
+  if (!record.vertexTimes.empty()) {
+    const auto &vertexList = st->getVertexList();
+    for (const auto &[id, time] : record.vertexTimes)
+      vertexList->get(id)->setTime(time);
+  }
+  for (auto *edge : st->getEdgeList()->toVector()) {
+    const auto a = edge->getSource()->getId();
+    const auto b = edge->getTarget()->getId();
+    const auto found = record.edges.find({std::min(a, b), std::max(a, b)});
+    if (found != record.edges.end()) {
+      setEdgeGeometry(*edge, found->second);
+    } else if (missing == MissingEdgeGeometry::Throw) {
+      throw std::out_of_range(
+          "Spacetime::fromRecord: edge (" + std::to_string(std::min(a, b)) +
+          ", " + std::to_string(std::max(a, b)) +
+          ") of the rebuilt complex has no recorded geometry; a partial record "
+          "is never silently defaulted");
+    }
+  }
+  return st;
+}
+
+Spacetime::Relabeled Spacetime::relabeled(std::uint64_t seed) const {
+  const Record original = record();
+  // A random vertex-id permutation and cell-order shuffle, both determined by
+  // the seed.
+  std::set<std::uint64_t> uniqueVertices;
+  for (const auto &cell : original.cells)
+    for (const std::uint64_t v : cell) uniqueVertices.insert(v);
+  const std::vector<std::uint64_t> allVertices(uniqueVertices.begin(),
+                                               uniqueVertices.end());
+  std::vector<std::uint64_t> shuffled = allVertices;
+  std::mt19937_64 generator(seed);
+  std::shuffle(shuffled.begin(), shuffled.end(), generator);
+  std::map<std::uint64_t, std::uint64_t> permutation;
+  for (std::size_t i = 0; i < allVertices.size(); ++i)
+    permutation[allVertices[i]] = shuffled[i];
+  std::vector<std::size_t> order(original.cells.size());
+  std::iota(order.begin(), order.end(), 0);
+  std::shuffle(order.begin(), order.end(), generator);
+
+  Record permuted;
+  permuted.dimensions = original.dimensions;
+  permuted.cells.reserve(original.cells.size());
+  for (const std::size_t index : order) {
+    std::vector<std::uint64_t> cell;
+    cell.reserve(original.cells[index].size());
+    for (const std::uint64_t v : original.cells[index]) cell.push_back(permutation.at(v));
+    permuted.cells.push_back(std::move(cell));
+  }
+  for (const auto &[pair, geometry] : original.edges) {
+    const std::uint64_t a = permutation.at(pair.first);
+    const std::uint64_t b = permutation.at(pair.second);
+    // The phase is held on the ascending orientation of the original pair;
+    // when the permutation reverses that orientation the link is the inverse.
+    permuted.edges[{std::min(a, b), std::max(a, b)}] =
+        a < b ? geometry
+              : EdgeGeometry{geometry.length,
+                             std::complex<double>{0.0, 0.0} - geometry.phase};
+  }
+  for (const auto &[id, time] : original.vertexTimes)
+    permuted.vertexTimes[permutation.at(id)] = time;
+
+  Relabeled out;
+  out.spacetime = fromRecord(permuted);
+  out.spacetime->materializeFacets();
+  out.vertexMap = std::move(permutation);
+  return out;
 }
 
 int Spacetime::getDimensions() const noexcept {

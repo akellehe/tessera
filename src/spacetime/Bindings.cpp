@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Twin Vector Labs LLC.
 // All rights reserved.
 
+#include <complex>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <pybind11/options.h>
@@ -781,6 +782,56 @@ Args:
     precession: Precession cycles per loop, integer for perfect loop (default 1).
     nFrames: Number of GIF frames (default 36).
     delayCs: Frame delay in centiseconds (default 7).)doc");
+
+  // Spacetime's record of its cells and edge geometry, and the relabeled copy
+  // built from it. Nested under Spacetime, as in C++.
+  auto spacetimeClass =
+      py::reinterpret_borrow<py::class_<Spacetime, std::shared_ptr<Spacetime>>>(
+          m.attr("Spacetime"));
+  py::class_<Spacetime::EdgeGeometry>(spacetimeClass, "EdgeGeometry",
+      R"doc(One edge's geometry as a Record holds it: the complex length and the
+connection phase on the ascending orientation of the edge's vertex pair.)doc")
+      .def(py::init([](std::complex<double> length, std::complex<double> phase) {
+             return Spacetime::EdgeGeometry{length, phase};
+           }),
+           py::arg("length"), py::arg("phase") = std::complex<double>{0.0, 0.0})
+      .def_readwrite("length", &Spacetime::EdgeGeometry::length)
+      .def_readwrite("phase", &Spacetime::EdgeGeometry::phase);
+  py::class_<Spacetime::Record>(spacetimeClass, "Record",
+      R"doc(A record from which Spacetime.from_record rebuilds a complex: its
+cells as vertex tuples, every edge's EdgeGeometry keyed by ascending vertex
+pair, and the vertices' times. The container fields are copied on access, so
+assign a whole list or dict rather than mutating one in place.)doc")
+      .def(py::init<>())
+      .def_readwrite("dimensions", &Spacetime::Record::dimensions)
+      .def_readwrite("cells", &Spacetime::Record::cells)
+      .def_readwrite("edges", &Spacetime::Record::edges)
+      .def_readwrite("vertex_times", &Spacetime::Record::vertexTimes);
+  py::enum_<Spacetime::MissingEdgeGeometry>(spacetimeClass, "MissingEdgeGeometry",
+      "What from_record does with an edge the record holds no geometry for.")
+      .value("THROW", Spacetime::MissingEdgeGeometry::Throw,
+             "Raise: a partial record is never silently defaulted.")
+      .value("KEEP_DEFAULT", Spacetime::MissingEdgeGeometry::KeepDefault,
+             "Keep from_vertex_tuples's unit length and zero phase.");
+  py::class_<Spacetime::Relabeled>(spacetimeClass, "Relabeled",
+      "A relabeled copy of a complex and the vertex-id permutation that "
+      "produced it (original id -> relabeled id).")
+      .def_readonly("spacetime", &Spacetime::Relabeled::spacetime)
+      .def_readonly("vertex_map", &Spacetime::Relabeled::vertexMap);
+  spacetimeClass
+      .def("record", &Spacetime::record,
+           R"doc(This complex as a Record: its top cells in their stored vertex
+order, every edge's geometry, and the time of every vertex of a top cell.)doc")
+      .def_static("from_record", &Spacetime::fromRecord, py::arg("record"),
+                  py::arg("missing") = Spacetime::MissingEdgeGeometry::Throw,
+                  R"doc(The complex a Record describes, rebuilt from its cells; the
+vertex times are applied first, then every edge's length and phase. Facets
+are not materialized (call materialize_facets). Raises when an edge has no
+recorded geometry, unless missing is KEEP_DEFAULT.)doc")
+      .def("relabeled", &Spacetime::relabeled, py::arg("seed"),
+           R"doc(A copy under a random vertex-id permutation, deterministic in seed,
+with the cell order shuffled too. Lengths, phases and vertex times carry
+across; facets are materialized.)doc");
   // ========================================
   // PachnerMove (transactional Pachner moves)
   // ========================================

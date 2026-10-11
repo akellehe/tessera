@@ -5,6 +5,7 @@
 #define TESSERA_SPACETIME_H
 
 #include <cmath>
+#include <complex>
 #include <map>
 #include <memory>
 #include <optional>
@@ -338,6 +339,84 @@ class Spacetime {
             = std::nullopt,
         const std::optional<std::vector<std::complex<double>>> &edgePhases
             = std::nullopt);
+
+    /// One edge's geometry as a `Record` holds it: the complex length, which is
+    /// orientation-free, and the connection phase on the ascending orientation
+    /// of the edge's vertex pair. `mesh::Edge` stores its phase on its own
+    /// source-to-target orientation and the link on the reverse orientation is
+    /// the inverse, so an edge stored descending records its phase negated
+    /// (`edgeGeometryOf`) and takes it back negated (`setEdgeGeometry`).
+    struct EdgeGeometry {
+      /// The edge's complex length, verbatim and branch-exact.
+      std::complex<double> length;
+      /// The connection phase on the ascending orientation.
+      std::complex<double> phase;
+    };
+
+    /// A record from which `fromRecord` rebuilds a complex: its cells as vertex
+    /// tuples, every edge's `EdgeGeometry` keyed by ascending vertex pair, and
+    /// the vertices' times. The phases are recorded with the lengths: under the
+    /// Whitney pencil the operator depends on the link phases, so a rebuild
+    /// restoring lengths alone would be a different geometry.
+    struct Record {
+      /// The complex's dimension, passed to `fromVertexTuples`.
+      int dimensions{0};
+      /// The cells, each in the vertex order it is recorded in. A cell with
+      /// fewer vertices than a top cell is registered as the lower simplex it is.
+      std::vector<std::vector<std::uint64_t>> cells;
+      /// Every edge's geometry, keyed by ascending vertex pair.
+      std::map<std::pair<std::uint64_t, std::uint64_t>, EdgeGeometry> edges;
+      /// Vertex times by vertex id; may be empty.
+      std::map<std::uint64_t, double> vertexTimes;
+    };
+
+    /// What `fromRecord` does with an edge the record holds no geometry for.
+    enum class MissingEdgeGeometry {
+      /// Throw `std::out_of_range`: a partial record is never silently defaulted.
+      Throw,
+      /// Keep `fromVertexTuples`'s unit length and zero phase, as for an edge a
+      /// move created after the record was taken.
+      KeepDefault,
+    };
+
+    /// This complex as a `Record`: its top cells in their stored vertex order,
+    /// every edge's geometry, and the time of every vertex of a top cell.
+    [[nodiscard]] Record record() const;
+
+    /// The complex \p record describes, rebuilt with `fromVertexTuples` from its
+    /// cells; the vertex times are applied first, then every edge's length and
+    /// phase. Facets are not materialized (`materializeFacets`).
+    /// @throws std::invalid_argument if the record holds no cells.
+    /// @throws std::out_of_range if an edge has no recorded geometry and
+    ///   \p missing is `MissingEdgeGeometry::Throw`.
+    [[nodiscard]] static std::shared_ptr<Spacetime> fromRecord(
+        const Record &record,
+        MissingEdgeGeometry missing = MissingEdgeGeometry::Throw);
+
+    /// A relabeled copy of a complex and the vertex-id permutation that
+    /// produced it.
+    struct Relabeled {
+      /// The relabeled complex.
+      std::shared_ptr<Spacetime> spacetime;
+      /// Original vertex id to relabeled vertex id.
+      std::map<std::uint64_t, std::uint64_t> vertexMap;
+    };
+
+    /// A copy of this complex under a random vertex-id permutation,
+    /// deterministic in \p seed, with the cell order shuffled too, so a reader
+    /// that depends on labels or enumeration order shows the dependence. The
+    /// lengths, phases and vertex times carry across, each phase on the
+    /// relabeled pair's own ascending orientation; facets are materialized.
+    [[nodiscard]] Relabeled relabeled(std::uint64_t seed) const;
+
+    /// \p edge's length and its phase on the ascending orientation.
+    [[nodiscard]] static EdgeGeometry edgeGeometryOf(const Edge &edge);
+
+    /// Write \p geometry onto \p edge: the length verbatim, the phase back on
+    /// the edge's own orientation. The reverse link is \f$ 0 - \varphi \f$
+    /// rather than \f$ -\varphi \f$, so a zero phase stays \f$ +0 \f$ on either
+    /// orientation and an all-zero connection round-trips bit for bit.
+    static void setEdgeGeometry(Edge &edge, const EdgeGeometry &geometry);
 
     /// The dimension-generic staircase ("prism") triangulation of
     /// \f$ K \times [0, \text{layers}] \f$ from the top cells of a base

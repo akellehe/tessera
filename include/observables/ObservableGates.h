@@ -24,8 +24,8 @@ namespace tessera::observables {
 ///   * GAUGE — re-measure on `ctx.gauged(GAUGE_THETA)`: the same live complex,
 ///     with the register target rotated by the surviving global U(1) phase. No
 ///     reconstruction.
-///   * RELABEL — re-measure on a relabeled rebuild. The rebuild lives in the
-///     loader (`LiveComplex::relabel`), not in a reader: this harness loads the
+///   * RELABEL — re-measure on a relabeled rebuild. The rebuild is
+///     `Spacetime::relabeled`, not a reader: this harness takes the
 ///     relabeled live complex, wraps it in a read-only `RegisterContext` with the
 ///     register's images matched by permuted vertex set, and maps any
 ///     vertex-id-bearing provenance through the permutation

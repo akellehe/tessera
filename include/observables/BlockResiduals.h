@@ -26,9 +26,9 @@ namespace tessera::observables {
 /// reports the full leak \f$ \|\mathrm{target}\|^2 \f$.
 ///
 /// Blocks are supplied to the constructor from recorded build history, never
-/// inferred. The sub-complex is loaded by `LiveComplex` — a strict selection of
-/// existing cells re-instantiated through `Spacetime::fromVertexTuples` — and never
-/// built inside this reader. Block regions carry vertex ids, so
+/// inferred. The sub-complex is a strict selection of existing cells
+/// re-instantiated through `Spacetime::fromVertexTuples` at a uniform metric, and
+/// is never grown inside this reader. Block regions carry vertex ids, so
 /// `recordRelabeled` maps them through the RELABEL permutation.
 class BlockResiduals : public RegisterObservable {
   public:

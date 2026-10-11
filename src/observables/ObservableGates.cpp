@@ -11,7 +11,6 @@
 #include <vector>
 
 #include "cobordism/MultiCobordism.h"
-#include "observables/LiveComplex.h"
 #include "spacetime/Spacetime.h"
 
 namespace tessera::observables {
@@ -28,9 +27,8 @@ double ObservableGates::relabelDelta(const RegisterObservable &observable,
                                      const RegisterContext &ctx) {
   const Record base = observable.record(ctx);
 
-  // The relabeled complex is rebuilt by the loader.
-  const LiveComplex::Relabeled rel =
-      LiveComplex::relabel(*ctx.spacetime(), GATE_SEED);
+  // The relabeled complex is rebuilt from the spacetime's record.
+  const Spacetime::Relabeled rel = ctx.spacetime()->relabeled(GATE_SEED);
 
   // Match this register's holes to the relabeled complex's emergent holes by
   // permuted vertex set; a missing image throws, since the gate has to compare

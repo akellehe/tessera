@@ -2670,39 +2670,14 @@ class MultiCobordism {
   [[nodiscard]] int lastStage1Lookahead() const { return lastStage1LookaheadDepth_; }
 
  private:
-  /// One edge's geometry as a snapshot records it: the complex length, which is
-  /// orientation-free, and the connection phase on the canonical min-to-max
-  /// orientation of the edge's vertex pair. `mesh::Edge` stores its phase on
-  /// its own source-to-target orientation, the convention
-  /// `chainhodge::Connection::fromSpacetime` reads, and the link on the reverse
-  /// orientation is the inverse, so an edge stored max-to-min records its phase
-  /// negated (`edgeGeometryOf`) and takes it back negated
-  /// (`restoreEdgeGeometry`). Keyed by vertex pair, the record is a pure
-  /// function of the geometry, as the checkpoint's `raw_complex` is.
-  struct EdgeGeometry {
-    /// The edge's complex length.
-    std::complex<double> length;
-    /// The connection phase on the min-to-max orientation.
-    std::complex<double> phase;
-  };
-  /// A committed stage-1 move's record of a complex: its top cells, followed on
-  /// a node with surface inputs by the uncovered surface faces, and every
-  /// edge's `EdgeGeometry` keyed by vertex pair. Both fields of an edge are
-  /// carried, because boundary tori carry pure-gauge link phases and, under the
-  /// Whitney pencil, the operator depends on them at every degree: their input
-  /// fibers are zero modes of the twisted Laplacian, so a rebuild restoring
-  /// lengths alone would reset every phase to zero.
-  using Snapshot =
-      std::pair<std::vector<std::vector<std::uint64_t>>,
-                std::map<std::pair<std::uint64_t, std::uint64_t>, EdgeGeometry>>;
   /// The fixed boundary as the gate reads it: `Spacetime::getBoundary` together
-  /// with the `EdgeGeometry` of every edge lying inside one of those facets.
+  /// with the `Spacetime::EdgeGeometry` of every edge lying inside one of those facets.
   /// Both halves come from one pass, because the gate takes this record twice
   /// per candidate — once before the move and once after — and reading the
   /// boundary is the whole cost of arming it.
   struct BoundaryRecord {
     std::set<std::vector<std::uint64_t>> facets;
-    std::map<std::pair<std::uint64_t, std::uint64_t>, EdgeGeometry> edges;
+    std::map<std::pair<std::uint64_t, std::uint64_t>, Spacetime::EdgeGeometry> edges;
   };
   [[nodiscard]] static BoundaryRecord boundaryRecordOf(const Spacetime &spacetime);
 
@@ -2808,34 +2783,22 @@ class MultiCobordism {
   [[nodiscard]] std::vector<std::vector<std::uint64_t>> bridgeCandidatesOn(
       const Spacetime &spacetime) const;
 
-  /// The phase of the inverse link, \f$ -\varphi \f$, computed as
-  /// \f$ 0 - \varphi \f$ so that a zero phase stays \f$ +0 \f$ on either
-  /// orientation: an all-zero connection round-trips bit-identically, with no
-  /// signed zero introduced by the orientation rule.
-  [[nodiscard]] static std::complex<double> inverseLinkPhase(
-      std::complex<double> phase) noexcept;
-  /// \p edge's length and its phase on the canonical min->max orientation.
-  [[nodiscard]] static EdgeGeometry edgeGeometryOf(const ::tessera::mesh::Edge &edge);
-  /// Write \p geometry onto \p edge: the length verbatim, the phase back on
-  /// the edge's own orientation (negated when the edge is stored max->min).
-  static void restoreEdgeGeometry(::tessera::mesh::Edge &edge,
-                                  const EdgeGeometry &geometry);
-  /// Record \p spacetime as a `Snapshot`.
-  [[nodiscard]] Snapshot snapshotOf(const Spacetime &spacetime) const;
-  [[nodiscard]] Snapshot snapshot() const;
-  /// The complex \p complexSnapshot records, rebuilt at \p dimensions from its
-  /// cells with every recorded edge's length and phase restored by
-  /// `restoreEdgeGeometry`. An edge the record does not hold, one a move
-  /// created, keeps `Spacetime::fromVertexTuples`'s auto-wired length and zero phase.
+  /// Record \p spacetime as a `Spacetime::Record`: its top cells as sorted
+  /// vertex tuples, followed on a node with surface inputs by the uncovered
+  /// surface faces, and every edge's length and phase. Both fields of an edge
+  /// are carried, because boundary tori carry pure-gauge link phases and,
+  /// under the Whitney pencil, the operator depends on them at every degree.
+  [[nodiscard]] Spacetime::Record snapshotOf(const Spacetime &spacetime) const;
+  [[nodiscard]] Spacetime::Record snapshot() const;
+  /// The complex \p complexSnapshot records (`Spacetime::fromRecord`), carrying
+  /// the node's edge-wiring mode. An edge the record does not hold, one a move
+  /// created, keeps `Spacetime::fromVertexTuples`'s length and zero phase.
   /// This is the rebuild behind stage-1 candidates, the committed step, the
   /// precone and refinement cone-ins, and checkpoint replay.
-  [[nodiscard]] static std::shared_ptr<Spacetime> rebuild(
-      int dimensions, const Snapshot &complexSnapshot);
-  /// `rebuild` at the node's dimension, carrying the node's edge-wiring mode
   /// so combinatorial moves scored on the result wire their new edges under
   /// the same convention.
   [[nodiscard]] std::shared_ptr<Spacetime> build(
-      const Snapshot &complexSnapshot) const;
+      const Spacetime::Record &complexSnapshot) const;
 
   /// Draw one random stage-1 move specification on `spacetime`: a `{kind, payload}`
   /// pair where `kind` is one of `add`/`remove`/`flip`/`iflip` (payload = a seed for
@@ -2881,8 +2844,8 @@ class MultiCobordism {
   /// of the sampled deep path in `step`: each level enumerates against the
   /// complex the previous level left, so the search walks a tree of the
   /// actual move space rather than a product of the base one.
-  [[nodiscard]] std::pair<double, Snapshot> bestComposition(
-      const Snapshot &fromSnapshot, int remainingMoves, double baseObjective,
+  [[nodiscard]] std::pair<double, Spacetime::Record> bestComposition(
+      const Spacetime::Record &fromSnapshot, int remainingMoves, double baseObjective,
       double baseResidualU,
       const std::set<std::vector<std::uint64_t>> &baseCellSet);
   /// One iteration of `runStage1`'s loop: optional boundary growth plus one

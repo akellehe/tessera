@@ -45,7 +45,6 @@
 #include "observables/RegisterContext.h"
 #include "observables/RegisterObservable.h"
 #include "observables/InteriorHinges.h"
-#include "observables/LiveComplex.h"
 #include "observables/SingletResidual.h"
 #include "observables/BlockResiduals.h"
 #include "observables/EmergentMass.h"
