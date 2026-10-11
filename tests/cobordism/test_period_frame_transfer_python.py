@@ -31,7 +31,7 @@ supplies the dual band's images, which equal the band's own at U = 1). The
 dual of a supplied frame is therefore its left partner under that pairing on
 the block's own pencil, Z^vee = Z @ inv(B).T with B = Z.T @ M_1 @ Z the frame's
 pairing under the Whitney mass matrix M_1 of the block's own surface, so that
-Z^vee.T @ M_1 @ Z = I (``MultiCobordism.dual_frame`` / ``input_frame_dual``;
+Z^vee.T @ M_1 @ Z = I (``PencilLayer.dual_frame`` / ``MultiCobordism.input_frame_dual``;
 the whitepaper's canonical left frame at U = 1). Under it a change of frame
 (g_A, g_B) sends T to g_A^-1 T g_B - the matrix of the operator block in the
 frames' coordinates - which is what a target written in those coordinates
@@ -531,7 +531,7 @@ def test_dual_frame_contract(n, whitney_default):
         assert np.abs(Zd - Z @ np.linalg.inv(pairing).T).max() < 1e-13 * np.abs(Zd).max()
         # the same dual from the static builder on the standalone torus (its own ids, the same edge order)
         own_cells = [sorted((int(i), int(j))) for i, j in q.edges()]
-        alone = np.asarray(MC.dual_frame(q.spacetime(), 1, own_cells, Z))
+        alone = np.asarray(cob.PencilLayer.dual_frame(q.spacetime(), 1, own_cells, Z))
         assert np.abs(alone - Zd).max() < 1e-13 * np.abs(Zd).max()
         # the pairing of a flat torus's period frame is the continuum Gram of
         # its unit-period forms, Im(tau) * [[1 + a^2/b^2, -a/b^2], [-a/b^2, 1/b^2]]
@@ -572,13 +572,13 @@ def test_frame_refusals(whitney_default):
         half.input_frame_dual(1, Zb)
     # the dual builder's refusals
     with pytest.raises(ValueError, match="null complex"):
-        MC.dual_frame(None, 1, cells_a, Za)
+        cob.PencilLayer.dual_frame(None, 1, cells_a, Za)
     with pytest.raises(ValueError, match="is not a degree-1 cell of the assembled complex"):
-        MC.dual_frame(qa.spacetime(), 1, [[0, 5]] + [sorted((int(i), int(j))) for i, j in qa.edges()][1:], Za)
+        cob.PencilLayer.dual_frame(qa.spacetime(), 1, [[0, 5]] + [sorted((int(i), int(j))) for i, j in qa.edges()][1:], Za)
     with pytest.raises(ValueError, match="outside the complex's dimension"):
-        MC.dual_frame(qa.spacetime(), 3, [sorted((int(i), int(j))) for i, j in qa.edges()], Za)
+        cob.PencilLayer.dual_frame(qa.spacetime(), 3, [sorted((int(i), int(j))) for i, j in qa.edges()], Za)
     with pytest.raises(ValueError, match="one image row per cell"):
-        MC.dual_frame(qa.spacetime(), 1, [sorted((int(i), int(j))) for i, j in qa.edges()], Za[:-1])
+        cob.PencilLayer.dual_frame(qa.spacetime(), 1, [sorted((int(i), int(j))) for i, j in qa.edges()], Za[:-1])
     with pytest.raises(RuntimeError, match="singular"):
         node.input_frame_dual(0, np.hstack([Za[:, :1], Za[:, :1]]))  # an isotropic (rank-deficient) frame
     # one frame is not a reading: both blocks or neither

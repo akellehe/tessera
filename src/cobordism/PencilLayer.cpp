@@ -452,4 +452,84 @@ chainhodge::TransferResult PencilLayer::transfer(const AssembledPencil &assemble
                                            place(B, true), tolerance);
 }
 
+double PencilLayer::fiberResidual(const std::shared_ptr<Spacetime> &spacetime,
+                                  const BoundaryFiber &target, FiberBand band) {
+  if (target.images.cols() == 0)
+    throw std::logic_error("PencilLayer::fiberResidual: the fiber target has no images");
+  const double targetNorm = target.images.squaredNorm();
+  if (!(targetNorm > 0.0))
+    throw std::logic_error("PencilLayer::fiberResidual: the fiber target is zero");
+  if (!spacetime) return 1.0;  // no complex to read: the target leaks in full
+  // A candidate geometry the pencil refuses (a singular dressed metric, a
+  // branch or allowability failure, a cell outside the complex) cannot carry
+  // the state: it scores as the full leak, exactly as a block with no emerged
+  // register does under the period residual. Contract errors still propagate.
+  BoundaryFiber read;
+  try {
+    const AssembledPencil assembled = assemble({spacetime});
+    if (assembled.dimension() < target.degree) return 1.0;
+    const std::vector<int> idx = indicesOf(assembled, target.degree, target.cells);
+    if (idx.size() != target.cells.size()) return 1.0;
+    const chainhodge::Contour contour = fiberContour(assembled, target, band);
+    read = readBoundaryFiber(assembled, target.degree, contour, target.cells);
+  } catch (const std::runtime_error &) {
+    return 1.0;
+  } catch (const std::invalid_argument &) {
+    return 1.0;
+  }
+  if (read.images.cols() == 0 || read.images.rows() != target.images.rows()) return 1.0;
+  // Least-squares fit of the target images in the band's images on the cells.
+  const Eigen::MatrixXcd coefficients = read.images.colPivHouseholderQr().solve(target.images);
+  const double leak = (read.images * coefficients - target.images).squaredNorm();
+  return leak / targetNorm;
+}
+
+chainhodge::Contour PencilLayer::fiberContour(const AssembledPencil &assembled,
+                                              const BoundaryFiber &target, FiberBand band) {
+  switch (band) {
+    case FiberBand::ZeroMode:
+      // The zero mode of this pencil: the block's own Laplacian's harmonic
+      // space, whatever contour the fiber stores (see `MultiCobordism::fiberBandFor`).
+      return harmonicContour(assembled, target.degree);
+    case FiberBand::AsStored:
+      break;
+  }
+  return target.contour.nodes.empty() ? bandContour(assembled, target.degree, 1)
+                                      : target.contour;
+}
+
+Eigen::MatrixXcd PencilLayer::dualFrame(const std::shared_ptr<Spacetime> &complex, int degree,
+                                        const std::vector<std::vector<std::uint64_t>> &cells,
+                                        const Eigen::MatrixXcd &images) {
+  if (!complex) throw std::invalid_argument("PencilLayer::dualFrame: null complex");
+  if (images.cols() == 0) throw std::invalid_argument("PencilLayer::dualFrame: the frame has no columns");
+  if (static_cast<std::size_t>(images.rows()) != cells.size())
+    throw std::invalid_argument("PencilLayer::dualFrame: one image row per cell (" +
+                                std::to_string(images.rows()) + " rows, " + std::to_string(cells.size()) + " cells)");
+  const AssembledPencil assembled = assemble({complex});
+  if (degree < 0 || degree > assembled.dimension())
+    throw std::invalid_argument("PencilLayer::dualFrame: degree " + std::to_string(degree) +
+                                " is outside the complex's dimension " + std::to_string(assembled.dimension()));
+  std::vector<std::vector<std::uint64_t>> sorted = cells;
+  for (auto &c : sorted) std::sort(c.begin(), c.end());
+  // A cell absent from the complex at this degree is refused by name here.
+  const std::vector<int> idx = indicesOf(assembled, degree, sorted);
+  // B = Z^T M_k Z on the cells: the frame's pairing under the transpose pairing
+  // of the complex's own pencil (M_k the Whitney mass matrix, the chain
+  // metric's inverse, as PencilLayer::readBoundaryFiber's Gram uses it).
+  const Eigen::MatrixXcd M(assembled.op->Minv(degree));
+  const auto n = static_cast<Eigen::Index>(idx.size());
+  Eigen::MatrixXcd MBB(n, n);
+  for (Eigen::Index i = 0; i < n; ++i)
+    for (Eigen::Index j = 0; j < n; ++j)
+      MBB(i, j) = M(idx[static_cast<std::size_t>(i)], idx[static_cast<std::size_t>(j)]);
+  const Eigen::MatrixXcd pairing = images.transpose() * MBB * images;
+  Eigen::FullPivLU<Eigen::MatrixXcd> lu(pairing);
+  if (!lu.isInvertible())
+    throw std::runtime_error("PencilLayer::dualFrame: the frame's pairing Z^T M Z is singular (an isotropic "
+                             "frame); no dual under the transpose pairing exists");
+  // Z^vee = Z B^{-T}, i.e. (Z^vee)^T = B^{-1} Z^T, so that (Z^vee)^T M Z = B^{-1} B = I.
+  return lu.solve(images.transpose()).transpose();
+}
+
 }  // namespace tessera::cobordism

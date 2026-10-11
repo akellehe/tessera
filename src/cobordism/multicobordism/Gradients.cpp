@@ -50,7 +50,7 @@ MultiCobordism::ResidualGradient MultiCobordism::fiberResidualGradientOn(
   if (target.degree == 0) gradient.phases = Eigen::VectorXcd::Zero(static_cast<Eigen::Index>(edges.size()));
   const AssembledPencil assembled = PencilLayer::assemble({spacetime});
   const std::vector<int> idx = PencilLayer::indicesOf(assembled, target.degree, target.cells);
-  const chainhodge::Contour contour = fiberContourOn(assembled, target, band);
+  const chainhodge::Contour contour = PencilLayer::fiberContour(assembled, target, band);
   const chainhodge::Band riesz = assembled.op->band(target.degree, contour);
   if (riesz.rank() == 0) return gradient;  // full leak everywhere: no descent direction
   // The least-squares fit on the cells: u = psi - Z_T c, r = |u|^2 / |psi|^2.

@@ -14,7 +14,7 @@ void register_cobordism_multicobordism(py::module_ &m) {
       "transfer is read in. `images` Z is one column per basis element on the block's fiber cells "
       "(rows in the attachment order); `dual_images` Z^vee is the frame's left partner under the "
       "transpose pairing, the contract Z^vee.T @ M_k @ Z == I with M_k the Whitney mass matrix of "
-      "the block's OWN pencil on the cells (MultiCobordism.dual_frame / input_frame_dual). With both "
+      "the block's OWN pencil on the cells (PencilLayer.dual_frame / MultiCobordism.input_frame_dual). With both "
       "input blocks framed the transfer is T_AB = Z_A^vee.T @ A~_AB @ Z_B, the whole's pencil-operator "
       "block in the frames' coordinates (a change of frame g_A, g_B gives g_A^-1 T g_B); for two "
       "qubit tori the frames are their period frames (SimplicialQubit.period_frame) and T is 2x2 in "
@@ -756,15 +756,6 @@ void register_cobordism_multicobordism(py::module_ &m) {
            "EdgeList order, each entry (d/dRe, d/dIm) packed as a complex number, the whole's band "
            "derivative with the MOVING target (the frame's own derivative on the block's edges); phases "
            "empty at degree 1.")
-      .def_static("dual_frame", &MultiCobordism::dualFrame, py::arg("complex"), py::arg("degree"),
-           py::arg("cells"), py::arg("images"),
-           "The dual of a frame under the transpose pairing of `complex`'s own chain-level Whitney "
-           "pencil at `degree`: with M_k the pencil's Whitney mass matrix (CovariantChainHodge.m_inv, "
-           "PencilLayer.pencil(...).B) restricted to `cells` and B = Z.T @ M_k @ Z the frame's pairing, "
-           "Z^vee = Z @ inv(B).T, so that Z^vee.T @ M_k @ Z == I (the BlockFrame contract; the "
-           "canonical left frame at U = 1). Read-only on the complex. Refuses by name a "
-           "null complex, a degree above its dimension, a frame without columns, a row count other than "
-           "the cell count, a cell absent at that degree, and a singular pairing (an isotropic frame).")
       .def("input_frame_dual", &MultiCobordism::inputFrameDual, py::arg("index"), py::arg("images"),
            "dual_frame of `images` on input block `index`'s OWN pencil - its own complex with the live "
            "lengths (block_surface_subcomplex for a surface block, the sub-complex for an ordinary one) "

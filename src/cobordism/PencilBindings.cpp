@@ -104,6 +104,15 @@ assertion. Every pairing is the transpose.)doc")
            py::arg("band_index"), py::arg("node_count") = 64,
            "A circle around the band_index-th distinct eigenvalue cluster (by modulus; 0 is the harmonic "
            "cluster when zero is an eigenvalue, 1 the lowest band above it), radius a quarter of the gap.")
+      .def_static("dual_frame", &PencilLayer::dualFrame, py::arg("complex"), py::arg("degree"),
+           py::arg("cells"), py::arg("images"),
+           "The dual of a frame under the transpose pairing of `complex`'s own chain-level Whitney "
+           "pencil at `degree`: with M_k the pencil's Whitney mass matrix (CovariantChainHodge.m_inv, "
+           "PencilLayer.pencil(...).B) restricted to `cells` and B = Z.T @ M_k @ Z the frame's pairing, "
+           "Z^vee = Z @ inv(B).T, so that Z^vee.T @ M_k @ Z == I (the BlockFrame contract; the "
+           "canonical left frame at U = 1). Read-only on the complex. Refuses by name a "
+           "null complex, a degree above its dimension, a frame without columns, a row count other than "
+           "the cell count, a cell absent at that degree, and a singular pairing (an isotropic frame).")
       .def_static("read_boundary_fiber", &PencilLayer::readBoundaryFiber, py::arg("assembled"), py::arg("k"),
            py::arg("contour"), py::arg("cells"), py::arg("kappa") = 10.0)
       .def_static("level", &PencilLayer::level, py::arg("assembled"), py::arg("k"), py::arg("retained"),

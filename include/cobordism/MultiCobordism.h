@@ -1163,18 +1163,7 @@ class MultiCobordism {
   void setFiberPhaseDescent(bool enabled) { fiberPhaseDescent_ = enabled; }
   /// Whether stage 2 descends the degree-0 link phases.
   [[nodiscard]] bool fiberPhaseDescent() const noexcept { return fiberPhaseDescent_; }
-  /// Which band of a pencil a fiber is fitted in when its residual, or the
-  /// residual's gradient, is read on that pencil.
-  enum class FiberBand {
-    /// The contour stored on the fiber when it names one, else the lowest
-    /// band above the zero mode (`PencilLayer::bandContour(…, 1)`): the read
-    /// of a whole-complex target and of an ordinary block's sub-complex.
-    AsStored,
-    /// The zero mode of the pencil the fiber is read on — the harmonic contour
-    /// of that pencil (`PencilLayer::harmonicContour`), whatever contour the
-    /// fiber stores. This is a surface block's own Laplacian.
-    ZeroMode,
-  };
+
   /// The band a block's fiber is read in: `ZeroMode` for a surface block
   /// (`BoundaryBlock::surface`), `AsStored` for an ordinary block.
   ///
@@ -1279,7 +1268,7 @@ class MultiCobordism {
   /// \f$ \tilde Z \f$ the dual kernel's images (the same zero mode under the
   /// inverse links, `AssembledPencil::dual`) and \f$ M_1^U \f$ the dressed
   /// Whitney mass matrix of the block's own pencil, giving the `BlockFrame`
-  /// normalization \f$ (F^\vee)^T M_1^U F = I \f$ (`dualFrame`). That pairing
+  /// normalization \f$ (F^\vee)^T M_1^U F = I \f$ (`PencilLayer::dualFrame`). That pairing
   /// is the gauge-covariant one; at zero phases the dual kernel is the kernel.
   ///
   /// An `obstruction` is reported when the block's own kernel does not have the
@@ -1565,28 +1554,7 @@ class MultiCobordism {
   /// \f$ c = (a, b) \f$. Returns 1.0 when \f$ p \f$ vanishes.
   [[nodiscard]] static double ownStateLeakOf(std::complex<double> periodA, std::complex<double> periodB,
                                              const Eigen::VectorXcd &coefficients);
-  /// The dual of a frame under the transpose pairing of \p complex's own
-  /// chain-level Whitney pencil at degree \p degree. With \f$ M_k \f$ the
-  /// pencil's chain-metric inverse (`CovariantChainHodge::Minv`, the Whitney
-  /// mass matrix) restricted to \p cells, and \f$ B = Z^T M_k Z \f$ the frame's
-  /// pairing, the dual is \f$ Z^\vee = Z\,B^{-T} \f$, so that
-  /// \f$ (Z^\vee)^T M_k Z = I \f$ as `BlockFrame` requires.
-  ///
-  /// `chainhodge::PencilSchur::transfer` normalizes nothing, so a frame paired
-  /// with its plain images gives the bilinear form \f$ Z_A^T \tilde A Z_B \f$,
-  /// which transforms by \f$ g_A^T T g_B \f$. Under this dual it instead gives
-  /// the matrix of the operator block in the frames' coordinates,
-  /// \f$ g_A^{-1} T g_B \f$, which is what a target written in those
-  /// coordinates compares with. Read-only on \p complex.
-  /// @throws std::invalid_argument on a null complex, a degree above its
-  ///   dimension, a frame without columns, a row count other than the cell
-  ///   count, or a cell absent from the complex at that degree
-  ///   (`PencilLayer::indicesOf`, by name); std::runtime_error when the
-  ///   pairing is singular (an isotropic frame).
-  [[nodiscard]] static Eigen::MatrixXcd dualFrame(const std::shared_ptr<Spacetime> &complex, int degree,
-                                                  const std::vector<std::vector<std::uint64_t>> &cells,
-                                                  const Eigen::MatrixXcd &images);
-  /// `dualFrame` of \p images on input block \p index's own pencil — its own
+  /// `PencilLayer::dualFrame` of \p images on input block \p index's own pencil — its own
   /// complex with the live lengths (`blockComplexWithGeometry`: a surface
   /// block's surface, an ordinary block's sub-complex) on its attached fiber
   /// cells at the fiber's degree. Call it at attachment, when the block's
@@ -2959,11 +2927,6 @@ class MultiCobordism {
   [[nodiscard]] double fiberResidualOn(const std::shared_ptr<Spacetime> &spacetime,
                                        const BoundaryFiber &fiber,
                                        FiberBand band = FiberBand::AsStored) const;
-  /// The contour a fiber is read at on \p assembled under \p band: the
-  /// harmonic contour of \p assembled for `ZeroMode`; the fiber's stored
-  /// contour, else the lowest band above the zero mode, for `AsStored`.
-  [[nodiscard]] static chainhodge::Contour fiberContourOn(const AssembledPencil &assembled,
-                                                          const BoundaryFiber &fiber, FiberBand band);
   /// The block's region of \p spacetime (`Spacetime::getRegion`), which carries
   /// the parent's edge lengths and phases, with its facets materialized for the
   /// fiber reads. Null when the region holds no top cell.

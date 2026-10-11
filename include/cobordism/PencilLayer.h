@@ -145,6 +145,19 @@ struct FiberLevel {
 ///
 /// Every pairing is the transpose; no conjugation enters. Dense below the
 /// crossover of the underlying `ChainHodge`.
+/// Which band of a pencil a fiber is fitted in when its residual, or the
+/// residual's gradient, is read on that pencil.
+enum class FiberBand {
+  /// The contour stored on the fiber when it names one, else the lowest
+  /// band above the zero mode (`PencilLayer::bandContour(…, 1)`): the read
+  /// of a whole-complex target and of an ordinary block's sub-complex.
+  AsStored,
+  /// The zero mode of the pencil the fiber is read on — the harmonic contour
+  /// of that pencil (`PencilLayer::harmonicContour`), whatever contour the
+  /// fiber stores. This is a surface block's own Laplacian.
+  ZeroMode,
+};
+
 class PencilLayer {
  public:
   using Cell = std::vector<std::uint64_t>;
@@ -220,6 +233,42 @@ class PencilLayer {
   [[nodiscard]] static chainhodge::Contour harmonicContour(const AssembledPencil &assembled,
                                                            int k, int nodeCount = 64);
 
+  /// The least-squares leak of \p target's images in the band read on
+  /// \p spacetime's pencil at the target's cells, relative to the target's
+  /// norm: 0 when the band carries the target, 1 when nothing does. The band is
+  /// chosen by \p band (`fiberContour`). A geometry the pencil refuses (a
+  /// singular dressed metric, a branch or allowability failure, a cell outside
+  /// the complex), or no complex at all, scores as the full leak 1.
+  /// @throws std::logic_error for a target with no images or a zero target.
+  [[nodiscard]] static double fiberResidual(const std::shared_ptr<Spacetime> &spacetime,
+                                            const BoundaryFiber &target,
+                                            FiberBand band = FiberBand::AsStored);
+  /// The contour a fiber is read at on \p assembled under \p band: the
+  /// harmonic contour of \p assembled for `ZeroMode`; the fiber's stored
+  /// contour, else the lowest band above the zero mode, for `AsStored`.
+  [[nodiscard]] static chainhodge::Contour fiberContour(const AssembledPencil &assembled,
+                                                          const BoundaryFiber &fiber, FiberBand band);
+  /// The dual of a frame under the transpose pairing of \p complex's own
+  /// chain-level Whitney pencil at degree \p degree. With \f$ M_k \f$ the
+  /// pencil's chain-metric inverse (`CovariantChainHodge::Minv`, the Whitney
+  /// mass matrix) restricted to \p cells, and \f$ B = Z^T M_k Z \f$ the frame's
+  /// pairing, the dual is \f$ Z^\vee = Z\,B^{-T} \f$, so that
+  /// \f$ (Z^\vee)^T M_k Z = I \f$ as `BlockFrame` requires.
+  ///
+  /// `chainhodge::PencilSchur::transfer` normalizes nothing, so a frame paired
+  /// with its plain images gives the bilinear form \f$ Z_A^T \tilde A Z_B \f$,
+  /// which transforms by \f$ g_A^T T g_B \f$. Under this dual it instead gives
+  /// the matrix of the operator block in the frames' coordinates,
+  /// \f$ g_A^{-1} T g_B \f$, which is what a target written in those
+  /// coordinates compares with. Read-only on \p complex.
+  /// @throws std::invalid_argument on a null complex, a degree above its
+  ///   dimension, a frame without columns, a row count other than the cell
+  ///   count, or a cell absent from the complex at that degree
+  ///   (`PencilLayer::indicesOf`, by name); std::runtime_error when the
+  ///   pairing is singular (an isotropic frame).
+  [[nodiscard]] static Eigen::MatrixXcd dualFrame(const std::shared_ptr<Spacetime> &complex, int degree,
+                                                  const std::vector<std::vector<std::uint64_t>> &cells,
+                                                  const Eigen::MatrixXcd &images);
   /// Read the fiber form of a block's target: the band of \p contour on the
   /// assembled pencil, restricted to \p cells.
   [[nodiscard]] static BoundaryFiber readBoundaryFiber(const AssembledPencil &assembled, int k,
