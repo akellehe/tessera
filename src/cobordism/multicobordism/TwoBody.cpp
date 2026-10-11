@@ -656,15 +656,10 @@ double MultiCobordism::wholeHarmonicResidualOn(
   if (!periodFrame.obstruction.empty())
     return refuse(std::move(periodFrame.obstruction));
   state = periodFrame.block * state;  // the coordinates in the period frame
-  const double ss = state.squaredNorm();
-  if (!(ss > 0.0)) return refuse("the inputs determine the zero harmonic form");
+  if (!(state.squaredNorm() > 0.0)) return refuse("the inputs determine the zero harmonic form");
   // The same projective Frobenius leak the other readings take, so all are on
-  // one scale and a set of them may be summed. It is `quantum::projectiveLeak`
-  // written out: through the helper this function's dot product is no longer
-  // inlined, and the leak's last bit moves under -march=native.
-  const complexd overlap = state.dot(wanted);
-  const double leak = wanted.squaredNorm() - std::norm(overlap) / ss;
-  return std::max(0.0, leak / wanted.squaredNorm());
+  // one scale and a set of them may be summed.
+  return quantum::projectiveLeak(state, wanted);
 }
 
 double MultiCobordism::twoBodyResidualOn(const std::shared_ptr<Spacetime> &spacetime,

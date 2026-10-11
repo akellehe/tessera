@@ -121,12 +121,8 @@ double MultiCobordism::ownStateLeakOf(std::complex<double> periodA, std::complex
     throw std::invalid_argument("MultiCobordism::ownStateLeakOf: a qubit state has two coefficients");
   const Eigen::Vector2cd p(periodA, periodB);
   const Eigen::Vector2cd c(coefficients(0), coefficients(1));
-  const double pp = p.squaredNorm(), cc = c.squaredNorm();
-  if (!(pp > 0.0) || !(cc > 0.0)) return 1.0;
-  const std::complex<double> overlap = c.dot(p);  // c^H p: Eigen's dot conjugates its first argument
-  // The leak of `quantum::projectiveLeak` in its symmetric form, which rounds
-  // differently from the helper's, so the two are not interchanged.
-  return std::max(0.0, 1.0 - std::norm(overlap) / (cc * pp));
+  if (!(c.squaredNorm() > 0.0)) return 1.0;
+  return quantum::projectiveLeak(p, c);  // the periods read against the state wanted; 1.0 when p vanishes
 }
 
 double MultiCobordism::ownStateResidualOn(const BoundaryBlock &block,
