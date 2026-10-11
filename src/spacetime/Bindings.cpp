@@ -374,7 +374,7 @@ avoids the intermediate Python conversion.)doc")
            py::arg("M"),
            R"doc(Newman-Girvan modularity Q on the vertex/edge 1-skeleton.
 
-Implicit labels: ``label(v) = v.id() % M``.  Returns 0 if M < 2,
+Implicit labels: ``label(v) = v.id() % M``.  Returns 0 if M < 1,
 the graph has no edges, or the spacetime has no vertices.)doc")
       .def("get_spectral_dimension_on_skeleton",
            &Spacetime::getSpectralDimensionOnSkeleton,
