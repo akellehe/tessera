@@ -37,6 +37,7 @@ namespace {
 
 using Complex = std::complex<double>;
 using chainhodge::Connection;
+using mesh::ascendingIds;
 constexpr double kPi = 3.14159265358979323846;
 constexpr double kEps = std::numeric_limits<double>::epsilon();
 /// Rounding tolerance of the pure-gauge check. A gauge
@@ -60,6 +61,8 @@ Complex pairT(const Eigen::Vector2cd &a, const Eigen::Vector2cd &b) { return a(0
 std::string edgeText(std::uint64_t u, std::uint64_t v) {
   return "(" + std::to_string(u) + "," + std::to_string(v) + ")";
 }
+
+std::string edgeText(const SimplicialQubit::EdgePair &edge) { return edgeText(edge.first, edge.second); }
 
 std::string faceText(const SimplicialQubit::Face &f) {
   return "(" + std::to_string(f[0]) + "," + std::to_string(f[1]) + "," + std::to_string(f[2]) + ")";
@@ -173,7 +176,7 @@ SimplicialQubit::SimplicialQubit(std::vector<std::uint64_t> vertices, std::vecto
   for (mesh::Edge *edge : spacetime_->getEdgeList()->toVector()) {
     const std::uint64_t u = edge->getSource()->getId();
     const std::uint64_t v = edge->getTarget()->getId();
-    edge->setLength(lengths_[edgeIndexOf(std::min(u, v), std::max(u, v))]);
+    edge->setLength(lengths_[edgeIndexOf(u, v)]);
     edge->setPhase(Complex(0.0, 0.0));
   }
   buildConnection({});
@@ -203,7 +206,7 @@ SimplicialQubit::SimplicialQubit(const std::shared_ptr<Spacetime> &spacetime, Cy
   for (const mesh::Edge *edge : spacetime_->getEdgeList()->toVector()) {
     const std::uint64_t a = indexOfId.at(edge->getSource()->getId());
     const std::uint64_t b = indexOfId.at(edge->getTarget()->getId());
-    edgeLengths.push_back({{std::min(a, b), std::max(a, b)}, edge->getLength()});
+    edgeLengths.push_back({ascendingIds(a, b), edge->getLength()});
   }
   std::sort(edgeLengths.begin(), edgeLengths.end(),
             [](const auto &x, const auto &y) { return x.first < y.first; });
@@ -345,10 +348,10 @@ void SimplicialQubit::indexEdges() {
 }
 
 std::size_t SimplicialQubit::edgeIndexOf(std::uint64_t u, std::uint64_t v) const {
-  const auto it = edgeIndex_.find({std::min(u, v), std::max(u, v)});
+  const EdgePair edge = ascendingIds(u, v);
+  const auto it = edgeIndex_.find(edge);
   if (it == edgeIndex_.end())
-    throw std::invalid_argument("SimplicialQubit: " + edgeText(std::min(u, v), std::max(u, v)) +
-                                " is not an edge of E");
+    throw std::invalid_argument("SimplicialQubit: " + edgeText(edge) + " is not an edge of E");
   return it->second;
 }
 
@@ -373,7 +376,7 @@ void SimplicialQubit::validateCombinatorics() {
         e = edgeIndexOf(u, v);
       } catch (const std::invalid_argument &) {
         throw std::invalid_argument("SimplicialQubit: face " + faceText(f) + " uses " +
-                                    edgeText(std::min(u, v), std::max(u, v)) + ", which is not in E");
+                                    edgeText(ascendingIds(u, v)) + ", which is not in E");
       }
       edgeFaces_[e].push_back({t, slot});
       traversalSigns[e].push_back(u < v ? 1 : -1);
@@ -1187,7 +1190,7 @@ SimplicialQubit SimplicialQubit::flatTorus(std::complex<double> tau, int nx, int
 
   std::map<EdgePair, double> lengthOf;
   auto addEdge = [&](std::uint64_t u, std::uint64_t v, Complex displacement) {
-    lengthOf[{std::min(u, v), std::max(u, v)}] = std::abs(displacement);
+    lengthOf[ascendingIds(u, v)] = std::abs(displacement);
   };
   std::vector<Face> faces;
   for (int i = 0; i < nx; ++i)
@@ -1212,7 +1215,7 @@ SimplicialQubit SimplicialQubit::flatTorus(std::complex<double> tau, int nx, int
   // Marked cycles: A the row loop along 1 (j = 0), B the column loop along
   // tau (i = 0); a step's sign is +1 when it runs from the smaller id.
   auto step = [&](std::uint64_t from, std::uint64_t to) {
-    return CycleStep{index.at({std::min(from, to), std::max(from, to)}), from < to ? 1 : -1};
+    return CycleStep{index.at(ascendingIds(from, to)), from < to ? 1 : -1};
   };
   Cycle cycleA, cycleB;
   for (int i = 0; i < nx; ++i) cycleA.push_back(step(vid(i, 0), vid((i + 1) % nx, 0)));
@@ -1242,7 +1245,7 @@ SimplicialQubit SimplicialQubit::intrinsicDelaunay() const {
   std::vector<std::string> skipped;
 
   auto lengthOf = [&](std::uint64_t u, std::uint64_t v) {
-    return lengths[index.at({std::min(u, v), std::max(u, v)})];
+    return lengths[index.at(ascendingIds(u, v))];
   };
   auto faceAngles = [&](const Face &f) {
     return anglesOf(lengthOf(f[1], f[2]), lengthOf(f[2], f[0]), lengthOf(f[0], f[1]));
@@ -1259,7 +1262,7 @@ SimplicialQubit SimplicialQubit::intrinsicDelaunay() const {
   auto attach = [&](std::size_t t) {
     for (int slot = 0; slot < 3; ++slot) {
       const auto [u, v] = traversal(faces[t], slot);
-      incidence[index.at({std::min(u, v), std::max(u, v)})].push_back({t, slot});
+      incidence[index.at(ascendingIds(u, v))].push_back({t, slot});
     }
   };
 
@@ -1292,9 +1295,9 @@ SimplicialQubit SimplicialQubit::intrinsicDelaunay() const {
     const std::uint64_t i = u, j = v;
     const std::uint64_t k = faces[t1][static_cast<std::size_t>(oppositeVertexSlot(slot1))];
     const std::uint64_t l = faces[t2][static_cast<std::size_t>(oppositeVertexSlot(slot2))];
-    if (k == l || index.count({std::min(k, l), std::max(k, l)}) != 0) {
+    if (k == l || index.count(ascendingIds(k, l)) != 0) {
       skipped.push_back("edge " + edgeText(i, j) + " violates the Delaunay condition but its flip would "
-                        "duplicate edge " + edgeText(std::min(k, l), std::max(k, l)) + "; left in place");
+                        "duplicate edge " + edgeText(ascendingIds(k, l)) + "; left in place");
       continue;
     }
 
@@ -1312,12 +1315,12 @@ SimplicialQubit SimplicialQubit::intrinsicDelaunay() const {
     // Replace: faces (i,j,k), (j,i,l) -> (k,i,l), (l,j,k); edge (i,j) -> (k,l).
     for (int slot = 0; slot < 3; ++slot) {
       const auto [x, y] = traversal(faces[t1], slot);
-      detach(index.at({std::min(x, y), std::max(x, y)}), t1);
+      detach(index.at(ascendingIds(x, y)), t1);
       const auto [p, q] = traversal(faces[t2], slot);
-      detach(index.at({std::min(p, q), std::max(p, q)}), t2);
+      detach(index.at(ascendingIds(p, q)), t2);
     }
     index.erase({i, j});
-    edges[e] = {std::min(k, l), std::max(k, l)};
+    edges[e] = ascendingIds(k, l);
     lengths[e] = newLength;
     index[edges[e]] = e;
     faces[t1] = {k, i, l};
@@ -1335,8 +1338,8 @@ SimplicialQubit SimplicialQubit::intrinsicDelaunay() const {
           continue;
         }
         const std::uint64_t from = sign > 0 ? i : j, to = sign > 0 ? j : i;
-        out.push_back({index.at({std::min(from, k), std::max(from, k)}), from < k ? 1 : -1});
-        out.push_back({index.at({std::min(k, to), std::max(k, to)}), k < to ? 1 : -1});
+        out.push_back({index.at(ascendingIds(from, k)), from < k ? 1 : -1});
+        out.push_back({index.at(ascendingIds(k, to)), k < to ? 1 : -1});
       }
       cycle = std::move(out);
     };
@@ -1344,8 +1347,8 @@ SimplicialQubit SimplicialQubit::intrinsicDelaunay() const {
     reroute(cycleB);
 
     // The four sides of the quadrilateral may have become non-Delaunay.
-    for (const auto &[x, y] : {EdgePair{i, k}, EdgePair{k, j}, EdgePair{j, l}, EdgePair{l, i}}) {
-      const std::size_t side = index.at({std::min(x, y), std::max(x, y)});
+    for (const EdgePair &edge : {ascendingIds(i, k), ascendingIds(k, j), ascendingIds(j, l), ascendingIds(l, i)}) {
+      const std::size_t side = index.at(edge);
       if (!queued[side]) {
         queued[side] = true;
         queue.push_back(side);

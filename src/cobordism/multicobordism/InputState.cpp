@@ -202,12 +202,12 @@ multicobordism::ResidualGradient MultiCobordism::ownStateResidualGradientOn(
   std::vector<std::uint64_t> ids;
   for (const auto *vertex : read->spacetime()->getVertexList()->liveVector()) ids.push_back(vertex->getId());
   std::sort(ids.begin(), ids.end());
-  std::map<std::pair<std::uint64_t, std::uint64_t>, std::size_t> parentIndex;
+  std::map<VertexIdPair, std::size_t> parentIndex;
   for (std::size_t e = 0; e < parentEdges.size(); ++e) parentIndex[parentEdges[e]->ascendingIds()] = e;
   const auto &edges = read->edges();
   for (std::size_t e = 0; e < edges.size(); ++e) {
     const std::uint64_t u = ids.at(edges[e].first), v = ids.at(edges[e].second);
-    const auto found = parentIndex.find({std::min(u, v), std::max(u, v)});
+    const auto found = parentIndex.find(ascendingIds(u, v));
     if (found == parentIndex.end())
       throw std::logic_error("MultiCobordism::ownStateResidualGradientOn: an edge of the block's own surface is not "
                              "an edge of the parent complex");
