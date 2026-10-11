@@ -159,7 +159,7 @@ def test_duplicate_case_edges_are_refused_before_they_can_restore_wrong():
 
 def test_case_shape_validation_does_not_depend_on_readout_setter_order():
     node = built()
-    node.set_readout_modes([MC.ReadoutMode.WHOLE])
+    node.set_readout_modes([cob.multicobordism.ReadoutMode.WHOLE])
     with pytest.raises(ValueError, match="single target"):
         node.set_two_body_cases([([], np.ones((3, 3), dtype=complex))])
 
@@ -213,18 +213,18 @@ def test_one_refused_selected_gradient_does_not_erase_another():
     node.set_input_marking(1, [markings[1].cycles[1]], [TAU_OUT])
     node.set_two_body_target(np.eye(1, dtype=complex))
 
-    node.set_readout_modes([MC.ReadoutMode.TRANSFER])
+    node.set_readout_modes([cob.multicobordism.ReadoutMode.TRANSFER])
     assert node.two_body_residual() == 1.0
     with pytest.raises(RuntimeError, match=r"own kernel has rank 2"):
         node.two_body_residual_gradient()
 
-    node.set_readout_modes([MC.ReadoutMode.WHOLE])
+    node.set_readout_modes([cob.multicobordism.ReadoutMode.WHOLE])
     assert node.whole_harmonic_residual(np.eye(1, dtype=complex)) < 1.0
     assert node.whole_harmonic_obstruction == ""
     whole_only = np.asarray(node.fiber_mode_ascent()[0])
 
     node.set_readout_modes(
-        [MC.ReadoutMode.TRANSFER, MC.ReadoutMode.WHOLE])
+        [cob.multicobordism.ReadoutMode.TRANSFER, cob.multicobordism.ReadoutMode.WHOLE])
     np.testing.assert_array_equal(
         np.asarray(node.fiber_mode_ascent()[0]), whole_only)
 

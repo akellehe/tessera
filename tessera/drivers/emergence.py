@@ -1796,8 +1796,8 @@ def build_emergence_node(config):
     # Register construction and entropy stationarity have independent degree
     # domains, so the latter is always declared explicitly.
     node.set_hodge_degrees(list(config["hodge_degrees"]))
-    node.set_simulation_mode(MC.SimulationMode.EMERGENCE,
-                             MC.EmergenceSubmode.STRICT)
+    node.set_simulation_mode(cob.multicobordism.SimulationMode.EMERGENCE,
+                             cob.multicobordism.EmergenceSubmode.STRICT)
     # M0 is held, not targeted. It remains part of the scored cobordism.
     node.declare_pinned_region(M0_REGION, set(boundary_vertices(host)))
     return node, None

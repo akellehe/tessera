@@ -286,7 +286,7 @@ std::vector<double> MultiCobordism::twoBodyResidualsPerCaseOn(
   return residuals;
 }
 
-std::pair<const MultiCobordism::BoundaryBlock *, const MultiCobordism::BoundaryBlock *>
+std::pair<const multicobordism::BoundaryBlock *, const multicobordism::BoundaryBlock *>
 MultiCobordism::attachedInputBlocks() const {
   std::vector<const BoundaryBlock *> attached;
   for (const auto &block : inputBlocks_)
@@ -780,7 +780,7 @@ double MultiCobordism::twoBodyResidual() const {
   return twoBodyResidualOn(spacetime_, *twoBodyTarget_);
 }
 
-MultiCobordism::TwoBodyRead MultiCobordism::readTwoBody() const {
+multicobordism::TwoBodyRead MultiCobordism::readTwoBody() const {
   std::vector<const BoundaryBlock *> attached;
   for (const auto &block : inputBlocks_)
     if (block.fiber && block.fiber->images.cols() > 0)

@@ -77,9 +77,9 @@ void ProtonSynthesis::requireSynthesisMode(const MultiCobordism &node) {
   // labelled controlled-synthesis mode; the emergence protocol pins none, so a
   // targeted node may not run under the emergence label.
   const auto mode = node.simulationMode();
-  if (mode == MultiCobordism::SimulationMode::Synthesis) return;
+  if (mode == multicobordism::SimulationMode::Synthesis) return;
   std::string label = MultiCobordism::modeName(mode);
-  if (mode == MultiCobordism::SimulationMode::Emergence)
+  if (mode == multicobordism::SimulationMode::Emergence)
     label += " (" + MultiCobordism::submodeName(node.emergenceSubmode()) + ")";
   throw std::invalid_argument(
       "ProtonSynthesis: the proton synthesis pins colour targets (the diquark "
@@ -128,7 +128,7 @@ std::shared_ptr<MultiCobordism> ProtonSynthesis::recombinationNode(std::uint64_t
       /*shouldProposeDispositions=*/true, preconeTimelike_, preconeAlternate_,
       balancedEdges_, singularValueRatio_, einsteinHilbert_);
   // The label: this node pins targets, so it runs as controlled synthesis.
-  node->setSimulationMode(MultiCobordism::SimulationMode::Synthesis);
+  node->setSimulationMode(multicobordism::SimulationMode::Synthesis);
   node->setInputResidualWeight(inputResidualWeight_);
   node->seedInputs({seedVertexIds[0], seedVertexIds[1]});
   node->seedOutputs({seedVertexIds[2], seedVertexIds[3]});
@@ -156,7 +156,7 @@ std::shared_ptr<MultiCobordism> ProtonSynthesis::formationNode(std::uint64_t see
       /*shouldProposeDispositions=*/true, preconeTimelike_, preconeAlternate_,
       balancedEdges_, singularValueRatio_, einsteinHilbert_);
   // The label: this node pins targets, so it runs as controlled synthesis.
-  node->setSimulationMode(MultiCobordism::SimulationMode::Synthesis);
+  node->setSimulationMode(multicobordism::SimulationMode::Synthesis);
   node->setInputResidualWeight(inputResidualWeight_);
   node->seedInputs({seedVertexIds[0], seedVertexIds[1]});
   return node;
@@ -188,7 +188,7 @@ std::shared_ptr<MultiCobordism> ProtonSynthesis::directNode(std::uint64_t seed) 
       /*shouldProposeDispositions=*/true, preconeTimelike_, preconeAlternate_,
       balancedEdges_, singularValueRatio_, einsteinHilbert_);
   // The label: this node pins targets, so it runs as controlled synthesis.
-  node->setSimulationMode(MultiCobordism::SimulationMode::Synthesis);
+  node->setSimulationMode(multicobordism::SimulationMode::Synthesis);
   node->setInputResidualWeight(inputResidualWeight_);
   // Six blocks on a 5-vertex Δ⁴ seed, so the anchors cycle. On the bare seed
   // every block's region is the seed's full cell-neighbourhood anyway — the

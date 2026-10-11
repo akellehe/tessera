@@ -9,7 +9,14 @@
 #include "../Bindings.h"
 
 void register_cobordism_multicobordism(py::module_ &m) {
-  py::class_<MultiCobordism::BlockFrame>(m, "BlockFrame",
+  // MultiCobordism's records and enums, declared in
+  // include/cobordism/multicobordism/ in the namespace of the same name.
+  py::module_ multicobordismModule = m.def_submodule(
+      "multicobordism",
+      "The records and enums of MultiCobordism, declared in "
+      "include/cobordism/multicobordism/.");
+
+  py::class_<multicobordism::BlockFrame>(multicobordismModule, "BlockFrame",
       "A frame on a block's attached cells (qubit cobordism spec D3): the coordinates the two-body "
       "transfer is read in. `images` Z is one column per basis element on the block's fiber cells "
       "(rows in the attachment order); `dual_images` Z^vee is the frame's left partner under the "
@@ -21,11 +28,11 @@ void register_cobordism_multicobordism(py::module_ &m) {
       "the |0>, |1> bases a two-body target chi is written in. Separate from the fiber: the fiber is "
       "the rank-one state the block keeps representing (scored), the frame is the basis that state "
       "is a coordinate vector in (never scored).")
-      .def_readonly("cells", &MultiCobordism::BlockFrame::cells)
-      .def_readonly("images", &MultiCobordism::BlockFrame::images)
-      .def_readonly("dual_images", &MultiCobordism::BlockFrame::dualImages)
-      .def("rank", &MultiCobordism::BlockFrame::rank);
-  py::class_<MultiCobordism::BlockMarking>(m, "BlockMarking",
+      .def_readonly("cells", &multicobordism::BlockFrame::cells)
+      .def_readonly("images", &multicobordism::BlockFrame::images)
+      .def_readonly("dual_images", &multicobordism::BlockFrame::dualImages)
+      .def("rank", &multicobordism::BlockFrame::rank);
+  py::class_<multicobordism::BlockMarking>(multicobordismModule, "BlockMarking",
       "A block's MARKING with its input coefficients (qubit cobordism spec D2/D3 as revised): "
       "`cycles`, each one closed walk of directed host steps (u, v) starting at `base_vertex` (the "
       "first vertex of the first cycle's walk that lies on every other cycle's walk), and "
@@ -33,11 +40,11 @@ void register_cobordism_multicobordism(py::module_ &m) {
       "block's frame from it live (MultiCobordism.derive_input_frame) and scores the leak of the "
       "coefficients, written through that frame, in the WHOLE's zero mode on the block's edges "
       "(input_state_residual). Nothing about the marking is scored.")
-      .def_readonly("cycles", &MultiCobordism::BlockMarking::cycles)
-      .def_readonly("coefficients", &MultiCobordism::BlockMarking::coefficients)
-      .def_readonly("base_vertex", &MultiCobordism::BlockMarking::baseVertex)
-      .def("rank", &MultiCobordism::BlockMarking::rank);
-  py::class_<MultiCobordism::DerivedFrame>(m, "DerivedFrame",
+      .def_readonly("cycles", &multicobordism::BlockMarking::cycles)
+      .def_readonly("coefficients", &multicobordism::BlockMarking::coefficients)
+      .def_readonly("base_vertex", &multicobordism::BlockMarking::baseVertex)
+      .def("rank", &multicobordism::BlockMarking::rank);
+  py::class_<multicobordism::DerivedFrame>(multicobordismModule, "DerivedFrame",
       "The frame the engine DERIVES for a marked block from its live own complex: `frame` (BlockFrame on the block's own edges) with images F = Z inv(Pi), Z "
       "the images of the zero mode of the block's own covariant Whitney pencil and Pi its transported "
       "periods over the marking's cycles from the common base point, so column b has period delta_cb; "
@@ -45,12 +52,12 @@ void register_cobordism_multicobordism(py::module_ &m) {
       "F^vee.T @ M_1^U @ F == I; `periods` = Pi; `kernel_rank` = the own zero mode's rank. An obstructed "
       "derivation (kernel rank other than the marking's, a marking edge absent, singular periods, an "
       "isotropic pairing) names `obstruction` and `derived()` is False; the block then reads the full leak.")
-      .def_readonly("frame", &MultiCobordism::DerivedFrame::frame)
-      .def_readonly("periods", &MultiCobordism::DerivedFrame::periods)
-      .def_readonly("kernel_rank", &MultiCobordism::DerivedFrame::kernelRank)
-      .def_readonly("obstruction", &MultiCobordism::DerivedFrame::obstruction)
-      .def("derived", &MultiCobordism::DerivedFrame::derived);
-  py::class_<MultiCobordism::InputStateRead>(m, "InputStateRead",
+      .def_readonly("frame", &multicobordism::DerivedFrame::frame)
+      .def_readonly("periods", &multicobordism::DerivedFrame::periods)
+      .def_readonly("kernel_rank", &multicobordism::DerivedFrame::kernelRank)
+      .def_readonly("obstruction", &multicobordism::DerivedFrame::obstruction)
+      .def("derived", &multicobordism::DerivedFrame::derived);
+  py::class_<multicobordism::InputStateRead>(multicobordismModule, "InputStateRead",
       "The state at a marked block: `coefficients` = the "
       "coefficients of the WHOLE's zero mode in the block's live frame -- the transported periods over "
       "the marking's cycles of the least-squares combination of the whole's zero mode fitting the "
@@ -58,106 +65,106 @@ void register_cobordism_multicobordism(py::module_ &m) {
       "edges -- next to `input`; `residual` = that fit's leak, the block residual of D2 scored at "
       "`weight` in r_U; `harmonic_rank` of the whole, `frame_rank` of the own kernel, `base_vertex`; an "
       "obstructed read names `obstruction` and reads the full leak 1.0.")
-      .def_readonly("block", &MultiCobordism::InputStateRead::block)
-      .def_readonly("input", &MultiCobordism::InputStateRead::input)
-      .def_readonly("coefficients", &MultiCobordism::InputStateRead::coefficients)
-      .def_readonly("residual", &MultiCobordism::InputStateRead::residual)
-      .def_readonly("weight", &MultiCobordism::InputStateRead::weight)
-      .def_readonly("harmonic_rank", &MultiCobordism::InputStateRead::harmonicRank)
-      .def_readonly("frame_rank", &MultiCobordism::InputStateRead::frameRank)
-      .def_readonly("base_vertex", &MultiCobordism::InputStateRead::baseVertex)
-      .def_readonly("obstruction", &MultiCobordism::InputStateRead::obstruction);
+      .def_readonly("block", &multicobordism::InputStateRead::block)
+      .def_readonly("input", &multicobordism::InputStateRead::input)
+      .def_readonly("coefficients", &multicobordism::InputStateRead::coefficients)
+      .def_readonly("residual", &multicobordism::InputStateRead::residual)
+      .def_readonly("weight", &multicobordism::InputStateRead::weight)
+      .def_readonly("harmonic_rank", &multicobordism::InputStateRead::harmonicRank)
+      .def_readonly("frame_rank", &multicobordism::InputStateRead::frameRank)
+      .def_readonly("base_vertex", &multicobordism::InputStateRead::baseVertex)
+      .def_readonly("obstruction", &multicobordism::InputStateRead::obstruction);
 
-  py::class_<MultiCobordism::BoundaryBlock>(m, "MultiCobordismBlock",
+  py::class_<multicobordism::BoundaryBlock>(multicobordismModule, "BoundaryBlock",
       "An emergent boundary block of a MultiCobordism (an input or output): the "
       "vertex set whose own sub-complex carries the block, and its target period "
       "vector. Read the block's sub-complex with Spacetime.from_vertex_tuples over the "
       "cells inside `vertices`, then its holes with Spacetime.get_holes.")
       .def_property_readonly(
           "vertices",
-          [](const MultiCobordism::BoundaryBlock &block) {
+          [](const multicobordism::BoundaryBlock &block) {
             return std::vector<std::uint64_t>(block.vertices.begin(),
                                               block.vertices.end());
           })
       .def_property_readonly("target",
-                             [](const MultiCobordism::BoundaryBlock &block) {
+                             [](const multicobordism::BoundaryBlock &block) {
                                return block.target;
                              })
       .def_property_readonly("fiber",
-                             [](const MultiCobordism::BoundaryBlock &block) {
+                             [](const multicobordism::BoundaryBlock &block) {
                                return block.fiber;
                              },
                              "The fiber form of the target, or None.")
       .def_property_readonly("surface",
-                             [](const MultiCobordism::BoundaryBlock &block) {
+                             [](const multicobordism::BoundaryBlock &block) {
                                return block.surface;
                              },
                              "True for an input SURFACE block (the region form of "
                              "seed_inputs on a SurfaceSeed.from_surfaces host): its faces are "
                              "cells of the host the bulk is drawn onto by bridges.")
       .def_property_readonly("faces",
-                             [](const MultiCobordism::BoundaryBlock &block) {
+                             [](const multicobordism::BoundaryBlock &block) {
                                return block.faces;
                              },
                              "A surface block's own faces as seeded (sorted vertex tuples), "
                              "carried by the block so its own complex is the surface whatever "
                              "the host registers; empty for an ordinary block.")
       .def_property_readonly("frame",
-                             [](const MultiCobordism::BoundaryBlock &block) {
+                             [](const multicobordism::BoundaryBlock &block) {
                                return block.frame;
                              },
                              "The block's frame for the two-body transfer (BlockFrame, spec D3), "
                              "set by set_input_frame, or None; never read on a block that carries "
                              "a marking (its frame is derived live).")
       .def_property_readonly("marking",
-                             [](const MultiCobordism::BoundaryBlock &block) {
+                             [](const multicobordism::BoundaryBlock &block) {
                                return block.marking;
                              },
                              "The block's marking with its input coefficients (BlockMarking, spec "
                              "D2/D3 as revised), set by set_input_marking, or None.");
-  py::class_<MultiCobordism::TwoBodyTarget>(m, "TwoBodyTarget",
+  py::class_<multicobordism::TwoBodyTarget>(multicobordismModule, "TwoBodyTarget",
       "chi on the pair of attached frames and the reading flag.")
       .def(py::init<>())
-      .def_readwrite("chi", &MultiCobordism::TwoBodyTarget::chi)
-      .def_readwrite("choi_decomposed", &MultiCobordism::TwoBodyTarget::choiDecomposed)
+      .def_readwrite("chi", &multicobordism::TwoBodyTarget::chi)
+      .def_readwrite("choi_decomposed", &multicobordism::TwoBodyTarget::choiDecomposed)
       .def_readwrite("paired_direct_sum_target",
-                     &MultiCobordism::TwoBodyTarget::twoStateVector,
+                     &multicobordism::TwoBodyTarget::twoStateVector,
                      "Target expressed in the paired direct-sum frame.")
       .def_readwrite("two_state_vector",
-                     &MultiCobordism::TwoBodyTarget::twoStateVector,
+                     &multicobordism::TwoBodyTarget::twoStateVector,
                      "Deprecated legacy name for paired_direct_sum_target; "
                      "this field is not in tensor-product coordinates.")
-      .def_readwrite("input_coefficients", &MultiCobordism::TwoBodyTarget::inputCoefficients,
+      .def_readwrite("input_coefficients", &multicobordism::TwoBodyTarget::inputCoefficients,
                      "Optional case-specific coefficients in marked-block/cycle order.");
-  py::class_<MultiCobordism::BlockSurface>(m, "BlockSurface",
+  py::class_<multicobordism::BlockSurface>(multicobordismModule, "BlockSurface",
       "A block's own surface: its (d-1)-faces and its "
       "edges inside its vertex set, as sorted vertex-id tuples.")
-      .def_readonly("faces", &MultiCobordism::BlockSurface::faces)
-      .def_readonly("edges", &MultiCobordism::BlockSurface::edges);
-  py::class_<MultiCobordism::TwoBodyRead>(m, "TwoBodyRead",
+      .def_readonly("faces", &multicobordism::BlockSurface::faces)
+      .def_readonly("edges", &multicobordism::BlockSurface::edges);
+  py::class_<multicobordism::TwoBodyRead>(multicobordismModule, "TwoBodyRead",
       "The reading of the bulk between two attached input frames: the frame transfer "
       "T_AB (operator reading), vec(T_AB) (Choi-decomposed state reading), its Schmidt spectrum "
       "and rank, the reversal residual, the fit residual for two inputs (NaN for the four-input "
       "paired diagnostic), and the input blocks' fiber residuals.")
-      .def_readonly("choi_decomposed", &MultiCobordism::TwoBodyRead::choiDecomposed)
-      .def_readonly("transfer", &MultiCobordism::TwoBodyRead::transfer)
-      .def_readonly("in_frames", &MultiCobordism::TwoBodyRead::inFrames,
+      .def_readonly("choi_decomposed", &multicobordism::TwoBodyRead::choiDecomposed)
+      .def_readonly("transfer", &multicobordism::TwoBodyRead::transfer)
+      .def_readonly("in_frames", &multicobordism::TwoBodyRead::inFrames,
                     "True when `transfer` was read in the blocks' frames (a marking by set_input_marking "
                     "or a frame by set_input_frame, on both), false when in identity frames on the cells.")
-      .def_readonly("derived_frames", &MultiCobordism::TwoBodyRead::derivedFrames,
+      .def_readonly("derived_frames", &multicobordism::TwoBodyRead::derivedFrames,
                     "True when both frames were derived live from the blocks' markings.")
-      .def_readonly("input_states", &MultiCobordism::TwoBodyRead::inputStates,
+      .def_readonly("input_states", &multicobordism::TwoBodyRead::inputStates,
                     "The state at every marked input block (InputStateRead, block order).")
-      .def_readonly("choi_state", &MultiCobordism::TwoBodyRead::choiState)
-      .def_readonly("singular_values", &MultiCobordism::TwoBodyRead::singularValues)
-      .def_readonly("schmidt_rank", &MultiCobordism::TwoBodyRead::schmidtRank)
-      .def_readonly("reversal_residual", &MultiCobordism::TwoBodyRead::reversalResidual)
-      .def_readonly("residual", &MultiCobordism::TwoBodyRead::residual)
-      .def_readonly("input_fiber_residuals", &MultiCobordism::TwoBodyRead::inputFiberResiduals,
+      .def_readonly("choi_state", &multicobordism::TwoBodyRead::choiState)
+      .def_readonly("singular_values", &multicobordism::TwoBodyRead::singularValues)
+      .def_readonly("schmidt_rank", &multicobordism::TwoBodyRead::schmidtRank)
+      .def_readonly("reversal_residual", &multicobordism::TwoBodyRead::reversalResidual)
+      .def_readonly("residual", &multicobordism::TwoBodyRead::residual)
+      .def_readonly("input_fiber_residuals", &multicobordism::TwoBodyRead::inputFiberResiduals,
                     "The leak of each attached input fiber in its block's OWN kernel (T2): a geometric "
                     "diagnostic on a marked block, whose scored residual is in input_states.")
-      .def_readonly("cells_a", &MultiCobordism::TwoBodyRead::cellsA)
-      .def_readonly("cells_b", &MultiCobordism::TwoBodyRead::cellsB);
+      .def_readonly("cells_a", &multicobordism::TwoBodyRead::cellsA)
+      .def_readonly("cells_b", &multicobordism::TwoBodyRead::cellsB);
 
   auto multiCobordismClass =
       py::class_<MultiCobordism, std::shared_ptr<MultiCobordism>>(m, "MultiCobordism",
@@ -321,7 +328,7 @@ void register_cobordism_multicobordism(py::module_ &m) {
                              "input or output block.")
       .def("set_two_body_cases",
            [](MultiCobordism &self, const py::list &cases) {
-             std::vector<MultiCobordism::TwoBodyCase> out;
+             std::vector<multicobordism::TwoBodyCase> out;
              out.reserve(cases.size());
              for (const auto &item : cases) {
                auto entry = item.cast<py::tuple>();
@@ -329,7 +336,7 @@ void register_cobordism_multicobordism(py::module_ &m) {
                  throw std::invalid_argument(
                      "each case is (boundary, chi[, choi_decomposed[, paired_direct_sum_target"
                      "[, input_coefficients]]])");
-               MultiCobordism::TwoBodyCase one;
+               multicobordism::TwoBodyCase one;
                for (const auto &edge : entry[0].cast<py::list>()) {
                  auto quad = edge.cast<py::tuple>();
                  if (quad.size() != 3)
@@ -570,7 +577,7 @@ void register_cobordism_multicobordism(py::module_ &m) {
            [](const MultiCobordism &self, const Eigen::MatrixXcd &twoStateVector) {
              return self.operatorResidualOn(
                  self.spacetime(),
-                 MultiCobordism::TwoBodyTarget{Eigen::MatrixXcd(), true, twoStateVector});
+                 multicobordism::TwoBodyTarget{Eigen::MatrixXcd(), true, twoStateVector});
            },
            py::arg("two_state_vector"), py::call_guard<py::gil_scoped_release>(),
            "The projective leak of a target expressed in the paired direct-sum frames. "
@@ -602,7 +609,7 @@ void register_cobordism_multicobordism(py::module_ &m) {
       .def("whole_harmonic_residual_gradient",
            [](const MultiCobordism &self, const Eigen::MatrixXcd &chi) {
              const auto g = self.wholeHarmonicResidualGradientOn(
-                 self.spacetime(), MultiCobordism::TwoBodyTarget{chi, true, Eigen::MatrixXcd()});
+                 self.spacetime(), multicobordism::TwoBodyTarget{chi, true, Eigen::MatrixXcd()});
              return g.lengths;
            },
            py::arg("chi"), py::call_guard<py::gil_scoped_release>(),
@@ -612,7 +619,7 @@ void register_cobordism_multicobordism(py::module_ &m) {
       .def("whole_harmonic_residual",
            [](const MultiCobordism &self, const Eigen::MatrixXcd &chi, bool choiDecomposed) {
              return self.wholeHarmonicResidualOn(
-                 self.spacetime(), MultiCobordism::TwoBodyTarget{chi, choiDecomposed});
+                 self.spacetime(), multicobordism::TwoBodyTarget{chi, choiDecomposed});
            },
            py::arg("chi"), py::arg("choi_decomposed") = true,
            py::call_guard<py::gil_scoped_release>(),
@@ -626,7 +633,7 @@ void register_cobordism_multicobordism(py::module_ &m) {
       .def("bulk_operator_residual",
            [](const MultiCobordism &self, const Eigen::MatrixXcd &chi, bool choiDecomposed) {
              return self.bulkOperatorResidualOn(
-                 self.spacetime(), MultiCobordism::TwoBodyTarget{chi, choiDecomposed});
+                 self.spacetime(), multicobordism::TwoBodyTarget{chi, choiDecomposed});
            },
            py::arg("chi"), py::arg("choi_decomposed") = true,
            py::call_guard<py::gil_scoped_release>(),
@@ -973,10 +980,10 @@ Right -- re-read after each drive call:
 )doc")
       .def_property_readonly("inputs", &MultiCobordism::inputs,
                              py::return_value_policy::reference_internal,
-                             "The emergent input blocks (each a MultiCobordismBlock).")
+                             "The emergent input blocks (each a multicobordism.BoundaryBlock).")
       .def_property_readonly("outputs", &MultiCobordism::outputs,
                              py::return_value_policy::reference_internal,
-                             "The emergent output blocks (each a MultiCobordismBlock).")
+                             "The emergent output blocks (each a multicobordism.BoundaryBlock).")
       .def_property_readonly("last_stage1_lookahead",
                              &MultiCobordism::lastStage1Lookahead,
                              "Lookahead depth of the LAST stage-1 update's committed "
@@ -989,7 +996,7 @@ Right -- re-read after each drive call:
                              "True iff no complex-z line-search trial lowered the "
                              "selected objective by the absolute tolerance; False "
                              "if run_stage2 hit its max_iters budget.");
-  py::enum_<MultiCobordism::ReadoutMode>(multiCobordismClass, "ReadoutMode",
+  py::enum_<multicobordism::ReadoutMode>(multicobordismModule, "ReadoutMode",
       "The space a reading takes the state from, named for the space so a name cannot suggest "
       "the wrong one. TRANSFER is (Z_A^v)^T A~_1 Z_B: the whole complex's degree-1 operator read "
       "as the coupling block between the two boundary frames, factorized across them, which is "
@@ -997,40 +1004,40 @@ Right -- re-read after each drive call:
       "cells with the boundary REMOVED, read through a Choi frame. WHOLE is ker L1(W), the "
       "boundary INCLUDED, read through the blocks' markings; its rank is b_1(W). Selected as a "
       "SET and summed (set_readout_modes). Part of the OBJECTIVE: this residual is a term in r_U.")
-      .value("TRANSFER", MultiCobordism::ReadoutMode::Transfer)
-      .value("BULK", MultiCobordism::ReadoutMode::Bulk)
-      .value("WHOLE", MultiCobordism::ReadoutMode::Whole)
-      .value("OPERATOR", MultiCobordism::ReadoutMode::Operator);
+      .value("TRANSFER", multicobordism::ReadoutMode::Transfer)
+      .value("BULK", multicobordism::ReadoutMode::Bulk)
+      .value("WHOLE", multicobordism::ReadoutMode::Whole)
+      .value("OPERATOR", multicobordism::ReadoutMode::Operator);
 
-  py::enum_<MultiCobordism::WholePairing>(multiCobordismClass, "WholePairing",
+  py::enum_<multicobordism::WholePairing>(multicobordismModule, "WholePairing",
       "How the whole-complex reading pairs harmonic columns against input blocks. PERIODS "
       "integrates over the marked cycles and is topological on a 3-manifold bulk; GRAM contracts "
       "through the chain metric and responds to it.")
-      .value("PERIODS", MultiCobordism::WholePairing::Periods)
-      .value("GRAM", MultiCobordism::WholePairing::Gram);
-  py::enum_<MultiCobordism::BuildAction>(multiCobordismClass, "BuildAction",
+      .value("PERIODS", multicobordism::WholePairing::Periods)
+      .value("GRAM", multicobordism::WholePairing::Gram);
+  py::enum_<multicobordism::BuildAction>(multicobordismModule, "BuildAction",
       "One canonical solve action a search policy (ProtonSynthesis's build restart loop, a greedy "
       "driver, or the RL agent) composes, so the solve runs through the engine rather than "
       "being re-implemented by each consumer.")
-      .value("GROW", MultiCobordism::BuildAction::Grow)
-      .value("EVOLVE", MultiCobordism::BuildAction::Evolve)
-      .value("RELAX", MultiCobordism::BuildAction::Relax)
-      .value("CONE_OUT", MultiCobordism::BuildAction::ConeOut)
-      .value("CONE_IN", MultiCobordism::BuildAction::ConeIn);
-  py::enum_<MultiCobordism::HolePlacementStrategy>(multiCobordismClass,
+      .value("GROW", multicobordism::BuildAction::Grow)
+      .value("EVOLVE", multicobordism::BuildAction::Evolve)
+      .value("RELAX", multicobordism::BuildAction::Relax)
+      .value("CONE_OUT", multicobordism::BuildAction::ConeOut)
+      .value("CONE_IN", multicobordism::BuildAction::ConeIn);
+  py::enum_<multicobordism::HolePlacementStrategy>(multicobordismModule,
       "HolePlacementStrategy",
       "Secondary ordering for the directed cone-out probe (both interior-first): "
       "ADJACENT_HOLES_LAST sends cells sharing vertices with existing holes to the back "
       "(separated register), ADJACENT_HOLES_FIRST to the front (clustered).")
-      .value("ADJACENT_HOLES_FIRST", MultiCobordism::HolePlacementStrategy::AdjacentHolesFirst)
-      .value("ADJACENT_HOLES_LAST", MultiCobordism::HolePlacementStrategy::AdjacentHolesLast);
+      .value("ADJACENT_HOLES_FIRST", multicobordism::HolePlacementStrategy::AdjacentHolesFirst)
+      .value("ADJACENT_HOLES_LAST", multicobordism::HolePlacementStrategy::AdjacentHolesLast);
   multiCobordismClass
       .def("build_step", &MultiCobordism::buildStep, py::arg("action"),
            py::arg("max_steps") = 30, py::arg("n_candidate_moves") = 8,
            py::arg("stage2_beta") = 1.0,
            py::arg("stage2_max_iters") = 10, py::arg("stage2_alpha0") = 0.05,
            py::arg("hole_placement_strategy") =
-               MultiCobordism::HolePlacementStrategy::AdjacentHolesLast,
+               multicobordism::HolePlacementStrategy::AdjacentHolesLast,
            // Composes run_stage1/run_stage2 internally (C++ -> C++, so no nested
            // guard); release the GIL here too.
            py::call_guard<py::gil_scoped_release>(),
@@ -1038,7 +1045,7 @@ Right -- re-read after each drive call:
            "grow_boundaries true/false; RELAX = run_stage2; CONE_OUT/CONE_IN = the directed "
            "probes) -- the canonical solve step a policy (build, greedy, or RL) composes.")
       .def("directed_cone_out", &MultiCobordism::directedConeOut,
-           py::arg("strategy") = MultiCobordism::HolePlacementStrategy::AdjacentHolesLast,
+           py::arg("strategy") = multicobordism::HolePlacementStrategy::AdjacentHolesLast,
            py::arg("max_open") = 6,
            "Directed gated cone-out: deliberately remove top cells, keeping the opener "
            "that most lowers this node's rU (which absorbs r_state). Returns #holes opened.")
@@ -1084,31 +1091,27 @@ Right -- re-read after each drive call:
            "contains both endpoints. An edge spanning two distinct regions is bulk.");
 
   // === modes, the enumerable objective, refinement, and the overlay ===
-  py::enum_<MultiCobordism::SimulationMode>(multiCobordismClass, "SimulationMode",
+  py::enum_<multicobordism::SimulationMode>(multicobordismModule, "SimulationMode",
       "The three top-level simulation modes.")
-      .value("EMERGENCE", MultiCobordism::SimulationMode::Emergence,
+      .value("EMERGENCE", multicobordism::SimulationMode::Emergence,
              "Only the base geometric objective (plus the one permitted "
              "state-energy term) drives optimization; every particle and gauge "
              "quantity is a post-hoc observable.")
-      .value("SYNTHESIS", MultiCobordism::SimulationMode::Synthesis,
+      .value("SYNTHESIS", multicobordism::SimulationMode::Synthesis,
              "A pinned carrier or spectral sector. Never counted as emergence.")
-      .value("REPLAY", MultiCobordism::SimulationMode::Replay,
+      .value("REPLAY", multicobordism::SimulationMode::Replay,
              "Recompute every derived hierarchy and certificate from a "
              "checkpoint and verify that nothing cached changed the result.");
-  py::enum_<MultiCobordism::EmergenceSubmode>(multiCobordismClass, "EmergenceSubmode",
+  py::enum_<multicobordism::EmergenceSubmode>(multicobordismModule, "EmergenceSubmode",
       "The two labeled, Gaussian-closed emergence sub-modes.")
-      .value("STRICT", MultiCobordism::EmergenceSubmode::Strict,
+      .value("STRICT", multicobordism::EmergenceSubmode::Strict,
              "The carried state does not act back on the geometry at all.")
       .value("CERTIFICATES_BLIND_MEAN_FIELD",
-             MultiCobordism::EmergenceSubmode::CertificatesBlindMeanField,
+             multicobordism::EmergenceSubmode::CertificatesBlindMeanField,
              "Only the carried state's energy density may enter the objective; "
              "every particle certificate stays firewalled from it.");
 
-  // `MultiCobordism::ObjectiveTerms` is a C++ alias of the namespace-level
-  // record bound in ObjectiveBindings.cpp; the Python class mirrors the alias.
-  multiCobordismClass.attr("ObjectiveTerms") = m.attr("ObjectiveTerms");
-
-  py::class_<MultiCobordism::ObjectiveContribution>(multiCobordismClass,
+  py::class_<multicobordism::ObjectiveContribution>(multicobordismModule,
       "ObjectiveContribution",
       "One objective's decomposition, labelled by the objective that produced "
       "it and the region it was scored over. The record carries a contribution "
@@ -1116,60 +1119,60 @@ Right -- re-read after each drive call:
       "whether descent came from the bulk or from the pinned region.")
       .def(py::init<>())
       .def_readwrite("objective_name",
-                     &MultiCobordism::ObjectiveContribution::objectiveName,
+                     &multicobordism::ObjectiveContribution::objectiveName,
                      "The objective's stable identifier.")
       .def_readwrite("region_name",
-                     &MultiCobordism::ObjectiveContribution::regionName,
+                     &multicobordism::ObjectiveContribution::regionName,
                      "The declared region, or empty for the whole cobordism.")
       .def_readwrite("terms",
-                     &MultiCobordism::ObjectiveContribution::terms,
+                     &multicobordism::ObjectiveContribution::terms,
                      "That objective's terms over its own scope.");
 
-  py::class_<MultiCobordism::RefinementIndicators>(multiCobordismClass,
+  py::class_<multicobordism::RefinementIndicators>(multicobordismModule,
       "RefinementIndicators",
       "The particle-independent geometric/numerical indicators emergence-mode "
       "refinement is allowed to consult.")
       .def(py::init<>())
       .def_readwrite("regge_stationarity_residual",
-                     &MultiCobordism::RefinementIndicators::reggeStationarityResidual)
+                     &multicobordism::RefinementIndicators::reggeStationarityResidual)
       .def_readwrite("hodge_stationarity_residual",
-                     &MultiCobordism::RefinementIndicators::hodgeStationarityResidual)
+                     &multicobordism::RefinementIndicators::hodgeStationarityResidual)
       .def_readwrite("curvature_concentration",
-                     &MultiCobordism::RefinementIndicators::curvatureConcentration)
+                     &multicobordism::RefinementIndicators::curvatureConcentration)
       .def_readwrite("mesh_quality",
-                     &MultiCobordism::RefinementIndicators::meshQuality)
+                     &multicobordism::RefinementIndicators::meshQuality)
       .def_readwrite("solver_error",
-                     &MultiCobordism::RefinementIndicators::solverError);
+                     &multicobordism::RefinementIndicators::solverError);
 
-  py::class_<MultiCobordism::RefinementDecision>(multiCobordismClass,
+  py::class_<multicobordism::RefinementDecision>(multicobordismModule,
       "RefinementDecision", "Whether to refine, and which indicator asked.")
-      .def_readonly("refine", &MultiCobordism::RefinementDecision::refine)
-      .def_readonly("trigger", &MultiCobordism::RefinementDecision::trigger)
-      .def_readonly("indicators", &MultiCobordism::RefinementDecision::indicators);
+      .def_readonly("refine", &multicobordism::RefinementDecision::refine)
+      .def_readonly("trigger", &multicobordism::RefinementDecision::trigger)
+      .def_readonly("indicators", &multicobordism::RefinementDecision::indicators);
 
-  py::class_<MultiCobordism::AnalysisConfig>(multiCobordismClass, "AnalysisConfig",
+  py::class_<multicobordism::AnalysisConfig>(multicobordismModule, "AnalysisConfig",
       "Analysis-overlay configuration. DISABLED by default: with enabled False "
       "not one line of the overlay runs.")
       .def(py::init<>())
-      .def_readwrite("enabled", &MultiCobordism::AnalysisConfig::enabled)
-      .def_readwrite("cadence", &MultiCobordism::AnalysisConfig::cadence)
-      .def_readwrite("degrees", &MultiCobordism::AnalysisConfig::degrees)
-      .def_readwrite("resolutions", &MultiCobordism::AnalysisConfig::resolutions)
+      .def_readwrite("enabled", &multicobordism::AnalysisConfig::enabled)
+      .def_readwrite("cadence", &multicobordism::AnalysisConfig::cadence)
+      .def_readwrite("degrees", &multicobordism::AnalysisConfig::degrees)
+      .def_readwrite("resolutions", &multicobordism::AnalysisConfig::resolutions)
       .def_readwrite("frame_history",
-                     &MultiCobordism::AnalysisConfig::frameHistory,
+                     &multicobordism::AnalysisConfig::frameHistory,
                      "Cobordism frames the overlay retains (one pass is one "
                      "frame): what makes a candidate's lifetime, its "
                      "adjacent-frame overlap, its per-frame band and anchor "
                      "families and its lifetime transports measurable rather "
                      "than assumed. 1 means no history.")
       .def_readwrite("lifetime_winding_closure",
-                     &MultiCobordism::AnalysisConfig::lifetimeWindingClosure,
+                     &multicobordism::AnalysisConfig::lifetimeWindingClosure,
                      "\"none\" (an open cobordism segment: the phase is "
                      "reported and the winding stays unknown) or "
                      "\"closed-family\" (the caller DECLARES the world tube "
                      "closed and the winding is read cyclically).")
-      .def_readwrite("fock_oracle", &MultiCobordism::AnalysisConfig::fockOracle)
-      .def_readwrite("cold_caches", &MultiCobordism::AnalysisConfig::coldCaches);
+      .def_readwrite("fock_oracle", &multicobordism::AnalysisConfig::fockOracle)
+      .def_readwrite("cold_caches", &multicobordism::AnalysisConfig::coldCaches);
 
   multiCobordismClass
       .def_static("objective_term_names", &MultiCobordism::objectiveTermNames,
@@ -1184,7 +1187,7 @@ Right -- re-read after each drive call:
            "Decompose the objective on an explicit complex.")
       .def("set_simulation_mode", &MultiCobordism::setSimulationMode,
            py::arg("mode"),
-           py::arg("submode") = MultiCobordism::EmergenceSubmode::Strict,
+           py::arg("submode") = multicobordism::EmergenceSubmode::Strict,
            "Select the simulation mode and (for emergence) its labeled "
            "sub-mode. Anything but CERTIFICATES_BLIND_MEAN_FIELD zeroes the "
            "carried-state energy coupling.")

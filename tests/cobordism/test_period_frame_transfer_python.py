@@ -11,7 +11,7 @@ its own periods as coefficients, so the holomorphic form is P_A * F @ (1, tau):
 the qubit |0> + tau|1> read as a 1-form, f_A <-> |0>, f_B <-> |1>. That is the
 basis the two-body target chi of spec S5 is written in.
 
-On the engine each input block may carry a FRAME (``MultiCobordism.BlockFrame``
+On the engine each input block may carry a FRAME (``multicobordism.BlockFrame``
 via ``set_input_frame``): images Z and dual images Z^vee on the block's
 attached fiber cells, stated by the caller at attachment (the torus's period
 frame through the collar's id map) and held constant by the engine. With both

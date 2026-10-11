@@ -64,6 +64,26 @@ using ::tessera::matter::MatterConfiguration;
 using ::tessera::simulations::ReggeSolver;
 using complexd = std::complex<double>;
 
+// MultiCobordism's records and enums, declared in
+// include/cobordism/multicobordism/.
+using multicobordism::BlockFrame;
+using multicobordism::BlockMarking;
+using multicobordism::BlockSurface;
+using multicobordism::BoundaryBlock;
+using multicobordism::BuildAction;
+using multicobordism::DerivedFrame;
+using multicobordism::HolePlacementStrategy;
+using multicobordism::InputStateRead;
+using multicobordism::MoveSpec;
+using multicobordism::ObjectiveContribution;
+using multicobordism::ReadoutMode;
+using multicobordism::RegisterConstraint;
+using multicobordism::ResidualGradient;
+using multicobordism::TwoBodyCase;
+using multicobordism::TwoBodyRead;
+using multicobordism::TwoBodyTarget;
+using multicobordism::WholePairing;
+
 namespace {
 
 // How far the monodromy between two markings may sit from the identity before

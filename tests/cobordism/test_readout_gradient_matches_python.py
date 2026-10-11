@@ -14,7 +14,7 @@ import tessera
 from tessera import cobordism as cob
 
 MC = cob.MultiCobordism
-R = MC.ReadoutMode
+R = cob.multicobordism.ReadoutMode
 
 
 def node():

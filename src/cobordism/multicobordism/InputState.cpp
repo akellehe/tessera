@@ -65,7 +65,7 @@ void MultiCobordism::setInputMarking(std::size_t index, Marking cycles,
   block.marking = std::move(marking);
 }
 
-const std::optional<MultiCobordism::BlockMarking> &MultiCobordism::inputMarking(std::size_t index) const {
+const std::optional<multicobordism::BlockMarking> &MultiCobordism::inputMarking(std::size_t index) const {
   if (index >= inputBlocks_.size())
     throw std::out_of_range("MultiCobordism::inputMarking: input block index out of range");
   return inputBlocks_[index].marking;
@@ -77,7 +77,7 @@ void MultiCobordism::clearInputMarking(std::size_t index) {
   inputBlocks_[index].marking.reset();
 }
 
-MultiCobordism::DerivedFrame MultiCobordism::deriveFrame(const BoundaryBlock &block,
+multicobordism::DerivedFrame MultiCobordism::deriveFrame(const BoundaryBlock &block,
                                                          const std::shared_ptr<Spacetime> &spacetime) {
   if (!block.marking) throw std::logic_error("MultiCobordism::deriveFrame: the block carries no marking");
   const BlockMarking &marking = *block.marking;
@@ -146,7 +146,7 @@ MultiCobordism::DerivedFrame MultiCobordism::deriveFrame(const BoundaryBlock &bl
   return out;
 }
 
-MultiCobordism::DerivedFrame MultiCobordism::deriveInputFrame(std::size_t index) const {
+multicobordism::DerivedFrame MultiCobordism::deriveInputFrame(std::size_t index) const {
   if (index >= inputBlocks_.size())
     throw std::out_of_range("MultiCobordism::deriveInputFrame: input block index out of range");
   if (!inputBlocks_[index].marking)
@@ -293,7 +293,7 @@ double MultiCobordism::ownStateResidual(std::size_t index) const {
   return ownStateResidualOn(inputBlocks_[index], spacetime_);
 }
 
-MultiCobordism::ResidualGradient MultiCobordism::ownStateResidualGradientOn(
+multicobordism::ResidualGradient MultiCobordism::ownStateResidualGradientOn(
     const std::shared_ptr<Spacetime> &spacetime, const BoundaryBlock &block) const {
   if (!spacetime) throw std::invalid_argument("MultiCobordism::ownStateResidualGradientOn: null spacetime");
   if (!block.marking)
@@ -354,13 +354,13 @@ MultiCobordism::ResidualGradient MultiCobordism::ownStateResidualGradientOn(
   return gradient;
 }
 
-MultiCobordism::ResidualGradient MultiCobordism::ownStateResidualGradient(std::size_t index) const {
+multicobordism::ResidualGradient MultiCobordism::ownStateResidualGradient(std::size_t index) const {
   if (index >= inputBlocks_.size())
     throw std::out_of_range("MultiCobordism::ownStateResidualGradient: input block index out of range");
   return ownStateResidualGradientOn(spacetime_, inputBlocks_[index]);
 }
 
-MultiCobordism::InputStateRead MultiCobordism::readInputState(std::size_t index) const {
+multicobordism::InputStateRead MultiCobordism::readInputState(std::size_t index) const {
   if (index >= inputBlocks_.size())
     throw std::out_of_range("MultiCobordism::readInputState: input block index out of range");
   const BoundaryBlock &block = inputBlocks_[index];

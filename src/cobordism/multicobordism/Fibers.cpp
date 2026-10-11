@@ -136,7 +136,7 @@ void MultiCobordism::setInputFrame(std::size_t index, std::vector<std::vector<st
   inputBlocks_[index].frame = BlockFrame{std::move(cells), std::move(images), std::move(dualImages)};
 }
 
-const std::optional<MultiCobordism::BlockFrame> &MultiCobordism::inputFrame(std::size_t index) const {
+const std::optional<multicobordism::BlockFrame> &MultiCobordism::inputFrame(std::size_t index) const {
   if (index >= inputBlocks_.size())
     throw std::out_of_range("MultiCobordism::inputFrame: input block index out of range");
   return inputBlocks_[index].frame;

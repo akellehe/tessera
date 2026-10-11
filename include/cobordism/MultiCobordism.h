@@ -13,6 +13,14 @@
 #include "cobordism/EigenstateSynthesis.h"
 #include "cobordism/HodgeLaplacian.h"
 #include "cobordism/PencilLayer.h"
+#include "cobordism/multicobordism/Blocks.h"
+#include "cobordism/multicobordism/Gradients.h"
+#include "cobordism/multicobordism/InputState.h"
+#include "cobordism/multicobordism/Moves.h"
+#include "cobordism/multicobordism/Objective.h"
+#include "cobordism/multicobordism/Modes.h"
+#include "cobordism/multicobordism/Stages.h"
+#include "cobordism/multicobordism/TwoBody.h"
 #include "cobordism/SurfaceSeed.h"
 #include "spacetime/pachner/AddMove.h"
 #include "spacetime/pachner/FlipMove.h"
@@ -75,128 +83,6 @@ struct AnalysisFrameHistory;
 ///     square-root branch of the stored edge length \f$\ell_e\f$.
 class MultiCobordism {
  public:
-  /// A frame on a block's attached cells: the coordinates the two-body transfer
-  /// is read in. The transfer is
-  /// \f$ T_{AB} = (Z_A^\vee)^T (\tilde A)_{AB} Z_B \f$
-  /// (`chainhodge::PencilSchur::transfer`), the matrix of the whole complex's
-  /// pencil block in the frames' coordinates; a change of frame
-  /// \f$ Z_A \mapsto Z_A g_A \f$, \f$ Z_B \mapsto Z_B g_B \f$ gives
-  /// \f$ g_A^{-1} T g_B \f$. For two qubit tori the frames are their period
-  /// frames (`observables::SimplicialQubit::periodFrame`) and \f$ T \f$ is
-  /// \f$ 2 \times 2 \f$ in the \f$ |0\rangle, |1\rangle \f$ basis a two-body
-  /// target is written in. The frame is never scored; the fiber it expresses
-  /// is.
-  struct BlockFrame {
-    /// The block's attached fiber cells (sorted vertex tuples), one per row.
-    std::vector<std::vector<std::uint64_t>> cells;
-    /// \f$ Z \f$: one column per basis element on `cells`
-    /// (\f$ |cells| \times r \f$, rows in the fiber's attachment order).
-    Eigen::MatrixXcd images;
-    /// \f$ Z^\vee \f$: the left partner under the transpose pairing, with
-    /// \f$ (Z^\vee)^T M_k Z = I_r \f$ for \f$ M_k \f$ the inverse chain metric
-    /// (the Whitney mass matrix) of the block's own pencil on `cells`. Built by
-    /// `dualFrame`, or `inputFrameDual` on the block's own complex.
-    Eigen::MatrixXcd dualImages;
-    /// The frame's rank \f$ r \f$.
-    [[nodiscard]] int rank() const noexcept { return static_cast<int>(images.cols()); }
-  };
-
-  /// A block's marking together with its input coefficients: the cycles
-  /// \f$ A, B \f$ of the torus the block carries, as closed walks of directed
-  /// steps in host vertex ids (`Marking`), and the coefficients \f$ (a, b) \f$
-  /// of the state the block represents, one per cycle —
-  /// \f$ (1, \tau_{in}) \f$ for an input torus.
-  ///
-  /// The engine uses a marking in two ways. It scores the block's own state
-  /// against the coefficients: the block's live surface is read as the
-  /// simplicial qubit over the marking (`blockQubit`), and the transported
-  /// periods of its holomorphic form over \f$ (A, B) \f$ must equal the
-  /// coefficients as a point of \f$ \mathbb{CP}^1 \f$ (`ownStateResidualOn`).
-  /// It also derives the block's frame at every read (`deriveFrame`), in which
-  /// the zero mode of the whole cobordism is reported as coefficients
-  /// (`readInputState`), as is the two-body transfer.
-  ///
-  /// Unlike a frame stated at attachment (`setInputFrame`), a marking is
-  /// combinatorial data that every engine move preserves, so the frame it
-  /// normalizes stays the block's live kernel as its lengths move. The marking
-  /// itself is never scored: it fixes the coordinates, and by
-  /// \f$ A \cdot B = +1 \f$ the orientation, that the state is read in.
-  struct BlockMarking {
-    /// The cycles, each one closed walk starting at `baseVertex`.
-    Marking cycles;
-    /// \f$ (a, b, \dots) \f$: one coefficient per cycle, the state at the block.
-    Eigen::VectorXcd coefficients;
-    /// The common base point of the transported periods: the first vertex of
-    /// the first cycle's walk that lies on every other cycle's walk (the
-    /// `observables::SimplicialQubit::baseVertex` rule).
-    std::uint64_t baseVertex{0};
-    [[nodiscard]] int rank() const noexcept { return static_cast<int>(cycles.size()); }
-  };
-
-  /// A boundary block of the cobordism, either an input or an output. A block
-  /// is not itself a complex: it stores the vertex set it occupies plus the
-  /// target period vector its own \f$ L_k \f$ sub-complex must carry. The
-  /// sub-complex is recovered on demand from `vertices` by
-  /// `getRegion`, the ambient complex's top cells whose
-  /// vertices all lie in the set.
-  struct BoundaryBlock {
-    /// Host vertex ids the block occupies.
-    std::set<std::uint64_t> vertices;
-    /// Target period vector the block's own \f$ L_k \f$ sub-complex must carry.
-    std::vector<std::complex<double>> target;
-    /// The fiber form of the target: a retained fiber on the block's degree-k
-    /// cells with its Gram matrix, band eigenvalue, contour and certificate,
-    /// alongside the period vector. Set on an input block by `setInputFiber`
-    /// (pinned as boundary data by `pinInputFibers`); read on an output block
-    /// by `readOutputFiber` after relaxation.
-    std::optional<BoundaryFiber> fiber;
-    /// True when the block is an input surface of the host: seeded by the
-    /// region form of `seedInputs` on a `fromSurfaces` host, its
-    /// \f$ (d-1) \f$-faces are cells of the host that no top cell need cover,
-    /// and the bulk is drawn onto them by bridges. A block seeded from a
-    /// simplex is never a surface.
-    bool surface{false};
-    /// A surface block's own faces (sorted vertex-id tuples): the input
-    /// surface's \f$ (d-1) \f$-simplices, recorded when the block is seeded
-    /// and carried by the block thereafter, so that the block's own complex
-    /// (`blockSurface`, `blockSurfaceWithGeometry`) is the surface whatever the
-    /// host currently registers. The host registers a surface face only while a
-    /// top cell covers it or a read has materialized it — a cone-out dent
-    /// uncovers a face and the host's orphan prune then drops it — whereas the
-    /// surface's vertices and edges survive every stage-1 move. The faces are
-    /// therefore the one part of the surface the vertex set alone cannot
-    /// recover. Empty for an ordinary block, whose own complex is the host's
-    /// top cells inside its vertex set. Neither pinned nor scored.
-    std::vector<std::vector<std::uint64_t>> faces;
-    /// The block's frame for the two-body transfer, set by `setInputFrame` on
-    /// the cells of its attached fiber. The engine holds it constant; the
-    /// block's own residual keeps it valid as the lengths move. Absent on an
-    /// unframed block; when either input block lacks one, the transfer is read
-    /// in identity frames on the cells. Ignored on a block that carries a
-    /// `marking`, where the frame is derived live instead.
-    std::optional<BlockFrame> frame;
-    /// The block's marking with its input coefficients, set by
-    /// `setInputMarking`. Absent on an unmarked block.
-    std::optional<BlockMarking> marking;
-  };
-
-  /// An ordered, explicit period constraint, evaluated by
-  /// `EigenstateSynthesis::residualForPeriods`. No component permutation is
-  /// permitted: `target[i]` belongs to `holes[i]`.
-  struct RegisterConstraint {
-    /// Identity; re-declaring this name replaces the constraint.
-    std::string name;
-    /// Cochain degree the periods are read at.
-    int degree{1};
-    /// The cycles the periods are taken over, as vertex-id tuples.
-    std::vector<std::vector<std::uint64_t>> holes;
-    /// One target period per hole, in the same order.
-    std::vector<std::complex<double>> target;
-  };
-
-
-
-
 
   /// Whether a move may extend a boundary the node holds fixed. Default false.
   ///
@@ -322,10 +208,10 @@ class MultiCobordism {
   /// the same name. Every hole must contain degree + 2 distinct vertices and
   /// the hole count must equal the target width.
   /// @throws std::invalid_argument on malformed input.
-  void declareRegisterConstraint(RegisterConstraint constraint);
+  void declareRegisterConstraint(multicobordism::RegisterConstraint constraint);
 
   /// The declared register constraints, in declaration order.
-  [[nodiscard]] const std::vector<RegisterConstraint> &registerConstraints()
+  [[nodiscard]] const std::vector<multicobordism::RegisterConstraint> &registerConstraints()
       const noexcept {
     return registerConstraints_;
   }
@@ -375,62 +261,18 @@ class MultiCobordism {
       int maxGrowth = 4, std::uint64_t seed = 0,
       int maxIterations = 200);
 
-  /// The space a two-body target is scored against. Each name is the space the
-  /// reading takes the state from.
-  ///
-  /// `Transfer` is \f$(Z_A^\vee)^T \tilde A_1 Z_B\f$: the whole complex's
-  /// degree-1 operator read as the coupling block between the two boundary
-  /// frames. It is \f$2 \times 2\f$ here and factorizes across the boundaries,
-  /// which is what lets it carry an entangled target.
-  ///
-  /// `Bulk` is \f$\ker L_1(W-\partial W)\f$, the Laplacian on interior cells
-  /// with the boundary removed, read through a Choi frame
-  /// (`geometricOperator`).
-  ///
-  /// `Whole` is \f$\ker L_1(W)\f$, the boundary included, read through the
-  /// blocks' markings. Its rank is \f$b_1(W)\f$.
-  ///
-  /// `Operator` is the low-level transfer between two paired direct-sum frames.
-  /// A target is meaningful only when expressed in those same direct-sum
-  /// frames; equal dimensions alone do not identify it with a tensor-product
-  /// two-qubit operator.
-  enum class ReadoutMode { Transfer, Bulk, Whole, Operator };
-
-  /// How the whole-complex reading pairs the harmonic columns against the input
-  /// blocks.
-  ///
-  /// `Periods` integrates each harmonic column over the marked cycles
-  /// (`Connection::transportedPeriod`). That is how a state is defined on a
-  /// boundary torus, where the Hodge star is an endomorphism of \f$ H^1 \f$ and
-  /// a modulus is the period ratio of the holomorphic line it selects. On the
-  /// three-dimensional bulk the same reading is purely topological: the star
-  /// there maps 1-forms to 2-forms, so no such line exists, changing the metric
-  /// moves the harmonic representative by a coboundary, and a coboundary's
-  /// period around a closed cycle telescopes to zero. A bulk run scored on
-  /// periods therefore cannot improve.
-  ///
-  /// `Gram` contracts through the chain metric instead, \f$ f_c^T M_1 Z_a \f$
-  /// with \f$ f_c \f$ the columns of the block's live frame on the host's
-  /// edges: the transpose pairing that the harmonic Gram matrix
-  /// \f$ Z^T M_1 Z \f$ already uses. The metric content is present in both; the
-  /// period pairing is the contraction that annihilates it.
-  ///
-  /// The observation matrix has the same shape either way, so the fit, the
-  /// period-frame normalization and the projective leak downstream are
-  /// unchanged. `Periods` is the default.
-  enum class WholePairing { Periods, Gram };
   /// Select how the whole-complex reading pairs harmonic columns.
-  void setWholePairing(WholePairing pairing);
+  void setWholePairing(multicobordism::WholePairing pairing);
   /// The whole-complex pairing in force.
-  [[nodiscard]] WholePairing wholePairing() const noexcept { return wholePairing_; }
+  [[nodiscard]] multicobordism::WholePairing wholePairing() const noexcept { return wholePairing_; }
 
   /// The readings summed into the two-body residual. A set rather than a single
   /// choice, so a run can be scored under more than one reading. Repeated
   /// values are normalized to their first occurrence.
   /// @throws std::invalid_argument if \p modes is empty.
-  void setReadoutModes(std::vector<ReadoutMode> modes);
+  void setReadoutModes(std::vector<multicobordism::ReadoutMode> modes);
   /// The readings summed into the two-body residual.
-  [[nodiscard]] const std::vector<ReadoutMode> &readoutModes() const noexcept {
+  [[nodiscard]] const std::vector<multicobordism::ReadoutMode> &readoutModes() const noexcept {
     return readoutModes_;
   }
   /// Read a square operator from the target-free live bulk. \p frameCells is
@@ -472,9 +314,6 @@ class MultiCobordism {
   /// The two causal-disposition moves.
   static constexpr const char *kConeInTimelike = "cone_in_timelike";
   static constexpr const char *kFlipDisposition = "flip_disposition";
-  /// One candidate move: its kind, and the payload naming where or how to act.
-  /// Returned by `enumerateMoveSpecifications`.
-  using MoveSpec = std::pair<std::string, std::vector<std::uint64_t>>;
 
   /// The four Pachner kinds addressed by site: the same moves, but the payload
   /// names where to act instead of seeding a draw. They carry distinct names
@@ -501,7 +340,7 @@ class MultiCobordism {
   /// disposition kinds already name their sites and come back unchanged. Each
   /// returned spec is a candidate to score, not a promise that it applies.
   /// \p withSurgery false leaves out the cone kinds (`shouldProposeSurgery`).
-  [[nodiscard]] static std::vector<MoveSpec> enumerateMoveSpecifications(
+  [[nodiscard]] static std::vector<multicobordism::MoveSpec> enumerateMoveSpecifications(
       const std::shared_ptr<Spacetime> &spacetime, bool withDispositions = false,
       bool withSurgery = true);
 
@@ -556,8 +395,6 @@ class MultiCobordism {
   }
 
   // ---- module-level helpers (static) ----
-
-
 
   // ---- objective ----
   /// The per-block register residual summed over `registerDegrees_`: the sum of
@@ -706,26 +543,13 @@ class MultiCobordism {
   /// objective scoring the whole cobordism.
   void clearPinnedObjective() noexcept { pinnedObjectiveSpec_.reset(); }
 
-  /// One objective's decomposition, labelled by the objective that produced it
-  /// and the region it was scored over. The record carries a contribution per
-  /// objective rather than one summed record, so a reader can tell whether
-  /// descent came from the bulk or from the pinned region.
-  struct ObjectiveContribution {
-    /// The objective's stable identifier.
-    std::string objectiveName;
-    /// The declared region, or empty for the whole cobordism.
-    std::string regionName;
-    /// That objective's terms over its own scope.
-    ObjectiveTerms terms;
-  };
-
   /// Every objective's contribution, in evaluation order: the bulk objective
   /// first, then the pinned-region objective where one is supplied. Summing the
   /// terms reproduces `objectiveTerms()` exactly.
-  [[nodiscard]] std::vector<ObjectiveContribution> objectiveContributionsFor(
+  [[nodiscard]] std::vector<multicobordism::ObjectiveContribution> objectiveContributionsFor(
       const std::shared_ptr<Spacetime> &spacetime) const;
   /// `objectiveContributionsFor` on this node's own complex.
-  [[nodiscard]] std::vector<ObjectiveContribution> objectiveContributions()
+  [[nodiscard]] std::vector<multicobordism::ObjectiveContribution> objectiveContributions()
       const;
 
   /// The injected objective's stable identifier, as stamped on records.
@@ -879,7 +703,7 @@ class MultiCobordism {
   /// every read as its lengths move. In particular it is not band 1, the
   /// default of the whole-complex read, which sits above the zero mode and is
   /// not a state.
-  [[nodiscard]] static FiberBand fiberBandFor(const BoundaryBlock &block) noexcept {
+  [[nodiscard]] static FiberBand fiberBandFor(const multicobordism::BoundaryBlock &block) noexcept {
     return block.surface ? FiberBand::ZeroMode : FiberBand::AsStored;
   }
   /// The fiber residual of one block on \p spacetime (see `useFiberResiduals`):
@@ -890,7 +714,7 @@ class MultiCobordism {
   /// @throws std::logic_error when the block carries no fiber target or the
   ///   node's metric source is not the Whitney pencil.
   [[nodiscard]] double fiberResidualForBoundaryBlock(
-      const BoundaryBlock &boundaryBlock, const std::shared_ptr<Spacetime> &spacetime) const;
+      const multicobordism::BoundaryBlock &boundaryBlock, const std::shared_ptr<Spacetime> &spacetime) const;
   /// The fiber residual of input block \p index on the live complex.
   [[nodiscard]] double fiberResidualForInputBlock(std::size_t index) const;
   /// A fiber-form target carried by the whole complex: the node's own pencil is
@@ -913,24 +737,8 @@ class MultiCobordism {
   [[nodiscard]] BoundaryFiber readWholeComplexFiber(const chainhodge::Contour *contour = nullptr,
                                                     double kappa = 10.0) const;
 
-
-  /// A block's own surface: its \f$ (d-1) \f$-faces and its edges inside its
-  /// vertex set, as sorted vertex-id tuples. A face is inside the block when
-  /// the block carries it (`BoundaryBlock::faces`), when the host registers it,
-  /// or when it is a facet of a top cell with all \f$ d \f$ of its vertices in
-  /// the block. All three are enumerated from vertex tuples rather than from
-  /// the lazily materialized facet links, so the answer does not depend on what
-  /// an earlier read materialized. For a surface block this is the input
-  /// surface itself, as long as no chord — an edge or face inside the block
-  /// that is not part of its surface — has been created.
-  struct BlockSurface {
-    /// The block's \f$ (d-1) \f$-faces, as sorted vertex-id tuples.
-    std::vector<std::vector<std::uint64_t>> faces;
-    /// The block's edges, as sorted vertex-id pairs.
-    std::vector<std::vector<std::uint64_t>> edges;
-  };
   /// The own surface of \p block within \p spacetime.
-  [[nodiscard]] static BlockSurface blockSurface(const BoundaryBlock &block,
+  [[nodiscard]] static multicobordism::BlockSurface blockSurface(const multicobordism::BoundaryBlock &block,
                                                 const Spacetime &spacetime);
   /// A surface block's own complex with the host's geometry: `blockSurface`'s
   /// faces as the top cells of a fresh \f$ (d-1) \f$-dimensional `Spacetime`
@@ -950,179 +758,12 @@ class MultiCobordism {
   /// longer holds an edge of one of its faces. The block then scores the full
   /// leak, so no move that tears a surface survives the ΔF acceptance.
   [[nodiscard]] static std::shared_ptr<Spacetime> blockSurfaceWithGeometry(
-      const BoundaryBlock &block, const std::shared_ptr<Spacetime> &spacetime);
+      const multicobordism::BoundaryBlock &block, const std::shared_ptr<Spacetime> &spacetime);
 
   // ---- the derived frame and the state at a block ----
 
-  /// The frame derived for a marked block from its live own complex.
-  ///
-  /// `frame.cells` are the block's own edges, in the own pencil's canonical
-  /// order. `frame.images` is \f$ F = Z\,\Pi^{-1} \f$, with \f$ Z \f$ the
-  /// images of the zero mode of the block's own covariant Whitney pencil
-  /// (`PencilLayer::harmonicContour` on `blockSurfaceWithGeometry`) and
-  /// \f$ \Pi_{ca} = \oint_c z_a \f$ its transported periods over the marking's
-  /// cycles from the common base point
-  /// (`chainhodge::Connection::transportedPeriod`), so column \f$ b \f$ has
-  /// period \f$ \delta_{cb} \f$ over cycle \f$ c \f$. On the collar seed this
-  /// is `observables::SimplicialQubit::periodFrame` of the input torus through
-  /// the id map.
-  ///
-  /// `frame.dualImages` is
-  /// \f$ F^\vee = \tilde Z\,(\tilde Z^T M_1^U F)^{-T} \f$, with
-  /// \f$ \tilde Z \f$ the dual kernel's images (the same zero mode under the
-  /// inverse links, `AssembledPencil::dual`) and \f$ M_1^U \f$ the dressed
-  /// Whitney mass matrix of the block's own pencil, giving the `BlockFrame`
-  /// normalization \f$ (F^\vee)^T M_1^U F = I \f$ (`PencilLayer::dualFrame`). That pairing
-  /// is the gauge-covariant one; at zero phases the dual kernel is the kernel.
-  ///
-  /// An `obstruction` is reported when the block's own kernel does not have the
-  /// marking's rank (a torn surface, or phases that are not a pure gauge), a
-  /// marking edge is absent from the own complex, the periods are singular
-  /// (cycles that do not span the block's homology), or the pairing is
-  /// isotropic. Such a block reads the full leak.
-  struct DerivedFrame {
-    /// The derived frame on the block's own edges.
-    BlockFrame frame;
-    /// \f$ \Pi \f$, the transported periods over the marking's cycles
-    /// (rank × rank).
-    Eigen::MatrixXcd periods;
-    /// Rank of the block's own zero mode.
-    int kernelRank{0};
-    /// Empty when the frame was derived; otherwise why it could not be.
-    std::string obstruction;
-    /// True when the frame was derived without obstruction.
-    [[nodiscard]] bool derived() const noexcept { return obstruction.empty(); }
-  };
-  /// The state at a marked block: the coefficients of the whole complex's zero
-  /// mode in the block's live frame, alongside the block's input coefficients
-  /// and its residual.
-  ///
-  /// `coefficients` are the transported periods, over the marking's cycles from
-  /// `baseVertex`, of the least-squares combination of the whole's zero mode
-  /// that fits the block's target edge values — the input coefficients written
-  /// through the live frame — on the block's edges. That combination is a
-  /// kernel vector of the whole, so its periods are its coordinates in the
-  /// frame. `residual` is the fit's leak, i.e. the output state read at the
-  /// block; `rU` instead scores a marked block by `ownStateResidualOn` at
-  /// `weight`. Under a pure gauge the target's base-point factor cancels the
-  /// transport's, so the pair is gauge invariant.
-  ///
-  /// `harmonicRank` is the whole's zero-mode rank and `frameRank` the own
-  /// kernel's. An obstructed read — no frame, no zero mode, or a target edge
-  /// absent from the whole — names the obstruction and reads the full leak 1.0.
-  struct InputStateRead {
-    /// Index of the input block.
-    std::size_t block{0};
-    /// The block's declared input coefficients.
-    Eigen::VectorXcd input;
-    /// The whole complex's zero mode in the block's live frame.
-    Eigen::VectorXcd coefficients;
-    /// Leak of the fit; 1.0 when obstructed.
-    double residual{std::numeric_limits<double>::quiet_NaN()};
-    /// Weight this block's residual carries in `rU`.
-    double weight{1.0};
-    /// Rank of the whole complex's zero mode.
-    int harmonicRank{0};
-    /// Rank of the block's own kernel.
-    int frameRank{0};
-    /// Base point the periods were transported from.
-    std::uint64_t baseVertex{0};
-    /// Empty when the read succeeded; otherwise why it could not be made.
-    std::string obstruction;
-  };
-
   // ---- two-body cobordism map ----
 
-  /// The two-body target of the interaction node: \f$ \chi \f$ on the pair of
-  /// input frames (\f$ r_A\times r_B \f$). `choiDecomposed` selects what the
-  /// node reports: the state \f$ \mathrm{vec}(T_{AB}) \f$ on the pair space
-  /// when true, the operator \f$ T_{AB} \f$ when false. The fit residual is the
-  /// projective Frobenius leak in either reading — vec is linear, so the two
-  /// coincide — and the readings differ only in what is returned and certified.
-  struct TwoBodyTarget {
-    /// The target \f$ \chi \f$ on the pair of input frames.
-    Eigen::MatrixXcd chi{};
-    /// Report the Choi-decomposed state rather than the operator.
-    bool choiDecomposed{true};
-    /// Target for `ReadoutMode::Operator`, expressed in the paired direct-sum
-    /// frame returned by `pairedFrameTransferOn`. This is not a
-    /// tensor-product two-state vector: equal dimensions do not identify
-    /// \f$V_A\oplus V_{A^*}\f$ with \f$V_A\otimes V_{A^*}\f$. Empty means no
-    /// paired-frame target was declared, so the operator reading returns the
-    /// full leak.
-    Eigen::MatrixXcd twoStateVector{};
-    /// Optional input coefficients for this read, flattened in input-block
-    /// order and then cycle order. Empty uses the coefficients carried by the
-    /// live markings. Cases set this so that changing the boundary metric and
-    /// the input state is one atomic read of the shared bulk.
-    Eigen::VectorXcd inputCoefficients{};
-  };
-  /// One input pair and the output the gate should produce for it: a boundary
-  /// metric, a target, and optionally the input coefficients read by
-  /// `ReadoutMode::Whole`.
-  ///
-  /// A bulk fitted to a single pair reproduces that pair and nothing else —
-  /// one \f$2\times2\f$ transfer against one pair is six real constraints
-  /// against some eighty free bulk coordinates. Several cases constrain one
-  /// shared bulk, so a geometry satisfying all of them under the transfer
-  /// reading is an operator. Every case shares one triangulation, one gluing
-  /// and one bulk; only the boundary metric and the declared state differ, so
-  /// moving between cases involves no re-gluing.
-  struct TwoBodyCase {
-    /// Squared lengths on the boundary edges, by endpoint pair. Only the
-    /// boundary is listed: the bulk is what is being solved for and is shared.
-    std::vector<std::pair<std::pair<std::uint64_t, std::uint64_t>,
-                          std::complex<double>>> boundary;
-    /// The target \f$ \chi \f$ for this case.
-    Eigen::MatrixXcd chi{};
-    /// Report the Choi-decomposed state rather than the operator.
-    bool choiDecomposed{true};
-    /// Target for `ReadoutMode::Operator`, expressed in the paired direct-sum
-    /// frame. It is not a tensor-product two-state vector; empty means this
-    /// case declares no paired-frame target.
-    Eigen::MatrixXcd twoStateVector{};
-    /// Optional input coefficients for this case, flattened in input-block
-    /// order and then cycle order. Empty reads the live markings'
-    /// coefficients.
-    Eigen::VectorXcd inputCoefficients{};
-  };
-  /// The reading of the bulk between the two attached input frames.
-  struct TwoBodyRead {
-    bool choiDecomposed{true};
-    /// \f$ T_{AB} = (Z_A^\vee)^T(\tilde A^U)_{AB}Z_B \f$: with the full frames on
-    /// the two attached cell sets (the coupling block of the whole between
-    /// them, \f$ |A| \times |B| \f$) when the blocks carry no frame, or in the
-    /// blocks' frames (\f$ r_A \times r_B \f$, `BlockFrame`) when both do.
-    Eigen::MatrixXcd transfer{};
-    /// True when `transfer` was read in the blocks' frames (a derived frame
-    /// from `setInputMarking` or a supplied one from `setInputFrame`, on
-    /// both), false when in identity frames on the cells.
-    bool inFrames{false};
-    /// True when both frames were derived live from the blocks' markings;
-    /// false with supplied or identity frames.
-    bool derivedFrames{false};
-    /// \f$ \mathrm{vec}(T_{AB}) \f$, column-major, the Choi-decomposed state.
-    Eigen::VectorXcd choiState{};
-    /// Singular values of \f$ T_{AB} \f$: the Schmidt spectrum of the state.
-    std::vector<double> singularValues{};
-    /// Numerical Schmidt rank (singular values above \f$ 10^{-10}\sigma_{\max} \f$);
-    /// one is the product (quasi-free) case, two the XY flip-flop's.
-    int schmidtRank{0};
-    /// The reversal identity residual of the transfer.
-    double reversalResidual{std::numeric_limits<double>::quiet_NaN()};
-    /// The projective Frobenius leak of the target in the reading.
-    double residual{std::numeric_limits<double>::quiet_NaN()};
-    /// The fiber residual of each input block carrying an attached fiber: the
-    /// leak of its state fiber in its own kernel. On a marked block this is a
-    /// diagnostic; the scored residual is in `inputStates`.
-    std::vector<double> inputFiberResiduals{};
-    /// The state at every marked input block (`readInputState`, block order).
-    std::vector<InputStateRead> inputStates{};
-    /// The cells the transfer's rows and columns are placed on: the frames'
-    /// cells when framed, the attached fiber cells otherwise.
-    std::vector<std::vector<std::uint64_t>> cellsA{};
-    std::vector<std::vector<std::uint64_t>> cellsB{};
-  };
   /// Attach a piped input fiber to this complex's cells. \p cells are degree-k
   /// cells of the live complex, one per fiber row, in the attachment order; that
   /// order is the attachment permutation. The fiber's own cell ids are upstream
@@ -1156,7 +797,7 @@ class MultiCobordism {
                      Eigen::MatrixXcd images, Eigen::MatrixXcd dualImages);
   /// The frame of input block \p index, or none.
   /// @throws std::out_of_range
-  [[nodiscard]] const std::optional<BlockFrame> &inputFrame(std::size_t index) const;
+  [[nodiscard]] const std::optional<multicobordism::BlockFrame> &inputFrame(std::size_t index) const;
   /// Drop the frame of input block \p index: the transfer returns to identity
   /// frames on the cells.
   /// @throws std::out_of_range
@@ -1184,7 +825,7 @@ class MultiCobordism {
   void setInputMarking(std::size_t index, Marking cycles, std::vector<std::complex<double>> coefficients);
   /// The marking of input block \p index, or none.
   /// @throws std::out_of_range
-  [[nodiscard]] const std::optional<BlockMarking> &inputMarking(std::size_t index) const;
+  [[nodiscard]] const std::optional<multicobordism::BlockMarking> &inputMarking(std::size_t index) const;
   /// Drop the marking of input block \p index: its scoring and transfer
   /// return to what they were before `setInputMarking`.
   /// @throws std::out_of_range
@@ -1192,11 +833,11 @@ class MultiCobordism {
   /// The live frame of a marked \p block on \p spacetime (`DerivedFrame`):
   /// read-only on the geometry.
   /// @throws std::logic_error when the block carries no marking.
-  [[nodiscard]] static DerivedFrame deriveFrame(const BoundaryBlock &block,
+  [[nodiscard]] static multicobordism::DerivedFrame deriveFrame(const multicobordism::BoundaryBlock &block,
                                                const std::shared_ptr<Spacetime> &spacetime);
   /// `deriveFrame` of input block \p index on the live complex.
   /// @throws std::out_of_range on the index; std::logic_error without a marking.
-  [[nodiscard]] DerivedFrame deriveInputFrame(std::size_t index) const;
+  [[nodiscard]] multicobordism::DerivedFrame deriveInputFrame(std::size_t index) const;
   /// The block residual of a marked block: the target edge values
   /// \f$ t = F\,(a, b)^T \f$ of the block's input coefficients through its live
   /// frame on \p spacetime, and the leak of \f$ t \f$ in the zero mode of the
@@ -1205,7 +846,7 @@ class MultiCobordism {
   /// one target per block). Full leak 1.0 when the frame cannot be derived or
   /// the whole refuses the read.
   /// @throws std::logic_error without a marking or off the Whitney pencil.
-  [[nodiscard]] double inputStateResidualOn(const BoundaryBlock &block,
+  [[nodiscard]] double inputStateResidualOn(const multicobordism::BoundaryBlock &block,
                                             const std::shared_ptr<Spacetime> &spacetime) const;
   /// `inputStateResidualOn` of input block \p index on the live complex.
   [[nodiscard]] double inputStateResidual(std::size_t index) const;
@@ -1213,7 +854,7 @@ class MultiCobordism {
   /// mode in the block's live frame, its input coefficients, and its residual.
   /// @throws std::out_of_range
   /// @throws std::logic_error without a marking or off the Whitney pencil.
-  [[nodiscard]] InputStateRead readInputState(std::size_t index) const;
+  [[nodiscard]] multicobordism::InputStateRead readInputState(std::size_t index) const;
   /// The block's live surface read as a simplicial qubit over the block's
   /// marking: the surface of `blockSurfaceWithGeometry`, the marking's cycles
   /// as (edge index, sign) steps in the surface's edge order, and the
@@ -1229,7 +870,7 @@ class MultiCobordism {
   ///   a marking edge is not an edge of the live surface, or the qubit's
   ///   construction is refused (a branch that cannot be continued, a
   ///   degenerate complex structure).
-  [[nodiscard]] static observables::SimplicialQubit blockQubit(const BoundaryBlock &block,
+  [[nodiscard]] static observables::SimplicialQubit blockQubit(const multicobordism::BoundaryBlock &block,
                                                                 const std::shared_ptr<Spacetime> &spacetime);
   /// `blockQubit` of input block \p index on the live complex.
   /// @throws std::out_of_range
@@ -1248,7 +889,7 @@ class MultiCobordism {
   /// `inputResidualWeight` for a marked block: the torus keeps representing its
   /// input state on its own, while the whole's zero mode is the output state.
   /// @throws std::logic_error without a marking.
-  [[nodiscard]] double ownStateResidualOn(const BoundaryBlock &block,
+  [[nodiscard]] double ownStateResidualOn(const multicobordism::BoundaryBlock &block,
                                           const std::shared_ptr<Spacetime> &spacetime) const;
   /// `ownStateResidualOn` of input block \p index on the live complex.
   [[nodiscard]] double ownStateResidual(std::size_t index) const;
@@ -1288,9 +929,9 @@ class MultiCobordism {
   /// move.
   ///
   /// An empty list restores the single-target behaviour.
-  void setTwoBodyCases(std::vector<TwoBodyCase> cases);
+  void setTwoBodyCases(std::vector<multicobordism::TwoBodyCase> cases);
   /// The declared two-body cases, in the order they were set.
-  [[nodiscard]] const std::vector<TwoBodyCase> &twoBodyCases() const noexcept {
+  [[nodiscard]] const std::vector<multicobordism::TwoBodyCase> &twoBodyCases() const noexcept {
     return twoBodyCases_;
   }
   /// The two-body residual summed over the cases on \p spacetime, or the single
@@ -1313,7 +954,7 @@ class MultiCobordism {
     return twoBodyResidualOverCasesOn(spacetime_);
   }
   /// The declared two-body target, or empty when none is set.
-  [[nodiscard]] const std::optional<TwoBodyTarget> &twoBodyTarget() const noexcept {
+  [[nodiscard]] const std::optional<multicobordism::TwoBodyTarget> &twoBodyTarget() const noexcept {
     return twoBodyTarget_;
   }
   /// The two-body residual on the live complex.
@@ -1335,7 +976,7 @@ class MultiCobordism {
   /// carries none.
   [[nodiscard]] double operatorResidualOn(
       const std::shared_ptr<Spacetime> &spacetime,
-      const TwoBodyTarget &target) const;
+      const multicobordism::TwoBodyTarget &target) const;
   /// The projective leak of \p target against the operator promoted from
   /// \f$\ker L_1(W-\partial W)\f$ through a Choi frame — the reading
   /// `ReadoutMode::Bulk` selects. Returns the full leak 1.0 when the framed
@@ -1343,7 +984,7 @@ class MultiCobordism {
   /// the transfer reading, so a selected readout set may sum them.
   [[nodiscard]] double bulkOperatorResidualOn(
       const std::shared_ptr<Spacetime> &spacetime,
-      const TwoBodyTarget &target) const;
+      const multicobordism::TwoBodyTarget &target) const;
   /// The projective leak of \p target against the whole cobordism's degree-1
   /// harmonic form — the reading `ReadoutMode::Whole` selects.
   ///
@@ -1362,7 +1003,7 @@ class MultiCobordism {
   /// give rank 4.
   [[nodiscard]] double wholeHarmonicResidualOn(
       const std::shared_ptr<Spacetime> &spacetime,
-      const TwoBodyTarget &target) const;
+      const multicobordism::TwoBodyTarget &target) const;
   /// Why the last `wholeHarmonicResidualOn` could not read a state, or empty
   /// when it could.
   [[nodiscard]] const std::string &wholeHarmonicObstruction() const noexcept {
@@ -1375,25 +1016,14 @@ class MultiCobordism {
   /// NaN; no tensor-product target is inferred from the paired direct-sum
   /// matrix.
   /// @throws std::logic_error for any other input count.
-  [[nodiscard]] TwoBodyRead readTwoBody() const;
+  [[nodiscard]] multicobordism::TwoBodyRead readTwoBody() const;
 
   // ---- analytic gradients of the fiber-mode residuals ----
-  /// A gradient over the live complex's edges in `EdgeList` order. Each entry
-  /// packs \f$ (\partial/\partial\operatorname{Re}, \partial/\partial\operatorname{Im}) \f$
-  /// of the real residual as a complex number, the convention `runStage2`
-  /// descends.
-  struct ResidualGradient {
-    /// Derivative with respect to each edge's squared length.
-    Eigen::VectorXcd lengths;
-    /// Derivative with respect to each link phase; empty unless the residual
-    /// varies with the links.
-    Eigen::VectorXcd phases;
-  };
   /// The analytic gradient of `fiberResidualOn(spacetime, fiber, band)` through
   /// the band's Riesz projector (`chainhodge::BandDerivative`), holomorphic in
   /// the squared lengths and the phases, over \p spacetime's edges. The contour
   /// is the choice the residual makes (`FiberBand`) and is held fixed.
-  [[nodiscard]] ResidualGradient fiberResidualGradientOn(const std::shared_ptr<Spacetime> &spacetime,
+  [[nodiscard]] multicobordism::ResidualGradient fiberResidualGradientOn(const std::shared_ptr<Spacetime> &spacetime,
                                                          const BoundaryFiber &fiber,
                                                          FiberBand band = FiberBand::AsStored) const;
   /// The analytic gradient of `inputStateResidualOn(block, spacetime)` over
@@ -1415,16 +1045,16 @@ class MultiCobordism {
   /// by vertex pair, and vanishes on bulk edges. The contours are held fixed
   /// and no finite difference is taken. `phases` is empty at degree 1, and the
   /// gradient is zero when the frame cannot be derived.
-  [[nodiscard]] ResidualGradient inputStateResidualGradientOn(const std::shared_ptr<Spacetime> &spacetime,
-                                                              const BoundaryBlock &block) const;
+  [[nodiscard]] multicobordism::ResidualGradient inputStateResidualGradientOn(const std::shared_ptr<Spacetime> &spacetime,
+                                                              const multicobordism::BoundaryBlock &block) const;
   /// `inputStateResidualGradientOn` for several marked \p blocks at once, with
   /// the whole's band derivative computed once and shared. `fiberModeAscent`
   /// uses this for every marked block. Returns one gradient per block, in the
   /// given order; a block whose frame cannot be derived gets the zero gradient.
   /// @throws std::logic_error when a block carries no
   ///   marking or the metric source is not the Whitney pencil.
-  [[nodiscard]] std::vector<ResidualGradient> inputStateResidualGradientsOn(
-      const std::shared_ptr<Spacetime> &spacetime, const std::vector<const BoundaryBlock *> &blocks) const;
+  [[nodiscard]] std::vector<multicobordism::ResidualGradient> inputStateResidualGradientsOn(
+      const std::shared_ptr<Spacetime> &spacetime, const std::vector<const multicobordism::BoundaryBlock *> &blocks) const;
   /// The analytic gradient of `ownStateResidualOn(block, spacetime)` over
   /// \p spacetime's edges (`ResidualGradient`, the `runStage2` convention):
   /// \f$ r \f$ is a real function of \f$ \hat\tau \f$ alone, so
@@ -1441,16 +1071,16 @@ class MultiCobordism {
   /// carries. Zero when the read is refused; no finite difference is taken.
   /// @throws std::logic_error without a marking;
   /// @throws std::invalid_argument on a null spacetime.
-  [[nodiscard]] ResidualGradient ownStateResidualGradientOn(const std::shared_ptr<Spacetime> &spacetime,
-                                                            const BoundaryBlock &block) const;
+  [[nodiscard]] multicobordism::ResidualGradient ownStateResidualGradientOn(const std::shared_ptr<Spacetime> &spacetime,
+                                                            const multicobordism::BoundaryBlock &block) const;
   /// `ownStateResidualGradientOn` of input block \p index on the live complex.
-  [[nodiscard]] ResidualGradient ownStateResidualGradient(std::size_t index) const;
+  [[nodiscard]] multicobordism::ResidualGradient ownStateResidualGradient(std::size_t index) const;
   /// The analytic gradient of the frame-transfer two-body residual,
   /// \f$ d\tilde A^U = dM^U h + M^U dh \f$ on the attached blocks. This entry
   /// point is transfer-specific whatever readout is selected;
   /// `fiberModeAscent` dispatches the objective's selected readings.
-  [[nodiscard]] ResidualGradient twoBodyResidualGradientOn(const std::shared_ptr<Spacetime> &spacetime,
-                                                           const TwoBodyTarget &target) const;
+  [[nodiscard]] multicobordism::ResidualGradient twoBodyResidualGradientOn(const std::shared_ptr<Spacetime> &spacetime,
+                                                           const multicobordism::TwoBodyTarget &target) const;
   /// The analytic gradient of `wholeHarmonicResidualOn`, along the chain
   /// \f$Z \to \Pi \to c \to Bc \to r\f$: the whole complex's degree-1 harmonic
   /// images, their transported periods over the blocks' marked cycles, the
@@ -1463,9 +1093,9 @@ class MultiCobordism {
   ///
   /// Zero where the residual itself refuses. `phases` is empty: this is a
   /// degree-1 length gradient.
-  [[nodiscard]] ResidualGradient wholeHarmonicResidualGradientOn(
+  [[nodiscard]] multicobordism::ResidualGradient wholeHarmonicResidualGradientOn(
       const std::shared_ptr<Spacetime> &spacetime,
-      const TwoBodyTarget &target) const;
+      const multicobordism::TwoBodyTarget &target) const;
   /// The ascent of every fiber-mode term of `rU` on the live complex: the
   /// whole-complex fiber target, each input block's fiber, and the two-body
   /// target. A block's fiber gradient is taken on the block's own complex — a
@@ -1473,7 +1103,7 @@ class MultiCobordism {
   /// sub-complex at the fiber's contour — and mapped to the parent's edges by
   /// vertex pair.
   /// @throws std::logic_error when a selected two-body reading has no analytic gradient.
-  [[nodiscard]] ResidualGradient fiberModeAscent() const;
+  [[nodiscard]] multicobordism::ResidualGradient fiberModeAscent() const;
   /// Whether every selected reading has an analytic gradient, so that
   /// `fiberModeAscent` is the direction of the objective being minimized.
   /// Transfer and whole-harmonic readings do; bulk and paired-frame operator
@@ -1586,26 +1216,14 @@ class MultiCobordism {
                           int relaxBudgetPerMove = 10,
                           int combinatorialBreadth = 0);
 
-  /// One solve action on this node: the unit a search policy composes, so that
-  /// the solve is driven through the engine rather than re-implemented by each
-  /// consumer.
-  enum class BuildAction { Grow, Evolve, Relax, ConeOut, ConeIn };
-
-  /// Secondary sort for the directed cone-out probe; both orders are
-  /// interior-first. `AdjacentHolesLast` sends cells sharing vertices with the
-  /// existing holes to the back, so new holes come out separated;
-  /// `AdjacentHolesFirst` brings them to the front, so the register clusters.
-  /// For the first hole the orders coincide.
-  enum class HolePlacementStrategy { AdjacentHolesFirst, AdjacentHolesLast };
-
   /// Apply one `BuildAction` to this node, in place. `Grow` and `Evolve` are
   /// `runStage1` with `growBoundaries` true and false; `Relax` is `runStage2`;
   /// `ConeOut` and `ConeIn` are the directed probes below. Parameters
   /// irrelevant to the chosen action are ignored.
-  void buildStep(BuildAction action, int maxSteps = 30, int nCandidateMoves = 8,
+  void buildStep(multicobordism::BuildAction action, int maxSteps = 30, int nCandidateMoves = 8,
                  double stage2Beta = 1.0, int stage2MaxIters = 10,
                  double stage2Alpha0 = 0.05,
-                 HolePlacementStrategy holePlacementStrategy = HolePlacementStrategy::AdjacentHolesLast);
+                 multicobordism::HolePlacementStrategy holePlacementStrategy = multicobordism::HolePlacementStrategy::AdjacentHolesLast);
 
   /// Directed, gated cone-out: remove top cells deliberately. Candidate top
   /// cells are enumerated interior-first and ordered by \p strategy, each is
@@ -1618,7 +1236,7 @@ class MultiCobordism {
   /// valid manifold in its own right.
   ///
   /// \returns the number of holes opened.
-  [[nodiscard]] int directedConeOut(HolePlacementStrategy strategy = HolePlacementStrategy::AdjacentHolesLast,
+  [[nodiscard]] int directedConeOut(multicobordism::HolePlacementStrategy strategy = multicobordism::HolePlacementStrategy::AdjacentHolesLast,
                                     int maxOpen = 6);
 
   /// Directed, gated cone-IN: select the register. Enumerates the boundary facets of the
@@ -1644,7 +1262,6 @@ class MultiCobordism {
   /// \returns how many cells were removed, which is less than \p count when
   ///   the valid candidates run out.
   [[nodiscard]] int randomConeOut(int count);
-
 
   // ==================================================================
   // Surface inputs and the bridge move
@@ -1706,8 +1323,6 @@ class MultiCobordism {
   //     and surgery is the only topology-changing mechanism the engine has,
   //     since Pachner moves are bistellar and preserve Betti numbers.
 
-
-
   /// Declare a pinned region, replacing any existing region of the same name.
   void declarePinnedRegion(PinnedRegion region);
 
@@ -1757,41 +1372,6 @@ class MultiCobordism {
   //     lands in the checkpoint document and nowhere else: no member the
   //     objective or the refinement decision reads is written by that pass.
 
-  /// The three top-level simulation modes.
-  enum class SimulationMode {
-    /// The production scientific mode: only the base geometric objective (plus
-    /// the one permitted state-energy term) drives optimization; every particle
-    /// and gauge quantity is a post-hoc observable.
-    Emergence,
-    /// A pinned carrier / spectral sector, to establish existence, measure a
-    /// residual floor, or build an oracle fixture. Never counted as emergence.
-    Synthesis,
-    /// Recompute every derived hierarchy and certificate from a checkpoint and
-    /// verify that no cached or serialized choice changed the result.
-    Replay
-  };
-
-  /// The two labeled, Gaussian-closed emergence sub-modes. Recorded in
-  /// provenance on every checkpoint; both carry a covariance purity
-  /// certificate.
-  enum class EmergenceSubmode {
-    /// The carried state does not act back on the geometry.
-    Strict,
-    /// The carried state's energy density may enter the joint stationarity
-    /// objective through \f$ h = h(\Gamma, g) \f$, while no component, fiber,
-    /// transport, amplitude, color, particle, charge, flavor, exchange or spin
-    /// certificate may influence a geometry move.
-    CertificatesBlindMeanField
-  };
-
-  /// The enumerable term list the scalar objective is the sum of. `objectiveOf`
-  /// is static over this record, so the objective reads nothing else. Every
-  /// member is a geometric or target quantity except the last, which is the one
-  /// permitted state channel. Declared at namespace scope alongside
-  /// `CobordismObjective`, so an objective can be written without depending on
-  /// this class.
-  using ObjectiveTerms = ::tessera::cobordism::ObjectiveTerms;
-
   /// The names of `ObjectiveTerms`' members, in declaration order.
   [[nodiscard]] static std::vector<std::string> objectiveTermNames();
 
@@ -1808,21 +1388,21 @@ class MultiCobordism {
   /// Select the simulation mode and (for emergence) its labeled sub-mode.
   /// Selecting anything other than `CertificatesBlindMeanField` sets the
   /// carried-state energy term to exactly zero.
-  void setSimulationMode(SimulationMode mode,
-                         EmergenceSubmode submode = EmergenceSubmode::Strict);
+  void setSimulationMode(multicobordism::SimulationMode mode,
+                         multicobordism::EmergenceSubmode submode = multicobordism::EmergenceSubmode::Strict);
   /// The selected simulation mode.
-  [[nodiscard]] SimulationMode simulationMode() const noexcept {
+  [[nodiscard]] multicobordism::SimulationMode simulationMode() const noexcept {
     return simulationMode_;
   }
   /// The selected emergence sub-mode.
-  [[nodiscard]] EmergenceSubmode emergenceSubmode() const noexcept {
+  [[nodiscard]] multicobordism::EmergenceSubmode emergenceSubmode() const noexcept {
     return emergenceSubmode_;
   }
   /// `"emergence"` / `"synthesis"` / `"replay"`, as stamped on a checkpoint.
-  [[nodiscard]] static std::string modeName(SimulationMode mode);
+  [[nodiscard]] static std::string modeName(multicobordism::SimulationMode mode);
   /// `"strict"` / `"certificates_blind_mean_field"`, as stamped on a
   /// checkpoint.
-  [[nodiscard]] static std::string submodeName(EmergenceSubmode submode);
+  [[nodiscard]] static std::string submodeName(multicobordism::EmergenceSubmode submode);
 
   // ---- the carried quasi-free state ----
 
@@ -1955,64 +1535,31 @@ class MultiCobordism {
 
   // ---- particle-independent refinement ----
 
-  /// The geometric and numerical indicators emergence-mode refinement may
-  /// consult. Every member is a quantity of the base problem: none is a
-  /// coarse-response residual, band gap, modularity, transport leakage, Wilson
-  /// or center read, exchange read, anchor score, amplitude Gram defect, or
-  /// particle score.
-  struct RefinementIndicators {
-    /// \f$ \lVert\nabla_z S_{\rm Regge}\rVert^2 \f$ on the current complex.
-    double reggeStationarityResidual = 0.0;
-    /// \f$ \sum_k\lVert\nabla_z S_{\rm Hodge,k}\rVert^2 \f$.
-    double hodgeStationarityResidual = 0.0;
-    /// Curvature concentration: \f$ \max_h|\varepsilon_h| \f$ over the mean
-    /// \f$ |\varepsilon_h| \f$ across the \f$(d-2)\f$-hinges (1 = flat spread,
-    /// large = curvature piling onto one hinge). 0 when no hinge carries any.
-    double curvatureConcentration = 0.0;
-    /// Mesh quality: \f$ \min_\sigma|{\rm vol}\,\sigma| /
-    /// \max_\sigma|{\rm vol}\,\sigma| \f$ over the top cells, in `[0,1]`;
-    /// 0 means a degenerate cell. 1 with no cells.
-    double meshQuality = 1.0;
-    /// Solver discretization error: the magnitude of the last accepted stage-2
-    /// objective improvement; 0 at a stationary point.
-    double solverError = 0.0;
-  };
-
   /// The names of `RefinementIndicators`' members, in declaration order.
   [[nodiscard]] static std::vector<std::string> refinementIndicatorNames();
 
   /// Measure the indicators on this node's current complex.
-  [[nodiscard]] RefinementIndicators refinementIndicators() const;
+  [[nodiscard]] multicobordism::RefinementIndicators refinementIndicators() const;
 
   /// The thresholds `refinementDecision` compares against. The defaults never
   /// fire: `reggeStationarityResidual`, `hodgeStationarityResidual`,
   /// `curvatureConcentration` and `solverError` are upper bounds crossed from
   /// below (infinity means never), while `meshQuality` is a lower bound crossed
   /// from above (0 means never).
-  void setRefinementThresholds(const RefinementIndicators &thresholds);
+  void setRefinementThresholds(const multicobordism::RefinementIndicators &thresholds);
   /// The configured refinement thresholds.
-  [[nodiscard]] const RefinementIndicators &refinementThresholds()
+  [[nodiscard]] const multicobordism::RefinementIndicators &refinementThresholds()
       const noexcept {
     return refinementThresholds_;
   }
 
-  /// Whether to refine, and which indicator asked.
-  struct RefinementDecision {
-    /// True when some indicator crossed its threshold.
-    bool refine = false;
-    /// The indicator that asked: one of `refinementIndicatorNames()`, or empty.
-    std::string trigger{};
-    /// The measured indicators the decision was taken on.
-    RefinementIndicators indicators{};
-  };
-
   /// The refinement rule. Static over the indicator record, so it cannot reach
   /// a certificate, a fiber, a transport or a particle read.
-  [[nodiscard]] static RefinementDecision refinementDecisionOf(
-      const RefinementIndicators &indicators,
-      const RefinementIndicators &thresholds);
+  [[nodiscard]] static multicobordism::RefinementDecision refinementDecisionOf(
+      const multicobordism::RefinementIndicators &indicators,
+      const multicobordism::RefinementIndicators &thresholds);
   /// `refinementDecisionOf` on this node's measured indicators.
-  [[nodiscard]] RefinementDecision refinementDecision() const;
+  [[nodiscard]] multicobordism::RefinementDecision refinementDecision() const;
 
   /// Apply geometry refinement when, and only when, `refinementDecision()` asks
   /// for it, through the gated cone-in surgery `applyMoveSpecification` uses —
@@ -2023,56 +1570,10 @@ class MultiCobordism {
 
   // ---- the post-hoc analysis overlay ----
 
-  /// Analysis-overlay configuration. Disabled by default: with `enabled` false
-  /// no part of the overlay runs.
-  struct AnalysisConfig {
-    /// Master switch. False means the overlay never runs.
-    bool enabled = false;
-    /// Run one pass after every \p cadence accepted combinatorial moves.
-    int cadence = 1;
-    /// Hodge degrees the spectral bands are enumerated at.
-    std::vector<int> degrees{1};
-    /// The modularity resolution sequence scanned per pass.
-    std::vector<double> resolutions{1.0};
-    /// How many cobordism frames the overlay retains. One analysis pass is one
-    /// frame, so the retained frames are the last \p frameHistory passes, each
-    /// keeping its components, its candidate bands and their anchors. The
-    /// candidate's lifetime, its smallest adjacent-frame overlap, its
-    /// per-frame band and anchor families and its lifetime transports are
-    /// measured across them; with `frameHistory` 1 there is no history, the
-    /// pass sees a single frame, and the lifetime certificates fail by name
-    /// rather than passing vacuously. The default 4 clears the classifier's
-    /// two-frame stability floor with room to lose a frame.
-    /// @throws std::invalid_argument (from `setAnalysisConfig`) below 1.
-    int frameHistory = 4;
-    /// How the determinant line of a lifetime transport family is closed.
-    ///
-    ///  - `"none"` (the default): the family is an open cobordism segment with
-    ///    no declared closure. Its phase is reported and the winding is left
-    ///    unknown — an open path has no integer winding, and inventing one
-    ///    would be a measurement nobody made.
-    ///  - `"closed-family"`: the caller declares the candidate's world tube
-    ///    closed, so the family is read cyclically (the closing step returns to
-    ///    the first sample) and the closed-family determinant winding is the
-    ///    winding reported. It is a declaration about the run, like a causal
-    ///    type, and it is recorded on every read it produces. The overlay
-    ///    consumes that winding; nothing here computes it.
-    ///
-    /// @throws std::invalid_argument (from `setAnalysisConfig`) on any other
-    ///   value: an unrecognized closure is refused, never silently ignored.
-    std::string lifetimeWindingClosure{"none"};
-    /// Build the lazy Fock expression. For oracle and explicit non-Gaussian
-    /// boundary data only, never the quasi-free production representation.
-    bool fockOracle = false;
-    /// Serve nothing from the `AnalyticCache`, so the cold path can be compared
-    /// against the incremental one.
-    bool coldCaches = false;
-  };
-
   /// Configure the analysis overlay.
-  void setAnalysisConfig(const AnalysisConfig &config);
+  void setAnalysisConfig(const multicobordism::AnalysisConfig &config);
   /// The analysis-overlay configuration in force.
-  [[nodiscard]] const AnalysisConfig &analysisConfig() const noexcept {
+  [[nodiscard]] const multicobordism::AnalysisConfig &analysisConfig() const noexcept {
     return analysisConfig_;
   }
 
@@ -2153,11 +1654,11 @@ class MultiCobordism {
   /// The node's live complex.
   [[nodiscard]] std::shared_ptr<Spacetime> spacetime() const { return spacetime_; }
   /// The input boundary blocks, in seed order.
-  [[nodiscard]] const std::vector<BoundaryBlock> &inputs() const {
+  [[nodiscard]] const std::vector<multicobordism::BoundaryBlock> &inputs() const {
     return inputBlocks_;
   }
   /// The output boundary blocks, in seed order.
-  [[nodiscard]] const std::vector<BoundaryBlock> &outputs() const {
+  [[nodiscard]] const std::vector<multicobordism::BoundaryBlock> &outputs() const {
     return outputBlocks_;
   }
   /// Whether the last `runStage2` ended at a stationary point — no complex-z
@@ -2192,14 +1693,14 @@ class MultiCobordism {
   /// sub-complex (`Spacetime::getRegion`) against the block's target. When the
   /// block has no full sub-complex yet, the full leak summed over the degrees.
   [[nodiscard]] double residualForBoundaryBlock(
-      const BoundaryBlock &boundaryBlock,
+      const multicobordism::BoundaryBlock &boundaryBlock,
       const std::shared_ptr<Spacetime> &spacetime) const;
   /// The same block term, sharing one `claimedMatchings` set with the rest of the
   /// `r_U` evaluation so this block's register degrees cannot re-use a relabeling
   /// another register already won (see
   /// `EigenstateSynthesis::targetStateResidual`).
   [[nodiscard]] double residualForBoundaryBlockWithDistinctMatchings(
-      const BoundaryBlock &boundaryBlock,
+      const multicobordism::BoundaryBlock &boundaryBlock,
       const std::shared_ptr<Spacetime> &spacetime,
       std::set<std::vector<int>> &claimedMatchings) const;
   // Seed one boundary block per (seed, target) — region = the seed's cell-neighbourhood
@@ -2207,12 +1708,12 @@ class MultiCobordism {
   // grown later by growBlockRegions, not here.
   void seedBlocks(const std::vector<std::uint64_t> &seeds,
                   const std::vector<std::vector<std::complex<double>>> &targets,
-                  std::vector<BoundaryBlock> &destinationBlocks);
+                  std::vector<multicobordism::BoundaryBlock> &destinationBlocks);
   /// The shared tail of `seedBlocks` and the region form of `seedInputs`: one
   /// block per (region, target), appended to `destinationBlocks`.
   void seedBlockRegions(const std::vector<std::set<std::uint64_t>> &regions,
                         const std::vector<std::vector<std::complex<double>>> &targets,
-                        std::vector<BoundaryBlock> &destinationBlocks, bool surface);
+                        std::vector<multicobordism::BoundaryBlock> &destinationBlocks, bool surface);
 
   /// What the bridge phase reads off a complex: the surface input blocks with
   /// their faces and the simplices of those faces, the top cells, and the facet
@@ -2270,7 +1771,7 @@ class MultiCobordism {
   /// on a node with surface inputs whose bridge phase is incomplete, `bridge`
   /// (payload = the cell's vertex ids). The move is only described here, not
   /// applied — see `applyMoveSpecification`.
-  [[nodiscard]] MoveSpec drawRandomMoveSpecification(const Spacetime &spacetime);
+  [[nodiscard]] multicobordism::MoveSpec drawRandomMoveSpecification(const Spacetime &spacetime);
   /// Apply a move specification from `drawRandomMoveSpecification` to
   /// \p spacetime in place. Returns true when the move was applied and the
   /// result passes the `dualComplexValid` gate at `dualComplexGateDegree_`;
@@ -2279,7 +1780,7 @@ class MultiCobordism {
   /// leaves is a valid manifold.
   [[nodiscard]] bool applyMoveSpecification(
       const std::shared_ptr<Spacetime> &spacetime,
-      const MoveSpec &moveSpecification);
+      const multicobordism::MoveSpec &moveSpecification);
   [[nodiscard]] double
   deltaF(const std::shared_ptr<Spacetime> &candidateSpacetime,
          double baseObjective, double baseResidualU,
@@ -2381,7 +1882,7 @@ class MultiCobordism {
   /// Ordered exact-period state constraints: explicit fixtures over a
   /// caller-supplied topology, separate from emergent block matching and from
   /// geometric pinning.
-  std::vector<RegisterConstraint> registerConstraints_;
+  std::vector<multicobordism::RegisterConstraint> registerConstraints_;
   /// Propagated to every spacetime this node constructs: the host before the
   /// precone, and each candidate snapshot rebuild.
   bool balancedEdgeWiring_{false};
@@ -2471,16 +1972,16 @@ class MultiCobordism {
   /// The whole-complex fiber target, when one is set.
   std::optional<BoundaryFiber> wholeFiberTarget_;
   /// The single two-body target, when one is set.
-  std::optional<TwoBodyTarget> twoBodyTarget_;
+  std::optional<multicobordism::TwoBodyTarget> twoBodyTarget_;
   /// The declared two-body cases, in the order they were set.
-  std::vector<TwoBodyCase> twoBodyCases_;
+  std::vector<multicobordism::TwoBodyCase> twoBodyCases_;
   /// Write \p boundaryCase's boundary metric onto \p spacetime, returning what
   /// was there so the caller can put it back. Const because the complex is held
   /// by pointer and the cases read it under several boundary conditions rather
   /// than change it: every writer restores.
   [[nodiscard]] std::vector<std::pair<std::pair<std::uint64_t, std::uint64_t>,
                                       std::complex<double>>>
-  writeCaseBoundary(const TwoBodyCase &boundaryCase,
+  writeCaseBoundary(const multicobordism::TwoBodyCase &boundaryCase,
                     const std::shared_ptr<Spacetime> &spacetime) const;
   /// Restore exact complex edge lengths returned by `writeCaseBoundary`.
   /// Storing lengths rather than squared lengths preserves the square-root
@@ -2499,8 +2000,8 @@ class MultiCobordism {
   /// std::runtime_error.
   /// @throws std::logic_error when only one block carries a frame.
   [[nodiscard]] chainhodge::TransferResult frameTransferOn(
-      const std::shared_ptr<Spacetime> &spacetime, const BoundaryBlock &A,
-      const BoundaryBlock &B) const;
+      const std::shared_ptr<Spacetime> &spacetime, const multicobordism::BoundaryBlock &A,
+      const multicobordism::BoundaryBlock &B) const;
   /// One operand of the transfer on \p spacetime: the block's frame in effect —
   /// derived live from its marking when it carries one (`deriveFrame`; an
   /// obstructed derivation throws `std::runtime_error`, which the residual
@@ -2511,16 +2012,16 @@ class MultiCobordism {
     /// The cells the operand is placed on.
     std::vector<std::vector<std::uint64_t>> cells;
     /// The frame in effect, or empty when the operand is unframed.
-    std::optional<BlockFrame> frame;
+    std::optional<multicobordism::BlockFrame> frame;
     /// True when the frame was derived live from the block's marking.
     bool derived{false};
   };
   /// The transfer operand of \p block on \p spacetime.
-  [[nodiscard]] TransferOperand transferOperand(const BoundaryBlock &block,
+  [[nodiscard]] TransferOperand transferOperand(const multicobordism::BoundaryBlock &block,
                                                 const std::shared_ptr<Spacetime> &spacetime) const;
   /// The target edge values of a marked block through a frame: a degree-1
   /// fiber on the frame's cells with images \f$ F\,(a, b)^T \f$.
-  [[nodiscard]] static BoundaryFiber stateTargetOf(const BlockMarking &marking, const BlockFrame &frame);
+  [[nodiscard]] static BoundaryFiber stateTargetOf(const multicobordism::BlockMarking &marking, const multicobordism::BlockFrame &frame);
   /// The transfer between two paired frames: each side's blocks stacked into one
   /// frame, with cells concatenated and images block-diagonal.
   ///
@@ -2530,27 +2031,27 @@ class MultiCobordism {
   /// dimension alone.
   [[nodiscard]] chainhodge::TransferResult pairedFrameTransferOn(
       const std::shared_ptr<Spacetime> &spacetime,
-      const std::vector<const BoundaryBlock *> &sideA,
-      const std::vector<const BoundaryBlock *> &sideB) const;
+      const std::vector<const multicobordism::BoundaryBlock *> &sideA,
+      const std::vector<const multicobordism::BoundaryBlock *> &sideB) const;
   /// The projective leak of \p target against the frame transfer
   /// \f$T_{AB}\f$ — the reading `ReadoutMode::Transfer` selects. Returns the
   /// full leak 1.0 when the geometry is refused.
   [[nodiscard]] double transferResidualOn(
       const std::shared_ptr<Spacetime> &spacetime,
-      const TwoBodyTarget &target) const;
+      const multicobordism::TwoBodyTarget &target) const;
   /// The gradient of the selected two-body residual, summed over the readings
   /// that implement one. Used by `fiberModeAscent`; bulk and paired-operator
   /// readings are refused so stage 2 can choose its numerical fallback.
-  [[nodiscard]] ResidualGradient selectedTwoBodyResidualGradientOn(
+  [[nodiscard]] multicobordism::ResidualGradient selectedTwoBodyResidualGradientOn(
       const std::shared_ptr<Spacetime> &spacetime,
-      const TwoBodyTarget &target) const;
+      const multicobordism::TwoBodyTarget &target) const;
   /// The two-body residual of \p target on \p spacetime, summed over the
   /// selected readings.
   [[nodiscard]] double twoBodyResidualOn(const std::shared_ptr<Spacetime> &spacetime,
-                                         const TwoBodyTarget &target) const;
+                                         const multicobordism::TwoBodyTarget &target) const;
   /// The two input blocks carrying an attached fiber, in block order.
   /// @throws std::logic_error unless exactly two do.
-  [[nodiscard]] std::pair<const BoundaryBlock *, const BoundaryBlock *> attachedInputBlocks() const;
+  [[nodiscard]] std::pair<const multicobordism::BoundaryBlock *, const multicobordism::BoundaryBlock *> attachedInputBlocks() const;
   /// The shape of the transfer between two attached input blocks: the frames'
   /// ranks when both carry one, the cell counts when neither does. Empty when
   /// only one does, in which case the shape is settled at read time, or when
@@ -2579,12 +2080,12 @@ class MultiCobordism {
   /// the parent's edge lengths and phases, with its facets materialized for the
   /// fiber reads. Null when the region holds no top cell.
   [[nodiscard]] static std::shared_ptr<Spacetime> blockSubcomplexWithGeometry(
-      const BoundaryBlock &block, const std::shared_ptr<Spacetime> &spacetime);
+      const multicobordism::BoundaryBlock &block, const std::shared_ptr<Spacetime> &spacetime);
   /// The complex a block's fiber is read on: a surface block's own surface
   /// (`blockSurfaceWithGeometry`), an ordinary block's sub-complex
   /// (`blockSubcomplexWithGeometry`). Null when there is nothing to read.
   [[nodiscard]] static std::shared_ptr<Spacetime> blockComplexWithGeometry(
-      const BoundaryBlock &block, const std::shared_ptr<Spacetime> &spacetime);
+      const multicobordism::BoundaryBlock &block, const std::shared_ptr<Spacetime> &spacetime);
   /// An input region stops growing once its residual drops below this, i.e.
   /// once it carries its state.
   double inputCarriedTolerance_ = 1e-12;
@@ -2595,7 +2096,7 @@ class MultiCobordism {
   /// Whether the move draw and the enumeration offer the surgical kinds.
   bool shouldProposeSurgery_{true};
   /// What the two-body target is scored against (`setReadoutModes`).
-  std::vector<ReadoutMode> readoutModes_{ReadoutMode::Transfer};
+  std::vector<multicobordism::ReadoutMode> readoutModes_{multicobordism::ReadoutMode::Transfer};
   /// The state `ReadoutMode::Whole` scores against (`setOutputStateTarget`).
   std::optional<Eigen::VectorXcd> outputStateTarget_;
   /// Why the last harmonic readout could not name a state (empty when it
@@ -2610,9 +2111,9 @@ class MultiCobordism {
   /// Set by `stage1Update`: the committed sequence's lookahead depth. 0 means
   /// the update committed nothing.
   int lastStage1LookaheadDepth_ = 0;
-  std::vector<BoundaryBlock> inputBlocks_;
-  WholePairing wholePairing_{WholePairing::Periods};
-  std::vector<BoundaryBlock> outputBlocks_;
+  std::vector<multicobordism::BoundaryBlock> inputBlocks_;
+  multicobordism::WholePairing wholePairing_{multicobordism::WholePairing::Periods};
+  std::vector<multicobordism::BoundaryBlock> outputBlocks_;
 
   // ---- analysis-overlay state ----
   //
@@ -2622,8 +2123,8 @@ class MultiCobordism {
   // (`carriedModeCells_`, `carriedCovariance_`, `carriedStateEnergyWeight_`),
   // and only through the `ObjectiveTerms::carriedStateEnergy` scalar, and only
   // while the run declares `EmergenceSubmode::CertificatesBlindMeanField`.
-  SimulationMode simulationMode_{SimulationMode::Emergence};
-  EmergenceSubmode emergenceSubmode_{EmergenceSubmode::Strict};
+  multicobordism::SimulationMode simulationMode_{multicobordism::SimulationMode::Emergence};
+  multicobordism::EmergenceSubmode emergenceSubmode_{multicobordism::EmergenceSubmode::Strict};
   /// The carried modes' `carriedStateDegree_`-cells, by vertex tuple.
   std::vector<std::vector<std::uint64_t>> carriedModeCells_{};
   /// \f$ \Gamma \f$, flat row-major over the carried modes.
@@ -2642,10 +2143,10 @@ class MultiCobordism {
   /// own defaults describe a healthy complex (`meshQuality` 1), which as a
   /// lower bound would fire on every real mesh; zero means "never" in both
   /// senses, so an unconfigured node never refines.
-  RefinementIndicators refinementThresholds_{0.0, 0.0, 0.0, 0.0, 0.0};
+  multicobordism::RefinementIndicators refinementThresholds_{0.0, 0.0, 0.0, 0.0, 0.0};
   /// |ΔF| of the last accepted stage-2 update: the solver-error indicator.
   double lastStage2Improvement_{0.0};
-  AnalysisConfig analysisConfig_{};
+  multicobordism::AnalysisConfig analysisConfig_{};
   std::string provenanceConfigHash_{};
   std::string provenanceCommit_{};
   std::uint64_t seed_{0};

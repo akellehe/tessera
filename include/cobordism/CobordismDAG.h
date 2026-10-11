@@ -92,7 +92,7 @@ class CobordismDAG {
   void setInputAttachment(int node, int slot, std::vector<std::vector<std::uint64_t>> cells);
   void setTwoBodyTarget(int node, Eigen::MatrixXcd chi, bool choiDecomposed = true);
   /// The node's two-body reading after `run`; throws when the node carries none.
-  [[nodiscard]] const MultiCobordism::TwoBodyRead &twoBodyRead(int node) const;
+  [[nodiscard]] const multicobordism::TwoBodyRead &twoBodyRead(int node) const;
   [[nodiscard]] bool hasTwoBodyRead(int node) const;
 
  private:
@@ -114,8 +114,8 @@ class CobordismDAG {
   bool scoreBlocksByFiber_{false};
   std::vector<std::vector<std::optional<BoundaryFiber>>> outputFibers_;  // per node
   std::vector<std::map<int, std::vector<std::vector<std::uint64_t>>>> attachments_;  // per node, per slot
-  std::vector<std::optional<MultiCobordism::TwoBodyTarget>> twoBodyTargets_;      // per node
-  std::vector<std::optional<MultiCobordism::TwoBodyRead>> twoBodyReads_;          // per node
+  std::vector<std::optional<multicobordism::TwoBodyTarget>> twoBodyTargets_;      // per node
+  std::vector<std::optional<multicobordism::TwoBodyRead>> twoBodyReads_;          // per node
   std::vector<std::string> fiberRefusals_;
   std::vector<int> pipedInputs_;
 };

@@ -116,10 +116,10 @@ class DriveTest(unittest.TestCase):
         node = MC(host, [], [], list(ea.DECLARED_REGISTER_DEGREES), 1.0,
                   ea.DECLARED_SEED)
         node.set_objective(cob.JointStationarityObjective())
-        node.set_simulation_mode(MC.SimulationMode.EMERGENCE,
-                                 MC.EmergenceSubmode.STRICT)
-        self.assertEqual(node.simulation_mode, MC.SimulationMode.EMERGENCE)
-        self.assertEqual(node.emergence_submode, MC.EmergenceSubmode.STRICT)
+        node.set_simulation_mode(cob.multicobordism.SimulationMode.EMERGENCE,
+                                 cob.multicobordism.EmergenceSubmode.STRICT)
+        self.assertEqual(node.simulation_mode, cob.multicobordism.SimulationMode.EMERGENCE)
+        self.assertEqual(node.emergence_submode, cob.multicobordism.EmergenceSubmode.STRICT)
 
     def test_no_input_or_output_target_is_pinned(self):
         """The node is built with empty target lists: nothing is prescribed.

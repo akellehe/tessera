@@ -71,8 +71,8 @@ def _refined_ball4(n_refine=4, seed=3):
 def _node(st, seed=7):
     node = cob.MultiCobordism(st, [], [], degrees=[1], gamma=0.0, seed=seed)
     node.set_objective(cob.JointStationarityObjective())
-    node.set_simulation_mode(cob.MultiCobordism.SimulationMode.EMERGENCE,
-                             cob.MultiCobordism.EmergenceSubmode.STRICT)
+    node.set_simulation_mode(cob.multicobordism.SimulationMode.EMERGENCE,
+                             cob.multicobordism.EmergenceSubmode.STRICT)
     return node
 
 

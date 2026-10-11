@@ -223,8 +223,8 @@ DECLARED_WHOLE_PAIRING = "periods"
 
 #: The engine's whole-reading pairings by their command-line names.
 _WHOLE_PAIRINGS = {
-    "periods": MC.WholePairing.PERIODS,
-    "gram": MC.WholePairing.GRAM,
+    "periods": cob.multicobordism.WholePairing.PERIODS,
+    "gram": cob.multicobordism.WholePairing.GRAM,
 }
 
 #: The state the whole complex's harmonic form is meant to be (`--output-state`),
@@ -638,10 +638,10 @@ qubit mode: how --tori, --readout and --output-state fit together
 
 
 _READOUT_MODES = {
-    "transfer": MC.ReadoutMode.TRANSFER,
-    "bulk": MC.ReadoutMode.BULK,
-    "whole": MC.ReadoutMode.WHOLE,
-    "operator": MC.ReadoutMode.OPERATOR,
+    "transfer": cob.multicobordism.ReadoutMode.TRANSFER,
+    "bulk": cob.multicobordism.ReadoutMode.BULK,
+    "whole": cob.multicobordism.ReadoutMode.WHOLE,
+    "operator": cob.multicobordism.ReadoutMode.OPERATOR,
 }
 
 

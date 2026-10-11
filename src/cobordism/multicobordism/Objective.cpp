@@ -618,7 +618,7 @@ double MultiCobordism::objectiveOf(const ObjectiveTerms &terms) {
   return CobordismObjective::total(terms);
 }
 
-std::vector<MultiCobordism::ObjectiveContribution>
+std::vector<multicobordism::ObjectiveContribution>
 MultiCobordism::objectiveContributionsFor(
     const std::shared_ptr<Spacetime> &spacetime) const {
   // One contribution per objective, in evaluation order, so a reader can tell
@@ -636,12 +636,12 @@ MultiCobordism::objectiveContributionsFor(
   return contributions;
 }
 
-std::vector<MultiCobordism::ObjectiveContribution>
+std::vector<multicobordism::ObjectiveContribution>
 MultiCobordism::objectiveContributions() const {
   return objectiveContributionsFor(spacetime_);
 }
 
-MultiCobordism::ObjectiveTerms MultiCobordism::objectiveTermsFor(
+ObjectiveTerms MultiCobordism::objectiveTermsFor(
     const std::shared_ptr<Spacetime> &spacetime) const {
   // The engine does not know which functional it is scoring: it assembles the
   // firewalled context and the injected objective decomposes itself.
@@ -663,7 +663,7 @@ MultiCobordism::ObjectiveTerms MultiCobordism::objectiveTermsFor(
   return terms;
 }
 
-MultiCobordism::ObjectiveTerms MultiCobordism::objectiveTerms() const {
+ObjectiveTerms MultiCobordism::objectiveTerms() const {
   return objectiveTermsFor(spacetime_);
 }
 

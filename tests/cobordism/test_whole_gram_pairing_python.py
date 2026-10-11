@@ -33,7 +33,7 @@ sys.path.insert(0, os.path.join(
     "examples", "cobordism"))
 
 from tessera.drivers import qubit as qa
-from tessera._tessera.cobordism import MultiCobordism as MC  # noqa: E402
+from tessera._tessera.cobordism import MultiCobordism as MC, multicobordism  # noqa: E402
 
 GRID, TAU_A, TAU_B, TAU_OUT = 3, 0.3 + 1.1j, -0.2 + 0.8j, "0.1+1.3j"
 
@@ -71,7 +71,7 @@ def swept(node):
 def test_periods_is_the_default_and_is_unchanged():
     """The reading every recorded run used, to its last digit."""
     node = seeded("periods")
-    assert node.whole_pairing == MC.WholePairing.PERIODS
+    assert node.whole_pairing == multicobordism.WholePairing.PERIODS
     assert qa.build_config()["whole_pairing"] == "periods"
     assert node.whole_harmonic_obstruction == ""
     assert abs(node.whole_harmonic_residual(np.eye(2, dtype=complex))
@@ -87,7 +87,7 @@ def test_the_periods_reading_does_not_respond_to_the_metric():
 def test_the_gram_reading_does_respond():
     """The point of the flag."""
     node = seeded("gram")
-    assert node.whole_pairing == MC.WholePairing.GRAM
+    assert node.whole_pairing == multicobordism.WholePairing.GRAM
     assert node.whole_harmonic_obstruction == "", node.whole_harmonic_obstruction
     values = swept(node)
     assert max(abs(v - values[0]) for v in values) > 1e-3

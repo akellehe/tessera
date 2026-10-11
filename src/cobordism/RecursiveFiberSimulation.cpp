@@ -47,6 +47,12 @@
 
 namespace tessera::cobordism {
 
+using multicobordism::AnalysisConfig;
+using multicobordism::EmergenceSubmode;
+using multicobordism::RefinementDecision;
+using multicobordism::RefinementIndicators;
+using multicobordism::SimulationMode;
+
 using ::tessera::observables::ColorAnchor;
 using ::tessera::observables::ComponentRead;
 using ::tessera::observables::PersistentModularity;
@@ -717,7 +723,7 @@ std::vector<std::string> MultiCobordism::refinementIndicatorNames() {
           "curvature_concentration", "mesh_quality", "solver_error"};
 }
 
-MultiCobordism::RefinementIndicators MultiCobordism::refinementIndicators()
+multicobordism::RefinementIndicators MultiCobordism::refinementIndicators()
     const {
   RefinementIndicators indicators;
   indicators.solverError = lastStage2Improvement_;
@@ -764,7 +770,7 @@ void MultiCobordism::setRefinementThresholds(
   refinementThresholds_ = thresholds;
 }
 
-MultiCobordism::RefinementDecision MultiCobordism::refinementDecisionOf(
+multicobordism::RefinementDecision MultiCobordism::refinementDecisionOf(
     const RefinementIndicators &indicators,
     const RefinementIndicators &thresholds) {
   // Static over two indicator records; nothing else is in scope here.
@@ -796,7 +802,7 @@ MultiCobordism::RefinementDecision MultiCobordism::refinementDecisionOf(
   return decision;
 }
 
-MultiCobordism::RefinementDecision MultiCobordism::refinementDecision() const {
+multicobordism::RefinementDecision MultiCobordism::refinementDecision() const {
   return refinementDecisionOf(refinementIndicators(), refinementThresholds_);
 }
 

@@ -74,7 +74,7 @@ std::shared_ptr<Spacetime> MultiCobordism::build(
   return rebuiltSpacetime;
 }
 
-MultiCobordism::MoveSpec MultiCobordism::drawRandomMoveSpecification(
+multicobordism::MoveSpec MultiCobordism::drawRandomMoveSpecification(
     const Spacetime &spacetime) {
   // With emergent dispositions enabled the draw also offers a timelike cone-in
   // and a disposition flip on an existing edge. Both are ordinary candidate moves:
@@ -154,7 +154,7 @@ MultiCobordism::MoveSpec MultiCobordism::drawRandomMoveSpecification(
           boundaryFacets[randomNumberGenerator_() % boundaryFacets.size()]};
 }
 
-std::vector<MultiCobordism::MoveSpec> MultiCobordism::enumerateMoveSpecifications(
+std::vector<multicobordism::MoveSpec> MultiCobordism::enumerateMoveSpecifications(
     const std::shared_ptr<Spacetime> &spacetime, bool withDispositions,
     bool withSurgery) {
   std::vector<MoveSpec> specifications;

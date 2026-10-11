@@ -60,7 +60,7 @@ colour singlet {1, w, w*w} (w = (-1 + i*sqrt(3))/2, the primitive cube root of
 unity) as an output target and accepts an attempt only if the whole cobordism
 carries that singlet on at least min_emergent_holes holes. Targets are
 permitted only in explicitly labelled controlled synthesis, so every node this
-class builds is in MultiCobordism.SimulationMode.SYNTHESIS (recorded on a
+class builds is in multicobordism.SimulationMode.SYNTHESIS (recorded on a
 checkpoint as "synthesis"), and drive_node, build() and build_direct() refuse,
 with ValueError, a node in any other mode, including either emergence
 sub-mode. The emergence protocol pins no target.

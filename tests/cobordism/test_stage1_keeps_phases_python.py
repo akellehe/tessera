@@ -342,7 +342,7 @@ def test_committed_cone_in_keeps_every_surviving_edge_bit_exactly(whitney_defaul
     # one is allowed: a node with a declared boundary refuses cone-ins by
     # default (#997), so the old behaviour is asked for by name here.
     node.set_boundary_may_extend(True)
-    thresholds = MC.RefinementIndicators()
+    thresholds = cob.multicobordism.RefinementIndicators()
     thresholds.mesh_quality = 2.0  # a lower bound every mesh crosses: refine now
     node.set_refinement_thresholds(thresholds)
     assert node.refine_geometry(1) == 1
@@ -481,7 +481,7 @@ def ordinary_node_dump():
     # one is allowed: a node with a declared boundary refuses cone-ins by
     # default (#997), so the old behaviour is asked for by name here.
     node.set_boundary_may_extend(True)
-    thresholds = MC.RefinementIndicators()
+    thresholds = cob.multicobordism.RefinementIndicators()
     thresholds.mesh_quality = 2.0
     node.set_refinement_thresholds(thresholds)
     committed = node.refine_geometry(1)

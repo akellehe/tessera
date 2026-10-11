@@ -11,7 +11,7 @@
 
 namespace tessera::cobordism {
 
-MultiCobordism::BlockSurface MultiCobordism::blockSurface(const BoundaryBlock &block,
+multicobordism::BlockSurface MultiCobordism::blockSurface(const BoundaryBlock &block,
                                                           const Spacetime &spacetime) {
   const std::size_t faceSize = static_cast<std::size_t>(std::max(0, spacetime.getDimensions()));
   const auto inside = [&](const std::vector<std::uint64_t> &ids) {
