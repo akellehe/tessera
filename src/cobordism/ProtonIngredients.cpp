@@ -53,7 +53,7 @@ std::shared_ptr<Spacetime> ProtonIngredients::buildMinimalSeed() {
   // Unbalanced wiring, which is what this arm has always built. Unlike
   // ProtonSynthesis::buildMinimalSeed there is no parameter to select the balanced
   // variant, because nothing composes this arm with balanced edges.
-  return MultiCobordism::seedSimplex(kDim, /*balancedEdges=*/false);
+  return SolidSimplex::spacetime(kDim, /*balancedEdges=*/false);
 }
 
 std::shared_ptr<MultiCobordism> ProtonIngredients::recombinationNode(

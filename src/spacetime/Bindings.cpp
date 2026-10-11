@@ -118,7 +118,11 @@ Pachner moves (add, remove, flip, iflip, shift).)doc")
       .def("n", &SolidSimplex::n, "Dimension n of the simplex.")
       .def("build", &SolidSimplex::build, py::arg("spacetime"),
            py::arg("num_simplices") = 0,
-           "Build the solid n-simplex (numSimplices ignored).");
+           "Build the solid n-simplex (numSimplices ignored).")
+      .def_static("spacetime", &SolidSimplex::spacetime, py::arg("dimension"),
+                  py::arg("balanced_edges") = false,
+                  "A built spacetime of the solid dimension-simplex: a single-simplex host "
+                  "with a uniform Lorentzian metric, the seed a cobordism grows from.");
 
   py::class_<RealProjectivePlane, Topology,
              std::shared_ptr<RealProjectivePlane> >(m, "RealProjectivePlane",

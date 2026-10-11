@@ -2,7 +2,7 @@
 # All rights reserved.
 """`--edge-disposition` on the qubit collar's interior (#1074).
 
-`seed_collar` writes each torus's own lengths onto its edges and wires every
+`SurfaceSeed.collar` writes each torus's own lengths onto its edges and wires every
 other edge to 1.0, so a qubit host was all-spacelike in its bulk with no way
 to say otherwise. The flag existed in the combined driver but was INERT in
 qubit mode -- its only consumers were the neutral host builder and a caption

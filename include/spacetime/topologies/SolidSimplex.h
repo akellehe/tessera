@@ -4,6 +4,7 @@
 #ifndef TESSERA_SOLIDSIMPLEX_H
 #define TESSERA_SOLIDSIMPLEX_H
 
+#include <memory>
 #include "Topology.h"
 
 // === tessera subsystem ns fwd-decls ===
@@ -25,6 +26,19 @@ class SolidSimplex : public Topology {
   public:
     /// @param n Dimension of the simplex (n >= 1).
     explicit SolidSimplex(int n) : n_(n) {}
+
+    /// A built spacetime of the solid \p dimension-simplex: a single-simplex
+    /// host with a uniform metric (\f$ |\ell^2| = 1 \f$; balanced wiring gives
+    /// \f$ \ell=\sqrt{1/2}(1+i) \f$),
+    /// Lorentzian signature, and the causal dynamical triangulations (CDT) type
+    /// and preferred foliation. This is the seed every host grows from;
+    /// `ProtonSynthesis::buildMinimalSeed` is this at dimension 4.
+    ///
+    /// Reference: Ambjorn, Jurkiewicz and Loll, "Dynamically Triangulating
+    /// Lorentzian Quantum Gravity", arXiv:hep-th/0105267.
+    /// @throws std::invalid_argument for dimension below 1.
+    [[nodiscard]] static std::shared_ptr<Spacetime> spacetime(int dimension,
+                                                               bool balancedEdges = false);
 
     [[nodiscard]] int n() const noexcept { return n_; }
 

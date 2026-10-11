@@ -127,7 +127,7 @@ def state_fiber(q, ids, contour_on=None):
 def collar(n, seed_value=0, einstein_hilbert=False, attach=(0, 1), with_contour=True, layers=1,
            real_squared_lengths_only=False, weight=None):
     qa, qb = torus(TAU_A, n), torus(TAU_B, n)
-    seed = MC.seed_collar(qa.spacetime(), qb.spacetime(), layers)
+    seed = cob.SurfaceSeed.collar(qa.spacetime(), qb.spacetime(), layers)
     node = MC(seed.host, [[1.0 + 0j], [1.0 + 0j]], [], degrees=[1], seed=seed_value,
               einstein_hilbert=einstein_hilbert, real_squared_lengths_only=real_squared_lengths_only)
     node.seed_inputs([sorted(ids.values()) for ids in seed.vertex_ids])
@@ -472,7 +472,7 @@ def ordinary_read(st, block):
 def test_ordinary_nodes_read_as_before(whitney_default):
     rng = np.random.default_rng(11)
     psi, phi = (rng.normal(size=4) + 1j * rng.normal(size=4) for _ in range(2))
-    node = MC(MC.seed_simplex(3), [[1.0 + 0j, 0j, 0j, 0j], [1.0 + 0j, 0j, 0j, 0j]], [], degrees=[0],
+    node = MC(T.SolidSimplex.spacetime(3), [[1.0 + 0j, 0j, 0j, 0j], [1.0 + 0j, 0j, 0j, 0j]], [], degrees=[0],
               seed=0, precone=8, einstein_hilbert=False)
     for e in node.spacetime().get_edge_list().to_vector():
         s = 1.0 + 0.15 * rng.uniform(-1, 1) + 1j * 0.15 * rng.uniform(-1, 1)

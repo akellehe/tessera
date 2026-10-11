@@ -101,7 +101,7 @@ class ProtonSynthesis {
   ///                        uniform edge-length magnitude. Takes precedence
   ///                        over `preconeTimelike`.
   ///   * `balancedEdges`  — wire the seed and every node with the balanced
-  ///                        edge form (`MultiCobordism::seedSimplex`, where
+  ///                        edge form (`SolidSimplex::spacetime`, where
   ///                        balanced wiring gives `ℓ = √(1/2)(1+i)`).
   ///   * `singularValueRatio` — score the whole-complex term of `r_U` with the
   ///                        scale-invariant singular-value half-sum ratio

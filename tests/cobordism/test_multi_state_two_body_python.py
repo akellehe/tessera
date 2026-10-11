@@ -31,6 +31,7 @@ import sys
 
 import numpy as np
 import pytest
+import tessera
 from tessera import cobordism as cob
 
 sys.path.insert(0, os.path.join(
@@ -164,7 +165,7 @@ def test_case_shape_validation_does_not_depend_on_readout_setter_order():
 
 
 def test_cases_set_before_targets_or_attachments_share_target_shapes():
-    node = MC(MC.seed_simplex(3), [], [], degrees=[1],
+    node = MC(tessera.SolidSimplex.spacetime(3), [], [], degrees=[1],
                  einstein_hilbert=False)
     with pytest.raises(ValueError, match=r"case 1 target.*case 0"):
         node.set_two_body_cases([

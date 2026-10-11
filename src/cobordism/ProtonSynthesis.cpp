@@ -97,8 +97,8 @@ std::shared_ptr<Spacetime> ProtonSynthesis::buildMinimalSeed(bool balancedEdges)
   // proton's whole topology is grown from here, and the metric is uniform
   // (ℓ² = 1) so the geometry comes from the relaxation. Only the seed simplex
   // and the target colour states are imposed. The dimension-generic builder is
-  // `MultiCobordism::seedSimplex`.
-  return MultiCobordism::seedSimplex(kDim, balancedEdges);
+  // `SolidSimplex::spacetime`.
+  return SolidSimplex::spacetime(kDim, balancedEdges);
 }
 
 std::shared_ptr<MultiCobordism> ProtonSynthesis::recombinationNode(std::uint64_t seed) const {

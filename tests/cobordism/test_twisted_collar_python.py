@@ -2,7 +2,7 @@
 # All rights reserved.
 """A twisted collar, so the cobordism is not the identity propagator (#1064).
 
-`seedCollar` identifies the two surfaces' vertices by ascending id: the
+`SurfaceSeed::collar` identifies the two surfaces' vertices by ascending id: the
 PRODUCT collar, whose two boundary tori are homologous, so every harmonic form
 has the same periods on both ends and the monodromy `M = P_B P_A^-1` is the
 identity. That cobordism carries its input straight through.
@@ -37,7 +37,7 @@ sys.path.insert(0, os.path.join(
 from tessera.drivers import qubit as qa
 from tessera import cobordism as cob  # noqa: E402
 from tessera import observables as obs  # noqa: E402
-from tessera._tessera.cobordism import MultiCobordism as MC, PencilLayer  # noqa: E402
+from tessera._tessera.cobordism import MultiCobordism as MC, SurfaceSeed, PencilLayer  # noqa: E402
 
 GRID, TAU_A, TAU_B = 3, 0.3 + 1.1j, -0.2 + 0.8j
 SWAP = [(k % GRID) * GRID + (k // GRID) for k in range(GRID * GRID)]
@@ -48,7 +48,7 @@ DEHN = [((k // GRID + k % GRID) % GRID) * GRID + (k % GRID) for k in range(GRID 
 def collar(twist):
     a = obs.SimplicialQubit.flat_torus(TAU_A, GRID, GRID)
     b = obs.SimplicialQubit.flat_torus(TAU_B, GRID, GRID)
-    seed = MC.seed_collar(a.spacetime(), b.spacetime(), 3, twist)
+    seed = SurfaceSeed.collar(a.spacetime(), b.spacetime(), 3, twist)
     ids = [{int(k): int(v) for k, v in m.items()} for m in seed.vertex_ids]
     node = MC(seed.host, [[1.0 + 0j]] * 2, [], degrees=[1], seed=1,
               einstein_hilbert=False, real_squared_lengths_only=False,
@@ -134,16 +134,16 @@ def test_a_dehn_twist_is_refused_by_name():
     a = obs.SimplicialQubit.flat_torus(TAU_A, GRID, GRID)
     b = obs.SimplicialQubit.flat_torus(TAU_B, GRID, GRID)
     with pytest.raises(ValueError, match="differ in combinatorics"):
-        MC.seed_collar(a.spacetime(), b.spacetime(), 3, DEHN)
+        SurfaceSeed.collar(a.spacetime(), b.spacetime(), 3, DEHN)
 
 
 def test_a_twist_that_is_not_a_permutation_is_refused():
     a = obs.SimplicialQubit.flat_torus(TAU_A, GRID, GRID)
     b = obs.SimplicialQubit.flat_torus(TAU_B, GRID, GRID)
     with pytest.raises(ValueError, match="not a permutation"):
-        MC.seed_collar(a.spacetime(), b.spacetime(), 3, [0] * (GRID * GRID))
+        SurfaceSeed.collar(a.spacetime(), b.spacetime(), 3, [0] * (GRID * GRID))
     with pytest.raises(ValueError, match="entries for"):
-        MC.seed_collar(a.spacetime(), b.spacetime(), 3, [0, 1])
+        SurfaceSeed.collar(a.spacetime(), b.spacetime(), 3, [0, 1])
 
 
 def test_the_driver_flag_builds_the_permutation():
