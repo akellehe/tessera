@@ -17,8 +17,8 @@ def _make_spacetime(n_simplices=20):
 
 def _find_hinge(st):
     """Find a hinge (3-vertex simplex) with cofaces."""
-    for s in st.getSimplices():
-        if len(s.getVertices()) == 3 and len(s.getCofaces()) > 0:
+    for s in st.get_simplices():
+        if len(s.get_vertices()) == 3 and len(s.get_cofaces()) > 0:
             return s
     return None
 
@@ -30,7 +30,7 @@ class TestHingeLoop(unittest.TestCase):
         hinge = _find_hinge(st)
         if hinge is None:
             self.skipTest("No hinge found")
-        loop = wl.hingeLoop(hinge)
+        loop = wl.hinge_loop(hinge)
         self.assertGreaterEqual(len(loop), 2,
             "Hinge loop should have at least 2 simplices")
 
@@ -40,11 +40,11 @@ class TestHingeLoop(unittest.TestCase):
         hinge = _find_hinge(st)
         if hinge is None:
             self.skipTest("No hinge found")
-        loop = wl.hingeLoop(hinge)
-        hinge_verts = hinge.getVertices()
+        loop = wl.hinge_loop(hinge)
+        hinge_verts = hinge.get_vertices()
         for sigma in loop.simplices:
             for hv in hinge_verts:
-                self.assertTrue(sigma.hasVertex(hv),
+                self.assertTrue(sigma.has_vertex(hv),
                     "Every loop simplex must contain the hinge")
 
 
@@ -54,13 +54,13 @@ class TestGeodesicLoop(unittest.TestCase):
         wl = tessera.WilsonLoop(st)
         # Find a top-simplex
         start = None
-        for s in st.getSimplices():
-            if len(s.getVertices()) == 5:  # top-simplex in 4D
+        for s in st.get_simplices():
+            if len(s.get_vertices()) == 5:  # top-simplex in 4D
                 start = s
                 break
         if start is None:
             self.skipTest("No top-simplex found")
-        loop = wl.geodesicLoop(start)
+        loop = wl.geodesic_loop(start)
         self.assertGreaterEqual(len(loop), 2,
             "Geodesic loop should exist on a closed manifold")
 
@@ -70,13 +70,13 @@ class TestDualLatticeLoop(unittest.TestCase):
         st = _make_spacetime()
         wl = tessera.WilsonLoop(st)
         start = None
-        for s in st.getSimplices():
-            if len(s.getVertices()) == 5:  # top-simplex in 4D
+        for s in st.get_simplices():
+            if len(s.get_vertices()) == 5:  # top-simplex in 4D
                 start = s
                 break
         if start is None:
             self.skipTest("No top-simplex found")
-        loop = wl.dualLatticeLoop(start, 6)
+        loop = wl.dual_lattice_loop(start, 6)
         self.assertGreaterEqual(len(loop), 2)
 
 
@@ -87,9 +87,9 @@ class TestCombinatorialMode(unittest.TestCase):
         hinge = _find_hinge(st)
         if hinge is None:
             self.skipTest("No hinge found")
-        loop = wl.hingeLoop(hinge)
-        result = wl.evaluateCombinatorial(loop)
-        self.assertEqual(result.loopSize, len(loop))
+        loop = wl.hinge_loop(hinge)
+        result = wl.evaluate_combinatorial(loop)
+        self.assertEqual(result.loop_size, len(loop))
         self.assertEqual(result.value, float(len(loop)))
 
 
@@ -100,10 +100,10 @@ class TestDeficitAngleMode(unittest.TestCase):
         hinge = _find_hinge(st)
         if hinge is None:
             self.skipTest("No hinge found")
-        loop = wl.hingeLoop(hinge)
+        loop = wl.hinge_loop(hinge)
         if len(loop) < 2:
             self.skipTest("Hinge loop too small")
-        result = wl.evaluateDeficitAngle(loop)
+        result = wl.evaluate_deficit_angle(loop)
         val = complex(result.value)
         self.assertTrue(cmath.isfinite(val),
             f"Wilson value should be finite, got {val}")
@@ -121,11 +121,11 @@ class TestDeficitAngleMode(unittest.TestCase):
         hinge = _find_hinge(st)
         if hinge is None:
             self.skipTest("No hinge found")
-        loop = wl.hingeLoop(hinge)
+        loop = wl.hinge_loop(hinge)
         if len(loop) < 2:
             self.skipTest("Hinge loop too small")
-        result = wl.evaluateDeficitAngle(loop)
-        eps = solver.deficitAngle(hinge)
+        result = wl.evaluate_deficit_angle(loop)
+        eps = solver.deficit_angle(hinge)
         # The deficit is complex; the holonomy keeps it whole (cos of a complex
         # angle — the boost enters as a cosh), so compare in C.
         expected = ((4 - 2) + 2 * cmath.cos(eps)) / 4
@@ -140,12 +140,12 @@ class TestCausalMode(unittest.TestCase):
         hinge = _find_hinge(st)
         if hinge is None:
             self.skipTest("No hinge found")
-        loop = wl.hingeLoop(hinge)
+        loop = wl.hinge_loop(hinge)
         if len(loop) < 2:
             self.skipTest("Hinge loop too small")
-        result = wl.evaluateCausal(loop)
-        self.assertEqual(result.causalWindingNumber,
-                         int(result.causalWindingNumber))
+        result = wl.evaluate_causal(loop)
+        self.assertEqual(result.causal_winding_number,
+                         int(result.causal_winding_number))
 
 
 class TestEvaluateDispatch(unittest.TestCase):
@@ -155,36 +155,36 @@ class TestEvaluateDispatch(unittest.TestCase):
         hinge = _find_hinge(st)
         if hinge is None:
             self.skipTest("No hinge found")
-        loop = wl.hingeLoop(hinge)
+        loop = wl.hinge_loop(hinge)
         if len(loop) < 2:
             self.skipTest("Hinge loop too small")
         r1 = wl.evaluate(loop, tessera.WilsonMode.COMBINATORIAL)
-        r2 = wl.evaluateCombinatorial(loop)
+        r2 = wl.evaluate_combinatorial(loop)
         self.assertEqual(r1.value, r2.value)
-        self.assertEqual(r1.loopSize, r2.loopSize)
+        self.assertEqual(r1.loop_size, r2.loop_size)
 
 
 class TestMeasurements(unittest.TestCase):
     def test_measure_all_hinges_populates(self):
         st = _make_spacetime()
         wl = tessera.WilsonLoop(st)
-        wl.measureAllHinges(tessera.WilsonMode.DEFICIT_ANGLE)
-        measurements = wl.getMeasurements()
+        wl.measure_all_hinges(tessera.WilsonMode.DEFICIT_ANGLE)
+        measurements = wl.get_measurements()
         self.assertGreater(len(measurements), 0,
             "measureAllHinges should produce measurements")
 
     def test_reset_clears(self):
         st = _make_spacetime()
         wl = tessera.WilsonLoop(st)
-        wl.measureAllHinges(tessera.WilsonMode.DEFICIT_ANGLE)
+        wl.measure_all_hinges(tessera.WilsonMode.DEFICIT_ANGLE)
         wl.reset()
-        self.assertEqual(len(wl.getMeasurements()), 0)
+        self.assertEqual(len(wl.get_measurements()), 0)
 
     def test_average_by_size(self):
         st = _make_spacetime()
         wl = tessera.WilsonLoop(st)
-        wl.measureAllHinges(tessera.WilsonMode.DEFICIT_ANGLE)
-        avg = wl.getAverageBySize()
+        wl.measure_all_hinges(tessera.WilsonMode.DEFICIT_ANGLE)
+        avg = wl.get_average_by_size()
         self.assertGreater(len(avg), 0)
         for size, val in avg.items():
             self.assertIsInstance(size, int)

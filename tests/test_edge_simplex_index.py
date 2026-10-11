@@ -24,32 +24,32 @@ class TestEdgeSimplexIndex(unittest.TestCase):
         sig = tessera.Signature(4, tessera.Lorentzian)
         st = tessera.Spacetime(tessera.Metric(True, sig), tessera.CDT,
                                1.0, 1.0, tessera.PREFERRED, tessera.Toroid())
-        st.setSeed(20260906)
+        st.set_seed(20260906)
         st.build(1600)
         cdt = tessera.CDTSimulation(st, 2.2, 0.5, 0.6, 1.0 / 2000, 2000)
-        cdt.setSeed(20260906)
+        cdt.set_seed(20260906)
         cdt.tune()
         cdt.sweep(50)
         cls.spacetime = st
 
     def _edges(self, limit):
-        return self.spacetime.getEdgeList().toVector()[:limit]
+        return self.spacetime.get_edge_list().to_vector()[:limit]
 
     @staticmethod
     def _ids(simplices):
-        return {tuple(sorted(v.getId() for v in s.getVertices()))
+        return {tuple(sorted(v.get_id() for v in s.get_vertices()))
                 for s in simplices}
 
     def test_edge_index_finds_what_a_vertex_scan_finds(self):
         """The cells on an edge are the cells carrying both its endpoints."""
         checked = 0
         for edge in self._edges(400):
-            source, target = edge.getSource(), edge.getTarget()
+            source, target = edge.get_source(), edge.get_target()
             by_edge = self._ids(s for s in edge.simplices()
-                                if len(s.getVertices()) == self.TOP_SIZE)
-            by_scan = self._ids(s for s in source.getSimplices()
-                                if len(s.getVertices()) == self.TOP_SIZE
-                                and s.hasVertex(target))
+                                if len(s.get_vertices()) == self.TOP_SIZE)
+            by_scan = self._ids(s for s in source.get_simplices()
+                                if len(s.get_vertices()) == self.TOP_SIZE
+                                and s.has_vertex(target))
             self.assertEqual(by_edge, by_scan)
             checked += 1
         self.assertGreater(checked, 0, "no edges to check")
@@ -58,13 +58,13 @@ class TestEdgeSimplexIndex(unittest.TestCase):
         """Reading from either endpoint gives the same cells, so a move may
         start from whichever endpoint it happens to hold."""
         for edge in self._edges(200):
-            source, target = edge.getSource(), edge.getTarget()
-            from_source = self._ids(s for s in source.getSimplices()
-                                    if len(s.getVertices()) == self.TOP_SIZE
-                                    and s.hasVertex(target))
-            from_target = self._ids(s for s in target.getSimplices()
-                                    if len(s.getVertices()) == self.TOP_SIZE
-                                    and s.hasVertex(source))
+            source, target = edge.get_source(), edge.get_target()
+            from_source = self._ids(s for s in source.get_simplices()
+                                    if len(s.get_vertices()) == self.TOP_SIZE
+                                    and s.has_vertex(target))
+            from_target = self._ids(s for s in target.get_simplices()
+                                    if len(s.get_vertices()) == self.TOP_SIZE
+                                    and s.has_vertex(source))
             self.assertEqual(from_source, from_target)
 
     def test_an_edges_incidence_is_far_smaller_than_its_endpoints(self):
@@ -72,7 +72,7 @@ class TestEdgeSimplexIndex(unittest.TestCase):
         with the four-volume and an edge's does not."""
         edges = self._edges(400)
         edge_degrees = [len(e.simplices()) for e in edges]
-        vertex_degrees = [len(e.getSource().getSimplices()) for e in edges]
+        vertex_degrees = [len(e.get_source().get_simplices()) for e in edges]
         mean_edge = sum(edge_degrees) / len(edge_degrees)
         mean_vertex = sum(vertex_degrees) / len(vertex_degrees)
         self.assertLess(mean_edge, mean_vertex)

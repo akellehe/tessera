@@ -260,7 +260,7 @@ any isolated vertex) -- on a closed manifold this opens a manifold-with-boundary
 and, for a cell disjoint from an existing hole, raises b_{d-1} by 1 (on S^3, the
 color register's b_2). coneIn adds one top cell on a fresh vertex joined to d
 existing vertices, lowering b_{d-1} by 1 when it caps a hole. EVERY move is gated
-on ChainComplex.dualComplexIsValid (a valid manifold-with-boundary; the
+on ChainComplex.dual_complex_is_valid (a valid manifold-with-boundary; the
 n>=4 recursive check) -- surgery is allowed BECAUSE it is gated. Rejected
 moves roll back bit-identically.
 Accepted moves stack; rollback() undoes the last LIFO, restoring every edge
@@ -268,13 +268,13 @@ length and phase so a round trip leaves the dual Regge action (Re AND Im)
 invariant.)doc")
       .def(py::init<Spacetime *>(), py::arg("spacetime"), py::keep_alive<1, 2>(),
            "Bind the cone to a spacetime (does not mutate it).")
-      .def("coneOut", &SurgicalCone::coneOut, py::arg("cell"),
+      .def("cone_out", &SurgicalCone::coneOut, py::arg("cell"),
            "(ok, reason): gated surgical cone-out -- remove the top cell whose "
            "sorted vertex ids equal `cell` (plus orphaned edges and any vertex "
            "thereby isolated). Accepts only a valid manifold-with-boundary; "
            "otherwise restores the cell and names the reason. Rejects removing "
            "the last top cell.")
-      .def("coneIn", &SurgicalCone::coneIn, py::arg("target_verts"),
+      .def("cone_in", &SurgicalCone::coneIn, py::arg("target_verts"),
            py::arg("timelike") = false,
            "(ok, reason): gated surgical cone-in -- create a fresh vertex, join "
            "it to the d `target_verts` to form a new top cell. Accepts only a "
@@ -290,13 +290,13 @@ invariant.)doc")
       .def("rollback", &SurgicalCone::rollback,
            "Undo the last accepted move (LIFO), restoring the complex bit-for-"
            "bit (edge lengths and phases). False if nothing is applied.")
-      .def("rollbackAll", &SurgicalCone::rollbackAll,
+      .def("rollback_all", &SurgicalCone::rollbackAll,
            "Roll every accepted move back; returns the number undone.")
       .def_property_readonly("depth", &SurgicalCone::depth,
            "Number of accepted, not-yet-rolled-back moves on the stack.")
-      .def_property_readonly("isApplied", &SurgicalCone::isApplied,
+      .def_property_readonly("is_applied", &SurgicalCone::isApplied,
            "True iff at least one move is accepted and not yet rolled back.")
-      .def("bettiNumbers", &SurgicalCone::bettiNumbers,
+      .def("betti_numbers", &SurgicalCone::bettiNumbers,
            "Betti numbers b_0..b_n (over Q) of the CURRENT complex -- the read-"
            "out the b_k-delta tests assert a surgical move shifts by one.")
       .def("validate", &SurgicalCone::validate,
@@ -339,25 +339,25 @@ measured on a crossover fixture, and the declared tolerance. Unmeasured
 quantities are NaN, never zero. holds() = a certified grade whose residual met
 the tolerance; HeuristicDiscovery never holds.)doc")
       .def(py::init<>())
-      .def_static("algebraicallyExact", &Certificate::algebraicallyExact,
+      .def_static("algebraically_exact", &Certificate::algebraicallyExact,
                   py::arg("domain"), py::arg("regime"), py::arg("residual"),
                   py::arg("tolerance"))
-      .def_static("structureExact", &Certificate::structureExact,
+      .def_static("structure_exact", &Certificate::structureExact,
                   py::arg("domain"), py::arg("regime"), py::arg("residual"),
                   py::arg("conditioning"), py::arg("tolerance"))
-      .def_static("certifiedNumerical", &Certificate::certifiedNumerical,
+      .def_static("certified_numerical", &Certificate::certifiedNumerical,
                   py::arg("domain"), py::arg("regime"), py::arg("residual"),
                   py::arg("conditioning"), py::arg("tolerance"))
-      .def_static("heuristicDiscovery", &Certificate::heuristicDiscovery,
+      .def_static("heuristic_discovery", &Certificate::heuristicDiscovery,
                   py::arg("domain"), py::arg("regime"))
       .def_property_readonly("grade", &Certificate::grade)
       .def_property_readonly("domain", &Certificate::domain)
       .def_property_readonly("regime", &Certificate::regime)
       .def_property_readonly("residual", &Certificate::residual)
       .def_property_readonly("conditioning", &Certificate::conditioning)
-      .def_property_readonly("denseReferenceError",
+      .def_property_readonly("dense_reference_error",
                              &Certificate::denseReferenceError)
-      .def("setDenseReferenceError", &Certificate::setDenseReferenceError,
+      .def("set_dense_reference_error", &Certificate::setDenseReferenceError,
            py::arg("error"),
            "Record the relative error measured against the dense reference on "
            "a crossover fixture.")
@@ -379,15 +379,15 @@ simplices, changed edges, created/deleted cells, all named by vertex
 identifiers. AnalyticCache.publish drops entries whose component vertex set
 meets this star; disjoint siblings survive.)doc")
       .def(py::init<>())
-      .def("addTouchedSimplex", &TouchedStar::addTouchedSimplex,
+      .def("add_touched_simplex", &TouchedStar::addTouchedSimplex,
            py::arg("vertex_ids"),
            "Record a simplex whose geometry or incidence changed.")
-      .def("addChangedEdge", &TouchedStar::addChangedEdge, py::arg("vertex_a"),
+      .def("add_changed_edge", &TouchedStar::addChangedEdge, py::arg("vertex_a"),
            py::arg("vertex_b"),
            "Record an edge whose complex length or phase changed.")
-      .def("addCreatedCell", &TouchedStar::addCreatedCell, py::arg("vertex_ids"),
+      .def("add_created_cell", &TouchedStar::addCreatedCell, py::arg("vertex_ids"),
            "Record a created cell (a combinatorial change).")
-      .def("addDeletedCell", &TouchedStar::addDeletedCell, py::arg("vertex_ids"),
+      .def("add_deleted_cell", &TouchedStar::addDeletedCell, py::arg("vertex_ids"),
            "Record a deleted cell (a combinatorial change).")
       .def_property_readonly("vertices",
            [](const TouchedStar &star) {
@@ -395,6 +395,6 @@ meets this star; disjoint siblings survive.)doc")
                                                star.vertices().end());
            },
            "The union of recorded vertex identifiers (unordered).")
-      .def_property_readonly("structuralChange", &TouchedStar::structuralChange)
+      .def_property_readonly("structural_change", &TouchedStar::structuralChange)
       .def_property_readonly("empty", &TouchedStar::empty);
 }

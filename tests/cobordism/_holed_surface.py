@@ -41,14 +41,14 @@ def holed_surface(degree=1, jitter=True, metric_source=None):
     hole-circles), and the carried period matrix of shape ``(b_k, n_holes)``."""
     rm = {tuple(sorted(t)) for t in _WINDOWS}
     holed = [list(f) for f in _ICOSA_FACES if tuple(sorted(f)) not in rm]
-    st = tessera.Spacetime.fromVertexTuples(2, holed, 1.0, 0.0)
+    st = tessera.Spacetime.from_vertex_tuples(2, holed, 1.0, 0.0)
     if jitter:
-        for i, e in enumerate(st.getEdgeList().toVector()):
-            e.setLength(cmath.sqrt(complex(1.0 + 0.013 * (i % 6))))
-    st.materializeFacets()
+        for i, e in enumerate(st.get_edge_list().to_vector()):
+            e.set_length(cmath.sqrt(complex(1.0 + 0.013 * (i % 6))))
+    st.materialize_facets()
     es = (cob.EigenstateSynthesis(st, degree) if metric_source is None
           else cob.EigenstateSynthesis(st, degree, metric_source))
     holes = [list(t) for t in _WINDOWS]
-    periods = np.asarray(es.cyclePeriods(holes), complex)
+    periods = np.asarray(es.cycle_periods(holes), complex)
     n = len(holes)
     return st, es, holes, periods.reshape(len(periods) // n, n)

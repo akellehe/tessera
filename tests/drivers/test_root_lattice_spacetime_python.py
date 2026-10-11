@@ -145,7 +145,7 @@ class TestCausalOrder(unittest.TestCase):
         from tessera import Poset
         ps, P, covers = rls.poset(EVENTS)
         self.assertIsInstance(ps, Poset)
-        self.assertEqual(ps.getCoverCount(), len(covers))
+        self.assertEqual(ps.get_cover_count(), len(covers))
         self.assertEqual(sorted(tuple(c) for c in ps.covers), sorted(covers))
 
     def test_events_are_read_from_the_slices(self):
@@ -281,7 +281,7 @@ class TestCommandLine(unittest.TestCase):
         for (t, X, Y), l in zip(rep["steps"], rep["step_lengths"]):
             I = result["slices"][t]["MI"][X, Y]
             self.assertAlmostEqual(l, math.log1p(rls.I_MAX / I), places=10)
-        self.assertEqual(rep["poset"].getCoverCount(), len(rep["covers"]))
+        self.assertEqual(rep["poset"].get_cover_count(), len(rep["covers"]))
         self.assertEqual(len(rep["depth"]), 6)
         with self.assertRaises(ValueError):
             rls.analyse(result, 1e-12, 1.0, rls.I_MAX, "walk", 0, dims=4)

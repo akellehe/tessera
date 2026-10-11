@@ -59,7 +59,7 @@ def _profiles_worker(run_id, n_simplices, n_therm, n_meas, meas_interval,
                          tessera.Toroid())
     max_build = 80 * 20  # cap at ~80 time slices (20 simplices/slab in 4D)
     st.build(min(n_simplices, max_build))
-    target = st.getN41() if n_simplices <= max_build else n_simplices // 2
+    target = st.get_n41() if n_simplices <= max_build else n_simplices // 2
     cdt = tessera.CDTSimulation(st, 2.2, 0.5, 0.6, 1.0 / target, target)
 
     _ph("tuning")
@@ -74,7 +74,7 @@ def _profiles_worker(run_id, n_simplices, n_therm, n_meas, meas_interval,
     profiles = []
     for i in range(n_meas):
         cdt.sweep(meas_interval, progress=sweep_cb)
-        profiles.append(np.array(cdt.getVolumeProfile(), dtype=float))
+        profiles.append(np.array(cdt.get_volume_profile(), dtype=float))
         _ph("measuring", i + 1, n_meas)
     return n_simplices, profiles
 

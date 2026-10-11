@@ -36,7 +36,7 @@ such, with the analytic gradient and Hessian of ``S`` supplying the residual and
 its Jacobian.
 
 ``ReggeSolver`` evaluates the action and its derivatives and does not relax the
-geometry itself. Its ``actionGradientExact`` is the gradient of the
+geometry itself. Its ``action_gradient_exact`` is the gradient of the
 gravitational term ``S_Regge`` alone -- it does not see the matter configuration
 -- so this script adds the matter term ``dS_matter/d(l^2_e) = M / (2 sqrt(-l^2_e))``
 on the worldline's timelike edges. Without it the mass would not source any
@@ -139,14 +139,14 @@ def _vertex_curvatures(verts, solver, t):
     for idx, v in enumerate(verts):
         total = 0.0 + 0.0j
         count = 0
-        for s in v.getSimplices():
-            sv = s.getVertices()
+        for s in v.get_simplices():
+            sv = s.get_vertices()
             if len(sv) != 3:
                 continue
-            if not all(round(hv.getTime()) == t for hv in sv):
+            if not all(round(hv.get_time()) == t for hv in sv):
                 continue
-            eps = complex(solver.deficitAngle(s))
-            area = complex(tessera.ReggeSolver.hingeContent(s))
+            eps = complex(solver.deficit_angle(s))
+            area = complex(tessera.ReggeSolver.hinge_content(s))
             total += eps * area
             count += 1
         if count > 0:
@@ -165,7 +165,7 @@ def _radial_layout_2d(verts, edges, center_vid, bfs_dist, *,
     """Place vertices in 2D: radius = BFS distance, angles from force layout.
 
     The radius-constrained angular solve runs in C++
-    (``tessera.ForceLayout.layout2D`` via :func:`radial_layout_2d`); this
+    (``tessera.ForceLayout.layout_2d`` via :func:`radial_layout_2d`); this
     wrapper keeps the per-frame angular-continuity bookkeeping in Python:
     seeding initial angles from the previous frame and recording the solved
     angles for the next one.
@@ -176,7 +176,7 @@ def _radial_layout_2d(verts, edges, center_vid, bfs_dist, *,
     """
     rng = np.random.default_rng(seed)
     n = len(verts)
-    vid_to_idx = {v.getId(): i for i, v in enumerate(verts)}
+    vid_to_idx = {v.get_id(): i for i, v in enumerate(verts)}
     center_idx = vid_to_idx[center_vid]
 
     # Group vertices by BFS distance
@@ -187,9 +187,9 @@ def _radial_layout_2d(verts, edges, center_vid, bfs_dist, *,
     init_pos = np.zeros((n, 2))
     target_radii = np.zeros(n)
     for v in verts:
-        idx = vid_to_idx[v.getId()]
-        d = bfs_dist.get(v.getId(), max_d + 1)
-        if v.getId() == center_vid:
+        idx = vid_to_idx[v.get_id()]
+        d = bfs_dist.get(v.get_id(), max_d + 1)
+        if v.get_id() == center_vid:
             continue
         r = float(d)
         target_radii[idx] = r
@@ -197,9 +197,9 @@ def _radial_layout_2d(verts, edges, center_vid, bfs_dist, *,
         if prev_angles and d in prev_angles and prev_angles[d]:
             # Pick the angle closest to a uniform distribution
             used = len([1 for vi in verts[:idx]
-                       if bfs_dist.get(vi.getId(), -1) == d])
+                       if bfs_dist.get(vi.get_id(), -1) == d])
             n_at_d = sum(1 for vi in verts
-                        if bfs_dist.get(vi.getId(), -1) == d)
+                        if bfs_dist.get(vi.get_id(), -1) == d)
             base_angle = prev_angles[d][0] if prev_angles[d] else 0
             angle = base_angle + 2 * math.pi * used / max(n_at_d, 1)
         else:
@@ -209,8 +209,8 @@ def _radial_layout_2d(verts, edges, center_vid, bfs_dist, *,
     # Build edge index
     edge_idx = []
     for e in edges:
-        si = vid_to_idx.get(e.getSource().getId())
-        ti = vid_to_idx.get(e.getTarget().getId())
+        si = vid_to_idx.get(e.get_source().get_id())
+        ti = vid_to_idx.get(e.get_target().get_id())
         if si is not None and ti is not None:
             edge_idx.append((si, ti))
 
@@ -221,9 +221,9 @@ def _radial_layout_2d(verts, edges, center_vid, bfs_dist, *,
     # Record angles for next frame
     angles_by_dist = {}
     for v in verts:
-        idx = vid_to_idx[v.getId()]
-        d = bfs_dist.get(v.getId(), max_d + 1)
-        if v.getId() == center_vid:
+        idx = vid_to_idx[v.get_id()]
+        d = bfs_dist.get(v.get_id(), max_d + 1)
+        if v.get_id() == center_vid:
             continue
         angle = math.atan2(pos[idx, 1], pos[idx, 0])
         angles_by_dist.setdefault(d, []).append(angle)
@@ -290,7 +290,7 @@ def _render_2d_frame(pos, edge_idx, curvatures, center_idx, t,
 
 def _edge_key(edge):
     """An edge's identity as an ordered pair of vertex ids."""
-    a, b = edge.getSource().getId(), edge.getTarget().getId()
+    a, b = edge.get_source().get_id(), edge.get_target().get_id()
     return (min(a, b), max(a, b))
 
 
@@ -299,15 +299,15 @@ def _worldline_edges(st, worldline, edge_index):
 
     Walks consecutive worldline vertices and keeps the edge joining them when
     one exists and is timelike, which is the same traversal and the same causal
-    test ``ReggeSolver.matterAction`` applies. A worldline vertex pair with no
+    test ``ReggeSolver.matter_action`` applies. A worldline vertex pair with no
     joining edge carries no proper time and so is skipped.
     """
-    ids = [v.getId() for v in worldline]
-    edges = st.getEdgeList().toVector()
+    ids = [v.get_id() for v in worldline]
+    edges = st.get_edge_list().to_vector()
     positions = []
     for a, b in zip(ids, ids[1:]):
         position = edge_index.get((min(a, b), max(a, b)))
-        if position is not None and edges[position].isTimelike():
+        if position is not None and edges[position].is_timelike():
             positions.append(position)
     return positions
 
@@ -338,7 +338,7 @@ def _matter_derivatives(squared_lengths, worldline_positions, mass):
 def _require_finite(values, what):
     """Reject a non-finite derivative rather than carry it into the objective.
 
-    ``Simplex.dualVolumeGradient`` divides by the principal square root of a
+    ``Simplex.dual_volume_gradient`` divides by the principal square root of a
     facet's circumradius offset, which is exactly zero on a hinge whose
     circumradius coincides with one of its facets'. The action stays finite
     there -- it only multiplies by that root -- but its derivatives do not, and
@@ -360,10 +360,10 @@ def _gravitational_hessian(solver):
     """``d2S_Regge/d(l^2_e)d(l^2_f)`` as a sparse matrix in edge-list order.
 
     Two edges couple only through a hinge they share, so the matrix is sparse
-    and ``ReggeSolver.actionHessianExactSparse`` assembles it directly as
+    and ``ReggeSolver.action_hessian_exact_sparse`` assembles it directly as
     coordinate lists rather than densifying it.
     """
-    rows, cols, values, dim = solver.actionHessianExactSparse()
+    rows, cols, values, dim = solver.action_hessian_exact_sparse()
     values = np.asarray(values, dtype=complex)
     _require_finite(values, "action Hessian entries")
     return coo_matrix((values, (np.asarray(rows, dtype=int),
@@ -375,7 +375,7 @@ def covered_edges(solver):
     """The edges whose second derivative of the action the engine supplies.
 
     An edge with an identically empty Hessian column is one the analytic
-    assembly never reaches: ``actionGradientExact`` reports its gradient as
+    assembly never reaches: ``action_gradient_exact`` reports its gradient as
     exactly zero and the Hessian offers no leverage on it, even where the
     action does respond to it. Those edges are held fixed during the relaxation
     -- there is no descent direction along them -- while their stationarity
@@ -392,25 +392,25 @@ def action_gradient(solver, edges, squared_lengths, worldline_positions, mass,
                     uncovered):
     """``dS/d(l^2_e)`` for every edge, gravity and matter together.
 
-    The gravitational part is ``ReggeSolver.actionGradientExact``, the exact
+    The gravitational part is ``ReggeSolver.action_gradient_exact``, the exact
     analytic gradient of the dual Regge action, which is matter-independent. On
     the edges named by *uncovered* that analytic gradient is reported as exactly
     zero whether or not the action responds to them, so those components are
-    recomputed as a central difference of ``dualReggeAction`` in the edge's own
+    recomputed as a central difference of ``dual_regge_action`` in the edge's own
     ``l^2``. The step preserves the edge's sign, and therefore its causal
     character, on both legs. The matter term is added last.
     """
-    gravity = np.asarray(solver.actionGradientExact(), dtype=complex)
+    gravity = np.asarray(solver.action_gradient_exact(), dtype=complex)
     _require_finite(gravity, "gravitational action gradient entries")
     for position in np.nonzero(uncovered)[0]:
         edge = edges[position]
         squared = complex(squared_lengths[position])
         step = max(abs(squared) * 1e-5, 1e-9)
-        edge.setLength(cmath.sqrt(squared + step))
-        forward = complex(solver.dualReggeAction())
-        edge.setLength(cmath.sqrt(squared - step))
-        backward = complex(solver.dualReggeAction())
-        edge.setLength(cmath.sqrt(squared))
+        edge.set_length(cmath.sqrt(squared + step))
+        forward = complex(solver.dual_regge_action())
+        edge.set_length(cmath.sqrt(squared - step))
+        backward = complex(solver.dual_regge_action())
+        edge.set_length(cmath.sqrt(squared))
         gravity[position] = (forward - backward) / (2.0 * step)
     _require_finite(gravity, "action gradient entries")
     matter, _ = _matter_derivatives(squared_lengths, worldline_positions, mass)
@@ -440,12 +440,12 @@ def relax_to_stationary_action(st, solver, worldline, mass, *,
     irreducible floor for this relaxation, and *converged* is ``F <= tol``: the
     Regge equations are satisfied to that residual.
     """
-    edges = st.getEdgeList().toVector()
+    edges = st.get_edge_list().to_vector()
     edge_index = {_edge_key(e): i for i, e in enumerate(edges)}
     worldline_positions = _worldline_edges(st, worldline, edge_index)
 
-    initial = np.array([(complex(e.getLength()) ** 2).real for e in edges])
-    definite = np.array([e.isTimelike() or e.isSpacelike() for e in edges])
+    initial = np.array([(complex(e.get_length()) ** 2).real for e in edges])
+    definite = np.array([e.is_timelike() or e.is_spacelike() for e in edges])
     covered = covered_edges(solver)
     free = np.nonzero(definite & covered)[0]
     uncovered = ~covered
@@ -468,7 +468,7 @@ def relax_to_stationary_action(st, solver, worldline, mass, *,
             # that length squared, so write the principal root. The root is real
             # for a positive l^2 and imaginary for a negative one, which is
             # exactly the spacelike/timelike distinction the bounds preserve.
-            edges[position].setLength(
+            edges[position].set_length(
                 cmath.sqrt(complex(squared_lengths[position])))
 
     def gradient_at(x):
@@ -525,7 +525,7 @@ def render_curvature_gif(st, solver, worldline, output_path="curvature.gif",
     """
     wl_by_time = {}
     for v in worldline:
-        wl_by_time[round(v.getTime())] = v
+        wl_by_time[round(v.get_time())] = v
 
     times = time_slices(st)
 
@@ -543,20 +543,20 @@ def render_curvature_gif(st, solver, worldline, output_path="curvature.gif",
 
         bfs_dist = bfs_distances(center, st)
         reachable_ids = set(bfs_dist.keys())
-        verts = [v for v in verts if v.getId() in reachable_ids]
+        verts = [v for v in verts if v.get_id() in reachable_ids]
         edges = [e for e in edges
-                 if e.getSource().getId() in reachable_ids
-                 and e.getTarget().getId() in reachable_ids]
+                 if e.get_source().get_id() in reachable_ids
+                 and e.get_target().get_id() in reachable_ids]
         if len(verts) < 3:
             continue
 
         pos, vid_to_idx, edge_idx, prev_angles = _radial_layout_2d(
-            verts, edges, center.getId(), bfs_dist,
+            verts, edges, center.get_id(), bfs_dist,
             iters=layoutIters, prev_angles=prev_angles)
 
         curvatures, max_boost = _vertex_curvatures(verts, solver, t)
         max_boost_deficit = max(max_boost_deficit, max_boost)
-        center_idx = vid_to_idx[center.getId()]
+        center_idx = vid_to_idx[center.get_id()]
         slice_data.append((t, pos, edge_idx, curvatures, center_idx))
 
     if not slice_data:
@@ -623,15 +623,15 @@ def main():
 
     st, _ = build_spacetime(args.n_simplices, seed=args.seed)
 
-    verts = st.getVertexList().toVector()
+    verts = st.get_vertex_list().to_vector()
     center = max(verts, key=lambda v: v.degree())
 
     matter = tessera.matter.MatterConfiguration()
-    worldline = tessera.matter.MatterConfiguration.buildWorldline(center, st)
-    matter.setWorldlineMass(center, args.mass, st)
+    worldline = tessera.matter.MatterConfiguration.build_worldline(center, st)
+    matter.set_worldline_mass(center, args.mass, st)
 
     solver = tessera.ReggeSolver(st, matter)
-    n_edges = len(st.getEdgeList().toVector())
+    n_edges = len(st.get_edge_list().to_vector())
     print(f"  {n_edges} edges, {len(time_slices(st))} time slices, "
           f"worldline of {len(worldline)} vertices")
 

@@ -31,11 +31,11 @@ class TestCobordismScaffold(unittest.TestCase):
         # Build S^2 = ∂Δ³ (triangles) inside a 4D-declared Spacetime. The
         # combinatorial dimension is 2, independent of the Spacetime's signature.
         st = tessera.Spacetime()
-        V = [st.createVertex(i, [0.0]) for i in range(4)]
+        V = [st.create_vertex(i, [0.0]) for i in range(4)]
         for a, b in itertools.combinations(range(4), 2):
-            st.createEdge(V[a], V[b], cmath.sqrt(complex(1.0)))
+            st.create_edge(V[a], V[b], cmath.sqrt(complex(1.0)))
         for combo in itertools.combinations(range(4), 3):
-            st.createSimplex([V[i] for i in combo])
+            st.create_simplex([V[i] for i in combo])
         self.assertEqual(cobordism.CombinatorialDimension().compute(st), 2.0)
 
 

@@ -5,8 +5,8 @@ reaches them.
 
 `baryon_poles.quark_conditions` (called by `evaluate_content` for every
 content of every host cell `recursion.cell_reads` reads) builds the evidence
-of the seven conditions from `SheetedSupport.certifyIsomorphism`,
-`SheetAttachment.attachmentMatrix`, the spin read of `MonopoleSupport` and the
+of the seven conditions from `SheetedSupport.certify_isomorphism`,
+`SheetAttachment.attachment_matrix`, the spin read of `MonopoleSupport` and the
 recursion record, and grades it with `QuarkConditions.evaluate`. The tests
 hold each piece to whitepaper v17 §8 (the sheet convention, lines 355-357:
 the free operator h (x) I_3, every band E-bar (x) C^3, colour commuting with
@@ -39,8 +39,8 @@ def _base_operator():
     line 506) with a non-Hermitian perturbation, so that nothing below rests
     on symmetry of the base."""
     support = obs.MonopoleSupport.tetrahedron(1)
-    averaged = np.asarray(support.rotationAveragedEdgeOperator(
-        support.edgeLaplacian(), obs.MonopoleSupport.tetrahedralRotations()))
+    averaged = np.asarray(support.rotation_averaged_edge_operator(
+        support.edge_laplacian(), obs.MonopoleSupport.tetrahedral_rotations()))
     return averaged + 0.1j * np.arange(36).reshape(6, 6) / 36.0
 
 
@@ -50,9 +50,9 @@ def test_the_free_operator_is_h_tensor_the_identity_on_the_sheets():
     and its spectrum is the base spectrum with each value three times."""
     h = _base_operator()
     support = obs.SheetedSupport(3, 6)
-    lifted = np.asarray(support.freeOperator(h))
+    lifted = np.asarray(support.free_operator(h))
     assert np.max(np.abs(lifted - np.kron(h, np.eye(3)))) == 0.0
-    assert support.modeIndex(4, 2) == 14
+    assert support.mode_index(4, 2) == 14
     base = np.sort_complex(np.linalg.eigvals(h))
     sheeted = np.sort_complex(np.linalg.eigvals(lifted))
     np.testing.assert_allclose(sheeted, np.repeat(base, 3), atol=1e-12)
@@ -64,16 +64,16 @@ def test_a_lifted_band_is_the_colour_spin_fibre():
     a rank-6 fibre equal to np.kron(E-bar, I_3), invariant under the free
     operator of the averaged Laplacian."""
     support = obs.MonopoleSupport.tetrahedron(1)
-    averaged = np.asarray(support.rotationAveragedEdgeOperator(
-        support.edgeLaplacian(), obs.MonopoleSupport.tetrahedralRotations()))
+    averaged = np.asarray(support.rotation_averaged_edge_operator(
+        support.edge_laplacian(), obs.MonopoleSupport.tetrahedral_rotations()))
     values, vectors = np.linalg.eigh(averaged)
     band = vectors[:, np.abs(values - 4.0) < 1e-9]
     assert band.shape == (6, 2)
     sheeting = obs.SheetedSupport(3, 6)
-    fibre = np.asarray(sheeting.liftBand(band))
+    fibre = np.asarray(sheeting.lift_band(band))
     assert fibre.shape == (18, 6)
     assert np.max(np.abs(fibre - np.kron(band, np.eye(3)))) == 0.0
-    free = np.asarray(sheeting.freeOperator(averaged))
+    free = np.asarray(sheeting.free_operator(averaged))
     assert np.max(np.abs(free @ fibre - 4.0 * fibre)) < 1e-12
 
 
@@ -84,14 +84,14 @@ def test_colour_commutes_with_the_base_dynamics_and_symmetries():
     rounding."""
     g = np.array([[1.0, 2.0, 0.5j], [0.0, 1.5, -1.0], [0.3, 0.0, 2.0]])
     sheeting = obs.SheetedSupport(3, 6)
-    assert sheeting.sheetCommutatorResidual(_base_operator(), g) < 1e-13
+    assert sheeting.sheet_commutator_residual(_base_operator(), g) < 1e-13
     support = obs.MonopoleSupport.tetrahedron(1)
-    for rotation in obs.MonopoleSupport.tetrahedralRotations():
-        action = np.asarray(support.edgeRepresentation(rotation))
-        assert sheeting.sheetCommutatorResidual(action, g) < 1e-13
-        lifted = np.asarray(sheeting.baseSymmetryOperator(action))
+    for rotation in obs.MonopoleSupport.tetrahedral_rotations():
+        action = np.asarray(support.edge_representation(rotation))
+        assert sheeting.sheet_commutator_residual(action, g) < 1e-13
+        lifted = np.asarray(sheeting.base_symmetry_operator(action))
         assert np.max(np.abs(lifted - np.kron(action, np.eye(3)))) == 0.0
-    frame = np.asarray(sheeting.sheetFrameOperator(g))
+    frame = np.asarray(sheeting.sheet_frame_operator(g))
     assert np.max(np.abs(frame - np.kron(np.eye(6), g))) == 0.0
 
 
@@ -100,7 +100,7 @@ def test_the_driver_sheet_to_sheet_attachment_is_the_identity():
     attaches sheet t to sheet t with weight 1: the attachment matrix is I_3,
     its determinant is exactly 1, it is sheet-diagonal and certified full
     rank."""
-    read = obs.SheetAttachment.attachmentMatrix(
+    read = obs.SheetAttachment.attachment_matrix(
         3, [obs.ConnectingSimplex(t, t, 1.0) for t in range(3)])
     assert np.max(np.abs(np.asarray(read.matrix) - np.eye(3))) == 0.0
     assert read.determinant == 1.0
@@ -117,7 +117,7 @@ def test_a_cross_sheet_attachment_accumulates_its_weights():
     simplices = [obs.ConnectingSimplex(0, 1, 2.0),
                  obs.ConnectingSimplex(0, 1, 3.0)] + \
         [obs.ConnectingSimplex(t, t, 1.0) for t in range(3)]
-    read = obs.SheetAttachment.attachmentMatrix(3, simplices)
+    read = obs.SheetAttachment.attachment_matrix(3, simplices)
     expected = np.array([[1, 5, 0], [0, 1, 0], [0, 0, 1]], dtype=complex)
     assert np.max(np.abs(np.asarray(read.matrix) - expected)) == 0.0
     assert read.determinant == pytest.approx(1.0, abs=1e-14)
@@ -127,7 +127,7 @@ def test_a_cross_sheet_attachment_accumulates_its_weights():
 def test_a_missing_sheet_attachment_is_rank_deficient():
     """Sheets 0 and 1 attached, sheet 2 not: det S = 0 and the full-rank
     certificate does not hold (condition 5 would fail)."""
-    read = obs.SheetAttachment.attachmentMatrix(
+    read = obs.SheetAttachment.attachment_matrix(
         3, [obs.ConnectingSimplex(t, t, 1.0) for t in range(2)])
     assert read.determinant == 0.0
     assert read.min_singular_value == 0.0
@@ -351,9 +351,9 @@ def test_the_driver_verdict_fails_condition_two_on_a_separated_sheet():
     tolerance 1e-8) fails condition 2 on sheet isomorphism alone, with the
     residual in the evidence."""
     spacetime = bp.build_host()
-    edge = [e for e in spacetime.getEdgeList().toVector()
-            if int(e.getSource().getId()) // 4 == 2][0]
-    edge.setLength(np.sqrt(complex(edge.getLength()) ** 2 + 1e-6))
+    edge = [e for e in spacetime.get_edge_list().to_vector()
+            if int(e.get_source().get_id()) // 4 == 2][0]
+    edge.set_length(np.sqrt(complex(edge.get_length()) ** 2 + 1e-6))
     verdict = _driver_verdict(spacetime)
     two = verdict["conditions"][1]
     assert two["status"] == "Failed"

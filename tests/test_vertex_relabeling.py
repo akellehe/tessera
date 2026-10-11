@@ -29,24 +29,24 @@ def _make_spacetime(d=4):
 
 def _top_simplices(st, d=4):
     """All top-dimensional simplices (d+1 vertices)."""
-    return [s for s in st.getSimplices() if len(s.getVertices()) == d + 1]
+    return [s for s in st.get_simplices() if len(s.get_vertices()) == d + 1]
 
 
 def _vids(simplex):
     """Vertex IDs of a simplex as a frozenset."""
-    return frozenset(v.getId() for v in simplex.getVertices())
+    return frozenset(v.get_id() for v in simplex.get_vertices())
 
 
 def _all_vertex_ids(st):
     """Set of all vertex IDs in the spacetime."""
-    return {v.getId() for v in st.getVertexList().toVector()}
+    return {v.get_id() for v in st.get_vertex_list().to_vector()}
 
 
 def _all_edge_pairs(st):
     """Set of (min_id, max_id) for all edges in the edge list."""
     pairs = set()
-    for e in st.getEdgeList().toVector():
-        a, b = e.getSource().getId(), e.getTarget().getId()
+    for e in st.get_edge_list().to_vector():
+        a, b = e.get_source().get_id(), e.get_target().get_id()
         pairs.add((min(a, b), max(a, b)))
     return pairs
 
@@ -54,8 +54,8 @@ def _all_edge_pairs(st):
 def _edge_pairs_of(vertex):
     """Set of (min_id, max_id) for all edges of a vertex."""
     pairs = set()
-    for e in vertex.getEdges():
-        a, b = e.getSource().getId(), e.getTarget().getId()
+    for e in vertex.get_edges():
+        a, b = e.get_source().get_id(), e.get_target().get_id()
         pairs.add((min(a, b), max(a, b)))
     return pairs
 
@@ -64,7 +64,7 @@ def _count_orientations(st, d=4):
     """Orientation -> count for top simplices."""
     counts = {}
     for s in _top_simplices(st, d):
-        o = s.getOrientation().numeric()
+        o = s.get_orientation().numeric()
         counts[o] = counts.get(o, 0) + 1
     return counts
 
@@ -79,53 +79,53 @@ class TestSwapBasic(unittest.TestCase):
     def test_swap_changes_vertex_ids(self):
         """After swap, vertex IDs are exchanged."""
         st = _make_spacetime()
-        st.createSimplex((1, 4))
-        verts = st.getVertexList().toVector()
-        v0 = [v for v in verts if v.getId() == 0][0]
-        v1 = [v for v in verts if v.getId() == 1][0]
+        st.create_simplex((1, 4))
+        verts = st.get_vertex_list().to_vector()
+        v0 = [v for v in verts if v.get_id() == 0][0]
+        v1 = [v for v in verts if v.get_id() == 1][0]
 
-        st.swapVertexLabels(v0, v1)
+        st.swap_vertex_labels(v0, v1)
 
-        self.assertEqual(v0.getId(), 1, "v0 should now have id 1")
-        self.assertEqual(v1.getId(), 0, "v1 should now have id 0")
+        self.assertEqual(v0.get_id(), 1, "v0 should now have id 1")
+        self.assertEqual(v1.get_id(), 0, "v1 should now have id 0")
 
     def test_swap_self_is_noop(self):
         """Swapping a vertex with itself does nothing."""
         st = _make_spacetime()
-        st.createSimplex((1, 4))
-        v0 = st.getVertexList().get(0)
-        n0 = st.getVertexCount()
-        n4 = st.getTopSimplexCount()
+        st.create_simplex((1, 4))
+        v0 = st.get_vertex_list().get(0)
+        n0 = st.get_vertex_count()
+        n4 = st.get_top_simplex_count()
 
-        st.swapVertexLabels(v0, v0)
+        st.swap_vertex_labels(v0, v0)
 
-        self.assertEqual(v0.getId(), 0)
-        self.assertEqual(st.getVertexCount(), n0)
-        self.assertEqual(st.getTopSimplexCount(), n4)
+        self.assertEqual(v0.get_id(), 0)
+        self.assertEqual(st.get_vertex_count(), n0)
+        self.assertEqual(st.get_top_simplex_count(), n4)
 
     def test_swap_preserves_vertex_count(self):
         """Swap does not change the total number of vertices."""
         st = _make_spacetime()
         st.build(20)
-        n0 = st.getVertexCount()
-        v0 = st.getVertexList().get(0)
-        v1 = st.getVertexList().get(1)
+        n0 = st.get_vertex_count()
+        v0 = st.get_vertex_list().get(0)
+        v1 = st.get_vertex_list().get(1)
 
-        st.swapVertexLabels(v0, v1)
+        st.swap_vertex_labels(v0, v1)
 
-        self.assertEqual(st.getVertexCount(), n0)
+        self.assertEqual(st.get_vertex_count(), n0)
 
     def test_swap_preserves_simplex_count(self):
         """Swap does not change the total number of simplices."""
         st = _make_spacetime()
         st.build(20)
-        n4 = st.getTopSimplexCount()
-        v0 = st.getVertexList().get(0)
-        v1 = st.getVertexList().get(1)
+        n4 = st.get_top_simplex_count()
+        v0 = st.get_vertex_list().get(0)
+        v1 = st.get_vertex_list().get(1)
 
-        st.swapVertexLabels(v0, v1)
+        st.swap_vertex_labels(v0, v1)
 
-        self.assertEqual(st.getTopSimplexCount(), n4)
+        self.assertEqual(st.get_top_simplex_count(), n4)
 
 
 # =====================================================================
@@ -138,25 +138,25 @@ class TestSwapVertexList(unittest.TestCase):
     def test_vertex_list_lookup_by_new_id(self):
         """After swap, VertexList.get(newId) returns the correct vertex."""
         st = _make_spacetime()
-        st.createSimplex((1, 4))
-        v0 = st.getVertexList().get(0)
-        v1 = st.getVertexList().get(1)
+        st.create_simplex((1, 4))
+        v0 = st.get_vertex_list().get(0)
+        v1 = st.get_vertex_list().get(1)
 
-        st.swapVertexLabels(v0, v1)
+        st.swap_vertex_labels(v0, v1)
 
         # v0 now has id=1, v1 now has id=0
-        self.assertIs(st.getVertexList().get(1), v0)
-        self.assertIs(st.getVertexList().get(0), v1)
+        self.assertIs(st.get_vertex_list().get(1), v0)
+        self.assertIs(st.get_vertex_list().get(0), v1)
 
     def test_vertex_set_preserved(self):
         """The set of all vertex IDs is unchanged after swap."""
         st = _make_spacetime()
         st.build(20)
         ids_before = _all_vertex_ids(st)
-        v0 = st.getVertexList().get(0)
-        v1 = st.getVertexList().get(1)
+        v0 = st.get_vertex_list().get(0)
+        v1 = st.get_vertex_list().get(1)
 
-        st.swapVertexLabels(v0, v1)
+        st.swap_vertex_labels(v0, v1)
 
         self.assertEqual(_all_vertex_ids(st), ids_before)
 
@@ -173,13 +173,13 @@ class TestSwapEdges(unittest.TestCase):
         st = _make_spacetime()
         st.build(20)
         # Map old IDs to new IDs for the pair we'll swap
-        v0 = st.getVertexList().get(0)
-        v1 = st.getVertexList().get(1)
+        v0 = st.get_vertex_list().get(0)
+        v1 = st.get_vertex_list().get(1)
         id0, id1 = 0, 1
 
         edges_before = _all_edge_pairs(st)
 
-        st.swapVertexLabels(v0, v1)
+        st.swap_vertex_labels(v0, v1)
 
         # After swap, edges that had id0 now have id1 and vice versa
         # So the edge set should reflect the swapped IDs
@@ -195,24 +195,24 @@ class TestSwapEdges(unittest.TestCase):
         """Swap does not change the total number of edges."""
         st = _make_spacetime()
         st.build(20)
-        n_edges = st.getEdgeList().size()
-        v0 = st.getVertexList().get(0)
-        v1 = st.getVertexList().get(1)
+        n_edges = st.get_edge_list().size()
+        v0 = st.get_vertex_list().get(0)
+        v1 = st.get_vertex_list().get(1)
 
-        st.swapVertexLabels(v0, v1)
+        st.swap_vertex_labels(v0, v1)
 
-        self.assertEqual(st.getEdgeList().size(), n_edges)
+        self.assertEqual(st.get_edge_list().size(), n_edges)
 
     def test_vertex_edge_degree_swapped(self):
         """After swap, each vertex's edge degree matches the other's original."""
         st = _make_spacetime()
         st.build(20)
-        v0 = st.getVertexList().get(0)
-        v1 = st.getVertexList().get(1)
+        v0 = st.get_vertex_list().get(0)
+        v1 = st.get_vertex_list().get(1)
         deg0 = v0.degree()
         deg1 = v1.degree()
 
-        st.swapVertexLabels(v0, v1)
+        st.swap_vertex_labels(v0, v1)
 
         # Degrees should be unchanged (same vertex objects, same edges)
         self.assertEqual(v0.degree(), deg0)
@@ -230,38 +230,38 @@ class TestSwapSimplices(unittest.TestCase):
         """N41 and N32 counts are unchanged by swap."""
         st = _make_spacetime()
         st.build(20)
-        n41 = st.getN41()
-        n32 = st.getN32()
-        v0 = st.getVertexList().get(0)
-        v1 = st.getVertexList().get(1)
+        n41 = st.get_n41()
+        n32 = st.get_n32()
+        v0 = st.get_vertex_list().get(0)
+        v1 = st.get_vertex_list().get(1)
 
-        st.swapVertexLabels(v0, v1)
+        st.swap_vertex_labels(v0, v1)
 
-        self.assertEqual(st.getN41(), n41)
-        self.assertEqual(st.getN32(), n32)
-        self.assertEqual(st.getTopSimplexCount(), n41 + n32)
+        self.assertEqual(st.get_n41(), n41)
+        self.assertEqual(st.get_n32(), n32)
+        self.assertEqual(st.get_top_simplex_count(), n41 + n32)
 
     def test_orientation_counts_preserved(self):
         """Orientation distribution is unchanged by swap."""
         st = _make_spacetime()
         st.build(20)
         counts_before = _count_orientations(st)
-        v0 = st.getVertexList().get(0)
-        v1 = st.getVertexList().get(1)
+        v0 = st.get_vertex_list().get(0)
+        v1 = st.get_vertex_list().get(1)
 
-        st.swapVertexLabels(v0, v1)
+        st.swap_vertex_labels(v0, v1)
 
         self.assertEqual(_count_orientations(st), counts_before)
 
     def test_simplex_vertex_sets_updated(self):
         """Simplex vertex IDs reflect the swapped labels."""
         st = _make_spacetime()
-        st.createSimplex((1, 4))
+        st.create_simplex((1, 4))
         # Seed simplex has vertices {0, 1, 2, 3, 4}
-        v0 = st.getVertexList().get(0)
-        v4 = st.getVertexList().get(4)
+        v0 = st.get_vertex_list().get(0)
+        v4 = st.get_vertex_list().get(4)
 
-        st.swapVertexLabels(v0, v4)
+        st.swap_vertex_labels(v0, v4)
 
         # v0 now has id 4, v4 now has id 0
         top = _top_simplices(st)[0]
@@ -270,22 +270,22 @@ class TestSwapSimplices(unittest.TestCase):
         self.assertEqual(ids, frozenset({0, 1, 2, 3, 4}))
 
     def test_hasVertex_works_after_swap(self):
-        """Simplex.hasVertex correctly uses updated IDs."""
+        """Simplex.has_vertex correctly uses updated IDs."""
         st = _make_spacetime()
-        st.createSimplex((1, 4))
-        v0 = st.getVertexList().get(0)
-        v4 = st.getVertexList().get(4)
+        st.create_simplex((1, 4))
+        v0 = st.get_vertex_list().get(0)
+        v4 = st.get_vertex_list().get(4)
 
         top = _top_simplices(st)[0]
-        self.assertTrue(top.hasVertex(v0))
-        self.assertTrue(top.hasVertex(v4))
+        self.assertTrue(top.has_vertex(v0))
+        self.assertTrue(top.has_vertex(v4))
 
-        st.swapVertexLabels(v0, v4)
+        st.swap_vertex_labels(v0, v4)
 
         # v0 now has id 4, v4 now has id 0
         # The simplex still contains both vertex objects
-        self.assertTrue(top.hasVertex(v0))
-        self.assertTrue(top.hasVertex(v4))
+        self.assertTrue(top.has_vertex(v0))
+        self.assertTrue(top.has_vertex(v4))
 
 
 # =====================================================================
@@ -299,49 +299,49 @@ class TestSwapInvariants(unittest.TestCase):
         """Every top simplex still spans exactly 2 time slices."""
         st = _make_spacetime()
         st.build(50)
-        v0 = st.getVertexList().get(0)
-        v1 = st.getVertexList().get(1)
+        v0 = st.get_vertex_list().get(0)
+        v1 = st.get_vertex_list().get(1)
 
-        st.swapVertexLabels(v0, v1)
+        st.swap_vertex_labels(v0, v1)
 
         for s in _top_simplices(st):
-            times = {v.getTime() for v in s.getVertices()}
+            times = {v.get_time() for v in s.get_vertices()}
             self.assertEqual(len(times), 2,
                              f"Non-causal simplex after swap: {times}")
 
     def test_vertex_times_swapped(self):
         """After swap, vertex times follow the vertex objects, not IDs."""
         st = _make_spacetime()
-        st.createSimplex((1, 4))
-        v0 = st.getVertexList().get(0)
-        v1 = st.getVertexList().get(1)
-        t0 = v0.getTime()
-        t1 = v1.getTime()
+        st.create_simplex((1, 4))
+        v0 = st.get_vertex_list().get(0)
+        v1 = st.get_vertex_list().get(1)
+        t0 = v0.get_time()
+        t1 = v1.get_time()
 
-        st.swapVertexLabels(v0, v1)
+        st.swap_vertex_labels(v0, v1)
 
         # Vertex objects keep their times; only IDs change
-        self.assertEqual(v0.getTime(), t0)
-        self.assertEqual(v1.getTime(), t1)
+        self.assertEqual(v0.get_time(), t0)
+        self.assertEqual(v1.get_time(), t1)
 
     def test_simulation_works_after_swap(self):
         """CDT simulation continues to work after vertex relabeling."""
         st = _make_spacetime()
         st.build(50)
-        target = st.getN41()
+        target = st.get_n41()
         cdt = tessera.CDTSimulation(st, 2.2, 0.5, 0.6, 1.0 / max(target, 1), target)
 
-        v0 = st.getVertexList().get(0)
-        v1 = st.getVertexList().get(1)
-        st.swapVertexLabels(v0, v1)
+        v0 = st.get_vertex_list().get(0)
+        v1 = st.get_vertex_list().get(1)
+        st.swap_vertex_labels(v0, v1)
 
         # Should not crash
         cdt.sweep(10)
 
         # Invariants hold
-        self.assertEqual(st.getTopSimplexCount(), st.getN41() + st.getN32())
+        self.assertEqual(st.get_top_simplex_count(), st.get_n41() + st.get_n32())
         for s in _top_simplices(st):
-            times = {v.getTime() for v in s.getVertices()}
+            times = {v.get_time() for v in s.get_vertices()}
             self.assertEqual(len(times), 2)
 
 
@@ -356,16 +356,16 @@ class TestSwapStress(unittest.TestCase):
         """Swapping the same pair twice restores original state."""
         st = _make_spacetime()
         st.build(20)
-        v0 = st.getVertexList().get(0)
-        v1 = st.getVertexList().get(1)
+        v0 = st.get_vertex_list().get(0)
+        v1 = st.get_vertex_list().get(1)
 
         edges_before = _all_edge_pairs(st)
 
-        st.swapVertexLabels(v0, v1)
-        st.swapVertexLabels(v0, v1)
+        st.swap_vertex_labels(v0, v1)
+        st.swap_vertex_labels(v0, v1)
 
-        self.assertEqual(v0.getId(), 0)
-        self.assertEqual(v1.getId(), 1)
+        self.assertEqual(v0.get_id(), 0)
+        self.assertEqual(v1.get_id(), 1)
         self.assertEqual(_all_edge_pairs(st), edges_before)
 
     def test_many_random_swaps_preserve_invariants(self):
@@ -375,29 +375,29 @@ class TestSwapStress(unittest.TestCase):
 
         st = _make_spacetime()
         st.build(50)
-        n41_plus_n32 = st.getN41() + st.getN32()
+        n41_plus_n32 = st.get_n41() + st.get_n32()
 
         for _ in range(100):
-            verts = st.getVertexList().toVector()
+            verts = st.get_vertex_list().to_vector()
             if len(verts) < 2:
                 break
             v1, v2 = random.sample(verts, 2)
-            st.swapVertexLabels(v1, v2)
+            st.swap_vertex_labels(v1, v2)
 
         # Invariants
-        self.assertEqual(st.getTopSimplexCount(), st.getN41() + st.getN32())
-        self.assertEqual(st.getVertexCount(), len(_all_vertex_ids(st)))
+        self.assertEqual(st.get_top_simplex_count(), st.get_n41() + st.get_n32())
+        self.assertEqual(st.get_vertex_count(), len(_all_vertex_ids(st)))
 
         # Causality
         for s in _top_simplices(st):
-            times = {v.getTime() for v in s.getVertices()}
+            times = {v.get_time() for v in s.get_vertices()}
             self.assertEqual(len(times), 2)
 
     def test_swap_interleaved_with_moves(self):
         """Interleave swaps with CDT moves, verify invariants throughout."""
         st = _make_spacetime()
         st.build(100)
-        target = st.getN41()
+        target = st.get_n41()
         cdt = tessera.CDTSimulation(st, 2.2, 0.5, 0.6, 1.0 / max(target, 1), target)
         cdt.tune()
 
@@ -408,18 +408,18 @@ class TestSwapStress(unittest.TestCase):
             cdt.sweep(5)
 
             # Do a random swap
-            verts = st.getVertexList().toVector()
+            verts = st.get_vertex_list().to_vector()
             if len(verts) >= 2:
                 v1, v2 = random.sample(verts, 2)
-                st.swapVertexLabels(v1, v2)
+                st.swap_vertex_labels(v1, v2)
 
             # Verify invariants
-            self.assertEqual(st.getTopSimplexCount(),
-                             st.getN41() + st.getN32(),
+            self.assertEqual(st.get_top_simplex_count(),
+                             st.get_n41() + st.get_n32(),
                              f"Step {step}: N4 != N41 + N32")
 
             for s in _top_simplices(st):
-                times = {v.getTime() for v in s.getVertices()}
+                times = {v.get_time() for v in s.get_vertices()}
                 self.assertEqual(len(times), 2,
                                  f"Step {step}: non-causal simplex")
 
@@ -434,39 +434,39 @@ class TestSwapNeighbors(unittest.TestCase):
     def test_swap_connected_vertices(self):
         """Swapping two vertices connected by an edge preserves edge count."""
         st = _make_spacetime()
-        st.createSimplex((1, 4))
+        st.create_simplex((1, 4))
         # All 5 vertices are pairwise connected (10 edges)
-        n_edges = st.getEdgeList().size()
-        v0 = st.getVertexList().get(0)
-        v1 = st.getVertexList().get(1)
+        n_edges = st.get_edge_list().size()
+        v0 = st.get_vertex_list().get(0)
+        v1 = st.get_vertex_list().get(1)
 
         # v0 and v1 share an edge
-        st.swapVertexLabels(v0, v1)
+        st.swap_vertex_labels(v0, v1)
 
-        self.assertEqual(st.getEdgeList().size(), n_edges)
-        self.assertEqual(v0.getId(), 1)
-        self.assertEqual(v1.getId(), 0)
+        self.assertEqual(st.get_edge_list().size(), n_edges)
+        self.assertEqual(v0.get_id(), 1)
+        self.assertEqual(v1.get_id(), 0)
 
     def test_swap_connected_on_built_lattice(self):
         """Swap neighbors on a real lattice, check edge set size."""
         st = _make_spacetime()
         st.build(20)
-        n_edges = st.getEdgeList().size()
+        n_edges = st.get_edge_list().size()
 
         # Find two connected vertices
-        v0 = st.getVertexList().get(0)
+        v0 = st.get_vertex_list().get(0)
         neighbor = None
-        for e in v0.getEdges():
-            other = e.getTarget() if e.getSource().getId() == v0.getId() else e.getSource()
-            if other.getId() != v0.getId():
+        for e in v0.get_edges():
+            other = e.get_target() if e.get_source().get_id() == v0.get_id() else e.get_source()
+            if other.get_id() != v0.get_id():
                 neighbor = other
                 break
         self.assertIsNotNone(neighbor)
 
-        st.swapVertexLabels(v0, neighbor)
+        st.swap_vertex_labels(v0, neighbor)
 
-        self.assertEqual(st.getEdgeList().size(), n_edges)
-        self.assertEqual(st.getTopSimplexCount(), st.getN41() + st.getN32())
+        self.assertEqual(st.get_edge_list().size(), n_edges)
+        self.assertEqual(st.get_top_simplex_count(), st.get_n41() + st.get_n32())
 
 
 if __name__ == "__main__":

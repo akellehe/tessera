@@ -45,12 +45,12 @@ def _build(topology):
 
 
 def _chain_complex(topology):
-    return cobordism.ChainComplex.fromSpacetime(_build(topology))
+    return cobordism.ChainComplex.from_spacetime(_build(topology))
 
 
 def _top_simplices(spacetime):
-    tuples = [tuple(sorted(v.getId() for v in s.getVertices()))
-              for s in spacetime.getSimplices()]
+    tuples = [tuple(sorted(v.get_id() for v in s.get_vertices()))
+              for s in spacetime.get_simplices()]
     top_size = max(len(t) for t in tuples)
     return [t for t in tuples if len(t) == top_size]
 
@@ -71,19 +71,19 @@ class TestSimplicialProductHomology(unittest.TestCase):
     def test_betti_numbers(self):
         for name, topology, expected in PRODUCTS:
             with self.subTest(product=name):
-                self.assertEqual(_chain_complex(topology).bettiNumbers(), expected)
+                self.assertEqual(_chain_complex(topology).betti_numbers(), expected)
 
     def test_euler_characteristic_matches_betti_alternating_sum(self):
         for name, topology, expected_betti in PRODUCTS:
             with self.subTest(product=name):
                 chain = _chain_complex(topology)
                 expected_euler = sum((-1) ** k * b for k, b in enumerate(expected_betti))
-                self.assertEqual(chain.eulerCharacteristic(), expected_euler)
+                self.assertEqual(chain.euler_characteristic(), expected_euler)
 
     def test_boundary_of_boundary_is_zero(self):
         for name, topology, _ in PRODUCTS:
             with self.subTest(product=name):
-                self.assertTrue(_chain_complex(topology).boundaryComposesToZero())
+                self.assertTrue(_chain_complex(topology).boundary_composes_to_zero())
 
     def test_is_closed_manifold(self):
         # Every codimension-one face of a top cell is shared by exactly two top

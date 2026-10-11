@@ -52,8 +52,8 @@ SMALL = 4
 
 def cells(node):
     """The node's top cells as sorted vertex-id tuples, order-independent."""
-    return sorted(tuple(sorted(v.getId() for v in cell.getVertices()))
-                  for cell in node.spacetime().getTopSimplices())
+    return sorted(tuple(sorted(v.get_id() for v in cell.get_vertices()))
+                  for cell in node.spacetime().get_top_simplices())
 
 
 def host(precone=PRECONE):

@@ -136,7 +136,7 @@ def _fiber(frame, cells, weights, accepted=True):
         "weights_im": [float(w.imag) for w in weights],
         "certificate": certificate,
     }
-    return obs.SpectralFiber.fromRecord(record)
+    return obs.SpectralFiber.from_record(record)
 
 
 def _exchange_tracking(positions, n, steps, distance, ranks):
@@ -156,7 +156,7 @@ def _exchange_tracking(positions, n, steps, distance, ranks):
 
 
 def _occupancy(occupation, sheets=1):
-    return obs.ClusterOccupancy(occupation=occupation, sheetCount=sheets)
+    return obs.ClusterOccupancy(occupation=occupation, sheet_count=sheets)
 
 
 # ─── the exchange statistic ────────────────────────────────────────────────
@@ -170,15 +170,15 @@ class TestOccupationParityIsTheStatistic(unittest.TestCase):
         mode. The occupations give (-1)^{1*1} = -1 and the ranks give
         (-1)^{2*2} = +1, and the read reports both as what they are."""
         tracking = _exchange_tracking([0, 4], 8, 16, 4, [2, 2])
-        read = EH.blockPermutation(tracking,
+        read = EH.block_permutation(tracking,
                                    occupancies=[_occupancy(1), _occupancy(1)])
-        self.assertEqual(list(read.blockPermutation), [1, 0])
-        self.assertEqual(list(read.blockRanks), [2, 2])
-        self.assertEqual(list(read.blockOccupations), [1, 1])
-        self.assertEqual(read.occupationParity, -1)   # the statistic
-        self.assertEqual(read.rankParity, +1)         # the cross-check
-        self.assertFalse(read.rankParityAgrees)
-        self.assertFalse(read.rankParityRetired)
+        self.assertEqual(list(read.block_permutation), [1, 0])
+        self.assertEqual(list(read.block_ranks), [2, 2])
+        self.assertEqual(list(read.block_occupations), [1, 1])
+        self.assertEqual(read.occupation_parity, -1)   # the statistic
+        self.assertEqual(read.rank_parity, +1)         # the cross-check
+        self.assertFalse(read.rank_parity_agrees)
+        self.assertFalse(read.rank_parity_retired)
         self.assertTrue(read.certificate.holds())
 
     def test_the_default_declaration_is_one_occupied_mode(self) -> None:
@@ -186,43 +186,43 @@ class TestOccupationParityIsTheStatistic(unittest.TestCase):
         construction -- one occupied mode on an unsheeted support -- for every
         block, which is what a quark is."""
         tracking = _exchange_tracking([0, 4], 8, 16, 4, [2, 2])
-        read = EH.blockPermutation(tracking)
-        self.assertEqual(list(read.blockOccupations), [1, 1])
-        self.assertEqual(list(read.blockSheetCounts), [1, 1])
-        self.assertEqual(read.occupationParity, -1)
+        read = EH.block_permutation(tracking)
+        self.assertEqual(list(read.block_occupations), [1, 1])
+        self.assertEqual(list(read.block_sheet_counts), [1, 1])
+        self.assertEqual(read.occupation_parity, -1)
 
     def test_two_doubly_occupied_clusters_exchange_with_plus_one(self) -> None:
         """A meson or a diquark carries two odd constituents, so its composite
         parity is even and two of them exchange with +1."""
         tracking = _exchange_tracking([0, 4], 8, 16, 4, [2, 2])
-        read = EH.blockPermutation(tracking,
+        read = EH.block_permutation(tracking,
                                    occupancies=[_occupancy(2), _occupancy(2)])
-        self.assertEqual(read.occupationParity, +1)
-        self.assertEqual(read.rankParity, +1)
-        self.assertTrue(read.rankParityAgrees)
+        self.assertEqual(read.occupation_parity, +1)
+        self.assertEqual(read.rank_parity, +1)
+        self.assertTrue(read.rank_parity_agrees)
 
     def test_an_odd_and_an_even_cluster_exchange_with_plus_one(self) -> None:
         """(-1)^{1*2} = +1: a quark and a meson pick up no sign from each
         other."""
         tracking = _exchange_tracking([0, 4], 8, 16, 4, [2, 2])
-        read = EH.blockPermutation(tracking,
+        read = EH.block_permutation(tracking,
                                    occupancies=[_occupancy(1), _occupancy(2)])
-        self.assertEqual(read.occupationParity, +1)
+        self.assertEqual(read.occupation_parity, +1)
 
     def test_two_singly_occupied_rank_one_clusters_agree_with_the_ranks(self) -> None:
         tracking = _exchange_tracking([0, 4], 8, 16, 4, [1, 1])
-        read = EH.blockPermutation(tracking)
-        self.assertEqual(read.occupationParity, -1)
-        self.assertEqual(read.rankParity, -1)
-        self.assertTrue(read.rankParityAgrees)
+        read = EH.block_permutation(tracking)
+        self.assertEqual(read.occupation_parity, -1)
+        self.assertEqual(read.rank_parity, -1)
+        self.assertTrue(read.rank_parity_agrees)
 
     def test_a_double_exchange_is_plus_one_whatever_the_occupations(self) -> None:
         tracking = _exchange_tracking([0, 4], 8, 32, 8, [2, 2])
         for occupation in (1, 2):
-            read = EH.blockPermutation(
+            read = EH.block_permutation(
                 tracking, occupancies=[_occupancy(occupation)] * 2)
-            self.assertEqual(list(read.blockPermutation), [0, 1])
-            self.assertEqual(read.occupationParity, +1)
+            self.assertEqual(list(read.block_permutation), [0, 1])
+            self.assertEqual(read.occupation_parity, +1)
 
     def test_the_cross_check_is_retired_on_a_sheeted_support(self) -> None:
         """A quark is a single occupied mode of a three-sheeted colour-spin
@@ -231,42 +231,42 @@ class TestOccupationParityIsTheStatistic(unittest.TestCase):
         than reported as it."""
         tracking = _exchange_tracking([0, 8], 16, 32, 8, [6, 6])
         quark = _occupancy(1, sheets=3)
-        read = EH.blockPermutation(tracking, occupancies=[quark, quark])
-        self.assertEqual(list(read.blockPermutation), [1, 0])
-        self.assertEqual(list(read.blockRanks), [6, 6])
-        self.assertEqual(list(read.blockSheetCounts), [3, 3])
-        self.assertTrue(read.rankParityRetired)
-        self.assertEqual(read.rankParity, 0)
-        self.assertFalse(read.rankParityAgrees)
-        self.assertEqual(read.occupationParity, -1)
+        read = EH.block_permutation(tracking, occupancies=[quark, quark])
+        self.assertEqual(list(read.block_permutation), [1, 0])
+        self.assertEqual(list(read.block_ranks), [6, 6])
+        self.assertEqual(list(read.block_sheet_counts), [3, 3])
+        self.assertTrue(read.rank_parity_retired)
+        self.assertEqual(read.rank_parity, 0)
+        self.assertFalse(read.rank_parity_agrees)
+        self.assertEqual(read.occupation_parity, -1)
         self.assertTrue(read.certificate.holds())
 
     def test_an_uncertified_tracking_reports_no_parity_at_all(self) -> None:
         tracking = _exchange_tracking([0, 4], 8, 16, 4, [1, 1])
         tracking[8][0] = _fiber(_mode(2.0, 8), _ring_cells(8), _weights(8),
                                 accepted=False)
-        read = EH.blockPermutation(tracking)
+        read = EH.block_permutation(tracking)
         self.assertFalse(read.certificate.holds())
-        self.assertEqual(read.occupationParity, 0)
-        self.assertEqual(read.rankParity, 0)
-        self.assertFalse(read.rankParityAgrees)
-        self.assertEqual(list(read.blockPermutation), [])
+        self.assertEqual(read.occupation_parity, 0)
+        self.assertEqual(read.rank_parity, 0)
+        self.assertFalse(read.rank_parity_agrees)
+        self.assertEqual(list(read.block_permutation), [])
 
     def test_a_wrong_number_of_occupancies_throws(self) -> None:
         tracking = _exchange_tracking([0, 4], 8, 16, 4, [1, 1])
         with self.assertRaises(ValueError):
-            EH.blockPermutation(tracking, occupancies=[_occupancy(1)])
+            EH.block_permutation(tracking, occupancies=[_occupancy(1)])
 
     def test_occupying_more_modes_than_the_fibre_has_throws(self) -> None:
         tracking = _exchange_tracking([0, 4], 8, 16, 4, [1, 1])
         with self.assertRaises(ValueError):
-            EH.blockPermutation(
+            EH.block_permutation(
                 tracking, occupancies=[_occupancy(2), _occupancy(1)])
 
     def test_a_support_with_no_sheets_throws(self) -> None:
         tracking = _exchange_tracking([0, 4], 8, 16, 4, [1, 1])
         with self.assertRaises(ValueError):
-            EH.blockPermutation(
+            EH.block_permutation(
                 tracking,
                 occupancies=[_occupancy(1, sheets=0), _occupancy(1)])
 
@@ -280,7 +280,7 @@ class TestFrameExchangeDeterminant(unittest.TestCase):
                                          (2, 2, +1), (6, 6, +1), (3, 6, +1),
                                          (0, 5, +1)):
             self.assertEqual(
-                EH.frameExchangeDeterminant(rank_a, rank_b), expected,
+                EH.frame_exchange_determinant(rank_a, rank_b), expected,
                 f"det pi for ranks ({rank_a}, {rank_b})")
 
     def test_it_matches_an_explicit_permutation_determinant(self) -> None:
@@ -292,7 +292,7 @@ class TestFrameExchangeDeterminant(unittest.TestCase):
             for i in range(rank):
                 permutation[rank + i, i] = 1.0
                 permutation[i, rank + i] = 1.0
-            self.assertEqual(EH.frameExchangeDeterminant(rank, rank),
+            self.assertEqual(EH.frame_exchange_determinant(rank, rank),
                              round(float(np.linalg.det(permutation))))
 
 
@@ -323,12 +323,12 @@ def _reading(number, fermion_number=1, cluster_id="Q"):
     if number not in (-1, 0, 1):
         raise AssertionError("the fixture builds only N_Q in {-1, 0, +1}")
     cobordism = _two_level_history()
-    cut = ClusterLineage.levelCut(cobordism, 0)
+    cut = ClusterLineage.level_cut(cobordism, 0)
     if number == 0:
-        lineage = ClusterLineage.fromVertexPath(cobordism, [0, 1],
+        lineage = ClusterLineage.from_vertex_path(cobordism, [0, 1],
                                                 fermion_number, cluster_id)
     else:
-        lineage = ClusterLineage.fromFiberPath(cobordism, 0, fermion_number,
+        lineage = ClusterLineage.from_fiber_path(cobordism, 0, fermion_number,
                                                cluster_id)
         if number == -1:
             lineage = ClusterLineage.reversed(lineage)
@@ -344,7 +344,7 @@ class TestLineageOrderKey(unittest.TestCase):
         """An anti-cluster sorts before a cluster: the sign of N_Q is carried
         by the encoding and not by a leading minus sign, which would sort a
         negative number after every positive one."""
-        keys = [ClusterLineage.orderKey(_reading(n)) for n in (-1, 0, 1)]
+        keys = [ClusterLineage.order_key(_reading(n)) for n in (-1, 0, 1)]
         self.assertEqual(keys, sorted(keys))
 
     def test_the_integers_are_written_at_a_fixed_width(self) -> None:
@@ -352,7 +352,7 @@ class TestLineageOrderKey(unittest.TestCase):
         only because the integers are written at one width. A key for a
         negative, a zero and a positive lineage number therefore all have the
         same length, and the numeric field is exactly ten digits."""
-        keys = [ClusterLineage.orderKey(_reading(n)) for n in (-1, 0, 1)]
+        keys = [ClusterLineage.order_key(_reading(n)) for n in (-1, 0, 1)]
         self.assertEqual({len(k) for k in keys}, {len(keys[0])})
         for key in keys:
             self.assertTrue(key.startswith("lineage:"))
@@ -362,30 +362,30 @@ class TestLineageOrderKey(unittest.TestCase):
 
     def test_the_key_orders_fermion_numbers_numerically(self) -> None:
         """The width trap: a plain decimal would sort "10" before "2"."""
-        keys = [ClusterLineage.orderKey(_reading(1, n, "a"))
+        keys = [ClusterLineage.order_key(_reading(1, n, "a"))
                 for n in (1, 2, 10)]
         self.assertEqual(keys, sorted(keys))
         self.assertEqual(len(set(keys)), 3)
 
     def test_the_cluster_name_breaks_the_remaining_tie(self) -> None:
-        first = ClusterLineage.orderKey(_reading(1, 1, "a"))
-        second = ClusterLineage.orderKey(_reading(1, 1, "b"))
+        first = ClusterLineage.order_key(_reading(1, 1, "a"))
+        second = ClusterLineage.order_key(_reading(1, 1, "b"))
         self.assertLess(first, second)
 
     def test_the_key_is_the_same_for_two_readings_of_one_lineage(self) -> None:
-        self.assertEqual(ClusterLineage.orderKey(_reading(1, 1, "q")),
-                         ClusterLineage.orderKey(_reading(1, 1, "q")))
+        self.assertEqual(ClusterLineage.order_key(_reading(1, 1, "q")),
+                         ClusterLineage.order_key(_reading(1, 1, "q")))
 
     def test_an_uncertified_reading_has_no_order_key(self) -> None:
         """A cut that does not separate leaves N_Q dependent on the cut, so no
         compilation order can be fixed by it."""
         cobordism = _two_level_history()
-        broken = ClusterLineage.cutFromSides(cobordism, [0] * 8)
-        lineage = ClusterLineage.fromFiberPath(cobordism, 0, 1, "q")
+        broken = ClusterLineage.cut_from_sides(cobordism, [0] * 8)
+        lineage = ClusterLineage.from_fiber_path(cobordism, 0, 1, "q")
         reading = ClusterLineage.read(cobordism, broken, lineage)
-        self.assertFalse(reading.cutSeparates)
+        self.assertFalse(reading.cut_separates)
         with self.assertRaises(ValueError):
-            ClusterLineage.orderKey(reading)
+            ClusterLineage.order_key(reading)
 
 
 # ─── the mode order from oriented component lineage ────────────────────────
@@ -394,20 +394,20 @@ def _registry(edges, key="~unassigned"):
     """A registry built by registering `edges` in the given order."""
     registry = EdgeModeRegistry()
     for a, b in edges:
-        registry.addEdge(a, b, +1, key)
+        registry.add_edge(a, b, +1, key)
     return registry
 
 
 def _ordered_pairs(registry):
     """The canonical mode order as a list of unordered vertex pairs."""
-    return [(min(registry.record(m).vertexA, registry.record(m).vertexB),
-             max(registry.record(m).vertexA, registry.record(m).vertexB))
-            for m in registry.canonicalModeOrder()]
+    return [(min(registry.record(m).vertex_a, registry.record(m).vertex_b),
+             max(registry.record(m).vertex_a, registry.record(m).vertex_b))
+            for m in registry.canonical_mode_order()]
 
 
 def _ordered_keys(registry):
-    return [registry.record(m).lineageKey
-            for m in registry.canonicalModeOrder()]
+    return [registry.record(m).lineage_key
+            for m in registry.canonical_mode_order()]
 
 
 class TestModeOrderFromLineage(unittest.TestCase):
@@ -424,16 +424,16 @@ class TestModeOrderFromLineage(unittest.TestCase):
     def _assignments(self, low_number, high_number):
         return [
             LineageAssignment(self.CLUSTER_LOW,
-                              ClusterLineage.orderKey(
+                              ClusterLineage.order_key(
                                   _reading(low_number, 1, "low"))),
             LineageAssignment(self.CLUSTER_HIGH,
-                              ClusterLineage.orderKey(
+                              ClusterLineage.order_key(
                                   _reading(high_number, 1, "high"))),
         ]
 
     def test_the_clusters_are_ordered_by_their_lineage_numbers(self) -> None:
         registry = _registry(self.EDGES)
-        assigned = registry.assignLineageKeys(self._assignments(1, 0))
+        assigned = registry.assign_lineage_keys(self._assignments(1, 0))
         self.assertEqual(assigned, 6)
         # The cluster with the SMALLER lineage number is compiled first, even
         # though it carries the LARGER vertex ids.
@@ -443,7 +443,7 @@ class TestModeOrderFromLineage(unittest.TestCase):
 
     def test_reversing_the_lineage_numbers_reverses_the_blocks(self) -> None:
         registry = _registry(self.EDGES)
-        registry.assignLineageKeys(self._assignments(0, 1))
+        registry.assign_lineage_keys(self._assignments(0, 1))
         self.assertEqual(_ordered_pairs(registry),
                          [(10, 11), (10, 12), (11, 12),
                           (20, 21), (20, 22), (21, 22)])
@@ -452,7 +452,7 @@ class TestModeOrderFromLineage(unittest.TestCase):
         """A negative lineage number sorts before a positive one, which the
         fixed-width offset encoding is there to make true."""
         registry = _registry(self.EDGES)
-        registry.assignLineageKeys(self._assignments(1, -1))
+        registry.assign_lineage_keys(self._assignments(1, -1))
         self.assertEqual(_ordered_pairs(registry)[:3],
                          [(20, 21), (20, 22), (21, 22)])
 
@@ -461,7 +461,7 @@ class TestModeOrderFromLineage(unittest.TestCase):
         the same compilation order, because the order is read off the lineage
         and the endpoints and never off the registration index."""
         reference = _registry(self.EDGES)
-        reference.assignLineageKeys(self._assignments(1, 0))
+        reference.assign_lineage_keys(self._assignments(1, 0))
         expected_pairs = _ordered_pairs(reference)
         expected_keys = _ordered_keys(reference)
         generator = np.random.default_rng(20261202)
@@ -469,7 +469,7 @@ class TestModeOrderFromLineage(unittest.TestCase):
             shuffled = [self.EDGES[i]
                         for i in generator.permutation(len(self.EDGES))]
             registry = _registry(shuffled)
-            registry.assignLineageKeys(self._assignments(1, 0))
+            registry.assign_lineage_keys(self._assignments(1, 0))
             self.assertEqual(_ordered_pairs(registry), expected_pairs)
             self.assertEqual(_ordered_keys(registry), expected_keys)
 
@@ -479,19 +479,19 @@ class TestModeOrderFromLineage(unittest.TestCase):
         is the lineage and the lineage is a relabelling-invariant integer.
         The induced permutation carries the exact exterior-algebra parity."""
         registry = _registry(self.EDGES)
-        registry.assignLineageKeys(self._assignments(1, 0))
+        registry.assign_lineage_keys(self._assignments(1, 0))
         relabelled = registry.relabeled({10: 12, 11: 11, 12: 10,
                                          20: 22, 21: 21, 22: 20})
         self.assertEqual(_ordered_keys(relabelled), _ordered_keys(registry))
-        permutation = EdgeModeRegistry.orderPermutation(registry, relabelled)
+        permutation = EdgeModeRegistry.order_permutation(registry, relabelled)
         self.assertEqual(sorted(permutation), list(range(6)))
-        parity = quantum.OccupationBitset.fromOccupiedModes(
-            6, list(range(6))).permutationParity(list(permutation))
+        parity = quantum.OccupationBitset.from_occupied_modes(
+            6, list(range(6))).permutation_parity(list(permutation))
         self.assertIn(parity, (-1, +1))
 
     def test_an_unclaimed_mode_is_compiled_last(self) -> None:
         registry = _registry(self.EDGES + [(30, 31)])
-        assigned = registry.assignLineageKeys(self._assignments(1, 0))
+        assigned = registry.assign_lineage_keys(self._assignments(1, 0))
         self.assertEqual(assigned, 6)
         self.assertEqual(_ordered_pairs(registry)[-1], (30, 31))
 
@@ -500,25 +500,25 @@ class TestModeOrderFromLineage(unittest.TestCase):
         overlapping = self._assignments(1, 0)
         overlapping[1] = LineageAssignment(
             [10, 11, 20, 21],
-            ClusterLineage.orderKey(_reading(0, 1, "high")))
+            ClusterLineage.order_key(_reading(0, 1, "high")))
         with self.assertRaises(ValueError):
-            registry.assignLineageKeys(overlapping)
+            registry.assign_lineage_keys(overlapping)
 
     def test_setting_one_key_moves_only_that_mode(self) -> None:
         registry = _registry(self.EDGES)
-        registry.assignLineageKeys(self._assignments(1, 0))
+        registry.assign_lineage_keys(self._assignments(1, 0))
         before = registry.record(0)
-        registry.setLineageKey(0, "lineage:0000000000:fermion:0:first")
+        registry.set_lineage_key(0, "lineage:0000000000:fermion:0:first")
         after = registry.record(0)
-        self.assertEqual((after.vertexA, after.vertexB, after.orientationSign),
-                         (before.vertexA, before.vertexB,
-                          before.orientationSign))
+        self.assertEqual((after.vertex_a, after.vertex_b, after.orientation_sign),
+                         (before.vertex_a, before.vertex_b,
+                          before.orientation_sign))
         self.assertEqual(_ordered_pairs(registry)[0], (10, 11))
 
     def test_setting_an_unknown_mode_throws(self) -> None:
         registry = _registry(self.EDGES)
         with self.assertRaises(ValueError):
-            registry.setLineageKey(99, "lineage")
+            registry.set_lineage_key(99, "lineage")
 
 
 class TestRegistryFromSpacetimeWithLineages(unittest.TestCase):
@@ -527,29 +527,29 @@ class TestRegistryFromSpacetimeWithLineages(unittest.TestCase):
 
     @staticmethod
     def _spacetime(cells):
-        return tessera.spacetime.Spacetime.fromVertexTuples(2, cells)
+        return tessera.spacetime.Spacetime.from_vertex_tuples(2, cells)
 
     def test_every_edge_of_a_claimed_cluster_is_assigned(self) -> None:
         spacetime = self._spacetime([[0, 1, 2], [3, 4, 5]])
-        first = ClusterLineage.orderKey(_reading(0, 1, "first"))
-        second = ClusterLineage.orderKey(_reading(1, 1, "second"))
-        registry = EdgeModeRegistry.fromSpacetimeWithLineages(
+        first = ClusterLineage.order_key(_reading(0, 1, "first"))
+        second = ClusterLineage.order_key(_reading(1, 1, "second"))
+        registry = EdgeModeRegistry.from_spacetime_with_lineages(
             spacetime,
             [LineageAssignment([0, 1, 2], first),
              LineageAssignment([3, 4, 5], second)])
-        self.assertEqual(registry.modeCount(), 6)
+        self.assertEqual(registry.mode_count(), 6)
         keys = _ordered_keys(registry)
         self.assertEqual(keys, [first] * 3 + [second] * 3)
 
     def test_an_unclaimed_complex_keeps_the_declared_default(self) -> None:
         spacetime = self._spacetime([[0, 1, 2]])
-        registry = EdgeModeRegistry.fromSpacetimeWithLineages(spacetime, [])
+        registry = EdgeModeRegistry.from_spacetime_with_lineages(spacetime, [])
         self.assertEqual(set(_ordered_keys(registry)), {"~unassigned"})
 
     def test_the_default_key_sorts_after_every_lineage_key(self) -> None:
         spacetime = self._spacetime([[0, 1, 2], [3, 4, 5]])
-        claimed = ClusterLineage.orderKey(_reading(1, 1, "z"))
-        registry = EdgeModeRegistry.fromSpacetimeWithLineages(
+        claimed = ClusterLineage.order_key(_reading(1, 1, "z"))
+        registry = EdgeModeRegistry.from_spacetime_with_lineages(
             spacetime, [LineageAssignment([0, 1, 2], claimed)])
         self.assertEqual(_ordered_keys(registry),
                          [claimed] * 3 + ["~unassigned"] * 3)

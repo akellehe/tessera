@@ -41,8 +41,8 @@ class MultiCobordismEmptyOutputsTest(unittest.TestCase):
         # residual — the pre-topological register signal (#644) — which is
         # deliberately nonzero BEFORE any register exists. Bare r_u is exactly
         # that term and nothing else.
-        near = cob.MultiCobordism.nearKernelResidual(node.st, 3,
-                                                     node.expectedRegisterCount())
+        near = cob.MultiCobordism.near_kernel_residual(node.st, 3,
+                                                     node.expected_register_count())
         self.assertAlmostEqual(node.r_u(node.st), near, places=12)
         self.assertEqual(len(node.outputs), 0)
         self.assertTrue(math.isfinite(node.objective()))
@@ -53,10 +53,10 @@ class MultiCobordismEmptyOutputsTest(unittest.TestCase):
         host = cob.ProtonIngredients().formation_node(2).st
         node = cob.MultiCobordism(host, [[1.0, -1.0, 0.0]], [], degrees=[3],
                                   gamma=1.0, seed=0)
-        vertex_id = host.getVertexList().toVector()[0].getId()
+        vertex_id = host.get_vertex_list().to_vector()[0].get_id()
         node.seed_inputs([vertex_id])
-        near = cob.MultiCobordism.nearKernelResidual(node.st, 3,
-                                                     node.expectedRegisterCount())
+        near = cob.MultiCobordism.near_kernel_residual(node.st, 3,
+                                                     node.expected_register_count())
         node.set_input_residual_weight(1.0)
         r_at_weight_1 = node.r_u(node.st) - near   # the weighted input terms alone
         node.set_input_residual_weight(2.0)
@@ -92,8 +92,8 @@ class ProtonIngredientsNodesTest(unittest.TestCase):
         ingredients_node = cob.ProtonIngredients(seed=5).formation_node(6)
         self.assertEqual(len(ingredients_node.inputs), 2)
         self.assertEqual(len(ingredients_node.outputs), 0)
-        near = cob.MultiCobordism.nearKernelResidual(
-            ingredients_node.st, 3, ingredients_node.expectedRegisterCount())
+        near = cob.MultiCobordism.near_kernel_residual(
+            ingredients_node.st, 3, ingredients_node.expected_register_count())
         ingredients_node.set_input_residual_weight(1.0)
         r_at_weight_1 = ingredients_node.r_u(ingredients_node.st) - near
         ingredients_node.set_input_residual_weight(2.0)
@@ -108,8 +108,8 @@ class ProtonIngredientsNodesTest(unittest.TestCase):
         node = cob.ProtonIngredients(seed=5).joint_node(5)
         self.assertEqual(len(node.inputs), 3)
         self.assertEqual(len(node.outputs), 0)
-        near = cob.MultiCobordism.nearKernelResidual(node.st, 3,
-                                                     node.expectedRegisterCount())
+        near = cob.MultiCobordism.near_kernel_residual(node.st, 3,
+                                                     node.expected_register_count())
         node.set_input_residual_weight(1.0)
         r_at_weight_1 = node.r_u(node.st) - near   # the weighted input terms alone
         node.set_input_residual_weight(2.0)
@@ -163,16 +163,16 @@ class ProtonIngredientsBuildTest(unittest.TestCase):
     def test_whole_complex_exists_with_relaxed_metric(self):
         whole = self.ingredients.spacetime()
         self.assertIsNotNone(whole)
-        squared = [(e.getLength() * e.getLength()) for e in whole.getEdgeList().toVector()]
+        squared = [(e.get_length() * e.get_length()) for e in whole.get_edge_list().to_vector()]
         self.assertTrue(squared, "emergent complex has no edges")
         self.assertTrue(any(abs(l - complex(1.0, 0.0)) > 1e-9 for l in squared),
                         "metric is unit — the relaxed geometry was lost")
         # block() IS the whole (API parity with ProtonSynthesis.block()): same complex, not a carve.
         block = self.ingredients.block()
         self.assertIsNotNone(block)
-        self.assertEqual(len(block.getTopSimplices()), len(whole.getTopSimplices()))
-        self.assertEqual(len(block.getEdgeList().toVector()),
-                         len(whole.getEdgeList().toVector()))
+        self.assertEqual(len(block.get_top_simplices()), len(whole.get_top_simplices()))
+        self.assertEqual(len(block.get_edge_list().to_vector()),
+                         len(whole.get_edge_list().to_vector()))
 
 
 if __name__ == "__main__":

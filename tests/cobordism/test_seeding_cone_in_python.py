@@ -1,6 +1,6 @@
 # Copyright (c) 2026 Twin Vector Labs LLC.
 # All rights reserved.
-"""SurgicalCone.coneIn contract + connectivity (#503).
+"""SurgicalCone.cone_in contract + connectivity (#503).
 
 coneIn requires exactly d targets (a facet of a top cell), NOT the full (d+1)-vertex
 cell — passing the whole cell fails the arg-count check, so a cone-in could only ever
@@ -20,31 +20,31 @@ cob = tessera.cobordism
 
 def _pentatope():
     """A single solid 4-simplex (one top cell, 5 vertices, a 4-ball)."""
-    return tessera.Spacetime.fromVertexTuples(4, [[0, 1, 2, 3, 4]], 1.0, 0.0)
+    return tessera.Spacetime.from_vertex_tuples(4, [[0, 1, 2, 3, 4]], 1.0, 0.0)
 
 
 def _counts(st):
-    verts = [v.getId() for v in st.getVertexList().toVector()]
-    edges = st.getEdgeList().toVector()
-    cells = st.getTopSimplices()
+    verts = [v.get_id() for v in st.get_vertex_list().to_vector()]
+    edges = st.get_edge_list().to_vector()
+    cells = st.get_top_simplices()
     return len(verts), len(edges), len(cells)
 
 
 def _loose_vertices(st):
     """Vertex ids not incident to any edge — what 'loose vertices floating' means."""
     edged = set()
-    for e in st.getEdgeList().toVector():
-        edged.add(e.getSource().getId())
-        edged.add(e.getTarget().getId())
-    return {v.getId() for v in st.getVertexList().toVector()} - edged
+    for e in st.get_edge_list().to_vector():
+        edged.add(e.get_source().get_id())
+        edged.add(e.get_target().get_id())
+    return {v.get_id() for v in st.get_vertex_list().to_vector()} - edged
 
 
 def _components(st):
     """Number of connected components of the 1-skeleton (edge graph)."""
     adj = collections.defaultdict(set)
-    verts = {v.getId() for v in st.getVertexList().toVector()}
-    for e in st.getEdgeList().toVector():
-        a, b = e.getSource().getId(), e.getTarget().getId()
+    verts = {v.get_id() for v in st.get_vertex_list().to_vector()}
+    for e in st.get_edge_list().to_vector():
+        a, b = e.get_source().get_id(), e.get_target().get_id()
         adj[a].add(b)
         adj[b].add(a)
     seen, comps = set(), 0
@@ -68,19 +68,19 @@ class ConeInContractTest(unittest.TestCase):
     def test_full_cell_is_rejected(self):
         # The exact bug: passing the whole (d+1)-vertex top cell.
         sc = cob.SurgicalCone(_pentatope())
-        ok, reason = sc.coneIn([0, 1, 2, 3, 4])
+        ok, reason = sc.cone_in([0, 1, 2, 3, 4])
         self.assertFalse(ok)
         self.assertIn("4", reason)   # "cone-in needs 4 target vertices (got 5)"
         self.assertIn("5", reason)
 
     def test_too_few_targets_is_rejected(self):
         sc = cob.SurgicalCone(_pentatope())
-        self.assertFalse(sc.coneIn([0, 1, 2])[0])
+        self.assertFalse(sc.cone_in([0, 1, 2])[0])
 
     def test_facet_is_accepted(self):
         # A d-vertex facet of the cell is the correct payload.
         sc = cob.SurgicalCone(_pentatope())
-        ok, reason = sc.coneIn([0, 1, 2, 3])
+        ok, reason = sc.cone_in([0, 1, 2, 3])
         self.assertTrue(ok, reason)
 
 
@@ -92,7 +92,7 @@ class ConeInConnectivityTest(unittest.TestCase):
         v0, e0, c0 = _counts(st)
         self.assertEqual(_loose_vertices(st), set())
         sc = cob.SurgicalCone(st)
-        self.assertTrue(sc.coneIn([0, 1, 2, 3])[0])
+        self.assertTrue(sc.cone_in([0, 1, 2, 3])[0])
         v1, e1, c1 = _counts(st)
         self.assertEqual(v1, v0 + 1)          # one fresh apex
         self.assertEqual(e1, e0 + 4)          # apex joined to the 4 targets by edges
@@ -103,7 +103,7 @@ class ConeInConnectivityTest(unittest.TestCase):
         st = _pentatope()
         before = _counts(st)
         sc = cob.SurgicalCone(st)
-        self.assertTrue(sc.coneIn([0, 1, 2, 3])[0])
+        self.assertTrue(sc.cone_in([0, 1, 2, 3])[0])
         self.assertTrue(sc.rollback())
         self.assertEqual(_counts(st), before)
         self.assertEqual(_loose_vertices(st), set())
@@ -118,9 +118,9 @@ class ConeInGrowthTest(unittest.TestCase):
         sc = cob.SurgicalCone(st)
         grown = 0
         for _ in range(8):
-            boundary = sorted(tuple(sorted(f)) for f in st.getBoundary())
+            boundary = sorted(tuple(sorted(f)) for f in st.get_boundary())
             self.assertTrue(boundary, "ball lost its boundary")
-            ok, _reason = sc.coneIn(list(boundary[0]))   # cone onto a boundary facet
+            ok, _reason = sc.cone_in(list(boundary[0]))   # cone onto a boundary facet
             if ok:
                 grown += 1
                 self.assertEqual(_loose_vertices(st), set(),

@@ -46,7 +46,7 @@ KS = ch.Branch.KontsevichSegal
 
 
 def _edges(K):
-    return [tuple(int(v) for v in e) for e in K.kSimplexVertices(1)]
+    return [tuple(int(v) for v in e) for e in K.k_simplex_vertices(1)]
 
 
 def _split_interface(K, N):
@@ -61,9 +61,9 @@ def _complex_symmetric_pencil(N=4, seed=11):
     hold, so (A~, M) is a complex symmetric pair."""
     rng = np.random.default_rng(seed)
     cells, _ = torus_cells(N)
-    K = cob.ChainComplex.fromTopCells(cells)
+    K = cob.ChainComplex.from_top_cells(cells)
     s = [complex(1.0 + 0.3 * rng.normal(), 0.3 * rng.normal())
-         for _ in range(K.numSimplices(1))]
+         for _ in range(K.num_simplices(1))]
     base = ch.ChainHodge(K, s, ch.Preset.L2, KS)
     P = base.pencil(1)
     return K, np.array(P.A), np.array(P.B)
@@ -74,8 +74,8 @@ def _non_normal_pencil(N=4, seed=23):
     the regime certificate calls this one non-normal."""
     rng = np.random.default_rng(seed)
     cells, _ = torus_cells(N)
-    K = cob.ChainComplex.fromTopCells(cells)
-    n1 = K.numSimplices(1)
+    K = cob.ChainComplex.from_top_cells(cells)
+    n1 = K.num_simplices(1)
     s = [complex(1.0 + 0.3 * rng.normal(), 0.3 * rng.normal()) for _ in range(n1)]
     links = [complex(rng.normal(), rng.normal()) for _ in range(n1)]
     base = ch.ChainHodge(K, s, ch.Preset.L2, KS)
@@ -157,20 +157,20 @@ class TestResonantFeshbach:
         values, interior = _interior_spectrum(A, M, interface)
         lam = complex(values[0])
         F = PS.feshbach(A, M, lam, interface, 1e-10, RADIUS)
-        assert F.interiorSingular
-        R, Pi0 = np.array(F.rangeProjector), np.array(F.nullProjector)
+        assert F.interior_singular
+        R, Pi0 = np.array(F.range_projector), np.array(F.null_projector)
         ni = len(interior)
         PII = (A - lam * M)[np.ix_(interior, interior)]
-        q = F.resonantSpace.shape[1]
+        q = F.resonant_space.shape[1]
         assert q >= 1
         assert np.abs(R @ R - R).max() < 1e-10
         assert np.abs(Pi0 @ Pi0 - Pi0).max() < 1e-10
         assert np.abs(R + Pi0 - np.eye(ni)).max() < 1e-12
         assert np.linalg.norm(Pi0 @ PII - PII @ Pi0) < 1e-10 * np.linalg.norm(PII)
         assert abs(np.trace(Pi0) - q) < 1e-8
-        assert abs(F.projectorTrace - q) < 1e-8
-        assert F.projectorIdempotency < 1e-10
-        assert F.interiorRank == ni - q
+        assert abs(F.projector_trace - q) < 1e-8
+        assert F.projector_idempotency < 1e-10
+        assert F.interior_rank == ni - q
         # The projector is spectral, not Hermitian-orthogonal: it need not be
         # Hermitian, and on the non-normal fixture it is not.
         if fixture == "non-normal":
@@ -188,7 +188,7 @@ class TestResonantFeshbach:
         lam = complex(values[1])
         F = PS.feshbach(A, M, lam, interface, 1e-10, RADIUS)
         PII = (A - lam * M)[np.ix_(interior, interior)]
-        PD, Pi0 = np.array(F.interiorInverse), np.array(F.nullProjector)
+        PD, Pi0 = np.array(F.interior_inverse), np.array(F.null_projector)
         I = np.eye(len(interior))
         assert _rel(PD @ PII, I - Pi0) < 1e-10
         assert _rel(PII @ PD, I - Pi0) < 1e-10
@@ -212,9 +212,9 @@ class TestResonantFeshbach:
         test proves which inverse is in use rather than assuming it."""
         A, M, interface, interior, lam, PII = _declared_pencil(4242, jordan=True)
         F = PS.feshbach(A, M, lam, interface, 1e-10, RADIUS)
-        assert F.interiorSingular
-        assert F.resonantSpace.shape[1] == 2
-        PD, Pi0 = np.array(F.interiorInverse), np.array(F.nullProjector)
+        assert F.interior_singular
+        assert F.resonant_space.shape[1] == 2
+        PD, Pi0 = np.array(F.interior_inverse), np.array(F.null_projector)
         I = np.eye(len(interior))
         assert _rel(PD @ PII, I - Pi0) < 1e-10
         assert _rel(PII @ PD, I - Pi0) < 1e-10
@@ -224,9 +224,9 @@ class TestResonantFeshbach:
         pinv = np.linalg.pinv(PII, rcond=1e-8)
         assert _rel(pinv, PD) > 1e-3
         # The reduction's certificates hold at machine precision even so.
-        assert F.reductionResidual < 1e-12
-        assert F.projectorIdempotency < 1e-12
-        assert abs(F.projectorTrace - 2.0) < 1e-10
+        assert F.reduction_residual < 1e-12
+        assert F.projector_idempotency < 1e-12
+        assert abs(F.projector_trace - 2.0) < 1e-10
 
     @pytest.mark.parametrize("fixture", ["complex-symmetric", "non-normal"])
     def test_resonant_bases_span_the_generalized_eigenspace(self, fixture):
@@ -239,7 +239,7 @@ class TestResonantFeshbach:
         lam = complex(values[1])
         F = PS.feshbach(A, M, lam, interface, 1e-10, RADIUS)
         PII = (A - lam * M)[np.ix_(interior, interior)]
-        Nv, NL, Pi0 = np.array(F.resonantSpace), np.array(F.resonantLeftSpace), np.array(F.nullProjector)
+        Nv, NL, Pi0 = np.array(F.resonant_space), np.array(F.resonant_left_space), np.array(F.null_projector)
         q = Nv.shape[1]
         assert _rel(NL.T @ Nv, np.eye(q)) < 1e-10
         assert _rel(Nv @ NL.T, Pi0) < 1e-10
@@ -268,18 +268,18 @@ class TestResonantFeshbach:
             lam = complex(values[0])
         F = PS.feshbach(A, M, lam, interface, 1e-10, RADIUS)
         nb = len(interface)
-        q = F.resonantSpace.shape[1]
-        assert F.resonantResponse.shape == (nb + q, nb + q)
+        q = F.resonant_space.shape[1]
+        assert F.resonant_response.shape == (nb + q, nb + q)
         P = A - lam * M
-        W = np.hstack([np.array(F.constraintModes), np.array(F.resonantModes)])
-        Fhat = np.array(F.resonantResponse)
+        W = np.hstack([np.array(F.constraint_modes), np.array(F.resonant_modes)])
+        Fhat = np.array(F.resonant_response)
         predicted = np.zeros_like(W)
         predicted[interface, :] = Fhat[:nb, :]
-        predicted[interior, :] = np.array(F.resonantSpace) @ Fhat[nb:, :]
+        predicted[interior, :] = np.array(F.resonant_space) @ Fhat[nb:, :]
         residual = (np.linalg.norm(P @ W - predicted)
                     / (np.linalg.norm(P) * np.linalg.norm(W)))
         assert residual < 1e-10
-        assert abs(residual - F.reductionResidual) < 1e-12
+        assert abs(residual - F.reduction_residual) < 1e-12
 
     @pytest.mark.parametrize("fixture", ["complex-symmetric", "non-normal"])
     def test_resonant_reduction_lifts_its_null_vectors_to_the_pencil(self, fixture):
@@ -292,22 +292,22 @@ class TestResonantFeshbach:
         lam = complex(values[0])
         F = PS.feshbach(A, M, lam, interface, 1e-10, RADIUS)
         nb = len(interface)
-        Fhat = np.array(F.resonantResponse)
+        Fhat = np.array(F.resonant_response)
         u, sv, vh = np.linalg.svd(Fhat)
         nullity = int(np.sum(sv <= 1e-10 * sv[0]))
         P = A - lam * M
         scaleP = np.linalg.norm(P)
-        T, Z = np.array(F.constraintModes), np.array(F.resonantModes)
+        T, Z = np.array(F.constraint_modes), np.array(F.resonant_modes)
         for j in range(nullity):
             y = vh[Fhat.shape[1] - 1 - j].conj()
             x = T @ y[:nb] + Z @ y[nb:]
             assert np.linalg.norm(P @ x) <= 1e-7 * scaleP * np.linalg.norm(x)
         if nullity > 0:
-            assert np.isfinite(F.liftResidual) and F.liftResidual < 1e-7
+            assert np.isfinite(F.lift_residual) and F.lift_residual < 1e-7
         else:
             # There is no null vector to lift, and the read says so rather than
             # reporting a zero it did not measure.
-            assert np.isnan(F.liftResidual)
+            assert np.isnan(F.lift_residual)
 
     @pytest.mark.parametrize("fixture", ["complex-symmetric", "non-normal"])
     def test_compatibility_and_independence_are_measured_on_the_projector(self, fixture):
@@ -325,15 +325,15 @@ class TestResonantFeshbach:
         P = A - lam * M
         PIB = P[np.ix_(interior, interface)]
         PBI = P[np.ix_(interface, interior)]
-        Pi0 = np.array(F.nullProjector)
+        Pi0 = np.array(F.null_projector)
         assert abs(np.linalg.norm(Pi0 @ PIB) / np.linalg.norm(PIB)
-                   - F.compatibilityResidual) < 1e-10
+                   - F.compatibility_residual) < 1e-10
         assert abs(np.linalg.norm(PBI @ Pi0) / np.linalg.norm(PBI)
-                   - F.independenceResidual) < 1e-10
+                   - F.independence_residual) < 1e-10
         # The interior solve residual is the compatibility residual: the
         # Drazin inverse solves the interior equation exactly on the
         # complementary invariant subspace and nowhere else.
-        assert abs(F.solveResidual - F.compatibilityResidual) < 1e-10
+        assert abs(F.solve_residual - F.compatibility_residual) < 1e-10
 
     @pytest.mark.parametrize("fixture", ["semisimple", "jordan", "complex-symmetric"])
     def test_the_reduction_is_similarity_covariant(self, fixture):
@@ -357,11 +357,11 @@ class TestResonantFeshbach:
         Dinv = np.linalg.inv(D)
         F = PS.feshbach(A, M, lam, interface, 1e-10, RADIUS)
         G = PS.feshbach(Dinv @ A @ D, Dinv @ M @ D, lam, interface, 1e-10, RADIUS)
-        assert F.interiorSingular and G.interiorSingular
+        assert F.interior_singular and G.interior_singular
         Sinv = np.linalg.inv(S)
         assert _rel(np.array(G.response), np.array(F.response)) < 1e-9
-        assert _rel(S @ np.array(G.nullProjector) @ Sinv, np.array(F.nullProjector)) < 1e-9
-        assert _rel(S @ np.array(G.interiorInverse) @ Sinv, np.array(F.interiorInverse)) < 1e-9
+        assert _rel(S @ np.array(G.null_projector) @ Sinv, np.array(F.null_projector)) < 1e-9
+        assert _rel(S @ np.array(G.interior_inverse) @ Sinv, np.array(F.interior_inverse)) < 1e-9
         # The Moore-Penrose complement on the same two pencils is not covariant.
         P = A - lam * M
         Pt = Dinv @ P @ D
@@ -374,15 +374,15 @@ class TestResonantFeshbach:
         K, A, M = _complex_symmetric_pencil()
         interface = _split_interface(K, 4)
         F = PS.feshbach(A, M, complex(0.37, -0.11), interface)
-        assert not F.interiorSingular
+        assert not F.interior_singular
         ni = A.shape[0] - len(interface)
-        assert np.abs(np.array(F.rangeProjector) - np.eye(ni)).max() == 0.0
-        assert np.abs(np.array(F.nullProjector)).max() == 0.0
-        assert F.resonantSpace.shape[1] == 0
-        assert F.interiorInverse.size == 0
-        assert F.compatible and F.responseIndependent
-        assert F.determinantResidual < 1e-8
-        assert F.resonanceSeparation > 1.0
+        assert np.abs(np.array(F.range_projector) - np.eye(ni)).max() == 0.0
+        assert np.abs(np.array(F.null_projector)).max() == 0.0
+        assert F.resonant_space.shape[1] == 0
+        assert F.interior_inverse.size == 0
+        assert F.compatible and F.response_independent
+        assert F.determinant_residual < 1e-8
+        assert F.resonance_separation > 1.0
 
     def test_the_resonance_disc_is_the_declaration(self):
         """The same shift is a resonance or not according to the declared disc:
@@ -395,11 +395,11 @@ class TestResonantFeshbach:
         # radius, inside a disc declared at 1e-6 and outside one at 1e-12.
         lam = complex(values[0]) * (1.0 + 1e-9)
         wide = PS.feshbach(A, M, lam, interface, 1e-10, 1e-6)
-        assert wide.interiorSingular
-        assert wide.resonanceEnclosure < 1.0 < wide.resonanceSeparation
+        assert wide.interior_singular
+        assert wide.resonance_enclosure < 1.0 < wide.resonance_separation
         narrow = PS.feshbach(A, M, lam, interface, 1e-10, 1e-12)
-        assert not narrow.interiorSingular
-        assert narrow.resonanceSeparation > 1.0
+        assert not narrow.interior_singular
+        assert narrow.resonance_separation > 1.0
         with pytest.raises(ValueError):
             PS.feshbach(A, M, lam, interface, 1e-10, -1.0)
 
@@ -409,12 +409,12 @@ class TestCongruenceCertificates:
         K, A, M = _complex_symmetric_pencil()
         interface = _split_interface(K, 4)
         F = PS.feshbach(A, M, 0.0 + 0.0j, interface)
-        G = PS.craigBampton(A, M, F.constraintModes)
-        assert G.symmetryDefect < 1e-10
-        assert G.metricSymmetryDefect < 1e-10
+        G = PS.craig_bampton(A, M, F.constraint_modes)
+        assert G.symmetry_defect < 1e-10
+        assert G.metric_symmetry_defect < 1e-10
         # The constraint modes have an identity block on the interface, so the
         # basis is far from rank deficient.
-        assert G.basisConditionInverse > 1e-6
+        assert G.basis_condition_inverse > 1e-6
 
 
 class TestCertifiedSurrogate:
@@ -437,20 +437,20 @@ class TestCertifiedSurrogate:
                    else _non_normal_pencil())
         interface = _split_interface(K, 4)
         centre, radius = self._window(A, M, interface)
-        surrogate = PS.craigBamptonSurrogate(
+        surrogate = PS.craig_bampton_surrogate(
             A, M, interface, centre, radius, 4.0 * radius,
             complex(0.0, 0.0), 1e-6, 1e-12)
-        assert surrogate.retainedModes > 0
-        assert len(surrogate.windowIndices) > 0
+        assert surrogate.retained_modes > 0
+        assert len(surrogate.window_indices) > 0
         # Every claimed pair's distance from the exact Feshbach map is within
         # the bound its own fine-space residual certifies. The inequality is
         # exact mathematics, so it holds for a truncated surrogate too: what
         # truncation costs is the size of the bound, not its truth.
-        for i in range(len(surrogate.windowIndices)):
-            if surrogate.resonantAtEigenvalue[i]:
+        for i in range(len(surrogate.window_indices)):
+            if surrogate.resonant_at_eigenvalue[i]:
                 continue
-            assert surrogate.feshbachHolds[i]
-            assert surrogate.feshbachDefects[i] <= surrogate.feshbachBounds[i] * 1.000001 + 1e-300
+            assert surrogate.feshbach_holds[i]
+            assert surrogate.feshbach_defects[i] <= surrogate.feshbach_bounds[i] * 1.000001 + 1e-300
 
     @pytest.mark.parametrize("fixture", ["complex-symmetric", "non-normal"])
     def test_the_defect_is_the_exact_map_recomputed(self, fixture):
@@ -461,11 +461,11 @@ class TestCertifiedSurrogate:
                    else _non_normal_pencil())
         interface = sorted(_split_interface(K, 4))
         centre, radius = self._window(A, M, interface)
-        surrogate = PS.craigBamptonSurrogate(
+        surrogate = PS.craig_bampton_surrogate(
             A, M, interface, centre, radius, 4.0 * radius)
         V = np.array(surrogate.basis)
-        for position, index in enumerate(surrogate.windowIndices):
-            if surrogate.resonantAtEigenvalue[position]:
+        for position, index in enumerate(surrogate.window_indices):
+            if surrogate.resonant_at_eigenvalue[position]:
                 continue
             theta = complex(surrogate.eigenvalues[index])
             x = V @ np.array(surrogate.vectors)[:, index]
@@ -473,7 +473,7 @@ class TestCertifiedSurrogate:
             F = PS.feshbach(A, M, theta, interface, 1e-12)
             expected = (np.linalg.norm(np.array(F.response) @ xB)
                         / (np.linalg.norm(F.response) * np.linalg.norm(xB)))
-            assert abs(expected - surrogate.feshbachDefects[position]) < 1e-8 * max(expected, 1.0)
+            assert abs(expected - surrogate.feshbach_defects[position]) < 1e-8 * max(expected, 1.0)
 
     @pytest.mark.parametrize("fixture", ["complex-symmetric", "non-normal"])
     def test_retaining_every_mode_makes_the_surrogate_exact(self, fixture):
@@ -485,15 +485,15 @@ class TestCertifiedSurrogate:
                    else _non_normal_pencil())
         interface = _split_interface(K, 4)
         centre, radius = self._window(A, M, interface)
-        full = PS.craigBamptonSurrogate(
+        full = PS.craig_bampton_surrogate(
             A, M, interface, centre, radius, 1e9, complex(0.0, 0.0), 1.0)
-        assert full.retainedModes == A.shape[0] - len(interface)
-        assert np.isinf(full.discardedModeSeparation)
-        assert all(full.feshbachHolds)
+        assert full.retained_modes == A.shape[0] - len(interface)
+        assert np.isinf(full.discarded_mode_separation)
+        assert all(full.feshbach_holds)
         assert full.certified, full.refusal
         exact = np.linalg.eigvals(np.linalg.solve(M, A))
-        assert len(full.windowIndices) > 0
-        for index in full.windowIndices:
+        assert len(full.window_indices) > 0
+        for index in full.window_indices:
             theta = complex(full.eigenvalues[index])
             assert np.min(np.abs(exact - theta)) < 1e-6 * max(1.0, abs(theta))
 
@@ -506,24 +506,24 @@ class TestCertifiedSurrogate:
                    else _non_normal_pencil())
         interface = _split_interface(K, 4)
         centre, radius = self._window(A, M, interface)
-        narrow = PS.craigBamptonSurrogate(
+        narrow = PS.craig_bampton_surrogate(
             A, M, interface, centre, radius, 0.5 * radius, complex(0.0, 0.0), 1e-4)
         assert not narrow.certified
         assert "window" in narrow.refusal
-        assert narrow.discardedModeSeparation < 0.0
+        assert narrow.discarded_mode_separation < 0.0
         assert len(narrow.eigenvalues) > 0
 
     def test_the_reduction_basis_is_the_constraint_modes_and_the_kept_modes(self):
         K, A, M = _complex_symmetric_pencil()
         interface = sorted(_split_interface(K, 4))
         centre, radius = self._window(A, M, interface)
-        surrogate = PS.craigBamptonSurrogate(
+        surrogate = PS.craig_bampton_surrogate(
             A, M, interface, centre, radius, 3.0 * radius)
         nb = len(interface)
         V = np.array(surrogate.basis)
-        assert V.shape == (A.shape[0], nb + surrogate.retainedModes)
+        assert V.shape == (A.shape[0], nb + surrogate.retained_modes)
         F = PS.feshbach(A, M, complex(0.0, 0.0), interface)
-        assert np.abs(V[:, :nb] - np.array(F.constraintModes)).max() < 1e-12
+        assert np.abs(V[:, :nb] - np.array(F.constraint_modes)).max() < 1e-12
         # The retained columns are supported on the interior alone: a
         # fixed-interface mode holds the interface at zero, which is what
         # "fixed-interface" means.
@@ -533,16 +533,16 @@ class TestCertifiedSurrogate:
         K, A, M = _complex_symmetric_pencil()
         interface = _split_interface(K, 4)
         centre, radius = self._window(A, M, interface)
-        surrogate = PS.craigBamptonSurrogate(
+        surrogate = PS.craig_bampton_surrogate(
             A, M, interface, centre, radius, 3.0 * radius)
-        assert surrogate.reduced.symmetryDefect < 1e-8
-        assert surrogate.reduced.metricSymmetryDefect < 1e-8
+        assert surrogate.reduced.symmetry_defect < 1e-8
+        assert surrogate.reduced.metric_symmetry_defect < 1e-8
 
     def test_a_negative_retention_radius_is_refused(self):
         K, A, M = _complex_symmetric_pencil()
         interface = _split_interface(K, 4)
         with pytest.raises(ValueError):
-            PS.craigBamptonSurrogate(A, M, interface, complex(0.0, 0.0), 1.0, -0.5)
+            PS.craig_bampton_surrogate(A, M, interface, complex(0.0, 0.0), 1.0, -0.5)
 
     def test_the_window_is_a_disc_in_the_complex_plane(self):
         """On a pencil with a declared complex interior spectrum, the disc
@@ -567,7 +567,7 @@ class TestCertifiedSurrogate:
         A[np.ix_(interface, interior)] = coupling
         A[np.ix_(interior, interface)] = coupling.T
         A[np.ix_(interior, interior)] = np.diag(spectrum)
-        surrogate = PS.craigBamptonSurrogate(A, M, interface, centre, radius, radius,
+        surrogate = PS.craig_bampton_surrogate(A, M, interface, centre, radius, radius,
                                              complex(0.0, 0.0), 1e-2)
         # Retained modes are the interior unit vectors whose eigenvalue lies in
         # the disc: read them off the basis.
@@ -577,15 +577,15 @@ class TestCertifiedSurrogate:
             support = np.flatnonzero(np.abs(column) > 1e-8)
             assert len(support) == 1
             retained.append(complex(spectrum[support[0] - nb]))
-        assert surrogate.retainedModes == 2
+        assert surrogate.retained_modes == 2
         assert any(abs(t - lightly_damped) < 1e-12 for t in retained)
         assert any(abs(t - 1.2) < 1e-12 for t in retained)
         assert all(abs(t - strongly_damped) > 1e-6 for t in retained)
-        assert surrogate.discardedModeSeparation > 0.0
-        for i in range(len(surrogate.windowIndices)):
-            if not surrogate.resonantAtEigenvalue[i]:
-                assert surrogate.feshbachHolds[i]
-                assert surrogate.feshbachDefects[i] <= surrogate.feshbachBounds[i] * 1.000001 + 1e-300
+        assert surrogate.discarded_mode_separation > 0.0
+        for i in range(len(surrogate.window_indices)):
+            if not surrogate.resonant_at_eigenvalue[i]:
+                assert surrogate.feshbach_holds[i]
+                assert surrogate.feshbach_defects[i] <= surrogate.feshbach_bounds[i] * 1.000001 + 1e-300
 
 
 class TestRecursiveQuotientSurrogateRegimes:
@@ -605,7 +605,7 @@ class TestRecursiveQuotientSurrogateRegimes:
         dim = A.shape[0]
         interface = _split_interface(K, 4)
         components = [list(range(dim))] + [[i] for i in interface]
-        return cob.RecursiveQuotient.overPencil(
+        return cob.RecursiveQuotient.over_pencil(
             [complex(z) for z in A.reshape(-1)],
             [complex(z) for z in M.reshape(-1)], dim, components)
 
@@ -618,17 +618,17 @@ class TestRecursiveQuotientSurrogateRegimes:
         K, A, M = (_complex_symmetric_pencil() if fixture == "complex-symmetric"
                    else _non_normal_pencil())
         quotient = self._quotient(K, A, M)
-        assert len(quotient.interiorIndices(0)) > 0
+        assert len(quotient.interior_indices(0)) > 0
         assert quotient.regime in (cob.CertificateRegime.NonNormal,
                                    cob.CertificateRegime.ComplexSymmetricPencil)
         values = np.linalg.eigvals(np.linalg.solve(M, A))
         lower = float(values.real.min()) - 1.0
         upper = float(np.sort(values.real)[len(values) // 2])
-        read = quotient.craigBampton(lower, upper, float(values.real.max()) + 10.0, 1e-4)
-        assert sum(read.retainedModes) > 0
-        assert len(read.windowEigenvalues) > 0
-        assert max(read.eigenResiduals) < 1e-6
+        read = quotient.craig_bampton(lower, upper, float(values.real.max()) + 10.0, 1e-4)
+        assert sum(read.retained_modes) > 0
+        assert len(read.window_eigenvalues) > 0
+        assert max(read.eigen_residuals) < 1e-6
         # Every level the surrogate reports inside the window is a level of the
         # fine pencil.
-        for value in read.windowEigenvalues:
+        for value in read.window_eigenvalues:
             assert np.min(np.abs(values.real - value)) < 1e-6 * max(1.0, abs(value))

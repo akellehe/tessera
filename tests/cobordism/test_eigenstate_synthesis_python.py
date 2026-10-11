@@ -43,16 +43,16 @@ def _from_simplices(num_vertices, simplices):
     metric = tessera.Metric(True, sig)
     st = tessera.Spacetime(metric, tessera.HERMITIAN_WEIGHTED, 1.0, 1.0,
                            tessera.PREFERRED, tessera.Toroid())
-    verts = [st.createVertex(i) for i in range(num_vertices)]
+    verts = [st.create_vertex(i) for i in range(num_vertices)]
     for simplex in simplices:
-        st.createSimplex([verts[i] for i in simplex])
+        st.create_simplex([verts[i] for i in simplex])
     return st
 
 
 def _set_uniform(st, squared_length=1.0, phase=0.0):
-    for e in st.getEdgeList().toVector():
-        e.setLength(cmath.sqrt(complex(squared_length)))
-        e.setPhase(phase)
+    for e in st.get_edge_list().to_vector():
+        e.set_length(cmath.sqrt(complex(squared_length)))
+        e.set_phase(phase)
 
 
 def _two_vertex_edge():
@@ -80,18 +80,18 @@ def _cvec(v):
 def _np_L(st):
     """Independent D - A reference (magnitude convention), in the operator's
     stable sorted-vertex-id order — the same oracle the Hodge tests use."""
-    ids = sorted(v.getId() for v in st.getVertexList().toVector())
+    ids = sorted(v.get_id() for v in st.get_vertex_list().to_vector())
     idx = {vid: i for i, vid in enumerate(ids)}
     n = len(ids)
     A = np.zeros((n, n), dtype=complex)
     D = np.zeros(n)
-    for e in st.getEdgeList().toVector():
-        s, t = e.getSource().getId(), e.getTarget().getId()
+    for e in st.get_edge_list().to_vector():
+        s, t = e.get_source().get_id(), e.get_target().get_id()
         if s == t:
             continue
         i, j = idx[s], idx[t]
-        w = (e.getLength() * e.getLength()).real
-        z = w * np.exp(1j * e.getPhase())
+        w = (e.get_length() * e.get_length()).real
+        z = w * np.exp(1j * e.get_phase())
         A[i, j] += z
         A[j, i] += np.conj(z)
         D[i] += abs(w)
@@ -115,15 +115,15 @@ def _synthesize(es, psi, n_restarts=40, seed=0, w_bounds=(0.1, 10.0)):
     parameters found and returns (best_r, best_x)."""
     from scipy.optimize import minimize
 
-    m = es.numEdges()
+    m = es.num_edges()
     psi = _cvec(psi)
     rng = np.random.default_rng(seed)
     th_bounds = (-2.0 * math.pi, 2.0 * math.pi)
     bounds = [w_bounds] * m + [th_bounds] * m
 
     def objective(x):
-        es.setWeights(x[:m].tolist())
-        es.setPhases(x[m:].tolist())
+        es.set_weights(x[:m].tolist())
+        es.set_phases(x[m:].tolist())
         return es.residual(psi)
 
     best_r, best_x = np.inf, None
@@ -145,32 +145,32 @@ class EigenstateSynthesisStructureTest(unittest.TestCase):
     def test_order_and_edge_count(self):
         es = cob.EigenstateSynthesis(_two_vertex_edge())
         self.assertEqual(es.order(), 2)
-        self.assertEqual(es.numEdges(), 1)
+        self.assertEqual(es.num_edges(), 1)
 
         es5 = cob.EigenstateSynthesis(_testbed())
         self.assertEqual(es5.order(), 4)
-        self.assertEqual(es5.numEdges(), 5)
+        self.assertEqual(es5.num_edges(), 5)
 
     def test_weights_phases_roundtrip(self):
         st = _testbed()
         es = cob.EigenstateSynthesis(st)
         w = [0.5, 1.5, 2.0, 0.25, 3.0]
         th = [0.1, -0.2, 0.3, -0.4, 0.5]
-        es.setWeights(w)
-        es.setPhases(th)
+        es.set_weights(w)
+        es.set_phases(th)
         self.assertTrue(np.allclose(es.weights(), w))
         self.assertTrue(np.allclose(es.phases(), th))
         # And the writes reach the underlying edges (the Laplacian sees them).
         self.assertTrue(np.allclose(np.array(es.weights()),
-                                    [(e.getLength() * e.getLength()).real
-                                     for e in st.getEdgeList().toVector()]))
+                                    [(e.get_length() * e.get_length()).real
+                                     for e in st.get_edge_list().to_vector()]))
 
     def test_size_mismatch_raises(self):
         es = cob.EigenstateSynthesis(_two_vertex_edge())
         with self.assertRaises(Exception):
             es.residual([1.0 + 0j])            # needs length order() == 2
         with self.assertRaises(Exception):
-            es.setWeights([1.0, 2.0])          # needs length numEdges() == 1
+            es.set_weights([1.0, 2.0])          # needs length num_edges() == 1
 
 
 class ResidualParallelTest(unittest.TestCase):
@@ -210,9 +210,9 @@ class ResidualParallelTest(unittest.TestCase):
     def test_richer_complex(self):
         st = _testbed()
         # generic Hermitian weights so the spectrum is non-degenerate
-        for i, e in enumerate(st.getEdgeList().toVector()):
-            e.setLength(cmath.sqrt(complex(0.7 + 0.3 * i)))
-            e.setPhase(0.2 * (i + 1))
+        for i, e in enumerate(st.get_edge_list().to_vector()):
+            e.set_length(cmath.sqrt(complex(0.7 + 0.3 * i)))
+            e.set_phase(0.2 * (i + 1))
         self._check(st)
 
 

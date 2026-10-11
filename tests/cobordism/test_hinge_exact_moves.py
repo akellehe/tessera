@@ -4,15 +4,15 @@ The Emergent Color Topology epic (#457) grows the proton's ``b2`` color register
 *gated surgical coning under relaxation*. Its load-bearing prerequisite (#458, this
 module) is that the **existing** CDT Pachner moves are **hinge-exact** and **exactly
 invertible**: ``move o move^-1`` must leave both the complex AND the complex
-(Lorentzian / Sorkin) ``dualReggeAction`` -- real AND imaginary parts -- invariant to
+(Lorentzian / Sorkin) ``dual_regge_action`` -- real AND imaginary parts -- invariant to
 machine precision, so a later greedy ``Delta F`` optimiser can trust its deltas
 instead of chasing orphan-hinge / lossy-rollback artifacts (#365 / #371).
 
-The defect being guarded: ``removeSimplex`` of a top cell leaves its lazily
+The defect being guarded: ``remove_simplex`` of a top cell leaves its lazily
 materialised ``(d-1)`` / ``(d-2)`` sub-faces registered. ``collectHinges`` then summed
 those *orphans* into the action with a bare ``2*pi`` deficit while the gradient ignored
 them. The fix is bookkeeping (a hinge with no top coface is not part of the
-triangulation -- ``Simplex.hasTopCoface``), not a change to ``S = sum_h |*h|*eps_h``.
+triangulation -- ``Simplex.has_top_coface``), not a change to ``S = sum_h |*h|*eps_h``.
 
 Coverage:
 
@@ -23,7 +23,7 @@ Coverage:
 * orientation / ``Im S`` sign stability under coning;
 * stacked topology changes inverted level-by-level -- the action retraces exactly;
 * multiple topologies and sizes;
-* orphans excluded from the action, and ``pruneOrphanedSimplices`` restoring the raw
+* orphans excluded from the action, and ``prune_orphaned_simplices`` restoring the raw
   registered simplex set bit-for-bit.
 """
 
@@ -63,8 +63,8 @@ def _sphere(d, sq=1.0):
     metric = T.Metric(True, sig)
     st = T.Spacetime(metric, T.CDT, 1.0, 1.0, T.PREFERRED, T.SimplexBoundarySphere(d))
     st.build()
-    for e in st.getEdgeList().toVector():
-        e.setLength(cmath.sqrt(complex(sq)))
+    for e in st.get_edge_list().to_vector():
+        e.set_length(cmath.sqrt(complex(sq)))
     return st
 
 
@@ -73,40 +73,40 @@ def _s2_cross_s1():
     metric = T.Metric(True, sig)
     st = T.Spacetime(metric, T.CDT, 1.0, 1.0, T.PREFERRED, T.SphereCircleProduct())
     st.build()
-    for e in st.getEdgeList().toVector():
-        e.setLength(cmath.sqrt(complex(1.0)))
+    for e in st.get_edge_list().to_vector():
+        e.set_length(cmath.sqrt(complex(1.0)))
     return st
 
 
 def _dim(st):
     # d = (top-cell vertex count) - 1, read straight off the triangulation.
-    return max(len([v for v in s.getVertices()]) for s in st.getTopSimplices()) - 1
+    return max(len([v for v in s.get_vertices()]) for s in st.get_top_simplices()) - 1
 
 
 def _act(st):
-    return T.ReggeSolver(st, _matter()).dualReggeAction()
+    return T.ReggeSolver(st, _matter()).dual_regge_action()
 
 
 def _top_set(st):
     return sorted(
-        tuple(sorted(v.getId() for v in s.getVertices()))
-        for s in st.getTopSimplices()
+        tuple(sorted(v.get_id() for v in s.get_vertices()))
+        for s in st.get_top_simplices()
     )
 
 
 def _all_set(st):
     return sorted(
-        tuple(sorted(v.getId() for v in s.getVertices()))
-        for s in st.getSimplices()
+        tuple(sorted(v.get_id() for v in s.get_vertices()))
+        for s in st.get_simplices()
     )
 
 
 def _genuine_hinge_set(st):
     hsize = _dim(st)  # (d-2)-simplex has d-1 vertices
     return sorted(
-        tuple(sorted(v.getId() for v in s.getVertices()))
-        for s in st.getSimplices()
-        if len([v for v in s.getVertices()]) == hsize and s.hasTopCoface()
+        tuple(sorted(v.get_id() for v in s.get_vertices()))
+        for s in st.get_simplices()
+        if len([v for v in s.get_vertices()]) == hsize and s.has_top_coface()
     )
 
 
@@ -139,14 +139,14 @@ def test_cdt_move_roundtrip_action_invariant(ctor, args):
         assert mv.apply()
         a1 = _act(st)  # materialise the new region's hinges (would orphan on rollback)
         mv.rollback()
-        assert not mv.isApplied()
+        assert not mv.is_applied()
         a2 = _act(st)
 
-        _assert_close(a2, a0, TOL_BIG, f"{mv.moveType()} roundtrip")
+        _assert_close(a2, a0, TOL_BIG, f"{mv.move_type()} roundtrip")
         assert _top_set(st) == tops0, "top-cell set not restored"
         assert _genuine_hinge_set(st) == hinges0, "genuine hinge set not restored"
         # The move genuinely perturbed the action (the test is not vacuous).
-        assert abs(a1 - a0) > TOL, f"{mv.moveType()} did not change the action"
+        assert abs(a1 - a0) > TOL, f"{mv.move_type()} did not change the action"
         return
     pytest.skip(f"{ctor.__name__} never proposed in 64 seeds")
 
@@ -195,7 +195,7 @@ def test_cone_in_out_roundtrip(builder):
     assert cone.propose(), "cone-in did not propose"
     assert cone.apply()
     # one cell -> (d+1) cells
-    assert st.getVertexCount() == len(set(v for tup in tops0 for v in tup)) + 1
+    assert st.get_vertex_count() == len(set(v for tup in tops0 for v in tup)) + 1
     a1 = _act(st)
     assert abs(a1 - a0) > TOL, "refinement should redistribute curvature"
 
@@ -206,7 +206,7 @@ def test_cone_in_out_roundtrip(builder):
 
     # Orphans (the materialised child hinges) are excluded from the action; pruning
     # them restores the raw registered simplex set bit-for-bit.
-    assert st.pruneOrphanedSimplices() >= 0
+    assert st.prune_orphaned_simplices() >= 0
     assert _all_set(st) == all0, "registered simplex set not bit-identical after prune"
 
 
@@ -364,9 +364,9 @@ def test_orphans_excluded_from_action():
     cone.rollback()
 
     hinge_size = _dim(st)
-    registered = [s for s in st.getSimplices()
-                  if len([v for v in s.getVertices()]) == hinge_size]
-    orphans = [s for s in registered if not s.hasTopCoface()]
+    registered = [s for s in st.get_simplices()
+                  if len([v for v in s.get_vertices()]) == hinge_size]
+    orphans = [s for s in registered if not s.has_top_coface()]
     assert len(orphans) > 0, "expected lingering orphan hinges to make the test bite"
 
     _assert_close(_act(st), ref, TOL, "orphans excluded from action")
@@ -383,7 +383,7 @@ def test_prune_orphans_restores_raw_simplex_set():
     mv.rollback()
 
     assert _all_set(st) != all0, "expected orphan registrations before pruning"
-    pruned = st.pruneOrphanedSimplices()
+    pruned = st.prune_orphaned_simplices()
     assert pruned > 0
     assert _all_set(st) == all0, "prune did not restore the raw simplex set"
 
@@ -393,14 +393,14 @@ def test_prune_orphans_restores_raw_simplex_set():
 # --------------------------------------------------------------------------- #
 def test_s3_sphere_cone_and_move_roundtrip():
     st = _sphere(3)
-    assert st.getVertexCount() == 5  # boundary of a 4-simplex
-    assert len([s for s in st.getTopSimplices()]) == 5
+    assert st.get_vertex_count() == 5  # boundary of a 4-simplex
+    assert len([s for s in st.get_top_simplices()]) == 5
     a0 = _act(st)
     tops0 = _top_set(st)
 
     cone = T.AddMove(st, 1, False, T.PachnerMode.PreGeometric, False)
     assert cone.propose() and cone.apply()
-    assert len([s for s in st.getTopSimplices()]) == 8  # 5 - 1 + 4
+    assert len([s for s in st.get_top_simplices()]) == 8  # 5 - 1 + 4
     cone.rollback()
     _assert_close(_act(st), a0, TOL, "S^3 cone roundtrip")
     assert _top_set(st) == tops0

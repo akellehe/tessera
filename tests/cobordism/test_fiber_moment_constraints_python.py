@@ -131,11 +131,11 @@ def test_the_fiber_gradient_is_the_whole_derivative():
     content = (0, 2, 1)
     spacetime, _, mean_field, _ = _host(FIRST_CELL, content)
     classes, orientations = bp.sheet_edge_classes(spacetime)
-    edges = spacetime.getEdgeList().toVector()
+    edges = spacetime.get_edge_list().to_vector()
     for edge, c, o in zip(edges, classes, orientations):
-        z = complex(edge.getLength()) ** 2 * (1.0 + 0.07 * (c - 2.5))
-        edge.setLength(cmath.sqrt(z))
-        edge.setPhase(complex(edge.getPhase()) + o * 0.05 * (c - 2))
+        z = complex(edge.get_length()) ** 2 * (1.0 + 0.07 * (c - 2.5))
+        edge.set_length(cmath.sqrt(z))
+        edge.set_phase(complex(edge.get_phase()) + o * 0.05 * (c - 2))
     follower = cob.BandFollower(mean_field)
 
     def fiber_at():
@@ -155,22 +155,22 @@ def test_the_fiber_gradient_is_the_whole_derivative():
         members = [(i, o) for i, (cc, o) in enumerate(zip(classes,
                                                           orientations))
                    if cc == c]
-        saved = [(complex(edges[i].getLength()), complex(edges[i].getPhase()))
+        saved = [(complex(edges[i].get_length()), complex(edges[i].get_phase()))
                  for i, _ in members]
         for kind in ("length", "link"):
             sums = []
             for sign in (1.0, -1.0):
                 for (i, o), (length, phase) in zip(members, saved):
                     if kind == "length":
-                        edges[i].setLength(
+                        edges[i].set_length(
                             cmath.sqrt(length * length + sign * radius))
                     else:
-                        edges[i].setPhase(phase - 1j * o * sign * radius)
+                        edges[i].set_phase(phase - 1j * o * sign * radius)
                 pinned.set_moment_projector(list(fiber_at().reshape(-1)))
                 sums.append(np.asarray(pinned.power_sums()))
                 for (i, _), (length, phase) in zip(members, saved):
-                    edges[i].setLength(length)
-                    edges[i].setPhase(phase)
+                    edges[i].set_length(length)
+                    edges[i].set_phase(phase)
             difference = (sums[0] - sums[1]) / (2.0 * radius)
             if kind == "length":
                 exact = np.array([sum(g[i] for i, _ in members)
@@ -190,8 +190,8 @@ def test_the_fiber_trace_obeys_the_euler_identity():
     spacetime, _, _, read = _host(FIRST_CELL, (0, 2, 1))
     pinned = _pinned(spacetime, _fiber(read), [1])
     gradient = np.asarray(pinned.moment_gradient(0))
-    z = np.array([complex(e.getLength()) ** 2
-                  for e in spacetime.getEdgeList().toVector()])
+    z = np.array([complex(e.get_length()) ** 2
+                  for e in spacetime.get_edge_list().to_vector()])
     p1 = complex(pinned.power_sums()[0])
     assert abs(np.sum(z * gradient[:len(z)]) + p1) < 1e-10 * abs(p1)
 
@@ -351,11 +351,11 @@ def test_the_band_mean_gradient_is_the_whole_derivative():
     content = (1, 1, 1)
     spacetime, _, mean_field, _ = _host(SECOND_CELL, content)
     classes, orientations = bp.sheet_edge_classes(spacetime)
-    edges = spacetime.getEdgeList().toVector()
+    edges = spacetime.get_edge_list().to_vector()
     for edge, c, o in zip(edges, classes, orientations):
-        z = complex(edge.getLength()) ** 2 * (1.0 + 0.07 * (c - 2.5))
-        edge.setLength(cmath.sqrt(z))
-        edge.setPhase(complex(edge.getPhase()) + o * 0.05 * (c - 2))
+        z = complex(edge.get_length()) ** 2 * (1.0 + 0.07 * (c - 2.5))
+        edge.set_length(cmath.sqrt(z))
+        edge.set_phase(complex(edge.get_phase()) + o * 0.05 * (c - 2))
     follower = cob.BandFollower(mean_field)
 
     def plain():
@@ -382,24 +382,24 @@ def test_the_band_mean_gradient_is_the_whole_derivative():
         members = [(i, o) for i, (cc, o) in enumerate(zip(classes,
                                                           orientations))
                    if cc == c]
-        saved = [(complex(edges[i].getLength()), complex(edges[i].getPhase()))
+        saved = [(complex(edges[i].get_length()), complex(edges[i].get_phase()))
                  for i, _ in members]
         for kind in ("length", "link"):
             values = []
             for sign in (1.0, -1.0):
                 for (i, o), (length, phase) in zip(members, saved):
                     if kind == "length":
-                        edges[i].setLength(
+                        edges[i].set_length(
                             cmath.sqrt(length * length + sign * radius))
                     else:
-                        edges[i].setPhase(phase - 1j * o * sign * radius)
+                        edges[i].set_phase(phase - 1j * o * sign * radius)
                 pinned.set_moment_band_projectors(
                     [list(np.asarray(b.projector).reshape(-1))
                      for b in bands_at()])
                 values.append(np.asarray(pinned.constraint_values()))
                 for (i, _), (length, phase) in zip(members, saved):
-                    edges[i].setLength(length)
-                    edges[i].setPhase(phase)
+                    edges[i].set_length(length)
+                    edges[i].set_phase(phase)
             difference = (values[0] - values[1]) / (2.0 * radius)
             if kind == "length":
                 exact = np.array([sum(g[i] for i, _ in members)

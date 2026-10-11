@@ -6,7 +6,7 @@ before optimization.
 `precone` is a constructor argument on the C++ `MultiCobordism` (the source of truth),
 threaded through `ProtonSynthesis` (which builds the animation's nodes from a single Δ⁴ seed) and
 surfaced as `--precone` on the animation. Each pre-cone adds one top cell on a fresh apex
-over a facet and is accepted only through the same `dualComplexValid` gate stage 1 uses, so
+over a facet and is accepted only through the same `dual_complex_valid` gate stage 1 uses, so
 the pre-growth stays a valid manifold-with-boundary — nothing is inserted by fiat. It is the
 emergent analogue of a prebuilt host refinement.
 """
@@ -28,17 +28,17 @@ def _single_delta4():
     st = tessera.Spacetime(tessera.Metric(True, sig), tessera.CDT, 1.0, 1.0,
                            tessera.PREFERRED, tessera.SolidSimplex(_DIM))
     st.build()
-    for e in st.getEdgeList().toVector():
-        e.setLength(cmath.sqrt(complex(1.0)))
+    for e in st.get_edge_list().to_vector():
+        e.set_length(cmath.sqrt(complex(1.0)))
     return st
 
 
 def _n_cells(st):
-    return len(st.getTopSimplices())
+    return len(st.get_top_simplices())
 
 
 def _is_manifold(st, k=3):
-    ok, _why = cob.EigenstateSynthesis(st, k).dualComplexValid()
+    ok, _why = cob.EigenstateSynthesis(st, k).dual_complex_valid()
     return ok
 
 

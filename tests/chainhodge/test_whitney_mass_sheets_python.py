@@ -14,7 +14,7 @@ principal-value choices instead of one continued state.
 Two things are added and asserted here. The certificate now carries the sheet
 label of every volume root, as the signed number of turns det g_T makes about
 zero along the continuation, so that the volume is that label's sign times the
-principal root. And ``volumeContinuedFrom`` continues from a declared previous
+principal root. And ``volume_continued_from`` continues from a declared previous
 geometry and sheet, so the label composes along a path: walked around a zero of
 det g, it returns one higher and the volume negated.
 
@@ -68,12 +68,12 @@ def test_the_determinant_of_the_fixture_is_the_one_the_loop_assumes():
 def test_the_certificate_carries_a_sheet_label_per_volume():
     """Every volume in the certificate is its label's sign times the principal
     root, so the label and the value are one statement."""
-    K = cob.ChainComplex.fromTopCells([[0, 1, 2, 3]])
+    K = cob.ChainComplex.from_top_cells([[0, 1, 2, 3]])
     s = [1.0 + 0.0j] * 5 + [2.0 + 0.0j]
     cert = WM.certificate(K, s, ch.Branch.Continuation)
-    assert len(cert.volumeWindings) == len(cert.volumes)
-    for volume, determinant, winding in zip(cert.volumes, cert.gramDeterminants,
-                                            cert.volumeWindings):
+    assert len(cert.volume_windings) == len(cert.volumes)
+    for volume, determinant, winding in zip(cert.volumes, cert.gram_determinants,
+                                            cert.volume_windings):
         expected = ((-1) ** (winding % 2)) * cmath.sqrt(determinant) / 6.0
         assert volume == pytest.approx(expected, abs=1e-14)
 
@@ -83,9 +83,9 @@ def test_the_euclidean_reference_declares_the_principal_sheet():
     and its volume is the principal root -- the unit regular tetrahedron's
     sqrt(2)/12."""
     g = _gram(1.0 + 0.0j)
-    volume, ambiguous = WM.volumeOnBranch(g, ch.Branch.Continuation)
+    volume, ambiguous = WM.volume_on_branch(g, ch.Branch.Continuation)
     assert not ambiguous
-    assert WM.volumeWindingOnBranch(g, ch.Branch.Continuation) == 0
+    assert WM.volume_winding_on_branch(g, ch.Branch.Continuation) == 0
     assert volume == pytest.approx(math.sqrt(0.5) / 6.0)
 
 
@@ -94,7 +94,7 @@ def test_a_zero_step_continues_nothing():
     whatever sheet that was."""
     g = _gram(2.0 + 0.0j)
     for winding in (0, 1, -2):
-        volume, ambiguous, out = WM.volumeContinuedFrom(g, winding, g)
+        volume, ambiguous, out = WM.volume_continued_from(g, winding, g)
         assert not ambiguous
         assert out == winding
         assert volume == pytest.approx(
@@ -111,7 +111,7 @@ def test_a_loop_about_the_zero_of_the_determinant_returns_the_other_sheet():
     volume = None
     for k in range(1, _STEPS + 1):
         nxt = _gram(_squared(2.0 * math.pi * k / _STEPS))
-        volume, ambiguous, winding = WM.volumeContinuedFrom(gram, winding, nxt)
+        volume, ambiguous, winding = WM.volume_continued_from(gram, winding, nxt)
         assert not ambiguous, f"no continuation at step {k}"
         gram = nxt
 
@@ -127,7 +127,7 @@ def test_two_loops_return_the_declared_sheet():
     volume = None
     for k in range(1, 2 * _STEPS + 1):
         nxt = _gram(_squared(4.0 * math.pi * k / (2 * _STEPS)))
-        volume, _, winding = WM.volumeContinuedFrom(gram, winding, nxt)
+        volume, _, winding = WM.volume_continued_from(gram, winding, nxt)
         gram = nxt
     assert winding == 2
     assert volume == pytest.approx(_principal(gram), abs=1e-12)
@@ -140,7 +140,7 @@ def test_a_loop_that_encloses_no_zero_moves_no_sheet():
     gram = _gram(1.0 + 0.5)
     for k in range(1, _STEPS + 1):
         nxt = _gram(1.0 + 0.5 * cmath.exp(2j * math.pi * k / _STEPS))
-        _, _, winding = WM.volumeContinuedFrom(gram, winding, nxt)
+        _, _, winding = WM.volume_continued_from(gram, winding, nxt)
         gram = nxt
     assert winding == 0
 
@@ -150,11 +150,11 @@ def test_the_continued_volume_is_continuous_where_the_principal_one_jumps():
     root of det g flips sign at the cut; the continued one does not."""
     winding = 0
     gram = _gram(_squared(0.0))
-    continued = [WM.volumeContinuedFrom(gram, 0, gram)[0]]
+    continued = [WM.volume_continued_from(gram, 0, gram)[0]]
     principal = [_principal(gram)]
     for k in range(1, _STEPS + 1):
         nxt = _gram(_squared(2.0 * math.pi * k / _STEPS))
-        volume, _, winding = WM.volumeContinuedFrom(gram, winding, nxt)
+        volume, _, winding = WM.volume_continued_from(gram, winding, nxt)
         continued.append(volume)
         principal.append(_principal(nxt))
         gram = nxt

@@ -4,7 +4,7 @@ The primal Regge action is S = Σ_h |h| ε_h: the sum over the hinges h of the
 mesh (its codimension-two faces, the (d-2)-simplices of a d-dimensional mesh)
 of the (d-2)-content |h| of the hinge times its deficit angle
 ε_h = 2π − Σ_σ θ_h^(σ), where σ runs over the top cells containing h and
-θ_h^(σ) is the dihedral angle of σ at h. ``ReggeSolver.hingeContent`` is |h|,
+θ_h^(σ) is the dihedral angle of σ at h. ``ReggeSolver.hinge_content`` is |h|,
 evaluated as ``Simplex.volume``: sqrt(det G)/(d-2)! under the principal complex
 root of the signed Gram determinant. An edge hinge (d = 3) therefore
 contributes its length, a triangular hinge (d = 4) its Heron area, a
@@ -20,9 +20,9 @@ of a regular tetrahedron, the interior edge 01 (three cells) has deficit
 edge has unit length, so S = 10·2π − 18α = 20π − 18α ≈ 40.67.
 
 Four dimensions (Lorentzian): a single 4-simplex. Every hinge is a triangle,
-so ``hingeContent`` equals Heron's formula: √3/4 on a unit equilateral triangle
+so ``hinge_content`` equals Heron's formula: √3/4 on a unit equilateral triangle
 and i√5/4 on the triangle with squared sides (−1, 1, 1) that contains one
-timelike edge. ``reggeAction`` equals the Heron-weighted deficit sum, which is
+timelike edge. ``regge_action`` equals the Heron-weighted deficit sum, which is
 what the area-weighted sum gave. On the all-spacelike cell each of the ten
 triangles sees the regular 4-simplex dihedral arccos(1/4) once, so
 S = 10 · (√3/4) · (2π − arccos(1/4)).
@@ -33,8 +33,8 @@ cell with the regular 5-simplex dihedral angle arccos(1/5), so
 S = 15 · (2π − arccos(1/5)) / (6√2).
 
 Materialization: the facet/coface skeleton is built in C++ by constructing a
-ReggeSolver (its constructor walks getFacets() down to the hinges); the
-canonical sub-simplices are then read back from getSimplices(). See
+ReggeSolver (its constructor walks get_facets() down to the hinges); the
+canonical sub-simplices are then read back from get_simplices(). See
 tests/mesh/test_lorentzian_regge_python.py for why this is not done from Python.
 
 Refs: Regge (1961); Sorkin (Lorentzian angles, arXiv:1908.10022).
@@ -69,8 +69,8 @@ def _spacetime(dim, signature, topology):
 
 def _edge_map(st):
     out = {}
-    for e in st.getEdgeList().toVector():
-        a, b = e.getSource().getId(), e.getTarget().getId()
+    for e in st.get_edge_list().to_vector():
+        a, b = e.get_source().get_id(), e.get_target().get_id()
         out[(min(a, b), max(a, b))] = e
     return out
 
@@ -81,8 +81,8 @@ def _set_edges(st, squared, overrides=None):
     (min id, max id) pairs in ``overrides``."""
     overrides = overrides or {}
     for k, e in _edge_map(st).items():
-        e.setLength(cmath.sqrt(complex(overrides.get(k, squared))))
-        e.setPhase(0.0)
+        e.set_length(cmath.sqrt(complex(overrides.get(k, squared))))
+        e.set_phase(0.0)
 
 
 def _solver(st):
@@ -92,22 +92,22 @@ def _solver(st):
 
 
 def _ids(s):
-    return tuple(sorted(v.getId() for v in s.getVertices()))
+    return tuple(sorted(v.get_id() for v in s.get_vertices()))
 
 
 def _hinges(st, dim):
     """The genuine hinges of a dim-dimensional mesh: the registered simplices
     on dim-1 vertices that are faces of a current top cell. Requires a prior
     _solver(st)."""
-    return [s for s in st.getSimplices()
-            if len(s.getVertices()) == dim - 1 and s.hasTopCoface()]
+    return [s for s in st.get_simplices()
+            if len(s.get_vertices()) == dim - 1 and s.has_top_coface()]
 
 
 def _heron(tri):
     """Heron's formula on the three signed squared edge lengths of a triangle,
     under the principal complex root: the area, imaginary when the radicand
     is negative."""
-    a2, b2, c2 = [e.getLength() ** 2 for e in tri.getEdges()]
+    a2, b2, c2 = [e.get_length() ** 2 for e in tri.get_edges()]
     radicand = 2.0 * (a2 * b2 + b2 * c2 + c2 * a2) - (a2 * a2 + b2 * b2 + c2 * c2)
     return cmath.sqrt(radicand) / 4.0
 
@@ -118,10 +118,10 @@ def _fan_of_three_tetrahedra():
     around it); every other edge lies in one or two cells."""
     st = _spacetime(3, tessera.Euclidean, tessera.SolidSimplex(3))
     st.build()                                    # tetrahedron 0-1-2-3
-    v = {x.getId(): x for x in st.getVertexList().toVector()}
-    v4 = st.createVertex(4)
-    st.createSimplex([v[0], v[1], v[3], v4])      # 0-1-3-4
-    st.createSimplex([v[0], v[1], v4, v[2]])      # 0-1-4-2
+    v = {x.get_id(): x for x in st.get_vertex_list().to_vector()}
+    v4 = st.create_vertex(4)
+    st.create_simplex([v[0], v[1], v[3], v4])      # 0-1-3-4
+    st.create_simplex([v[0], v[1], v4, v[2]])      # 0-1-4-2
     _set_edges(st, 1.0)
     return st
 
@@ -155,7 +155,7 @@ class TestThreeDimensionalMesh(unittest.TestCase):
         _solver(st)
         hinges = {_ids(h): h for h in _hinges(st, 3)}
         self.assertEqual(len(hinges), 10)          # the ten edges of the fan
-        eps = hinges[(0, 1)].deficitAngle()
+        eps = hinges[(0, 1)].deficit_angle()
         self.assertAlmostEqual(eps.real, 2.0 * math.pi - 3.0 * self.ALPHA,
                                places=8)
         self.assertAlmostEqual(eps.imag, 0.0, places=10)
@@ -165,8 +165,8 @@ class TestThreeDimensionalMesh(unittest.TestCase):
         _solver(st)
         edges = _edge_map(st)
         for h in _hinges(st, 3):
-            content = tessera.ReggeSolver.hingeContent(h)
-            length = edges[_ids(h)].getLength()
+            content = tessera.ReggeSolver.hinge_content(h)
+            length = edges[_ids(h)].get_length()
             self.assertAlmostEqual(content.real, length.real, places=12)
             self.assertAlmostEqual(content.imag, length.imag, places=12)
             self.assertAlmostEqual(content.real, 1.0, places=12)
@@ -174,12 +174,12 @@ class TestThreeDimensionalMesh(unittest.TestCase):
     def test_action_is_the_length_weighted_deficit_sum(self):
         st = _fan_of_three_tetrahedra()
         solver = _solver(st)
-        S = solver.reggeAction()
+        S = solver.regge_action()
         self.assertTrue(cmath.isfinite(S))
         self.assertGreater(abs(S), 1.0)            # not the zero area() gave
         # Hand sum over the hinges: edge length times deficit angle.
         edges = _edge_map(st)
-        by_hand = sum(edges[_ids(h)].getLength() * h.deficitAngle()
+        by_hand = sum(edges[_ids(h)].get_length() * h.deficit_angle()
                       for h in _hinges(st, 3))
         self.assertAlmostEqual(S.real, by_hand.real, places=9)
         self.assertAlmostEqual(S.imag, by_hand.imag, places=9)
@@ -199,7 +199,7 @@ class TestFourDimensionalMesh(unittest.TestCase):
         tris = _hinges(st, 4)
         self.assertEqual(len(tris), 10)            # C(5, 3) faces
         for t in tris:
-            content = tessera.ReggeSolver.hingeContent(t)
+            content = tessera.ReggeSolver.hinge_content(t)
             heron = _heron(t)
             self.assertAlmostEqual(content.real, heron.real, places=12)
             self.assertAlmostEqual(content.imag, heron.imag, places=12)
@@ -213,7 +213,7 @@ class TestFourDimensionalMesh(unittest.TestCase):
         tris = {_ids(t): t for t in _hinges(st, 4)}
         for k in (2, 3, 4):                        # the triangles on edge 01
             t = tris[(0, 1, k)]
-            content = tessera.ReggeSolver.hingeContent(t)
+            content = tessera.ReggeSolver.hinge_content(t)
             heron = _heron(t)
             # Squared sides (-1, 1, 1): radicand 2(-1+1-1) - 3 = -5.
             self.assertAlmostEqual(content.real, 0.0, places=12)
@@ -226,15 +226,15 @@ class TestFourDimensionalMesh(unittest.TestCase):
         for st in (_solid_four_simplex(),
                    _solid_four_simplex(timelike_edge=(0, 1))):
             solver = _solver(st)
-            S = solver.reggeAction()
+            S = solver.regge_action()
             self.assertTrue(cmath.isfinite(S))
-            by_hand = sum(_heron(t) * t.deficitAngle() for t in _hinges(st, 4))
+            by_hand = sum(_heron(t) * t.deficit_angle() for t in _hinges(st, 4))
             self.assertAlmostEqual(S.real, by_hand.real, places=9)
             self.assertAlmostEqual(S.imag, by_hand.imag, places=9)
 
     def test_all_spacelike_action_closed_form(self):
         st = _solid_four_simplex()
-        S = _solver(st).reggeAction()
+        S = _solver(st).regge_action()
         expected = 10.0 * (math.sqrt(3.0) / 4.0) * (2.0 * math.pi - math.acos(0.25))
         self.assertAlmostEqual(S.real, expected, places=7)
         self.assertAlmostEqual(S.imag, 0.0, places=9)
@@ -252,13 +252,13 @@ class TestFiveDimensionalMesh(unittest.TestCase):
         tets = _hinges(st, 5)
         self.assertEqual(len(tets), 15)            # C(6, 4) faces
         for t in tets:
-            content = tessera.ReggeSolver.hingeContent(t)
+            content = tessera.ReggeSolver.hinge_content(t)
             self.assertAlmostEqual(content.real, self.TET_VOLUME, places=12)
             self.assertAlmostEqual(content.imag, 0.0, places=12)
 
     def test_action_closed_form(self):
         st = _solid_five_simplex()
-        S = _solver(st).reggeAction()
+        S = _solver(st).regge_action()
         expected = 15.0 * self.TET_VOLUME * (2.0 * math.pi - math.acos(0.2))
         self.assertAlmostEqual(S.real, expected, places=7)
         self.assertAlmostEqual(S.imag, 0.0, places=9)

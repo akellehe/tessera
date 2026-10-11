@@ -84,12 +84,12 @@ def test_a_constructed_flavour_doubling_is_found_at_the_averaged_values():
     band: the detector returns three rank-12 candidate bands centred on
     4 - 2/sqrt 3, 4 and 4 + 2/sqrt 3 (WP v17 line 506)."""
     support = obs.MonopoleSupport.tetrahedron(1)
-    group = obs.MonopoleSupport.tetrahedralRotations()
-    base = np.asarray(support.rotationAveragedEdgeOperator(
-        support.edgeLaplacian(), group))
+    group = obs.MonopoleSupport.tetrahedral_rotations()
+    base = np.asarray(support.rotation_averaged_edge_operator(
+        support.edge_laplacian(), group))
     op = np.kron(np.kron(base, np.eye(2)), np.eye(3))
     n = op.shape[0]
-    actions = [np.kron(np.kron(np.asarray(support.edgeRepresentation(g)),
+    actions = [np.kron(np.kron(np.asarray(support.edge_representation(g)),
                                np.eye(2)), np.eye(3)) for g in group]
     frame = obs.IsospinDoublet.bands(
         op, sheet_of_cell=[i % 3 for i in range(n)],
@@ -123,15 +123,15 @@ def test_the_kato_schemes_on_a_rotated_line(theta):
     exponential exp([P1, P0]) is R(sin(2 theta) / 2), since
     [P1, P0] = sin(theta) cos(theta) [[0, -1], [1, 0]]."""
     p0, p1 = _line(0.0), _line(theta)
-    direct = np.asarray(CT.katoStep(p0, p1, KS.DirectRotation))
+    direct = np.asarray(CT.kato_step(p0, p1, KS.DirectRotation))
     assert np.max(np.abs(direct - _rotation(theta))) < 1e-14
-    intertwiner = np.asarray(CT.katoStep(p0, p1, KS.Intertwiner))
+    intertwiner = np.asarray(CT.kato_step(p0, p1, KS.Intertwiner))
     assert np.max(np.abs(intertwiner - math.cos(theta) * _rotation(theta))) \
         < 1e-15
-    exponential = np.asarray(CT.katoStep(p0, p1, KS.ExponentialGenerator))
+    exponential = np.asarray(CT.kato_step(p0, p1, KS.ExponentialGenerator))
     assert np.max(np.abs(exponential
                          - _rotation(math.sin(2 * theta) / 2))) < 1e-14
-    generator = np.asarray(CT.katoGenerator(p1 - p0, p0))
+    generator = np.asarray(CT.kato_generator(p1 - p0, p0))
     assert np.max(np.abs(generator - ((p1 - p0) @ p0 - p0 @ (p1 - p0)))) \
         == 0.0
 
@@ -142,12 +142,12 @@ def test_a_half_turn_of_lines_closes_with_holonomy_minus_one():
     direct rotations is R(pi) = -I, the holonomy -1 of the real line bundle
     over the circle of lines, with every step intertwining exactly."""
     path = [_line(k * math.pi / 16) for k in range(17)]
-    read = CT.katoTransport(path, KS.DirectRotation)
+    read = CT.kato_transport(path, KS.DirectRotation)
     assert read.complete
     assert read.steps == 16 and read.rank == 1 and read.dimension == 2
     assert np.max(np.abs(np.asarray(read.transport) + np.eye(2))) < 1e-13
-    assert read.intertwiningResidual < 1e-14
-    assert read.rankDefect < 1e-15
+    assert read.intertwining_residual < 1e-14
+    assert read.rank_defect < 1e-15
 
 
 def test_the_exponential_scheme_intertwines_to_third_order():
@@ -155,9 +155,9 @@ def test_the_exponential_scheme_intertwines_to_third_order():
     step: halving the step angle divides it by 8 to within one percent."""
     residuals = []
     for theta in (0.02, 0.01):
-        read = CT.katoTransport([_line(0.0), _line(theta)],
+        read = CT.kato_transport([_line(0.0), _line(theta)],
                                 KS.ExponentialGenerator)
-        residuals.append(read.intertwiningResidual)
+        residuals.append(read.intertwining_residual)
     assert residuals[0] / residuals[1] == pytest.approx(8.0, rel=1e-2)
 
 
@@ -174,20 +174,20 @@ def test_the_dual_transport_is_the_inverse_transpose():
     """M = [[2, 1], [0, 3]]: M^-T = [[1/2, 0], [-1/6, 1/3]] and its
     determinant is 1/6 = (det M)^-1 exactly; the dual of the dual is M."""
     m = np.array([[2.0, 1.0], [0.0, 3.0]], dtype=complex)
-    dual = np.asarray(CT.dualTransport(m))
+    dual = np.asarray(CT.dual_transport(m))
     expected = np.array([[0.5, 0.0], [-1.0 / 6.0, 1.0 / 3.0]])
     assert np.max(np.abs(dual - expected)) < 1e-15
     assert np.linalg.det(dual) == pytest.approx(1.0 / 6.0, abs=1e-15)
-    assert np.max(np.abs(np.asarray(CT.dualTransport(dual)) - m)) < 1e-14
+    assert np.max(np.abs(np.asarray(CT.dual_transport(dual)) - m)) < 1e-14
     with pytest.raises(ValueError):
-        CT.dualTransport(np.array([[1.0, 2.0], [2.0, 4.0]], dtype=complex))
+        CT.dual_transport(np.array([[1.0, 2.0], [2.0, 4.0]], dtype=complex))
 
 
 def test_composition_applies_the_first_link_first():
     a = np.array([[1.0, 1.0], [0.0, 1.0]], dtype=complex)
     b = np.array([[0.0, -1.0], [1.0, 0.0]], dtype=complex)
     assert np.max(np.abs(np.asarray(CT.compose([a, b])) - b @ a)) == 0.0
-    assert np.max(np.abs(np.asarray(CT.reversedTransfer(a)) - a.T)) == 0.0
+    assert np.max(np.abs(np.asarray(CT.reversed_transfer(a)) - a.T)) == 0.0
 
 
 # ----------------------------------------------------------- lineage
@@ -207,10 +207,10 @@ def test_a_fibre_path_crosses_the_level_cut_once():
     """The lineage of vertex 2 along its fibre edge 2 -> 5 crosses the level
     cut once, outward: N_Q = +1, a relative cycle, no interior source."""
     W = _run_level_history()
-    read = CL.read(W, CL.levelCut(W, 0), CL.fromFiberPath(W, 2, 1, "Q"))
+    read = CL.read(W, CL.level_cut(W, 0), CL.from_fiber_path(W, 2, 1, "Q"))
     assert read.number == 1
-    assert read.relativeCycle and read.cutSeparates
-    assert list(read.failedCertificates) == []
+    assert read.relative_cycle and read.cut_separates
+    assert list(read.failed_certificates) == []
 
 
 def test_a_zigzag_lineage_counts_signed_crossings():
@@ -218,12 +218,12 @@ def test_a_zigzag_lineage_counts_signed_crossings():
     times, outward, inward and outward: the signed count is
     +1 - 1 + 1 = +1, and the reversed path gives -1."""
     W = _run_level_history()
-    cut = CL.levelCut(W, 0)
-    zigzag = CL.fromVertexPath(W, [0, 5, 1, 3, 6], 1, "zigzag")
-    assert CL.intersectionNumber(W, cut, zigzag) == 1
-    assert CL.intersectionNumber(W, cut, CL.reversed(zigzag)) == -1
+    cut = CL.level_cut(W, 0)
+    zigzag = CL.from_vertex_path(W, [0, 5, 1, 3, 6], 1, "zigzag")
+    assert CL.intersection_number(W, cut, zigzag) == 1
+    assert CL.intersection_number(W, cut, CL.reversed(zigzag)) == -1
     crossings = [e for e, c in enumerate(np.asarray(zigzag.coefficients))
-                 if c != 0 and e in list(cut.crossingEdges)]
+                 if c != 0 and e in list(cut.crossing_edges)]
     assert len(crossings) == 3
 
 
@@ -234,10 +234,10 @@ def test_the_side_cut_equals_the_level_cut_and_refuses_a_misplaced_vertex():
     does. Putting response vertex 5 on the incoming side is refused by name,
     'outgoing-boundary-not-on-the-outgoing-side'."""
     W = _run_level_history()
-    cut = CL.cutFromSides(W, [0] * 5 + [1] * 2)
+    cut = CL.cut_from_sides(W, [0] * 5 + [1] * 2)
     assert cut.separates
-    assert CL.intersectionNumber(W, cut, CL.fromFiberPath(W, 4, 1, "Q")) == 1
-    wrong = CL.cutFromSides(W, [0] * 6 + [1])
+    assert CL.intersection_number(W, cut, CL.from_fiber_path(W, 4, 1, "Q")) == 1
+    wrong = CL.cut_from_sides(W, [0] * 6 + [1])
     assert not wrong.separates
     assert "outgoing-boundary-not-on-the-outgoing-side" in \
-        list(wrong.failedCertificates)
+        list(wrong.failed_certificates)

@@ -19,14 +19,14 @@ KS = ch.Branch.KontsevichSegal
 
 
 def _edges(K):
-    return [tuple(int(v) for v in e) for e in K.kSimplexVertices(1)]
+    return [tuple(int(v) for v in e) for e in K.k_simplex_vertices(1)]
 
 
 def _random_instance(N, seed, complex_lengths=True):
     rng = np.random.default_rng(seed)
     cells, _ = torus_cells(N)
-    K = cob.ChainComplex.fromTopCells(cells)
-    n1 = K.numSimplices(1)
+    K = cob.ChainComplex.from_top_cells(cells)
+    n1 = K.num_simplices(1)
     if complex_lengths:
         s = [complex(rng.normal(), rng.normal()) for _ in range(n1)]
     else:
@@ -59,12 +59,12 @@ class TestFeshbach:
         lam = complex(0.7, -0.3)
         F = PS.feshbach(P.A, P.B, lam, interface)
         Fd = PS.feshbach(Pd.A, Pd.B, lam, interface)
-        assert not F.interiorSingular
+        assert not F.interior_singular
         scale = np.abs(F.response).max()
         # F_B(lambda; U)^T = F_B(lambda; U^{-1})  (Prop. 7.1(a))
         assert np.abs(F.response.T - Fd.response).max() <= 8.0e-12 * scale
         # det P = det P_II det F_B
-        assert F.determinantResidual < 1e-8
+        assert F.determinant_residual < 1e-8
         # at U = 1 the complement is symmetric
         P1 = base.pencil(1)
         F1 = PS.feshbach(P1.A, P1.B, lam, interface)
@@ -72,7 +72,7 @@ class TestFeshbach:
         # the constraint modes reproduce the complement by congruence:
         # T^T P T = F_B when T = [I; -P_II^{-1} P_IB]  (Schur complement identity)
         Pmat = P.A - lam * P.B
-        cong = F.constraintModes.T @ Pmat @ F.constraintModes
+        cong = F.constraint_modes.T @ Pmat @ F.constraint_modes
         assert np.abs(cong - F.response).max() <= 1e-9 * scale
 
     def test_enclosed_poles_and_static_schur_does_not_preserve_them(self):
@@ -94,7 +94,7 @@ class TestFeshbach:
         # the PLAIN static complement (lambda = 0) and its carried Gram do not
         # carry that nonzero pole: the reduced pencil's eigenvalues miss it.
         F0 = PS.feshbach(A, M, 0.0, interface)
-        G0 = PS.craigBampton(A, M, F0.constraintModes)
+        G0 = PS.craig_bampton(A, M, F0.constraint_modes)
         reduced = np.linalg.eigvals(np.linalg.solve(G0.M, G0.A))
         assert np.min(np.abs(reduced - lam)) > 1e-3 * abs(lam)
 
@@ -111,13 +111,13 @@ class TestFeshbach:
         interior = [i for i in range(P.A.shape[0]) if i not in interface]
         lam = np.linalg.eigvals(np.linalg.solve(P.B[np.ix_(interior, interior)], P.A[np.ix_(interior, interior)]))[0]
         F = PS.feshbach(P.A, P.B, complex(lam), interface, 1e-10, 1e-8)
-        assert F.interiorSingular
-        nb, q = len(interface), F.resonantSpace.shape[1]
+        assert F.interior_singular
+        nb, q = len(interface), F.resonant_space.shape[1]
         assert q >= 1
-        assert F.interiorRank == len(interior) - q
+        assert F.interior_rank == len(interior) - q
         assert F.response.shape == (nb, nb)
-        assert F.resonantResponse.shape == (nb + q, nb + q)
-        assert F.interiorInverse.shape == (len(interior), len(interior))
+        assert F.resonant_response.shape == (nb + q, nb + q)
+        assert F.interior_inverse.shape == (len(interior), len(interior))
 
 
 class TestRestrictionAndTransfer:
@@ -127,7 +127,7 @@ class TestRestrictionAndTransfer:
         P = base.pencil(1)
         edges = _edges(K)
         n = len(edges)
-        tops = [tuple(int(v) for v in t) for t in K.orientedTopSimplices()]
+        tops = [tuple(int(v) for v in t) for t in K.oriented_top_simplices()]
         # fibers supported on edges of two triangles that share no top simplex
         # (the 3x3 torus: triangles [0,1,4] and [4,5,8] share only the vertex 4;
         # choose two edge-disjoint, non-adjacent supports).
@@ -138,22 +138,22 @@ class TestRestrictionAndTransfer:
             return Z
         far_a = [edges.index((0, 1))]
         far_b = [edges.index((4, 5))]
-        assert not PS.supportsShareTopSimplex(K, 1, far_a, far_b) or True  # measured below, not assumed
-        share = PS.supportsShareTopSimplex(K, 1, far_a, far_b)
-        block = PS.gramBlock(P.B, unit_fiber(far_a), unit_fiber(far_b))
+        assert not PS.supports_share_top_simplex(K, 1, far_a, far_b) or True  # measured below, not assumed
+        share = PS.supports_share_top_simplex(K, 1, far_a, far_b)
+        block = PS.gram_block(P.B, unit_fiber(far_a), unit_fiber(far_b))
         if not share:
             assert np.abs(block).max() == 0.0
         near_a = [edges.index((0, 1))]
         near_b = [edges.index((1, 4))]
-        assert PS.supportsShareTopSimplex(K, 1, near_a, near_b)
-        block2 = PS.gramBlock(P.B, unit_fiber(near_a), unit_fiber(near_b))
+        assert PS.supports_share_top_simplex(K, 1, near_a, near_b)
+        block2 = PS.gram_block(P.B, unit_fiber(near_a), unit_fiber(near_b))
         assert np.abs(block2).max() > 0.0
         np.testing.assert_allclose(block2, unit_fiber(near_a).T @ P.B @ unit_fiber(near_b), atol=1e-15)
         # a disjoint pair with no shared top simplex has a block-diagonal Gram
         supports = [[edges.index((0, 1))], [edges.index((7, 8))]]
-        assert not PS.supportsShareTopSimplex(K, 1, supports[0], supports[1])
-        restricted = PS.restrictToFiberBlocks(P.A, P.B, [unit_fiber(supports[0]), unit_fiber(supports[1])])
-        assert restricted.blockOffsets == [0, 1]
+        assert not PS.supports_share_top_simplex(K, 1, supports[0], supports[1])
+        restricted = PS.restrict_to_fiber_blocks(P.A, P.B, [unit_fiber(supports[0]), unit_fiber(supports[1])])
+        assert restricted.block_offsets == [0, 1]
         assert abs(restricted.gram[0, 1]) == 0.0 and abs(restricted.gram[1, 0]) == 0.0
         assert np.abs(restricted.gram - np.array([[P.B[supports[0][0], supports[0][0]], 0], [0, P.B[supports[1][0], supports[1][0]]]])).max() < 1e-15
         np.testing.assert_allclose(restricted.A, np.array([[P.A[supports[0][0], supports[0][0]], P.A[supports[0][0], supports[1][0]]],
@@ -170,10 +170,10 @@ class TestRestrictionAndTransfer:
         ZB = rng.normal(size=(n, 2)) + 1j * rng.normal(size=(n, 2))
         ZBd = rng.normal(size=(n, 2)) + 1j * rng.normal(size=(n, 2))
         T = PS.transfer(AU, AUi, ZA, ZAd, ZB, ZBd)
-        assert T.reversalResidual <= 1e-12
+        assert T.reversal_residual <= 1e-12
         np.testing.assert_allclose(T.forward, ZAd.T @ AU @ ZB, atol=1e-12 * np.abs(T.forward).max())
         np.testing.assert_allclose(T.reverse, T.forward.T, atol=1e-11 * np.abs(T.forward).max())
-        assert not T.groupoidHolds and T.dualTransfer.size == 0
+        assert not T.groupoid_holds and T.dual_transfer.size == 0
         # a wrong dual operator breaks the identity and is refused by name
         with pytest.raises(RuntimeError, match="reversal identity"):
             PS.transfer(AU, AU, ZA, ZAd, ZB, ZBd)
@@ -189,12 +189,12 @@ class TestRestrictionAndTransfer:
         # groupoid hypothesis holds; the dual transfer T_AB^{-T} = I is emitted.
         ZB = np.linalg.lstsq(ZA.T @ P.A, np.eye(2), rcond=None)[0]
         T = PS.transfer(P.A, P.A, ZA, ZA, ZB, ZB)
-        assert T.groupoidHolds
-        np.testing.assert_allclose(T.dualTransfer, np.eye(2), atol=1e-10)
+        assert T.groupoid_holds
+        np.testing.assert_allclose(T.dual_transfer, np.eye(2), atol=1e-10)
         # a generic pair does not satisfy it and gets no dual transfer
         ZB2 = rng.normal(size=(n, 2))
         T2 = PS.transfer(P.A, P.A, ZA, ZA, ZB2, ZB2)
-        assert not T2.groupoidHolds and T2.dualTransfer.size == 0
+        assert not T2.groupoid_holds and T2.dual_transfer.size == 0
 
 
 class TestRecursiveQuotientPencilLevels:
@@ -209,60 +209,60 @@ class TestRecursiveQuotientPencilLevels:
         comp_b = [i for i in range(n) if i not in comp_a]
         # overlap on the straddling edges so the union covers every index
         comp_b = sorted(set(comp_b) | {i for i, e in enumerate(edges) if (e[0] in left) != (e[1] in left)})
-        q = cob.RecursiveQuotient.overPencil(P.A.ravel().tolist(), P.B.ravel().tolist(), n, [comp_a, comp_b])
+        q = cob.RecursiveQuotient.over_pencil(P.A.ravel().tolist(), P.B.ravel().tolist(), n, [comp_a, comp_b])
         return K, P, q
 
     def test_static_child_carries_the_congruent_gram(self):
         K, P, q = self._pencil_quotient()
-        assert q.isPencil()
-        np.testing.assert_allclose(np.asarray(q.pencilMetric()).reshape(P.B.shape), P.B, atol=1e-15)
-        interface = list(q.interfaceIndices)
+        assert q.is_pencil()
+        np.testing.assert_allclose(np.asarray(q.pencil_metric()).reshape(P.B.shape), P.B, atol=1e-15)
+        interface = list(q.interface_indices)
         F0 = PS.feshbach(P.A, P.B, 0.0, interface)
-        child = q.nextLevel([list(range(len(interface)))])
-        assert child.isPencil() and child.level == 1
+        child = q.next_level([list(range(len(interface)))])
+        assert child.is_pencil() and child.level == 1
         m = child.dimension
-        A_child = np.asarray(q.staticReduction().effectiveOperator).reshape(m, m)
+        A_child = np.asarray(q.static_reduction().effective_operator).reshape(m, m)
         np.testing.assert_allclose(A_child, F0.response, atol=1e-9 * np.abs(F0.response).max())
-        G_child = np.asarray(child.pencilMetric()).reshape(m, m)
-        G_expected = PS.craigBampton(P.A, P.B, F0.constraintModes).M
+        G_child = np.asarray(child.pencil_metric()).reshape(m, m)
+        G_expected = PS.craig_bampton(P.A, P.B, F0.constraint_modes).M
         np.testing.assert_allclose(G_child, G_expected, atol=1e-9 * np.abs(G_expected).max())
         # the Gram is complex symmetric (transpose pairing), as the pencil demands
         np.testing.assert_allclose(G_child, G_child.T, atol=1e-12 * np.abs(G_child).max())
 
     def test_band_child_is_the_pencil_feshbach_with_its_gram(self):
         K, P, q = self._pencil_quotient()
-        interface = list(q.interfaceIndices)
+        interface = list(q.interface_indices)
         lam = complex(0.9, 0.2)
         read = q.feshbach(lam, -1.0, 2.0)
         F = PS.feshbach(P.A, P.B, lam, interface)
         m = len(interface)
         assert not read.resonant
         np.testing.assert_allclose(np.asarray(read.response).reshape(m, m), F.response, atol=1e-9 * np.abs(F.response).max())
-        child = q.nextLevelAtLambda([list(range(m))], lam, -1.0, 2.0)
-        assert child.isPencil()
-        G_child = np.asarray(child.pencilMetric()).reshape(m, m)
-        G_expected = PS.craigBampton(P.A, P.B, F.constraintModes).M
+        child = q.next_level_at_lambda([list(range(m))], lam, -1.0, 2.0)
+        assert child.is_pencil()
+        G_child = np.asarray(child.pencil_metric()).reshape(m, m)
+        G_expected = PS.craig_bampton(P.A, P.B, F.constraint_modes).M
         np.testing.assert_allclose(G_child, G_expected, atol=1e-9 * np.abs(G_expected).max())
 
     def test_second_level_consumes_the_first_with_the_same_schema(self):
         K, P, q = self._pencil_quotient()
-        interface = list(q.interfaceIndices)
+        interface = list(q.interface_indices)
         m = len(interface)
         half = m // 2
-        child = q.nextLevel([list(range(half + 1)), list(range(half, m))])
-        assert child.isPencil()
-        grand = child.nextLevel([list(range(len(child.interfaceIndices)))])
-        assert grand.isPencil() and grand.level == 2
+        child = q.next_level([list(range(half + 1)), list(range(half, m))])
+        assert child.is_pencil()
+        grand = child.next_level([list(range(len(child.interface_indices)))])
+        assert grand.is_pencil() and grand.level == 2
         k = grand.dimension
-        G = np.asarray(grand.pencilMetric()).reshape(k, k)
+        G = np.asarray(grand.pencil_metric()).reshape(k, k)
         np.testing.assert_allclose(G, G.T, atol=1e-10 * max(1.0, np.abs(G).max()))
-        assert all(p.startswith("L1:L0:") for p in grand.coordinateProvenance)
+        assert all(p.startswith("L1:L0:") for p in grand.coordinate_provenance)
 
     def test_operator_levels_are_untouched(self):
         K, P, q = self._pencil_quotient()
         n = P.A.shape[0]
-        plain = cob.RecursiveQuotient.overMatrix(P.A.ravel().tolist(), n, [], [list(range(n))])
-        assert not plain.isPencil() and plain.pencilMetric() == []
+        plain = cob.RecursiveQuotient.over_matrix(P.A.ravel().tolist(), n, [], [list(range(n))])
+        assert not plain.is_pencil() and plain.pencil_metric() == []
 
 
 class TestT9ReductionE5E6:
@@ -285,13 +285,13 @@ class TestT9ReductionE5E6:
             lam = 3.0 * complex(rng.normal(), rng.normal())
             for P in (P1, PU):
                 F = PS.feshbach(P.A, P.B, lam, interface)
-                assert not F.interiorSingular
+                assert not F.interior_singular
                 sign, logabs = np.linalg.slogdet(P.A - lam * P.B)
-                assert F.pencilLogDeterminant.real == pytest.approx(logabs, abs=1e-10 * max(1.0, abs(logabs)))
-                phase = F.pencilLogDeterminant.imag - np.angle(sign)
+                assert F.pencil_log_determinant.real == pytest.approx(logabs, abs=1e-10 * max(1.0, abs(logabs)))
+                phase = F.pencil_log_determinant.imag - np.angle(sign)
                 assert abs(math.remainder(phase, 2.0 * math.pi)) < 1e-10
-                assert F.logModulusResidual < 1e-10 * max(1.0, abs(logabs))
-                assert F.logPhaseResidual < 1e-10
+                assert F.log_modulus_residual < 1e-10 * max(1.0, abs(logabs))
+                assert F.log_phase_residual < 1e-10
             F1 = PS.feshbach(P1.A, P1.B, lam, interface)
             assert np.abs(F1.response - F1.response.T).max() <= 8.0e-12 * np.abs(F1.response).max()
 
@@ -299,12 +299,12 @@ class TestT9ReductionE5E6:
         rng = np.random.default_rng(3)
         A = rng.normal(size=(7, 7)) + 1j * rng.normal(size=(7, 7))
         sign, logabs = np.linalg.slogdet(A)
-        ld = PS.logDeterminant(A)
+        ld = PS.log_determinant(A)
         assert ld.real == pytest.approx(logabs, abs=1e-13)
         assert ld.imag == pytest.approx(np.angle(sign), abs=1e-13)
         assert -math.pi < ld.imag <= math.pi
-        assert PS.logDeterminant(np.zeros((0, 0), dtype=complex)) == 0
-        assert PS.logDeterminant(np.zeros((3, 3), dtype=complex)).real == -math.inf
+        assert PS.log_determinant(np.zeros((0, 0), dtype=complex)) == 0
+        assert PS.log_determinant(np.zeros((3, 3), dtype=complex)).real == -math.inf
 
     def test_the_three_log_determinants_factor_the_pencil(self):
         """log det P = log det P_II + log det F_B modulo 2 pi i, each term the
@@ -315,19 +315,19 @@ class TestT9ReductionE5E6:
         x = rng.normal(size=(7, 7)) + 1j * rng.normal(size=(7, 7))
         A = x + x.T
         F = PS.feshbach(A, np.eye(7, dtype=complex), 0.4 - 0.1j, [0, 1, 2])
-        assert cmath.exp(F.interiorLogDeterminant) == pytest.approx(
-            F.interiorDeterminant, rel=1e-10)
-        assert cmath.exp(F.responseLogDeterminant) == pytest.approx(
-            F.responseDeterminant, rel=1e-10)
-        total = F.interiorLogDeterminant + F.responseLogDeterminant
-        assert total.real == pytest.approx(F.pencilLogDeterminant.real,
+        assert cmath.exp(F.interior_log_determinant) == pytest.approx(
+            F.interior_determinant, rel=1e-10)
+        assert cmath.exp(F.response_log_determinant) == pytest.approx(
+            F.response_determinant, rel=1e-10)
+        total = F.interior_log_determinant + F.response_log_determinant
+        assert total.real == pytest.approx(F.pencil_log_determinant.real,
                                            abs=1e-10)
-        assert abs(math.remainder(total.imag - F.pencilLogDeterminant.imag,
+        assert abs(math.remainder(total.imag - F.pencil_log_determinant.imag,
                                   2.0 * math.pi)) < 1e-10
-        assert not F.interiorSingular
+        assert not F.interior_singular
         interior = (A - (0.4 - 0.1j) * np.eye(7))[3:, 3:]
         spectral_radius = np.max(np.abs(np.linalg.eigvals(interior)))
-        assert F.resonanceRadius == pytest.approx(1e-12 * spectral_radius,
+        assert F.resonance_radius == pytest.approx(1e-12 * spectral_radius,
                                                   rel=1e-8)
 
     def test_e6_craig_bampton_congruence_is_symmetric_at_u_one(self):
@@ -335,7 +335,7 @@ class TestT9ReductionE5E6:
         P = base.pencil(1)
         n = P.A.shape[0]
         T = rng.normal(size=(n, 9)) + 1j * rng.normal(size=(n, 9))
-        cb = PS.craigBampton(P.A, P.B, T)
+        cb = PS.craig_bampton(P.A, P.B, T)
         assert np.abs(cb.A - cb.A.T).max() <= 1e-13 * np.abs(cb.A).max()
         assert np.abs(cb.M - cb.M.T).max() <= 1e-13 * np.abs(cb.M).max()
 
@@ -352,8 +352,8 @@ class TestT9ReductionE5E6:
             assert band.rank() == 1
             fibers.append(band.images)
         P = cov.pencil(1)
-        R = PS.restrictToFiberBlocks(P.A, P.B, fibers)
-        assert list(R.blockRanks) == [1, 1]
+        R = PS.restrict_to_fiber_blocks(P.A, P.B, fibers)
+        assert list(R.block_ranks) == [1, 1]
         coarse = np.linalg.eigvals(np.linalg.solve(R.gram, R.A))
         for i in chosen:
             assert np.min(np.abs(coarse - ev[i])) <= 1e-9 * max(1.0, abs(ev[i]))

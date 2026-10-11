@@ -73,8 +73,8 @@ def _solid_simplex(dim):
 
 def _edge_map(st):
     out = {}
-    for e in st.getEdgeList().toVector():
-        a, b = e.getSource().getId(), e.getTarget().getId()
+    for e in st.get_edge_list().to_vector():
+        a, b = e.get_source().get_id(), e.get_target().get_id()
         out[(min(a, b), max(a, b))] = e
     return out
 
@@ -82,22 +82,22 @@ def _edge_map(st):
 def _set_edges(st, mapping, default=None):
     for k, e in _edge_map(st).items():
         if k in mapping:
-            e.setLength(cmath.sqrt(complex(mapping[k])))
+            e.set_length(cmath.sqrt(complex(mapping[k])))
         elif default is not None:
-            e.setLength(cmath.sqrt(complex(default)))
-        e.setPhase(0.0)
+            e.set_length(cmath.sqrt(complex(default)))
+        e.set_phase(0.0)
 
 
 def _materialize(st):
     """Build the facet/coface skeleton in C++ (ReggeSolver ctor); the canonical
-    sub-simplices then live in st.getSimplices()."""
+    sub-simplices then live in st.get_simplices()."""
     tessera.ReggeSolver(st, tessera.MatterConfiguration())
 
 
 def _simplex_by_verts(st, ids):
     want = tuple(sorted(ids))
-    for s in st.getSimplices():
-        if tuple(sorted(v.getId() for v in s.getVertices())) == want:
+    for s in st.get_simplices():
+        if tuple(sorted(v.get_id() for v in s.get_vertices())) == want:
             return s
     raise AssertionError(f"no simplex {want} (did you materialize?)")
 
@@ -123,14 +123,14 @@ def _flat_star(points):
     edge carrying its exact Minkowski ℓ².  Returns (st, centre_hinge)."""
     st = _spacetime(2, tessera.SolidSimplex(2))
     st.build()  # triangle 0-1-2 (vertices 0, 1, 2 exist)
-    v = {x.getId(): x for x in st.getVertexList().toVector()}
+    v = {x.get_id(): x for x in st.get_vertex_list().to_vector()}
     n = len(points)
     for k in range(3, n + 1):
-        v[k] = st.createVertex(k)
+        v[k] = st.create_vertex(k)
     for k in range(1, n + 1):
         b = 1 if k == n else k + 1
         if {k, b} != {1, 2}:  # triangle {0,1,2} already built
-            st.createSimplex([v[0], v[k], v[b]])
+            st.create_simplex([v[0], v[k], v[b]])
     O = (0.0, 0.0)
     mapping = {}
     for k in range(1, n + 1):
@@ -159,24 +159,24 @@ def _cell_41():
 
 def _grad_by_edge(hinge):
     return {tuple(k): v
-            for k, v in hinge.deficitAngleGradient().items()}
+            for k, v in hinge.deficit_angle_gradient().items()}
 
 
 def _hess_by_pair(hinge):
     return {(tuple(ke), tuple(kf)): v
-            for (ke, kf), v in hinge.deficitAngleHessian().items()}
+            for (ke, kf), v in hinge.deficit_angle_hessian().items()}
 
 
 def _fd_deficit_grad(st, hinge, key, h=1e-6):
     """Central difference of the implemented deficitAngle in ℓ² of
     the given edge (internal consistency, not a correctness oracle)."""
     e = _edge_map(st)[key]
-    orig = (e.getLength() * e.getLength())
-    e.setLength(cmath.sqrt(complex(orig + h)))
-    fp = complex(hinge.deficitAngle())
-    e.setLength(cmath.sqrt(complex(orig - h)))
-    fm = complex(hinge.deficitAngle())
-    e.setLength(cmath.sqrt(complex(orig)))
+    orig = (e.get_length() * e.get_length())
+    e.set_length(cmath.sqrt(complex(orig + h)))
+    fp = complex(hinge.deficit_angle())
+    e.set_length(cmath.sqrt(complex(orig - h)))
+    fm = complex(hinge.deficit_angle())
+    e.set_length(cmath.sqrt(complex(orig)))
     return (fp - fm) / (2.0 * h)
 
 
@@ -189,7 +189,7 @@ class TestMixedVertexAnalytic(unittest.TestCase):
         _materialize(st)
         tri = _simplex_by_verts(st, [0, 1, 2])
         v0 = _simplex_by_verts(st, [0])
-        theta = complex(tri.dihedralAngle(v0))
+        theta = complex(tri.dihedral_angle(v0))
         expect = complex(math.pi / 2.0, math.asinh(1.0 / math.sqrt(3.0)))
         self.assertAlmostEqual(theta.real, expect.real, delta=1e-12)
         self.assertAlmostEqual(theta.imag, expect.imag, delta=1e-12)
@@ -203,10 +203,10 @@ class TestMixedVertexAnalytic(unittest.TestCase):
         st = _mixed_triangle()
         _materialize(st)
         tri = _simplex_by_verts(st, [0, 1, 2])
-        th1 = complex(tri.dihedralAngle(_simplex_by_verts(st, [1])))
+        th1 = complex(tri.dihedral_angle(_simplex_by_verts(st, [1])))
         self.assertAlmostEqual(th1.real, math.pi / 2.0, delta=1e-12)
         self.assertAlmostEqual(th1.imag, 0.0, delta=1e-12)
-        th2 = complex(tri.dihedralAngle(_simplex_by_verts(st, [2])))
+        th2 = complex(tri.dihedral_angle(_simplex_by_verts(st, [2])))
         # cos θ = ⟨e20,e21⟩/(√(−3)√(−4)) = (−3−4−1)/2 / (−√12) = 2/√3 > 1
         boost = cmath.acos(complex(2.0 / math.sqrt(3.0), 0.0))
         self.assertAlmostEqual(th2.real, boost.real, delta=1e-12)
@@ -226,14 +226,14 @@ class TestFlatMinkowskiClosure(unittest.TestCase):
         angles = []
         for tri_ids in [(0, 1, 2), (0, 2, 3), (0, 3, 4), (0, 1, 4)]:
             tri = _simplex_by_verts(st, tri_ids)
-            angles.append(complex(tri.dihedralAngle(centre)))
+            angles.append(complex(tri.dihedral_angle(centre)))
         for th in angles:
             self.assertEqual(th.real, math.pi / 2.0)
             self.assertEqual(th.imag, 0.0)
         total = sum(angles)
         self.assertEqual(total.real, 2.0 * math.pi)
         self.assertEqual(total.imag, 0.0)
-        eps = complex(centre.deficitAngle())
+        eps = complex(centre.deficit_angle())
         self.assertEqual(eps.real, 0.0)
         self.assertEqual(eps.imag, 0.0)
 
@@ -244,14 +244,14 @@ class TestFlatMinkowskiClosure(unittest.TestCase):
         # must telescope to zero — this pins the crossing branch's sign.
         pts = [(0.25, 1.3), (1.6, 0.4), (0.3, -1.5), (-1.4, 0.5)]
         st, centre = _flat_star(pts)
-        eps = complex(centre.deficitAngle())
+        eps = complex(centre.deficit_angle())
         self.assertAlmostEqual(eps.real, 0.0, delta=1e-12)
         self.assertAlmostEqual(eps.imag, 0.0, delta=1e-12)
         # every wedge is a genuine crossing (Re = π/2) with a nonzero boost
         boosts = []
         for tri_ids in [(0, 1, 2), (0, 2, 3), (0, 3, 4), (0, 1, 4)]:
             tri = _simplex_by_verts(st, tri_ids)
-            th = complex(tri.dihedralAngle(centre))
+            th = complex(tri.dihedral_angle(centre))
             self.assertAlmostEqual(th.real, math.pi / 2.0, delta=1e-12)
             boosts.append(th.imag)
         self.assertGreater(max(abs(b) for b in boosts), 0.05)
@@ -266,7 +266,7 @@ class TestFlatMinkowskiClosure(unittest.TestCase):
         ]
         for pts in cases:
             st, centre = _flat_star(pts)
-            eps = complex(centre.deficitAngle())
+            eps = complex(centre.deficit_angle())
             self.assertAlmostEqual(eps.real, 0.0, delta=1e-11)
             self.assertAlmostEqual(eps.imag, 0.0, delta=1e-11)
 
@@ -288,7 +288,7 @@ class TestMixedHinge4D(unittest.TestCase):
         st = _cell_41()
         cell = _simplex_by_verts(st, [0, 1, 2, 3, 4])
         hinge = _simplex_by_verts(st, [0, 1, 2])
-        theta = complex(cell.dihedralAngle(hinge))
+        theta = complex(cell.dihedral_angle(hinge))
         self.assertAlmostEqual(theta.real, self.EXPECT.real, delta=1e-12)
         self.assertAlmostEqual(theta.imag, self.EXPECT.imag, delta=1e-12)
 
@@ -297,7 +297,7 @@ class TestMixedHinge4D(unittest.TestCase):
         st = _cell_41()
         cell = _simplex_by_verts(st, [0, 1, 2, 3, 4])
         for ids in [(0, 1, 2), (0, 1, 3), (0, 2, 3), (1, 2, 3)]:
-            theta = complex(cell.dihedralAngle(
+            theta = complex(cell.dihedral_angle(
                 _simplex_by_verts(st, ids)))
             self.assertAlmostEqual(theta.real, self.EXPECT.real, delta=1e-12)
             self.assertAlmostEqual(theta.imag, self.EXPECT.imag, delta=1e-12)
@@ -313,8 +313,8 @@ class TestRelabelingInvariance(unittest.TestCase):
         st = _spacetime(4, tessera.SolidSimplex(4))
         v = {}
         for a in range(5):
-            v[a] = st.createVertex(ids[a])
-        st.createSimplex([v[a] for a in order])
+            v[a] = st.create_vertex(ids[a])
+        st.create_simplex([v[a] for a in order])
         mapping = {}
         for i in range(4):
             for j in range(i + 1, 4):
@@ -327,7 +327,7 @@ class TestRelabelingInvariance(unittest.TestCase):
     def test_permuted_ids_and_stored_order_give_identical_angles(self):
         base_st = _cell_41()
         base_cell = _simplex_by_verts(base_st, [0, 1, 2, 3, 4])
-        base_theta = complex(base_cell.dihedralAngle(
+        base_theta = complex(base_cell.dihedral_angle(
             _simplex_by_verts(base_st, [0, 1, 2])))
 
         perms = [
@@ -338,18 +338,18 @@ class TestRelabelingInvariance(unittest.TestCase):
             st, v = self._cell_41_with_ids(ids, order)
             cell = _simplex_by_verts(st, ids)
             hinge = _simplex_by_verts(st, [ids[0], ids[1], ids[2]])
-            theta = complex(cell.dihedralAngle(hinge))
+            theta = complex(cell.dihedral_angle(hinge))
             self.assertAlmostEqual(theta.real, base_theta.real, delta=1e-13)
             self.assertAlmostEqual(theta.imag, base_theta.imag, delta=1e-13)
 
     def test_mixed_2d_triangle_relabeled(self):
         st = _spacetime(2, tessera.SolidSimplex(2))
-        v = {a: st.createVertex(i) for a, i in enumerate([17, 4, 99])}
-        st.createSimplex([v[2], v[0], v[1]])
+        v = {a: st.create_vertex(i) for a, i in enumerate([17, 4, 99])}
+        st.create_simplex([v[2], v[0], v[1]])
         _set_edges(st, {(4, 17): 1.0, (17, 99): -3.0, (4, 99): -4.0})
         _materialize(st)
         tri = _simplex_by_verts(st, [4, 17, 99])
-        theta = complex(tri.dihedralAngle(
+        theta = complex(tri.dihedral_angle(
             _simplex_by_verts(st, [17])))
         expect = complex(math.pi / 2.0, math.asinh(1.0 / math.sqrt(3.0)))
         self.assertAlmostEqual(theta.real, expect.real, delta=1e-12)
@@ -367,7 +367,7 @@ class TestMixedHingeGradient(unittest.TestCase):
         total = complex(0.0, 0.0)
         seen = 0
         for key, g in _grad_by_edge(hinge).items():
-            total += (em[key].getLength() * em[key].getLength()) * complex(g)
+            total += (em[key].get_length() * em[key].get_length()) * complex(g)
             seen += 1
         self.assertGreater(seen, 0)
         self.assertAlmostEqual(total.real, 0.0, delta=tol)
@@ -426,7 +426,7 @@ class TestMixedHingeHessian(unittest.TestCase):
         rows = {}
         for (ke, kf), v in hess.items():
             rows.setdefault(ke, complex(0.0, 0.0))
-            rows[ke] += (em[kf].getLength() * em[kf].getLength()) * complex(v)
+            rows[ke] += (em[kf].get_length() * em[kf].get_length()) * complex(v)
         self.assertGreater(len(rows), 0)
         for ke, total in rows.items():
             want = -complex(grad[ke])
@@ -456,12 +456,12 @@ class TestMixedHingeHessian(unittest.TestCase):
                     abs(complex(hess[(ke, kf)]) - complex(hess[(kf, ke)])),
                     0.0, delta=1e-12)
                 e = em[kf]
-                orig = (e.getLength() * e.getLength())
-                e.setLength(cmath.sqrt(complex(orig + h)))
+                orig = (e.get_length() * e.get_length())
+                e.set_length(cmath.sqrt(complex(orig + h)))
                 gp = complex(_grad_by_edge(hinge)[ke])
-                e.setLength(cmath.sqrt(complex(orig - h)))
+                e.set_length(cmath.sqrt(complex(orig - h)))
                 gm = complex(_grad_by_edge(hinge)[ke])
-                e.setLength(cmath.sqrt(complex(orig)))
+                e.set_length(cmath.sqrt(complex(orig)))
                 fd = (gp - gm) / (2.0 * h)
                 got = complex(hess[(ke, kf)])
                 self.assertAlmostEqual(got.real, fd.real, delta=5e-5)
@@ -475,26 +475,26 @@ class TestActionOnMixedComplex(unittest.TestCase):
     def test_action_gradient_exact_matches_fd_with_mixed_hinges(self):
         # tetra surface with one timelike edge: its vertex hinges include
         # genuine crossings; actionGradientExact must match a central
-        # difference of dualReggeAction (Re and Im) through them.
+        # difference of dual_regge_action (Re and Im) through them.
         st = _spacetime(2, tessera.SolidSimplex(2))
         st.build()
-        v = {x.getId(): x for x in st.getVertexList().toVector()}
-        v3 = st.createVertex(3)
-        st.createSimplex([v[0], v[1], v3])
-        st.createSimplex([v[0], v[2], v3])
-        st.createSimplex([v[1], v[2], v3])
+        v = {x.get_id(): x for x in st.get_vertex_list().to_vector()}
+        v3 = st.create_vertex(3)
+        st.create_simplex([v[0], v[1], v3])
+        st.create_simplex([v[0], v[2], v3])
+        st.create_simplex([v[1], v[2], v3])
         _set_edges(st, {(0, 1): -1.0}, default=1.0)
         solver = tessera.ReggeSolver(st, tessera.MatterConfiguration())
-        edges = st.getEdgeList().toVector()
-        grad = solver.actionGradientExact()
+        edges = st.get_edge_list().to_vector()
+        grad = solver.action_gradient_exact()
         h = 1e-6
         for i, e in enumerate(edges):
-            orig = (e.getLength() * e.getLength())
-            e.setLength(cmath.sqrt(complex(orig + h)))
-            sp = complex(solver.dualReggeAction())
-            e.setLength(cmath.sqrt(complex(orig - h)))
-            sm = complex(solver.dualReggeAction())
-            e.setLength(cmath.sqrt(complex(orig)))
+            orig = (e.get_length() * e.get_length())
+            e.set_length(cmath.sqrt(complex(orig + h)))
+            sp = complex(solver.dual_regge_action())
+            e.set_length(cmath.sqrt(complex(orig - h)))
+            sm = complex(solver.dual_regge_action())
+            e.set_length(cmath.sqrt(complex(orig)))
             fd = (sp - sm) / (2.0 * h)
             g = complex(grad[i])
             self.assertAlmostEqual(g.real, fd.real, delta=2e-5)

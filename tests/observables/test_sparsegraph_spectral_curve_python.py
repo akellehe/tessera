@@ -2,8 +2,8 @@
 # All rights reserved.
 """Per-sigma spectral-dimension bindings on ``tessera.SparseGraph``.
 
-Covers the ``returnProbability`` / ``spectralDimensionCurve`` /
-``spectralDimensionSmoothed`` bindings: the same Krylov-Lanczos
+Covers the ``return_probability`` / ``spectral_dimension_curve`` /
+``spectral_dimension_smoothed`` bindings: the same Krylov-Lanczos
 heat-kernel + finite-difference machinery ``EmergentGraph`` exposes,
 now reachable straight off the dual graph so the CDT examples
 (``spectral_dimension.py``, ``probe_*.py``) can drop their hand-rolled
@@ -57,9 +57,9 @@ class TestReturnProbability(unittest.TestCase):
     def test_in_unit_interval_and_monotone(self):
         n = 40
         rows, cols = _chain_coo(n)
-        g = tessera.SparseGraph.fromCOO(rows, cols, n)
+        g = tessera.SparseGraph.from_coo(rows, cols, n)
         sigmas = _log_sigmas(0.5, 200.0, 48)
-        P = g.returnProbability(sigmas, m=n)  # m=n -> exact trace
+        P = g.return_probability(sigmas, m=n)  # m=n -> exact trace
         self.assertEqual(len(P), len(sigmas))
         for p in P:
             self.assertGreater(p, 0.0)
@@ -69,13 +69,13 @@ class TestReturnProbability(unittest.TestCase):
                                  f"P not non-increasing at index {j}")
 
     def test_matches_diagonal_mean(self):
-        """``returnProbability(m=N)`` equals the mean over all start
-        vertices of the ``diagonalHeatKernel`` diagonal — ties the new
+        """``return_probability(m=N)`` equals the mean over all start
+        vertices of the ``diagonal_heat_kernel`` diagonal — ties the new
         binding to the existing exact heat-kernel path."""
-        g = tessera.SparseGraph.fromCOO([0, 1, 2, 3], [1, 2, 3, 0], 4)
+        g = tessera.SparseGraph.from_coo([0, 1, 2, 3], [1, 2, 3, 0], 4)
         sigmas = [0.5, 1.0, 2.0, 5.0]
-        P = g.returnProbability(sigmas, m=4)
-        K = g.diagonalHeatKernel([0, 1, 2, 3], sigmas)
+        P = g.return_probability(sigmas, m=4)
+        K = g.diagonal_heat_kernel([0, 1, 2, 3], sigmas)
         for j, _ in enumerate(sigmas):
             mean = sum(K[s][j] for s in range(4)) / 4.0
             self.assertAlmostEqual(P[j], mean, places=6)
@@ -90,20 +90,20 @@ class TestSpectralDimensionCurve(unittest.TestCase):
         sigmas = _log_sigmas(0.5, 100.0, 40)
         alpha = 1.5
         P = [s ** (-alpha) for s in sigmas]
-        dS = tessera.SparseGraph.spectralDimensionCurve(sigmas, P)
+        dS = tessera.SparseGraph.spectral_dimension_curve(sigmas, P)
         self.assertEqual(len(dS), len(sigmas))
         for d in dS[1:-1]:
             self.assertAlmostEqual(d, 2.0 * alpha, places=6)
 
     @unittest.skipUnless(HAVE_EMERGENT, "tessera built without quantum")
     def test_curve_matches_emergent_static(self):
-        """``SparseGraph.spectralDimensionCurve`` and
-        ``EmergentGraph.spectralDimension`` are the same inherited
+        """``SparseGraph.spectral_dimension_curve`` and
+        ``EmergentGraph.spectral_dimension`` are the same inherited
         finite-difference static — confirm the binding points at it."""
         sigmas = _log_sigmas(0.5, 100.0, 40)
         P = [s ** (-1.2) for s in sigmas]
-        a = tessera.SparseGraph.spectralDimensionCurve(sigmas, P)
-        b = EmergentGraph.spectralDimension(sigmas, P)
+        a = tessera.SparseGraph.spectral_dimension_curve(sigmas, P)
+        b = EmergentGraph.spectral_dimension(sigmas, P)
         self.assertEqual(len(a), len(b))
         for x, y in zip(a, b):
             self.assertAlmostEqual(x, y, places=10)
@@ -112,10 +112,10 @@ class TestSpectralDimensionCurve(unittest.TestCase):
         """1D chain: D_S(sigma) plateau ~ 1 in the diffusion regime."""
         n = 80
         rows, cols = _chain_coo(n)
-        g = tessera.SparseGraph.fromCOO(rows, cols, n)
+        g = tessera.SparseGraph.from_coo(rows, cols, n)
         sigmas = _log_sigmas(0.5, 200.0, 64)
-        P = g.returnProbability(sigmas, m=n)
-        dS = tessera.SparseGraph.spectralDimensionCurve(sigmas, P)
+        P = g.return_probability(sigmas, m=n)
+        dS = tessera.SparseGraph.spectral_dimension_curve(sigmas, P)
         window = sorted(d for s, d in zip(sigmas, dS)
                         if 3.0 <= s <= 30.0 and d == d)
         plateau = window[len(window) // 2] if window else float("nan")
@@ -130,10 +130,10 @@ class TestSpectralDimensionSmoothed(unittest.TestCase):
         w = h = 16
         n = w * h
         rows, cols = _square_lattice_coo(w, h)
-        g = tessera.SparseGraph.fromCOO(rows, cols, n)
+        g = tessera.SparseGraph.from_coo(rows, cols, n)
         sigmas = _log_sigmas(0.1, 1000.0, 64)
-        P = g.returnProbability(sigmas, m=n)
-        dS = tessera.SparseGraph.spectralDimensionSmoothed(sigmas, P, 7, 2)
+        P = g.return_probability(sigmas, m=n)
+        dS = tessera.SparseGraph.spectral_dimension_smoothed(sigmas, P, 7, 2)
         finite = [d for d in dS if d == d]
         self.assertTrue(finite, "all-NaN smoothed curve")
         peak = max(finite)
@@ -145,7 +145,7 @@ class TestSpectralDimensionSmoothed(unittest.TestCase):
         P = [s ** (-1.0) for s in sigmas]
         with self.assertRaises(Exception):
             # even window is invalid (must be odd, >= polyOrder + 1)
-            tessera.SparseGraph.spectralDimensionSmoothed(sigmas, P, 4, 2)
+            tessera.SparseGraph.spectral_dimension_smoothed(sigmas, P, 4, 2)
 
 
 if __name__ == "__main__":

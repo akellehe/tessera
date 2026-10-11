@@ -5,7 +5,7 @@
 
 The *diagonal Discrete Exterior Calculus Hodge star* assigns each k-simplex
 ``sigma`` the single scalar ratio ``|*sigma| / |sigma|``: its signed circumcentric
-dual cell content (``Simplex.dualVolume``) over its own signed content
+dual cell content (``Simplex.dual_volume``) over its own signed content
 (``Simplex.volume``). ``DualVolumeSigns`` reports the sign statistics of that
 ratio; it measures only and changes no geometry.
 
@@ -17,7 +17,7 @@ Two properties matter beyond raw agreement:
 
   * **Orphan exclusion.** A Pachner move can strand a lazily-materialised
     sub-face with no surviving top coface. Such a simplex is not part of the
-    complex, and ``Simplex.hasTopCoface`` is the documented filter. The oracle
+    complex, and ``Simplex.has_top_coface`` is the documented filter. The oracle
     applies the same filter.
   * **Signature partition.** A negative ratio has two unrelated causes -- a
     circumcenter falling outside its simplex (Riemannian mesh degradation) versus
@@ -26,8 +26,8 @@ Two properties matter beyond raw agreement:
     cells, and that partition must be exact.
 
 The skeleton is materialised by constructing a ``ReggeSolver``, never from
-Python: the ``getFacets``/``getCofaces`` bindings return copies, so building the
-skeleton Python-side corrupts the coface lists and ``dualVolume`` then sees only
+Python: the ``get_facets``/``get_cofaces`` bindings return copies, so building the
+skeleton Python-side corrupts the coface lists and ``dual_volume`` then sees only
 part of the star (the pitfall recorded on the mesh bindings).
 """
 
@@ -48,9 +48,9 @@ def _from_simplices(num_vertices, simplices):
     metric = tessera.Metric(True, sig)
     st = tessera.Spacetime(metric, tessera.HERMITIAN_WEIGHTED, 1.0, 1.0,
                            tessera.PREFERRED, tessera.Toroid())
-    verts = [st.createVertex(i) for i in range(num_vertices)]
+    verts = [st.create_vertex(i) for i in range(num_vertices)]
     for simplex in simplices:
-        st.createSimplex([verts[i] for i in simplex])
+        st.create_simplex([verts[i] for i in simplex])
     # Materialize the full skeleton in C++ so cofaces stay intact.
     tessera.ReggeSolver(st, tessera.MatterConfiguration())
     return st
@@ -67,13 +67,13 @@ def _two_pentatopes():
 
 
 def _set_all_squared_lengths(st, value):
-    for e in st.getEdgeList().toVector():
-        e.setLength(cmath.sqrt(complex(value)))
+    for e in st.get_edge_list().to_vector():
+        e.set_length(cmath.sqrt(complex(value)))
 
 
 def _edge(st, a, b):
-    for e in st.getEdgeList().toVector():
-        if {e.getSource().getId(), e.getTarget().getId()} == {a, b}:
+    for e in st.get_edge_list().to_vector():
+        if {e.get_source().get_id(), e.get_target().get_id()} == {a, b}:
             return e
     raise KeyError((a, b))
 
@@ -89,10 +89,10 @@ def _oracle(st, tolerance=TOLERANCE):
     left out of both the negative tally and the ratio statistics.
     """
     per_dimension = {}
-    for s in st.getSimplices():
-        if not s.hasTopCoface():
+    for s in st.get_simplices():
+        if not s.has_top_coface():
             continue
-        n_vertices = len(s.getVertices())
+        n_vertices = len(s.get_vertices())
         if n_vertices == 0:
             continue
         dimension = n_vertices - 1
@@ -106,20 +106,20 @@ def _oracle(st, tolerance=TOLERANCE):
         })
         entry["n_simplices"] += 1
 
-        all_spacelike = all(e.isSpacelike() for e in s.getEdges())
+        all_spacelike = all(e.is_spacelike() for e in s.get_edges())
         entry["n_all_spacelike" if all_spacelike else "n_mixed_signature"] += 1
 
         # Complex-typed reads; the sign tallies are defined on the real part,
         # exactly as the C++ observable reads them (#640).
-        dual_volume = complex(s.dualVolume())
+        dual_volume = complex(s.dual_volume())
         if dual_volume.real < 0.0:
             entry["n_negative_dual_volume"] += 1
 
-        barycentric = [complex(b) for b in s.circumcenterBarycentric()]
+        barycentric = [complex(b) for b in s.circumcenter_barycentric()]
         if barycentric and min(b.real for b in barycentric) < 0.0:
             entry["n_circumcenter_outside"] += 1
 
-        if complex(s.circumradiusSquared()).real < 0.0:
+        if complex(s.circumradius_squared()).real < 0.0:
             entry["n_negative_circumradius"] += 1
 
         volume = s.volume()
@@ -183,15 +183,15 @@ class TestDualVolumeSigns(unittest.TestCase):
         """One timelike edge -- exercises the mixed-signature branch."""
         st = _two_pentatopes()
         _set_all_squared_lengths(st, 1.0)
-        _edge(st, 0, 1).setLength(cmath.sqrt(complex(-1.0)))
+        _edge(st, 0, 1).set_length(cmath.sqrt(complex(-1.0)))
         self._assert_matches_oracle(st)
 
     def test_signature_partition_is_exact(self):
         """All-spacelike and mixed-signature counts partition every dimension."""
         st = _two_pentatopes()
         _set_all_squared_lengths(st, 1.0)
-        _edge(st, 0, 1).setLength(cmath.sqrt(complex(-1.0)))
-        _edge(st, 2, 3).setLength(cmath.sqrt(complex(-1.0)))
+        _edge(st, 0, 1).set_length(cmath.sqrt(complex(-1.0)))
+        _edge(st, 2, 3).set_length(cmath.sqrt(complex(-1.0)))
 
         for entry in tessera.DualVolumeSigns().analyze(st).dimensions:
             self.assertEqual(
@@ -218,7 +218,7 @@ class TestDualVolumeSigns(unittest.TestCase):
             "a uniformly spacelike complex has no mixed-signature cells",
         )
 
-        _edge(st, 0, 1).setLength(cmath.sqrt(complex(-1.0)))
+        _edge(st, 0, 1).set_length(cmath.sqrt(complex(-1.0)))
         mixed = tessera.DualVolumeSigns().analyze(st)
         self.assertGreater(
             sum(entry.n_mixed_signature for entry in mixed.dimensions), 0,
@@ -229,7 +229,7 @@ class TestDualVolumeSigns(unittest.TestCase):
         """compute() equals n_negative_star / n_simplices over the whole report."""
         st = _two_pentatopes()
         _set_all_squared_lengths(st, 1.0)
-        _edge(st, 0, 1).setLength(cmath.sqrt(complex(-1.0)))
+        _edge(st, 0, 1).set_length(cmath.sqrt(complex(-1.0)))
 
         observable = tessera.DualVolumeSigns()
         report = observable.analyze(st)

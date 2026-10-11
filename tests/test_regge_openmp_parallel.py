@@ -2,15 +2,15 @@
 
 """OpenMP parallelization of the Regge hinge loop.
 
-``ReggeSolver::actionGradientExact`` and ``actionHessianExact`` sum independent
+``ReggeSolver::actionGradientExact`` and ``action_hessian_exact`` sum independent
 per-hinge contributions into a shared accumulator. The C++ implementation
 parallelizes that hinge loop with per-thread partial accumulators reduced
 deterministically into the shared result (see ``src/simulations/ReggeSolver.cpp``).
 
 The optimization lives entirely in C++; this module only *tests* it. The serial
 reference oracles below re-accumulate the per-hinge contributions in a plain
-Python loop using the exposed per-hinge methods (``deficitAngle``,
-``dualVolume``, and their gradients/Hessians). The per-hinge *values* come from
+Python loop using the exposed per-hinge methods (``deficit_angle``,
+``dual_volume``, and their gradients/Hessians). The per-hinge *values* come from
 C++; only the *reduction order* differs between the serial reference and the
 parallel reduction — which is exactly what parallelization changes. So agreement
 to floating-point round-off is the correctness criterion ("identical values vs
@@ -61,7 +61,7 @@ def _new_spacetime():
 def _make_cdt(n_simplices):
     st = _new_spacetime()
     st.build(n_simplices)
-    st.materializeFacets()
+    st.materialize_facets()
     return st
 
 
@@ -75,10 +75,10 @@ def _complex_mesh():
 # Serial reference oracles — plain Python re-accumulation of the per-hinge terms
 # --------------------------------------------------------------------------- #
 def _edge_index(st):
-    edges = st.getEdgeList().toVector()
+    edges = st.get_edge_list().to_vector()
     eidx = {}
     for i, e in enumerate(edges):
-        a, b = e.getSource().getId(), e.getTarget().getId()
+        a, b = e.get_source().get_id(), e.get_target().get_id()
         eidx[(min(a, b), max(a, b))] = i
     return edges, eidx
 
@@ -87,11 +87,11 @@ def _collect_hinges(st):
     """The (d-2)-simplices, exactly as ``ReggeSolver::collectHinges``. Metric-free:
     top simplices have d+1 vertices, so a hinge has (top_verts - 2) vertices
     (= d - 1), i.e. edges in 3D and triangles in 4D."""
-    sims = list(st.getSimplices())
+    sims = list(st.get_simplices())
     if not sims:
         return []
-    hinge_nverts = max(len(s.getVertices()) for s in sims) - 2
-    return [s for s in sims if len(s.getVertices()) == hinge_nverts]
+    hinge_nverts = max(len(s.get_vertices()) for s in sims) - 2
+    return [s for s in sims if len(s.get_vertices()) == hinge_nverts]
 
 
 def _serial_gradient(st):
@@ -100,13 +100,13 @@ def _serial_gradient(st):
     edges, eidx = _edge_index(st)
     g = [0j] * len(edges)
     for h in _collect_hinges(st):
-        eps = complex(h.deficitAngle())
-        dv = complex(h.dualVolume())
-        for e, d_eps in h.deficitAngleGradient().items():
+        eps = complex(h.deficit_angle())
+        dv = complex(h.dual_volume())
+        for e, d_eps in h.deficit_angle_gradient().items():
             i = eidx.get(e)
             if i is not None:
                 g[i] += dv * complex(d_eps)
-        for e, d_dv in h.dualVolumeGradient().items():
+        for e, d_dv in h.dual_volume_gradient().items():
             i = eidx.get(e)
             if i is not None:
                 g[i] += complex(d_dv) * eps
@@ -120,12 +120,12 @@ def _serial_hessian(st):
     E = len(edges)
     H = np.zeros((E, E), dtype=complex)
     for h in _collect_hinges(st):
-        eps = complex(h.deficitAngle())
-        V = complex(h.dualVolume())
-        d_eps = {k: complex(v) for k, v in h.deficitAngleGradient().items()}
-        d_v = {k: complex(v) for k, v in h.dualVolumeGradient().items()}
-        d2_eps = {k: complex(v) for k, v in h.deficitAngleHessian().items()}
-        d2_v = {k: complex(v) for k, v in h.dualVolumeHessian().items()}
+        eps = complex(h.deficit_angle())
+        V = complex(h.dual_volume())
+        d_eps = {k: complex(v) for k, v in h.deficit_angle_gradient().items()}
+        d_v = {k: complex(v) for k, v in h.dual_volume_gradient().items()}
+        d2_eps = {k: complex(v) for k, v in h.deficit_angle_hessian().items()}
+        d2_v = {k: complex(v) for k, v in h.dual_volume_hessian().items()}
         for e, dVe in d_v.items():
             ie = eidx.get(e)
             if ie is None:
@@ -145,12 +145,12 @@ def _serial_hessian(st):
 
 def _parallel_gradient(st):
     rs = tessera.ReggeSolver(st, tessera.MatterConfiguration())
-    return np.array([complex(z) for z in rs.actionGradientExact()], dtype=complex)
+    return np.array([complex(z) for z in rs.action_gradient_exact()], dtype=complex)
 
 
 def _parallel_hessian(st):
     rs = tessera.ReggeSolver(st, tessera.MatterConfiguration())
-    H = rs.actionHessianExact()
+    H = rs.action_hessian_exact()
     return np.array([[complex(z) for z in row] for row in H], dtype=complex)
 
 
@@ -216,16 +216,16 @@ class DeterminismWithinProcessTest(unittest.TestCase):
     def test_gradient_bit_identical_across_calls(self):
         st = _complex_mesh()
         rs = tessera.ReggeSolver(st, tessera.MatterConfiguration())
-        a = np.array([complex(z) for z in rs.actionGradientExact()])
-        b = np.array([complex(z) for z in rs.actionGradientExact()])
+        a = np.array([complex(z) for z in rs.action_gradient_exact()])
+        b = np.array([complex(z) for z in rs.action_gradient_exact()])
         self.assertTrue(np.array_equal(a, b),
                         "gradient not bit-identical across repeated calls")
 
     def test_hessian_bit_identical_across_calls(self):
         st = _complex_mesh()
         rs = tessera.ReggeSolver(st, tessera.MatterConfiguration())
-        a = np.array([[complex(z) for z in r] for r in rs.actionHessianExact()])
-        b = np.array([[complex(z) for z in r] for r in rs.actionHessianExact()])
+        a = np.array([[complex(z) for z in r] for r in rs.action_hessian_exact()])
+        b = np.array([[complex(z) for z in r] for r in rs.action_hessian_exact()])
         self.assertTrue(np.array_equal(a, b),
                         "Hessian not bit-identical across repeated calls")
 
@@ -316,8 +316,8 @@ class EdgeCaseTest(unittest.TestCase):
         # gradient is empty, Hessian is 0x0.
         st = _new_spacetime()
         rs = tessera.ReggeSolver(st, tessera.MatterConfiguration())
-        self.assertEqual(len(rs.actionGradientExact()), 0)
-        self.assertEqual(len(rs.actionHessianExact()), 0)
+        self.assertEqual(len(rs.action_gradient_exact()), 0)
+        self.assertEqual(len(rs.action_hessian_exact()), 0)
 
 
 # --------------------------------------------------------------------------- #
@@ -354,11 +354,11 @@ def _dump_main(argv):
     st = _complex_mesh() if mesh == "complex" else _make_cdt(n)
     rs = tessera.ReggeSolver(st, tessera.MatterConfiguration())
     t0 = time.perf_counter()
-    grad = np.array([complex(z) for z in rs.actionGradientExact()], dtype=complex)
+    grad = np.array([complex(z) for z in rs.action_gradient_exact()], dtype=complex)
     secs = time.perf_counter() - t0
     if want_hess:
         hess = np.array([[complex(z) for z in row]
-                         for row in rs.actionHessianExact()], dtype=complex)
+                         for row in rs.action_hessian_exact()], dtype=complex)
     else:
         hess = np.array([], dtype=complex)
     np.savez(out, grad=grad, hess=hess)

@@ -24,30 +24,30 @@ def _make_st(d=4, n_simplices=200):
 
 def _top_size(st):
     # CDT top simplices are (d+1)-vertex; d is the spacetime's declared
-    # (signature) dimension. getTopVertexCount() == signature.dimensions + 1,
+    # (signature) dimension. get_top_vertex_count() == signature.dimensions + 1,
     # the engine's single source of truth for top-cell membership -- O(1) and
     # immune to the lazily-materialized lower-dimensional facets that
-    # propose()/getFacets() register into getSimplices() (where the first
+    # propose()/get_facets() register into get_simplices() (where the first
     # scanned simplex may be a lower-dimensional face).
-    return st.getTopVertexCount()
+    return st.get_top_vertex_count()
 
 
 def _full_snapshot(st):
     dPlus1 = _top_size(st)
     return {
-        "n0": st.getVertexCount(),
-        "n41": st.getN41(),
-        "n32": st.getN32(),
-        "n4": st.getTopSimplexCount(),
+        "n0": st.get_vertex_count(),
+        "n41": st.get_n41(),
+        "n32": st.get_n32(),
+        "n4": st.get_top_simplex_count(),
         "top_fps": frozenset(
-            hash(s) for s in st.getSimplices()
-            if len(s.getVertices()) == dPlus1
+            hash(s) for s in st.get_simplices()
+            if len(s.get_vertices()) == dPlus1
         ),
         "edge_fps": frozenset(
-            hash(e) for e in st.getEdgeList().toVector()
+            hash(e) for e in st.get_edge_list().to_vector()
         ),
         "vertex_ids": frozenset(
-            v.getId() for v in st.getVertexList().toVector()
+            v.get_id() for v in st.get_vertex_list().to_vector()
         ),
     }
 
@@ -75,7 +75,7 @@ class TestIFlipPropose(unittest.TestCase):
         st = tessera.Spacetime(metric, tessera.CDT, 1.0, 1.0,
                                tessera.PREFERRED, tessera.Toroid())
         st.build(200)
-        cdt = tessera.CDTSimulation(st, 2.2, 0.5, 0.6, 0.02, st.getN41())
+        cdt = tessera.CDTSimulation(st, 2.2, 0.5, 0.6, 0.02, st.get_n41())
         _grow(cdt, 200)
         before = _full_snapshot(st)
         for seed in range(20):
@@ -91,7 +91,7 @@ class TestIFlipPropose(unittest.TestCase):
         st = tessera.Spacetime(metric, tessera.CDT, 1.0, 1.0,
                                tessera.PREFERRED, tessera.Toroid())
         st.build(200)
-        cdt = tessera.CDTSimulation(st, 2.2, 0.5, 0.6, 0.02, st.getN41())
+        cdt = tessera.CDTSimulation(st, 2.2, 0.5, 0.6, 0.02, st.get_n41())
         _grow(cdt, 200)
         m = _try_propose(st, range(2000), tessera.IFlipMove)
         self.assertIsNotNone(m, "Could not find an iflip target in 2000 "
@@ -99,7 +99,7 @@ class TestIFlipPropose(unittest.TestCase):
 
     def test_movetype(self):
         m = tessera.IFlipMove(_make_st(), 0)
-        self.assertEqual(m.moveType(), "iflip")
+        self.assertEqual(m.move_type(), "iflip")
 
     def test_dN0_is_zero(self):
         sig = tessera.Signature(4, tessera.Lorentzian)
@@ -107,12 +107,12 @@ class TestIFlipPropose(unittest.TestCase):
         st = tessera.Spacetime(metric, tessera.CDT, 1.0, 1.0,
                                tessera.PREFERRED, tessera.Toroid())
         st.build(200)
-        cdt = tessera.CDTSimulation(st, 2.2, 0.5, 0.6, 0.02, st.getN41())
+        cdt = tessera.CDTSimulation(st, 2.2, 0.5, 0.6, 0.02, st.get_n41())
         _grow(cdt, 200)
         m = _try_propose(st, range(2000), tessera.IFlipMove)
         if m is None:
             self.skipTest("No iflip proposed")
-        self.assertEqual(m.dN0(), 0)
+        self.assertEqual(m.d_n0(), 0)
 
     def test_dN4_advertised_is_minus_d_minus_2(self):
         """Advertised ΔN4 = -(d - 2) = -2 in 4D (clean (d,2) replacement)."""
@@ -121,13 +121,13 @@ class TestIFlipPropose(unittest.TestCase):
         st = tessera.Spacetime(metric, tessera.CDT, 1.0, 1.0,
                                tessera.PREFERRED, tessera.Toroid())
         st.build(200)
-        cdt = tessera.CDTSimulation(st, 2.2, 0.5, 0.6, 0.02, st.getN41())
+        cdt = tessera.CDTSimulation(st, 2.2, 0.5, 0.6, 0.02, st.get_n41())
         _grow(cdt, 200)
         m = _try_propose(st, range(2000), tessera.IFlipMove)
         if m is None:
             self.skipTest("No iflip proposed")
         # 2 new - d old = -(d - 2) = -2
-        self.assertEqual(m.dN41() + m.dN32(), -(4 - 2))
+        self.assertEqual(m.d_n41() + m.d_n32(), -(4 - 2))
 
 
 class TestIFlipApplyRollback(unittest.TestCase):
@@ -138,7 +138,7 @@ class TestIFlipApplyRollback(unittest.TestCase):
         st = tessera.Spacetime(metric, tessera.CDT, 1.0, 1.0,
                                tessera.PREFERRED, tessera.Toroid())
         st.build(200)
-        cdt = tessera.CDTSimulation(st, 2.2, 0.5, 0.6, 0.02, st.getN41())
+        cdt = tessera.CDTSimulation(st, 2.2, 0.5, 0.6, 0.02, st.get_n41())
         _grow(cdt, cdt_grow)
         return st
 
@@ -161,10 +161,10 @@ class TestIFlipApplyRollback(unittest.TestCase):
         m = _try_propose(st, range(3000), tessera.IFlipMove)
         if m is None:
             self.skipTest("No iflip proposed")
-        n4_b = st.getTopSimplexCount()
+        n4_b = st.get_top_simplex_count()
         m.apply()
-        actual_dN4 = st.getTopSimplexCount() - n4_b
-        advertised = m.dN41() + m.dN32()
+        actual_dN4 = st.get_top_simplex_count() - n4_b
+        advertised = m.d_n41() + m.d_n32()
         self.assertEqual(actual_dN4, advertised,
                          f"actual ΔN4 ({actual_dN4}) != advertised "
                          f"({advertised}) — manifold check should "
@@ -175,19 +175,19 @@ class TestIFlipApplyRollback(unittest.TestCase):
         m = _try_propose(st, range(3000), tessera.IFlipMove)
         if m is None:
             self.skipTest("No iflip proposed")
-        n0_b = st.getVertexCount()
+        n0_b = st.get_vertex_count()
         m.apply()
-        self.assertEqual(st.getVertexCount(), n0_b)
+        self.assertEqual(st.get_vertex_count(), n0_b)
 
     def test_log_prefactor_matches_inverse_n4_ratio(self):
         st = self._make_grown()
         m = _try_propose(st, range(3000), tessera.IFlipMove)
         if m is None:
             self.skipTest("No iflip proposed")
-        n4 = st.getTopSimplexCount()
+        n4 = st.get_top_simplex_count()
         d = 4
         self.assertAlmostEqual(
-            m.metropolisLogPrefactor(),
+            m.metropolis_log_prefactor(),
             math.log(n4) - math.log(n4 - d + 2),
             places=8
         )
@@ -201,7 +201,7 @@ class TestIFlipStress(unittest.TestCase):
         st = tessera.Spacetime(metric, tessera.CDT, 1.0, 1.0,
                                tessera.PREFERRED, tessera.Toroid())
         st.build(200)
-        cdt = tessera.CDTSimulation(st, 2.2, 0.5, 0.6, 0.02, st.getN41())
+        cdt = tessera.CDTSimulation(st, 2.2, 0.5, 0.6, 0.02, st.get_n41())
         _grow(cdt, 300)
         before = _full_snapshot(st)
         cycles = 0

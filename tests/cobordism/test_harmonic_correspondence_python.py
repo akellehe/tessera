@@ -162,11 +162,11 @@ def test_scalar_bulk_geometry_changes_gram_not_period_transport(geometry):
     initial = hc.measure_geometry(node)
     random = np.random.default_rng(71)
     boundary = [set(block.vertices) for block in node.inputs]
-    for edge in node.spacetime().getEdgeList().toVector():
-        vertices = {edge.getSource().getId(), edge.getTarget().getId()}
+    for edge in node.spacetime().get_edge_list().to_vector():
+        vertices = {edge.get_source().get_id(), edge.get_target().get_id()}
         if any(vertices <= block for block in boundary):
             continue
-        edge.setLength(edge.getLength() * (1 + 0.03 * random.normal()))
+        edge.set_length(edge.get_length() * (1 + 0.03 * random.normal()))
     changed = hc.measure_geometry(node)
     for name in ("periods", "gram"):
         assert changed["readouts"][name]["identifiable"]
@@ -189,9 +189,9 @@ def test_animation_record_and_render(tmp_path):
 
 def test_native_scalar_phase_transport(geometry):
     node, _ = geometry
-    for edge in node.spacetime().getEdgeList().toVector():
-        u, v = edge.getSource().getId(), edge.getTarget().getId()
-        edge.setPhase(0.013 * (v - u))
+    for edge in node.spacetime().get_edge_list().to_vector():
+        u, v = edge.get_source().get_id(), edge.get_target().get_id()
+        edge.set_phase(0.013 * (v - u))
     read = hc.measure_geometry(node)["readouts"]["periods"]
     assert read["identifiable"]
     bases = [node.input_marking(i).base_vertex for i in (0, 1)]
@@ -208,11 +208,11 @@ def test_native_gram_gauge_covariance(geometry, fixed_bases, complex_lengths):
     coordinates as well. Exercise both real and complex Whitney metrics.
     """
     node, _ = geometry
-    edges = node.spacetime().getEdgeList().toVector()
+    edges = node.spacetime().get_edge_list().to_vector()
     if complex_lengths:
         random = np.random.default_rng(1105)
         for edge in edges:
-            edge.setLength(edge.getLength() * (1 + 0.02j * random.normal()))
+            edge.set_length(edge.get_length() * (1 + 0.02j * random.normal()))
     before = hc.measure_geometry(node)
     bases = [int(node.input_marking(i).base_vertex) for i in (0, 1)]
 
@@ -220,8 +220,8 @@ def test_native_gram_gauge_covariance(geometry, fixed_bases, complex_lengths):
         return 0.0 if fixed_bases and vertex in bases else 0.3 * np.sin(vertex)
 
     for edge in edges:
-        u, v = int(edge.getSource().getId()), int(edge.getTarget().getId())
-        edge.setPhase(phase(v) - phase(u))
+        u, v = int(edge.get_source().get_id()), int(edge.get_target().get_id())
+        edge.set_phase(phase(v) - phase(u))
     after = hc.measure_geometry(node)
     coordinate_change = np.exp(-1j * (phase(bases[1]) - phase(bases[0])))
     for name in ("periods", "gram"):
@@ -242,14 +242,14 @@ def test_native_gram_gauge_covariance(geometry, fixed_bases, complex_lengths):
 def test_gram_readout_reuses_native_gram_block(geometry, monkeypatch):
     from tessera import chainhodge
     node, _ = geometry
-    gram_block = chainhodge.PencilSchur.gramBlock
+    gram_block = chainhodge.PencilSchur.gram_block
     calls = []
 
     def recorded_gram_block(mass, left, right):
         calls.append((left.shape[1], right.shape[1]))
         return gram_block(mass, left, right)
 
-    monkeypatch.setattr(chainhodge.PencilSchur, "gramBlock", staticmethod(recorded_gram_block))
+    monkeypatch.setattr(chainhodge.PencilSchur, "gram_block", staticmethod(recorded_gram_block))
     read = hc.measure_geometry(node)["readouts"]["gram"]
     assert read["identifiable"], read["obstruction"]
     assert calls == [(2, read["cochain_count"])] * 2

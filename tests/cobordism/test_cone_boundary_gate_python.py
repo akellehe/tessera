@@ -44,8 +44,8 @@ def boundary(node):
 
 
 def cells(node):
-    return sorted(tuple(sorted(v.getId() for v in c.getVertices()))
-                  for c in node.spacetime().getTopSimplices())
+    return sorted(tuple(sorted(v.get_id() for v in c.get_vertices()))
+                  for c in node.spacetime().get_top_simplices())
 
 
 def test_the_boundary_of_a_simplex_is_all_of_its_facets():

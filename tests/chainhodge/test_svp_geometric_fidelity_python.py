@@ -95,7 +95,7 @@ def measure(K, s, W, preset, epsilon=math.nan, crossover=CROSSOVER):
     agree to five digits on every mesh of these tables."""
     started = time.time()
     hodge = ch.ChainHodge(K, s, preset, KS, crossover, epsilon)
-    read = hodge.harmonicChains(1)
+    read = hodge.harmonic_chains(1)
     return hodge, read, svp.angles_deg(read.images, W), started
 
 
@@ -312,8 +312,8 @@ class TestG4GeneratorSanity:
             test="G4", family="F1", preset="none",
             params={"N": 8, "jitter": 0.25, "seed": 1,
                     "signature": "lorentzian" if lorentz else "euclidean"},
-            n0=K.numSimplices(0), n1=K.numSimplices(1), n2=K.numSimplices(2),
-            betti=list(K.bettiNumbers()), max_abs_deficit=largest,
+            n0=K.num_simplices(0), n1=K.num_simplices(1), n2=K.num_simplices(2),
+            betti=list(K.betti_numbers()), max_abs_deficit=largest,
             vertices=len(deficits), criterion=f"max |deficit| <= {self.FLAT}")
         assert record["vertices"] == 64
         assert record["max_abs_deficit"] <= self.FLAT
@@ -331,8 +331,8 @@ class TestG4GeneratorSanity:
             test="G4", family="F2", preset="none",
             params={"N": 6, "L": 4, "jitter": 0.25, "seed": 2,
                     "signature": "lorentzian" if lorentz else "euclidean"},
-            n0=K.numSimplices(0), n1=K.numSimplices(1), n2=K.numSimplices(2),
-            betti=list(K.bettiNumbers()), max_abs_deficit=largest,
+            n0=K.num_simplices(0), n1=K.num_simplices(1), n2=K.num_simplices(2),
+            betti=list(K.betti_numbers()), max_abs_deficit=largest,
             vertices=len(deficits), criterion=f"max |deficit| <= {self.FLAT}")
         assert record["vertices"] == 18                 # the three interior layers
         assert record["max_abs_deficit"] <= self.FLAT
@@ -350,8 +350,8 @@ class TestG4GeneratorSanity:
             test="G4", family="F3", preset="none",
             params={"N": 8, "amp": 0.3, "jitter": 0.15, "seed": 1,
                     "signature": "lorentzian" if lorentz else "euclidean"},
-            n0=K.numSimplices(0), n1=K.numSimplices(1), n2=K.numSimplices(2),
-            betti=list(K.bettiNumbers()), max_abs_deficit=largest,
+            n0=K.num_simplices(0), n1=K.num_simplices(1), n2=K.num_simplices(2),
+            betti=list(K.betti_numbers()), max_abs_deficit=largest,
             gauss_bonnet=total, vertices=len(deficits),
             criterion=f"max |deficit| >= {self.CURVED} and |sum| <= 1e-10 (2 pi chi = 0)")
         assert record["max_abs_deficit"] >= self.CURVED

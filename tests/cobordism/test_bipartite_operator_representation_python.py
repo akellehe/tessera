@@ -43,46 +43,46 @@ BASE = [[0, 1], [1, 2], [0, 2]]  # the boundary circle
 
 @pytest.fixture
 def whitney_default():
-    previous = HL.defaultMetricSource()
-    HL.setDefaultMetricSource(Whitney)
+    previous = HL.default_metric_source()
+    HL.set_default_metric_source(Whitney)
     try:
         yield
     finally:
-        HL.setDefaultMetricSource(previous)
+        HL.set_default_metric_source(previous)
 
 
 def tube(layers, jitter=0.0, seed=0):
     """S¹ × [0, layers] over the triangle: ∂W = A (vertices 0,1,2) ⊔ B (the top
     circle). Interior edges may be jittered (real, Euclidean-like)."""
-    cells = tessera.Spacetime.prismCells(BASE, layers, {})
-    st = tessera.Spacetime.fromVertexTuples(2, cells, 1.0, 0.0)
+    cells = tessera.Spacetime.prism_cells(BASE, layers, {})
+    st = tessera.Spacetime.from_vertex_tuples(2, cells, 1.0, 0.0)
     rng = np.random.default_rng(seed)
     top = 3 * layers
-    for e in st.getEdgeList().toVector():
-        a, b = e.getSource().getId(), e.getTarget().getId()
+    for e in st.get_edge_list().to_vector():
+        a, b = e.get_source().get_id(), e.get_target().get_id()
         on_boundary = ({a, b} <= {0, 1, 2}) or ({a, b} <= {top, top + 1, top + 2})
         s = 1.0 if on_boundary or jitter == 0.0 else 1.0 + jitter * rng.uniform(-1, 1)
-        e.setLength(math.sqrt(s))
-        e.setPhase(0.0)
-    st.materializeFacets()
+        e.set_length(math.sqrt(s))
+        e.set_phase(0.0)
+    st.materialize_facets()
     return st, {0, 1, 2}, {top, top + 1, top + 2}
 
 
 def boundary_eigenframe(source):
     """Eigenvalues and eigenvectors of the isolated boundary circle's L_1 in
     its canonical edge order (the frame relaxBoundaryStatePairs pins against)."""
-    b = tessera.Spacetime.fromVertexTuples(1, BASE, 1.0, 0.0)
-    for e in b.getEdgeList().toVector():
-        e.setLength(1.0)
-        e.setPhase(0.0)
-    L = np.asarray(HL(b, HL.defaultWeightConvention(), source).laplacian(1, True)).reshape(3, 3)
+    b = tessera.Spacetime.from_vertex_tuples(1, BASE, 1.0, 0.0)
+    for e in b.get_edge_list().to_vector():
+        e.set_length(1.0)
+        e.set_phase(0.0)
+    L = np.asarray(HL(b, HL.default_weight_convention(), source).laplacian(1, True)).reshape(3, 3)
     w, V = np.linalg.eig(L)
-    cells = [[int(v) for v in c] for c in cob.ChainComplex.fromSpacetime(b).kSimplexVertices(1)]
+    cells = [[int(v) for v in c] for c in cob.ChainComplex.from_spacetime(b).k_simplex_vertices(1)]
     return w, V, cells
 
 
 def canonical_cells(st, k):
-    return [tuple(int(v) for v in c) for c in cob.ChainComplex.fromSpacetime(st).kSimplexVertices(k)]
+    return [tuple(int(v) for v in c) for c in cob.ChainComplex.from_spacetime(st).k_simplex_vertices(k)]
 
 
 def dense_operator(st, k):
@@ -115,15 +115,15 @@ class TestHarmonicSector:
 
     def test_harmonic_extension_is_the_operator_and_is_linear(self, whitney_default):
         st, A, B = tube(2, jitter=0.2, seed=1)
-        assert HL(st).metricSource() == Whitney
+        assert HL(st).metric_source() == Whitney
         k = 1
         cells = canonical_cells(st, k)
         L = dense_operator(st, k)
         # The harmonic chain of the tube (b_1 = 1) and its boundary values.
-        K = ch.WhitneyMass.complexOf(st)
-        hodge = ch.ChainHodge(K, ch.WhitneyMass.squaredLengthsOf(st, K))
+        K = ch.WhitneyMass.complex_of(st)
+        hodge = ch.ChainHodge(K, ch.WhitneyMass.squared_lengths_of(st, K))
         assert hodge.betti() == [1, 1, 0]
-        h = hodge.harmonicChains(k).images[:, 0]  # the operator acts on images under the pencil (#931)
+        h = hodge.harmonic_chains(k).images[:, 0]  # the operator acts on images under the pencil (#931)
         assert residual(L, h, 0.0) < 1e-10
         boundary_index = [i for i, c in enumerate(cells) if set(c) <= A or set(c) <= B]
         assert len(boundary_index) == 6
@@ -160,7 +160,7 @@ class TestHarmonicSector:
         has an exact solution."""
         st, A, B = tube(2)
         node = cob.MultiCobordism(st, [], [], [1], einstein_hilbert=False)
-        assert node.metricSource() == Whitney
+        assert node.metric_source() == Whitney
         node.declare_pinned_region("A", A)
         node.declare_pinned_region("B", B)
         w, V, bcells = boundary_eigenframe(Whitney)
@@ -216,7 +216,7 @@ class TestNonzeroSector:
     def _fit(self, layers, restarts, growth, iterations):
         st, A, B = tube(layers)
         node = cob.MultiCobordism(st, [], [], [1], einstein_hilbert=False)
-        assert node.metricSource() == Whitney
+        assert node.metric_source() == Whitney
         node.declare_pinned_region("A", A)
         node.declare_pinned_region("B", B)
         w, V, bcells = boundary_eigenframe(Whitney)
@@ -234,7 +234,7 @@ class TestNonzeroSector:
         node, A, B, res = self._fit(layers=2, restarts=1, growth=0, iterations=20)
         assert math.isfinite(res.residual) and math.isfinite(res.eigenvalue)
         assert res.growth_steps == 0
-        assert len(res.states) == 2 and all(len(s) == node.st.getEdgeList().size() for s in res.states)
+        assert len(res.states) == 2 and all(len(s) == node.st.get_edge_list().size() for s in res.states)
 
     def test_spanning_pairs_then_held_out(self, whitney_default):
         if not self._FULL:

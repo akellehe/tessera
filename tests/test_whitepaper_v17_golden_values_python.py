@@ -48,21 +48,21 @@ def _sorted_real(matrix):
 
 def _regular_tetrahedron(squared_length=8.0):
     """A single regular tetrahedron with every squared edge length equal."""
-    spacetime = T.Spacetime.fromVertexTuples(3, [[0, 1, 2, 3]], 1.0, 0.0)
-    for edge in spacetime.getEdgeList().toVector():
-        edge.setLength(cmath.sqrt(complex(squared_length)))
+    spacetime = T.Spacetime.from_vertex_tuples(3, [[0, 1, 2, 3]], 1.0, 0.0)
+    for edge in spacetime.get_edge_list().to_vector():
+        edge.set_length(cmath.sqrt(complex(squared_length)))
     return spacetime
 
 
 def _whitney_hodge(spacetime):
     return cob.HodgeLaplacian(spacetime,
-                              cob.HodgeLaplacian.defaultWeightConvention(),
+                              cob.HodgeLaplacian.default_weight_convention(),
                               cob.HodgeMetricSource.WhitneyPencil)
 
 
 def _edge_records(spacetime):
-    return [(int(e.getSource().getId()), int(e.getTarget().getId()))
-            for e in spacetime.getEdgeList().toVector()]
+    return [(int(e.get_source().get_id()), int(e.get_target().get_id()))
+            for e in spacetime.get_edge_list().to_vector()]
 
 
 def _band_split(operator, derivative, value, tolerance=1e-8):
@@ -113,7 +113,7 @@ def test_monopole_vertex_spectra(mu, expected):
     tetrahedron has spectrum {0, 4^(3)} at mu = 0, {2^(3), 6} at mu = 2, and
     two doublets {3 - sqrt 3 ^(2), 3 + sqrt 3 ^(2)} at mu = +-1."""
     support = obs.MonopoleSupport.tetrahedron(mu)
-    np.testing.assert_allclose(_sorted_real(support.vertexLaplacian()),
+    np.testing.assert_allclose(_sorted_real(support.vertex_laplacian()),
                                expected, atol=1e-10)
 
 
@@ -128,10 +128,10 @@ def test_the_two_c2_rotations_commute_at_even_and_anticommute_at_odd_flux(
     commutator is formed here from the representation matrices on vertex
     (degree 0) and edge (degree 1) cochains, not read from the cocycle."""
     support = obs.MonopoleSupport.tetrahedron(mu)
-    a, b = _commuting_rotation_pair(obs.MonopoleSupport.tetrahedralRotations())
+    a, b = _commuting_rotation_pair(obs.MonopoleSupport.tetrahedral_rotations())
     assert [a[b[i]] for i in range(4)] == [b[a[i]] for i in range(4)]
-    represent = (support.vertexRepresentation if degree == 0
-                 else support.edgeRepresentation)
+    represent = (support.vertex_representation if degree == 0
+                 else support.edge_representation)
     commutator = _group_commutator([np.asarray(represent(a)),
                                     np.asarray(represent(b))])
     size = commutator.shape[0]
@@ -143,20 +143,20 @@ def test_the_t_averaged_twisted_edge_laplacian():
     Laplacian has spectrum {4 - 2/sqrt 3 ^(2), 4^(2), 4 + 2/sqrt 3 ^(2)}, the
     genuine j = 1/2 doublet (the coexact one) at 4; the same construction
     returns 4 I at zero flux."""
-    group = obs.MonopoleSupport.tetrahedralRotations()
+    group = obs.MonopoleSupport.tetrahedral_rotations()
     unit = obs.MonopoleSupport.tetrahedron(1)
-    averaged = unit.rotationAveragedEdgeOperator(unit.edgeLaplacian(), group)
+    averaged = unit.rotation_averaged_edge_operator(unit.edge_laplacian(), group)
     np.testing.assert_allclose(
         _sorted_real(averaged),
         [4 - 2 / SQRT3] * 2 + [4.0] * 2 + [4 + 2 / SQRT3] * 2, atol=1e-12)
-    read = unit.spinRead(group)
+    read = unit.spin_read(group)
     doublet = read.bands[read.doublet_index]
     assert read.half_integer_doublet
     assert doublet.dimension == 2 and doublet.spinor_doublet and doublet.coexact
     assert doublet.eigenvalue == pytest.approx(4.0, abs=1e-12)
     flat = obs.MonopoleSupport.tetrahedron(0)
     np.testing.assert_allclose(
-        flat.rotationAveragedEdgeOperator(flat.edgeLaplacian(), group),
+        flat.rotation_averaged_edge_operator(flat.edge_laplacian(), group),
         4.0 * np.eye(6), atol=1e-12)
 
 
@@ -178,7 +178,7 @@ def test_single_edge_splits_of_the_regular_tetrahedron(band, expected):
     hodge = _whitney_hodge(spacetime)
     operator = np.asarray(hodge.laplacian(1)).reshape(6, 6)
     for a, b in _edge_records(spacetime):
-        derivative = np.asarray(hodge.laplacianGradient(1, a, b)).reshape(6, 6)
+        derivative = np.asarray(hodge.laplacian_gradient(1, a, b)).reshape(6, 6)
         split, trace = _band_split(operator, derivative, band)
         np.testing.assert_allclose(split / band, expected, atol=1e-12)
         assert trace.real / band == pytest.approx(-1.0 / 16.0, abs=1e-12)
@@ -194,17 +194,17 @@ def test_the_whitney_operator_is_homogeneous_of_degree_minus_one():
     eigenvectors."""
     spacetime = _regular_tetrahedron(8.0)
     rng = np.random.default_rng(1)
-    for edge in spacetime.getEdgeList().toVector():
-        edge.setLength(cmath.sqrt(8.0 + rng.normal() + 0.3j * rng.normal()))
+    for edge in spacetime.get_edge_list().to_vector():
+        edge.set_length(cmath.sqrt(8.0 + rng.normal() + 0.3j * rng.normal()))
     hodge = _whitney_hodge(spacetime)
     operator = np.asarray(hodge.laplacian(1)).reshape(6, 6)
     values, right = np.linalg.eig(operator)
     left = np.linalg.inv(right)
     euler = np.zeros(6, dtype=complex)
-    for edge, (a, b) in zip(spacetime.getEdgeList().toVector(),
+    for edge, (a, b) in zip(spacetime.get_edge_list().to_vector(),
                             _edge_records(spacetime)):
-        z = complex(edge.getLength()) ** 2
-        derivative = np.asarray(hodge.laplacianGradient(1, a, b)).reshape(6, 6)
+        z = complex(edge.get_length()) ** 2
+        derivative = np.asarray(hodge.laplacian_gradient(1, a, b)).reshape(6, 6)
         euler += z * np.diag(left @ derivative @ right)
     np.testing.assert_allclose(euler, -values, rtol=1e-12, atol=1e-12)
 
@@ -323,9 +323,9 @@ def test_the_feshbach_determinant_factorization():
     det_p = np.linalg.det(P)
     assert abs(det_p - np.linalg.det(P[np.ix_(interior, interior)])
                * np.linalg.det(F)) < 1e-12 * abs(det_p)
-    assert abs(read.pencilDeterminant - read.interiorDeterminant
-               * read.responseDeterminant) < 1e-12 * abs(det_p)
-    assert read.determinantResidual < 1e-12
+    assert abs(read.pencil_determinant - read.interior_determinant
+               * read.response_determinant) < 1e-12 * abs(det_p)
+    assert read.determinant_residual < 1e-12
     eigenvalue = np.linalg.eigvals(A)[0]
     at_pole = ch.PencilSchur.feshbach(A, identity, eigenvalue, interface)
     singular = np.linalg.svd(np.asarray(at_pole.response), compute_uv=False)
@@ -341,8 +341,8 @@ def _index_one_singular(seed=4, n=6):
 
 def _drazin(A, radius=1e-10):
     read = ch.PencilSchur.feshbach(A, np.zeros_like(A), 0j, [], 1e-12, radius)
-    assert read.interiorSingular
-    return np.asarray(read.interiorInverse), np.asarray(read.nullProjector), \
+    assert read.interior_singular
+    return np.asarray(read.interior_inverse), np.asarray(read.null_projector), \
         read
 
 
@@ -362,10 +362,10 @@ def test_the_drazin_inverse_identities():
     assert np.linalg.norm(A @ D @ A - A) < 1e-12 * np.linalg.norm(A)
     np.testing.assert_allclose(D, np.linalg.solve(A + null, identity - null),
                                atol=1e-12 * scale)
-    np.testing.assert_allclose(np.asarray(read.rangeProjector),
+    np.testing.assert_allclose(np.asarray(read.range_projector),
                                identity - null, atol=1e-12)
     assert np.trace(null).real == pytest.approx(2.0, abs=1e-10)
-    assert read.interiorRank == n - 2
+    assert read.interior_rank == n - 2
 
 
 def test_the_drazin_inverse_is_similarity_covariant():
@@ -397,16 +397,16 @@ def test_the_disc_window_is_the_real_window_in_the_hermitian_regime():
     A[:nb, nb:] *= 0.05
     A[nb:, :nb] = A[:nb, nb:].T
     centre, radius = 1.0, 0.5
-    read = ch.PencilSchur.craigBamptonSurrogate(
+    read = ch.PencilSchur.craig_bampton_surrogate(
         A.astype(complex), np.eye(n, dtype=complex), list(range(nb)),
         complex(centre), radius, radius)
     inside = spectrum[np.abs(spectrum - centre) <= radius]
-    assert read.retainedModes == len(inside) == 2
-    interior = np.asarray(read.interiorEigenvalues)
+    assert read.retained_modes == len(inside) == 2
+    interior = np.asarray(read.interior_eigenvalues)
     np.testing.assert_allclose(np.sort(interior.real), np.sort(spectrum),
                                atol=1e-12)
     assert np.max(np.abs(interior.imag)) < 1e-12
-    window = [complex(read.eigenvalues[k]) for k in read.windowIndices]
+    window = [complex(read.eigenvalues[k]) for k in read.window_indices]
     assert window
     for value in window:
         assert abs(value.imag) < 1e-10
@@ -457,10 +457,10 @@ def test_the_phase_rule_returns_the_level_zero_connection():
     rng = np.random.default_rng(7)
     for _ in range(4):
         u = cmath.exp(1j * (rng.normal() + 0.2j * rng.normal()))
-        assert ch.GrownCellRule.transportConnection(np.array([[u]])) == \
+        assert ch.GrownCellRule.transport_connection(np.array([[u]])) == \
             pytest.approx(u, rel=1e-15)
     block = rng.normal(size=(2, 2)) + 1j * rng.normal(size=(2, 2))
-    assert ch.GrownCellRule.transportConnection(block) == pytest.approx(
+    assert ch.GrownCellRule.transport_connection(block) == pytest.approx(
         np.linalg.det(block), rel=1e-13)
 
 
@@ -480,9 +480,9 @@ def test_the_inherited_pairing_is_gauge_and_frame_invariant():
     connection = rng.normal(size=(4, 4)) + 1j * rng.normal(size=(4, 4))
 
     def pairing(frames, duals, connection):
-        normalized = [np.asarray(ch.GrownCellRule.normalizeDualFrame(Y, D))
+        normalized = [np.asarray(ch.GrownCellRule.normalize_dual_frame(Y, D))
                       for Y, D in zip(frames, duals)]
-        return np.asarray(ch.GrownCellRule.gaugeInvariantPairing(
+        return np.asarray(ch.GrownCellRule.gauge_invariant_pairing(
             normalized, [G @ Y for Y in frames], connection))
 
     base = pairing(frames, duals, connection)
@@ -500,35 +500,35 @@ def test_the_two_dimensional_scale_is_not_determined():
     two-dimensional cell's lengths are known only up to one scale: the
     inversion says so, returns no squared lengths, and the triangle's block is
     the same at every scale."""
-    triangle = cob.ChainComplex.fromTopCells([[0, 1, 2]])
+    triangle = cob.ChainComplex.from_top_cells([[0, 1, 2]])
     s = [1.0 + 0.0j, 2.0 + 0.0j, 1.5 + 0.0j]
-    block = np.asarray(ch.WhitneyMass.topSimplexBlocks(triangle, s, 1)[0].block)
-    scaled = np.asarray(ch.WhitneyMass.topSimplexBlocks(
+    block = np.asarray(ch.WhitneyMass.top_simplex_blocks(triangle, s, 1)[0].block)
+    scaled = np.asarray(ch.WhitneyMass.top_simplex_blocks(
         triangle, [4.0 * z for z in s], 1)[0].block)
     np.testing.assert_allclose(scaled, block, rtol=1e-12)
-    read = ch.GrownCellRule.invertWhitneyBlock(block)
-    assert read.dimension == 2 and not read.scaleDetermined
-    assert read.squaredLengths == []
-    ratio = np.array(read.scaledSquaredLengths) / np.array(s)
+    read = ch.GrownCellRule.invert_whitney_block(block)
+    assert read.dimension == 2 and not read.scale_determined
+    assert read.squared_lengths == []
+    ratio = np.array(read.scaled_squared_lengths) / np.array(s)
     np.testing.assert_allclose(ratio, ratio[0], rtol=1e-12)
 
 
 def test_the_three_dimensional_scale_is_14400_over_the_determinant():
     """WP v17 line 664: in three dimensions the scale C of the pairing is
     14400 / det(g / C), with no square root taken."""
-    tetrahedron = cob.ChainComplex.fromTopCells([[0, 1, 2, 3]])
+    tetrahedron = cob.ChainComplex.from_top_cells([[0, 1, 2, 3]])
     rng = np.random.default_rng(2)
     points = rng.normal(size=(4, 3))
     s = [complex(np.sum((points[j] - points[i]) ** 2))
          for i, j in itertools.combinations(range(4), 2)]
-    block = np.asarray(ch.WhitneyMass.topSimplexBlocks(tetrahedron, s, 1)[0]
+    block = np.asarray(ch.WhitneyMass.top_simplex_blocks(tetrahedron, s, 1)[0]
                        .block)
-    read = ch.GrownCellRule.invertWhitneyBlock(block)
-    assert read.scaleDetermined
-    scaled_metric = np.asarray(read.scaledMetric)
+    read = ch.GrownCellRule.invert_whitney_block(block)
+    assert read.scale_determined
+    scaled_metric = np.asarray(read.scaled_metric)
     assert read.scale == pytest.approx(14400.0 / np.linalg.det(scaled_metric),
                                        rel=1e-10)
-    np.testing.assert_allclose(read.squaredLengths, s, rtol=1e-10)
+    np.testing.assert_allclose(read.squared_lengths, s, rtol=1e-10)
 
 
 # --------------------------------------- Section 11.1: held monopole sectors
@@ -561,10 +561,10 @@ def _flavoured_monopole_frames():
     operator: h-bar (x) I_2 (x) I_3, in two frames that differ by a
     rotation-invariant deformation, with the rotations and sheets lifted."""
     support = obs.MonopoleSupport.tetrahedron(1)
-    group = obs.MonopoleSupport.tetrahedralRotations()
-    base = np.asarray(support.rotationAveragedEdgeOperator(
-        support.edgeLaplacian(), group))
-    actions = [np.asarray(support.edgeRepresentation(g)) for g in group]
+    group = obs.MonopoleSupport.tetrahedral_rotations()
+    base = np.asarray(support.rotation_averaged_edge_operator(
+        support.edge_laplacian(), group))
+    actions = [np.asarray(support.edge_representation(g)) for g in group]
     rng = np.random.default_rng(7)
     x = rng.normal(size=(6, 6)) + 1j * rng.normal(size=(6, 6))
     x = x + x.conj().T

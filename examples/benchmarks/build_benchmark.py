@@ -59,9 +59,9 @@ def build_once(dim, target_n):
 
     return {
         "elapsed_s": elapsed,
-        "vertices": st.getVertexCount(),
-        "edges": st.getEdgeList().size(),
-        "simplices": st.getTopSimplexCount(),
+        "vertices": st.get_vertex_count(),
+        "edges": st.get_edge_list().size(),
+        "simplices": st.get_top_simplex_count(),
     }
 
 

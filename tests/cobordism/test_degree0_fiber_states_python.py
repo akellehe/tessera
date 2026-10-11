@@ -11,7 +11,7 @@ paths. Coefficients come from lengths and connection values only.
 
 The flat zero mode (band 0 at trivial holonomy) has the constant image and
 carries no state: its residual against a non-constant target is fixed at
-1 − |⟨1, ψ⟩|²/(4‖ψ‖²) and no geometry moves it; `flatZeroModeOverlap` is 1
+1 − |⟨1, ψ⟩|²/(4‖ψ‖²) and no geometry moves it; `flat_zero_mode_overlap` is 1
 there. The default band is the lowest band above it.
 """
 import math
@@ -31,12 +31,12 @@ CELLS = [[0], [1], [2], [3]]
 
 @pytest.fixture
 def whitney_default():
-    previous = HL.defaultMetricSource()
-    HL.setDefaultMetricSource(cob.HodgeMetricSource.WhitneyPencil)
+    previous = HL.default_metric_source()
+    HL.set_default_metric_source(cob.HodgeMetricSource.WhitneyPencil)
     try:
         yield
     finally:
-        HL.setDefaultMetricSource(previous)
+        HL.set_default_metric_source(previous)
 
 
 def fiber_target(psi, contour=None):
@@ -71,11 +71,11 @@ def python_residual(st, psi, band_index=1, contour=None):
 class TestSeedSimplex:
     def test_seed_simplex_is_one_lorentzian_tetrahedron(self):
         st = MC.seed_simplex(3)
-        assert all(len(f) == 3 for f in st.getBoundary())  # triangles bound a 3-simplex
-        assert st.getVertexList().size() == 4 and st.getEdgeList().size() == 6
-        assert len(st.getBoundary()) == 4
-        for e in st.getEdgeList().toVector():
-            assert abs(complex(e.getLength()) ** 2) == pytest.approx(1.0)
+        assert all(len(f) == 3 for f in st.get_boundary())  # triangles bound a 3-simplex
+        assert st.get_vertex_list().size() == 4 and st.get_edge_list().size() == 6
+        assert len(st.get_boundary()) == 4
+        for e in st.get_edge_list().to_vector():
+            assert abs(complex(e.get_length()) ** 2) == pytest.approx(1.0)
         with pytest.raises(ValueError, match="dimension must be at least one"):
             MC.seed_simplex(0)
 
@@ -136,20 +136,20 @@ class TestFiberResidual:
         # no choice of LENGTHS moves it: the flat band's image is the constant
         # vector on a connected complex at trivial holonomy
         rng = np.random.default_rng(5)
-        for e in node.spacetime().getEdgeList().toVector():
-            e.setLength(np.sqrt(complex(1.0 + 0.3 * rng.uniform(-1, 1), 0.2 * rng.uniform(-1, 1))))
+        for e in node.spacetime().get_edge_list().to_vector():
+            e.set_length(np.sqrt(complex(1.0 + 0.3 * rng.uniform(-1, 1), 0.2 * rng.uniform(-1, 1))))
         assert node.whole_complex_fiber_residual() == pytest.approx(0.75, abs=1e-12)
         # a link phase (flux) lifts the zero mode and the band inside the same
         # contour acquires content: stage 2's analytic phase gradient (#947) is
         # what descends it
-        node.spacetime().getEdgeList().toVector()[0].setPhase(0.3 + 0j)
+        node.spacetime().get_edge_list().to_vector()[0].set_phase(0.3 + 0j)
         assert node.whole_complex_fiber_residual() != pytest.approx(0.75, abs=1e-6)
-        node.spacetime().getEdgeList().toVector()[0].setPhase(0j)  # back to trivial holonomy
+        node.spacetime().get_edge_list().to_vector()[0].set_phase(0j)  # back to trivial holonomy
         read = node.read_whole_complex_fiber()
         assembled = cob.PencilLayer.assemble([node.spacetime()])
         K = assembled.complex
         cov = ch.CovariantChainHodge(ch.ChainHodge(K, assembled.lengths), ch.Connection(K, [1.0 + 0j] * 6))
-        assert ch.FaceAnchor.flatZeroModeOverlap(cov, np.asarray(read.dualImages), np.asarray(read.images)) == pytest.approx(1.0, abs=1e-10)
+        assert ch.FaceAnchor.flat_zero_mode_overlap(cov, np.asarray(read.dual_images), np.asarray(read.images)) == pytest.approx(1.0, abs=1e-10)
 
     def test_band_contour_indexing(self, whitney_default):
         st = MC.seed_simplex(3)
@@ -183,7 +183,7 @@ class TestDrive:
         node = MC(MC.seed_simplex(3), [], [], degrees=[0], precone=2, einstein_hilbert=False)
         node.set_whole_complex_fiber_target(fiber_target(psi))
         node.use_fiber_residuals(True)
-        assert node.spacetime().getVertexList().size() == 6
+        assert node.spacetime().get_vertex_list().size() == 6
         before = node.whole_complex_fiber_residual()
         node.run_stage2(beta=1.0, max_iters=60, tolerance=1e-15)
         after = node.whole_complex_fiber_residual()
@@ -200,7 +200,7 @@ class TestDrive:
         node = node_with_state(psi)
         node.run_stage1(max_steps=3, n_candidate_moves=4)
         r = node.whole_complex_fiber_residual()
-        assert math.isfinite(r) and node.spacetime().getVertexList().size() >= 4
+        assert math.isfinite(r) and node.spacetime().get_vertex_list().size() >= 4
 
     def test_state_is_approached(self, whitney_default):
         if not _FULL:

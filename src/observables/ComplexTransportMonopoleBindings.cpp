@@ -21,16 +21,16 @@ void register_observables_complex_transport_monopole(py::module_ &m) {
 threshold selects which reads are certified, never which value is reported:
 a failed threshold yields an uncertified read carrying the same numbers.)doc")
       .def(py::init<>())
-      .def_readwrite("rankTolerance", &ComplexTransportConfig::rankTolerance)
-      .def_readwrite("leakageTolerance",
+      .def_readwrite("rank_tolerance", &ComplexTransportConfig::rankTolerance)
+      .def_readwrite("leakage_tolerance",
                      &ComplexTransportConfig::leakageTolerance,
                      "Cap on the RELATIVE leakage leak_AB / ||T_AB P_B||_2.")
-      .def_readwrite("conditionNumberCap",
+      .def_readwrite("condition_number_cap",
                      &ComplexTransportConfig::conditionNumberCap)
-      .def_readwrite("isolationFloor", &ComplexTransportConfig::isolationFloor)
-      .def_readwrite("requireCertifiedFibers",
+      .def_readwrite("isolation_floor", &ComplexTransportConfig::isolationFloor)
+      .def_readwrite("require_certified_fibers",
                      &ComplexTransportConfig::requireCertifiedFibers)
-      .def_readwrite("certificateTolerance",
+      .def_readwrite("certificate_tolerance",
                      &ComplexTransportConfig::certificateTolerance);
 
   py::class_<GeneralLinearTransportRead>(m, "GeneralLinearTransportRead",
@@ -45,41 +45,41 @@ No polar factor, compact real form or determinant root is taken anywhere.)doc")
       .def_readonly("map", &GeneralLinearTransportRead::map,
                     "M_AB = Phi~_A^T T_AB Phi_B, unprojected.")
       .def_readonly("determinant", &GeneralLinearTransportRead::determinant)
-      .def_readonly("singularValues",
+      .def_readonly("singular_values",
                     &GeneralLinearTransportRead::singularValues)
-      .def_readonly("numericalRank",
+      .def_readonly("numerical_rank",
                     &GeneralLinearTransportRead::numericalRank)
-      .def_readonly("conditionNumber",
+      .def_readonly("condition_number",
                     &GeneralLinearTransportRead::conditionNumber)
-      .def_readonly("minSingularValue",
+      .def_readonly("min_singular_value",
                     &GeneralLinearTransportRead::minSingularValue)
       .def_readonly("leakage", &GeneralLinearTransportRead::leakage,
                     "||(I - P_A) T_AB P_B||_2.")
-      .def_readonly("relativeLeakage",
+      .def_readonly("relative_leakage",
                     &GeneralLinearTransportRead::relativeLeakage)
-      .def_readonly("toIsolation", &GeneralLinearTransportRead::toIsolation)
-      .def_readonly("fromIsolation",
+      .def_readonly("to_isolation", &GeneralLinearTransportRead::toIsolation)
+      .def_readonly("from_isolation",
                     &GeneralLinearTransportRead::fromIsolation)
-      .def_readonly("toResolventBound",
+      .def_readonly("to_resolvent_bound",
                     &GeneralLinearTransportRead::toResolventBound)
-      .def_readonly("fromResolventBound",
+      .def_readonly("from_resolvent_bound",
                     &GeneralLinearTransportRead::fromResolventBound)
-      .def_readonly("toRightFrameResidual",
+      .def_readonly("to_right_frame_residual",
                     &GeneralLinearTransportRead::toRightFrameResidual)
-      .def_readonly("toLeftFrameResidual",
+      .def_readonly("to_left_frame_residual",
                     &GeneralLinearTransportRead::toLeftFrameResidual)
-      .def_readonly("fromRightFrameResidual",
+      .def_readonly("from_right_frame_residual",
                     &GeneralLinearTransportRead::fromRightFrameResidual)
-      .def_readonly("fromLeftFrameResidual",
+      .def_readonly("from_left_frame_residual",
                     &GeneralLinearTransportRead::fromLeftFrameResidual)
-      .def_readonly("toProjectorNorm",
+      .def_readonly("to_projector_norm",
                     &GeneralLinearTransportRead::toProjectorNorm)
-      .def_readonly("fromProjectorNorm",
+      .def_readonly("from_projector_norm",
                     &GeneralLinearTransportRead::fromProjectorNorm)
       .def_readonly("regime", &GeneralLinearTransportRead::regime)
       .def_readonly("invertible", &GeneralLinearTransportRead::invertible)
       .def_readonly("accepted", &GeneralLinearTransportRead::accepted)
-      .def_readonly("rejectionReason",
+      .def_readonly("rejection_reason",
                     &GeneralLinearTransportRead::rejectionReason)
       .def_readonly("certificate", &GeneralLinearTransportRead::certificate)
       .def("describe", &GeneralLinearTransportRead::describe);
@@ -108,21 +108,21 @@ the idempotency of the supplied projectors, the rank held along the path and
 the coarseness of the sampling.)doc")
       .def(py::init<>())
       .def_readonly("transport", &KatoTransportRead::transport)
-      .def_readonly("stepTransports", &KatoTransportRead::stepTransports)
+      .def_readonly("step_transports", &KatoTransportRead::stepTransports)
       .def_readonly("scheme", &KatoTransportRead::scheme)
       .def_readonly("steps", &KatoTransportRead::steps)
       .def_readonly("dimension", &KatoTransportRead::dimension)
       .def_readonly("rank", &KatoTransportRead::rank)
-      .def_readonly("rankDefect", &KatoTransportRead::rankDefect)
-      .def_readonly("idempotencyResidual",
+      .def_readonly("rank_defect", &KatoTransportRead::rankDefect)
+      .def_readonly("idempotency_residual",
                     &KatoTransportRead::idempotencyResidual)
-      .def_readonly("intertwiningResidual",
+      .def_readonly("intertwining_residual",
                     &KatoTransportRead::intertwiningResidual)
-      .def_readonly("composedIntertwiningResidual",
+      .def_readonly("composed_intertwining_residual",
                     &KatoTransportRead::composedIntertwiningResidual)
-      .def_readonly("maxProjectorStep", &KatoTransportRead::maxProjectorStep)
+      .def_readonly("max_projector_step", &KatoTransportRead::maxProjectorStep)
       .def_readonly("complete", &KatoTransportRead::complete)
-      .def_readonly("invalidReason", &KatoTransportRead::invalidReason)
+      .def_readonly("invalid_reason", &KatoTransportRead::invalidReason)
       .def_readonly("certificate", &KatoTransportRead::certificate);
 
   py::class_<ExchangeCharacterRead>(m, "ExchangeCharacterRead",
@@ -133,25 +133,25 @@ reported because a reader wants to see it, not because anything is required of
 it, and no phase angle, component sign or unit-modulus projection is taken.)doc")
       .def(py::init<>())
       .def_readonly("character", &ExchangeCharacterRead::character)
-      .def_readonly("determinantRatio",
+      .def_readonly("determinant_ratio",
                     &ExchangeCharacterRead::determinantRatio)
-      .def_readonly("routeAgreementResidual",
+      .def_readonly("route_agreement_residual",
                     &ExchangeCharacterRead::routeAgreementResidual)
-      .def_readonly("exchangeDeterminant",
+      .def_readonly("exchange_determinant",
                     &ExchangeCharacterRead::exchangeDeterminant)
-      .def_readonly("referenceDeterminant",
+      .def_readonly("reference_determinant",
                     &ExchangeCharacterRead::referenceDeterminant)
       .def_readonly("modulus", &ExchangeCharacterRead::modulus,
                     "|chi_F|, reported and never required.")
-      .def_readonly("distanceToMinusOne",
+      .def_readonly("distance_to_minus_one",
                     &ExchangeCharacterRead::distanceToMinusOne)
-      .def_readonly("distanceToPlusOne",
+      .def_readonly("distance_to_plus_one",
                     &ExchangeCharacterRead::distanceToPlusOne)
       .def_readonly("rank", &ExchangeCharacterRead::rank)
-      .def_readonly("referenceConditionNumber",
+      .def_readonly("reference_condition_number",
                     &ExchangeCharacterRead::referenceConditionNumber)
-      .def_readonly("pathLeakage", &ExchangeCharacterRead::pathLeakage)
-      .def_readonly("referenceInvertible",
+      .def_readonly("path_leakage", &ExchangeCharacterRead::pathLeakage)
+      .def_readonly("reference_invertible",
                     &ExchangeCharacterRead::referenceInvertible)
       .def_readonly("certificate", &ExchangeCharacterRead::certificate);
 
@@ -168,13 +168,13 @@ polynomial, determinant and conjugacy class are frame-free.  That covariance is
 the reason nothing is normalized: a polar factor, a determinant root or a
 modulus is a choice of representative and destroys either the determinant
 transport or the frame law.)doc")
-      .def_static("fiberMap", &ComplexTransport::fiberMap,
-                  py::arg("dualFrameTo"), py::arg("transfer"),
-                  py::arg("rightFrameFrom"),
+      .def_static("fiber_map", &ComplexTransport::fiberMap,
+                  py::arg("dual_frame_to"), py::arg("transfer"),
+                  py::arg("right_frame_from"),
                   "M_AB = Phi~_A^T T_AB Phi_B, the bilinear pairing.")
       .def_static("leakage", &ComplexTransport::leakage,
-                  py::arg("projectorTo"), py::arg("transfer"),
-                  py::arg("projectorFrom"),
+                  py::arg("projector_to"), py::arg("transfer"),
+                  py::arg("projector_from"),
                   "||(I - P_A) T_AB P_B||_2, measured before the restriction "
                   "to the bands.")
       .def_static("transport", &ComplexTransport::transport,
@@ -183,14 +183,14 @@ transport or the frame law.)doc")
                   py::arg("config") = ComplexTransportConfig{},
                   "The complete transport A <- B of a transfer between two "
                   "bands.")
-      .def_static("frameChanged", &ComplexTransport::frameChanged,
-                  py::arg("map"), py::arg("frameTo"), py::arg("frameFrom"),
+      .def_static("frame_changed", &ComplexTransport::frameChanged,
+                  py::arg("map"), py::arg("frame_to"), py::arg("frame_from"),
                   "M_AB -> g_A^-1 M_AB g_B.")
-      .def_static("reversedTransfer", &ComplexTransport::reversedTransfer,
+      .def_static("reversed_transfer", &ComplexTransport::reversedTransfer,
                   py::arg("transfer"),
                   "T_BA = T_AB^T, the transposition reversal of a "
                   "hopping-defined transfer.")
-      .def_static("dualTransport", &ComplexTransport::dualTransport,
+      .def_static("dual_transport", &ComplexTransport::dualTransport,
                   py::arg("map"),
                   "M^v_AB = M_AB^-T, the branch-free dual transport of an "
                   "anti-cluster, whose determinant is (det M_AB)^-1.")
@@ -199,39 +199,39 @@ transport or the frame law.)doc")
                   "The path transport, first factor applied first.")
       .def_static("holonomy", &ComplexTransport::holonomy, py::arg("links"),
                   "The closed holonomy and its conjugacy invariants.")
-      .def_static("katoGenerator", &ComplexTransport::katoGenerator,
-                  py::arg("projectorRate"), py::arg("projector"),
+      .def_static("kato_generator", &ComplexTransport::katoGenerator,
+                  py::arg("projector_rate"), py::arg("projector"),
                   "[P', P], the right-hand side of the Kato equation.")
-      .def_static("katoStep", &ComplexTransport::katoStep,
-                  py::arg("fromProjector"), py::arg("toProjector"),
+      .def_static("kato_step", &ComplexTransport::katoStep,
+                  py::arg("from_projector"), py::arg("to_projector"),
                   py::arg("scheme") = KatoScheme::DirectRotation,
                   "One Kato step between two sampled projectors.")
-      .def_static("katoTransport", &ComplexTransport::katoTransport,
+      .def_static("kato_transport", &ComplexTransport::katoTransport,
                   py::arg("projectors"),
                   py::arg("scheme") = KatoScheme::DirectRotation,
                   py::arg("config") = ComplexTransportConfig{},
                   "The Kato parallel transport of an isolated band along a "
                   "sampled path of Riesz projectors.")
-      .def_static("katoTransportOnFibers",
+      .def_static("kato_transport_on_fibers",
                   &ComplexTransport::katoTransportOnFibers, py::arg("loop"),
                   py::arg("scheme") = KatoScheme::DirectRotation,
                   py::arg("config") = ComplexTransportConfig{},
                   "The same, with the projectors read from a path of bands "
                   "that all carry the same cells.")
-      .def_static("bandTransport", &ComplexTransport::bandTransport,
-                  py::arg("transport"), py::arg("dualFrameEnd"),
-                  py::arg("rightFrameStart"),
+      .def_static("band_transport", &ComplexTransport::bandTransport,
+                  py::arg("transport"), py::arg("dual_frame_end"),
+                  py::arg("right_frame_start"),
                   "k = Phi~_end^T K Phi_start, the general-linear link a "
                   "Kato-transported band contributes to a holonomy.")
-      .def_static("exchangeCharacter", &ComplexTransport::exchangeCharacter,
-                  py::arg("exchangeHolonomy"), py::arg("referenceHolonomy"),
-                  py::arg("pathLeakage"),
+      .def_static("exchange_character", &ComplexTransport::exchangeCharacter,
+                  py::arg("exchange_holonomy"), py::arg("reference_holonomy"),
+                  py::arg("path_leakage"),
                   py::arg("config") = ComplexTransportConfig{},
                   "chi_F = det(H_ex H_ref^-1).")
-      .def_static("exchangeCharacterOfPaths",
+      .def_static("exchange_character_of_paths",
                   &ComplexTransport::exchangeCharacterOfPaths,
-                  py::arg("exchangePath"), py::arg("referencePath"),
-                  py::arg("pathLeakage"),
+                  py::arg("exchange_path"), py::arg("reference_path"),
+                  py::arg("path_leakage"),
                   py::arg("config") = ComplexTransportConfig{},
                   "chi_F of the two paths' composed holonomies.");
 
@@ -341,17 +341,17 @@ reads the symmetry-protected bands of a rotation-invariant operator.)doc")
                     std::vector<std::array<std::size_t, 2>>,
                     std::vector<std::array<std::size_t, 3>>,
                     std::vector<std::complex<double>>>(),
-           py::arg("vertexCount"), py::arg("edges"), py::arg("faces"),
+           py::arg("vertex_count"), py::arg("edges"), py::arg("faces"),
            py::arg("connection"))
       .def_static("tetrahedron", &MonopoleSupport::tetrahedron,
-                  py::arg("monopoleNumber"),
+                  py::arg("monopole_number"),
                   "The tetrahedron with the symmetric monopole connection "
                   "whose every outward face holonomy is exp(2 pi i mu / 4).")
-      .def_static("tetrahedralRotations",
+      .def_static("tetrahedral_rotations",
                   &MonopoleSupport::tetrahedralRotations,
                   "The twelve rotations of the tetrahedron (T = A_4), the "
                   "identity first.")
-      .def_static("u1Part", &MonopoleSupport::u1Part, py::arg("connection"),
+      .def_static("u1_part", &MonopoleSupport::u1Part, py::arg("connection"),
                   "U_e / |U_e| -- the explicit way to bring an unrestricted "
                   "connection into this kernel's domain.")
       .def_property_readonly("vertex_count", &MonopoleSupport::vertexCount)
@@ -360,36 +360,36 @@ reads the symmetry-protected bands of a rotation-invariant operator.)doc")
       .def_property_readonly("connection", &MonopoleSupport::connection)
       .def("transport", &MonopoleSupport::transport, py::arg("x"),
            py::arg("y"))
-      .def("monopoleNumber", &MonopoleSupport::monopoleNumber,
+      .def("monopole_number", &MonopoleSupport::monopoleNumber,
            py::arg("tolerance") = 1e-9)
-      .def("twistedCoboundary", &MonopoleSupport::twistedCoboundary)
-      .def("twistedFaceCoboundary",
+      .def("twisted_coboundary", &MonopoleSupport::twistedCoboundary)
+      .def("twisted_face_coboundary",
            &MonopoleSupport::twistedFaceCoboundary)
-      .def("vertexLaplacian", &MonopoleSupport::vertexLaplacian)
-      .def("edgeLaplacian", &MonopoleSupport::edgeLaplacian)
-      .def("coexactProjector", &MonopoleSupport::coexactProjector,
+      .def("vertex_laplacian", &MonopoleSupport::vertexLaplacian)
+      .def("edge_laplacian", &MonopoleSupport::edgeLaplacian)
+      .def("coexact_projector", &MonopoleSupport::coexactProjector,
            py::arg("tolerance") = 1e-9)
-      .def("gaugeCompensation", &MonopoleSupport::gaugeCompensation,
+      .def("gauge_compensation", &MonopoleSupport::gaugeCompensation,
            py::arg("rotation"), py::arg("tolerance") = 1e-9)
-      .def("vertexRepresentation", &MonopoleSupport::vertexRepresentation,
+      .def("vertex_representation", &MonopoleSupport::vertexRepresentation,
            py::arg("rotation"), "D_0(g) on vertex cochains.")
-      .def("edgeRepresentation", &MonopoleSupport::edgeRepresentation,
+      .def("edge_representation", &MonopoleSupport::edgeRepresentation,
            py::arg("rotation"), "D_1(g) on edge cochains.")
-      .def("intertwiningResidual", &MonopoleSupport::intertwiningResidual,
+      .def("intertwining_residual", &MonopoleSupport::intertwiningResidual,
            py::arg("rotation"),
            "||delta_0^U D_0(g) - D_1(g) delta_0^U||_max.")
       .def("cocycle", &MonopoleSupport::cocycle, py::arg("group"),
-           py::arg("cochainDegree") = 1, py::arg("tolerance") = 1e-9)
-      .def("rotationAveragedEdgeOperator",
+           py::arg("cochain_degree") = 1, py::arg("tolerance") = 1e-9)
+      .def("rotation_averaged_edge_operator",
            &MonopoleSupport::rotationAveragedEdgeOperator,
-           py::arg("edgeOperator"), py::arg("group"))
-      .def("spinorBands", &MonopoleSupport::spinorBands,
-           py::arg("operatorMatrix"), py::arg("group"),
-           py::arg("nontrivialClass"),
-           py::arg("degeneracyTolerance") = 1e-7,
+           py::arg("edge_operator"), py::arg("group"))
+      .def("spinor_bands", &MonopoleSupport::spinorBands,
+           py::arg("operator_matrix"), py::arg("group"),
+           py::arg("nontrivial_class"),
+           py::arg("degeneracy_tolerance") = 1e-7,
            py::arg("tolerance") = 1e-9)
-      .def("spinRead", &MonopoleSupport::spinRead, py::arg("group"),
-           py::arg("degeneracyTolerance") = 1e-7,
+      .def("spin_read", &MonopoleSupport::spinRead, py::arg("group"),
+           py::arg("degeneracy_tolerance") = 1e-7,
            py::arg("tolerance") = 1e-9,
            "The whole spin read: monopole number, cocycle, bands and the "
            "j = 1/2 doublet among them.");
@@ -464,8 +464,8 @@ been decided wrongly by isotropic cancellation.)doc")
       "supplied and held, and is otherwise not evaluable. It implements the "
       "v16 reading (a per-sheet base band tensored with the sheet space, a "
       "projective anchor, no flavour or charge condition), which "
-      "ParticleClusters.classifyQuark, the v15 reading, does not.")
-      .def_property_readonly_static("kConditionCount", [](py::object) {
+      "ParticleClusters.classify_quark, the v15 reading, does not.")
+      .def_property_readonly_static("k_condition_count", [](py::object) {
         return QuarkConditions::kConditionCount;
       })
       .def_static("condition_names", &QuarkConditions::conditionNames)
@@ -504,56 +504,56 @@ eigen-equations under a declared SU(2) action on the modes.  J^2 is
 polynomial in the exterior generators, so its action is applied mode-pair by
 mode-pair; the dense Fock matrix is materialized only for fixtures and only
 below the declared mode limit.)doc")
-      .def_property_readonly_static("kMaxDenseModes",
+      .def_property_readonly_static("k_max_dense_modes",
           [](py::object) { return SharpSpin::kMaxDenseModes; })
-      .def_property_readonly_static("kMaxStateModes",
+      .def_property_readonly_static("k_max_state_modes",
           [](py::object) { return SharpSpin::kMaxStateModes; })
       .def_static("determinant", &SharpSpin::determinant,
-                  py::arg("occupiedModes"), py::arg("modeCount"))
-      .def_static("determinantSuperposition",
+                  py::arg("occupied_modes"), py::arg("mode_count"))
+      .def_static("determinant_superposition",
                   &SharpSpin::determinantSuperposition,
                   py::arg("occupations"), py::arg("amplitudes"),
-                  py::arg("modeCount"))
-      .def_static("applyTotalSpinSquared", &SharpSpin::applyTotalSpinSquared,
-                  py::arg("spinMatrices"), py::arg("state"))
-      .def_static("totalSpinSquaredMatrix",
+                  py::arg("mode_count"))
+      .def_static("apply_total_spin_squared", &SharpSpin::applyTotalSpinSquared,
+                  py::arg("spin_matrices"), py::arg("state"))
+      .def_static("total_spin_squared_matrix",
                   &SharpSpin::totalSpinSquaredMatrix,
-                  py::arg("spinMatrices"))
-      .def_static("read", &SharpSpin::read, py::arg("spinMatrices"),
-                  py::arg("rightState"), py::arg("leftState"),
-                  py::arg("targetEigenvalue") = 0.75,
+                  py::arg("spin_matrices"))
+      .def_static("read", &SharpSpin::read, py::arg("spin_matrices"),
+                  py::arg("right_state"), py::arg("left_state"),
+                  py::arg("target_eigenvalue") = 0.75,
                   py::arg("tolerance") = 1e-9)
-      .def_static("doubletSpinMatrices", &SharpSpin::doubletSpinMatrices,
-                  py::arg("carrierCount"),
+      .def_static("doublet_spin_matrices", &SharpSpin::doubletSpinMatrices,
+                  py::arg("carrier_count"),
                   "J_a = I (x) sigma_a / 2 on carrierCount distinguishable "
                   "spin-one-half carriers, mode 2c + s being spin state s of "
                   "carrier c.")
-      .def_property_readonly_static("kMaxSectorPatterns",
+      .def_property_readonly_static("k_max_sector_patterns",
           [](py::object) { return SharpSpin::kMaxSectorPatterns; })
-      .def_static("sectorPatterns", &SharpSpin::sectorPatterns,
-                  py::arg("modeCount"), py::arg("particles"),
+      .def_static("sector_patterns", &SharpSpin::sectorPatterns,
+                  py::arg("mode_count"), py::arg("particles"),
                   "The n-particle occupation patterns: ascending mode tuples "
                   "in lexicographic order, the basis of the sector matrices.")
-      .def_static("exteriorPowerMatrix", &SharpSpin::exteriorPowerMatrix,
-                  py::arg("oneParticle"), py::arg("particles"),
+      .def_static("exterior_power_matrix", &SharpSpin::exteriorPowerMatrix,
+                  py::arg("one_particle"), py::arg("particles"),
                   "Lambda^n D on the n-particle sector: entry (J, I) is the "
                   "minor det D[J, I] over the sector patterns.")
-      .def_static("sectorComponent", &SharpSpin::sectorComponent,
+      .def_static("sector_component", &SharpSpin::sectorComponent,
                   py::arg("state"), py::arg("particles"),
                   "The n-particle component of a Fock vector over the sector "
                   "patterns.")
-      .def_static("fockVector", &SharpSpin::fockVector, py::arg("sector"),
-                  py::arg("modeCount"), py::arg("particles"),
+      .def_static("fock_vector", &SharpSpin::fockVector, py::arg("sector"),
+                  py::arg("mode_count"), py::arg("particles"),
                   "A vector over the sector patterns as a Fock vector.")
-      .def_static("isotypicProjector", &SharpSpin::isotypicProjector,
+      .def_static("isotypic_projector", &SharpSpin::isotypicProjector,
                   py::arg("maps"), py::arg("characters"), py::arg("dimension"),
                   py::arg("particles"),
                   "P_rho = (dim rho / |G|) sum_g conj(chi_rho(g)) Lambda^n "
                   "D(g) on the n-particle sector, from every element's "
                   "one-particle map and rho's character on it.")
-      .def_static("isotypicRead", &SharpSpin::isotypicRead,
-                  py::arg("projector"), py::arg("rightState"),
-                  py::arg("leftState"), py::arg("type"),
+      .def_static("isotypic_read", &SharpSpin::isotypicRead,
+                  py::arg("projector"), py::arg("right_state"),
+                  py::arg("left_state"), py::arg("type"),
                   py::arg("tolerance") = 1e-9,
                   "The sharp spinor certificate: (I - P)|Psi_R> = 0 and "
                   "<Psi_L|(I - P) = 0 against the declared tolerance.");

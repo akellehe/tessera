@@ -51,7 +51,7 @@ def _edge():
     st = tessera.Spacetime(metric, tessera.CDT, 1.0, 1.0, tessera.PREFERRED,
                            tessera.SolidSimplex(2))
     st.build()
-    return st, st.getEdgeList().toVector()[0]
+    return st, st.get_edge_list().to_vector()[0]
 
 
 def _continue_squared_along(edge, arguments, modulus=1.0):
@@ -62,7 +62,7 @@ def _continue_squared_along(edge, arguments, modulus=1.0):
     sheet the winding names."""
     root = math.sqrt(modulus)
     for theta in arguments:
-        edge.continueLength(root * cmath.exp(0.5j * theta))
+        edge.continue_length(root * cmath.exp(0.5j * theta))
 
 
 def _arc(total, steps):
@@ -75,20 +75,20 @@ def _arc(total, steps):
 # --------------------------------------------------------------------------- #
 def test_a_fresh_edge_is_declared_on_the_principal_sheet():
     _, edge = _edge()
-    edge.setLength(1.0 + 0.0j)
-    assert edge.squaredWinding() == 0
-    assert edge.squaredSheet() == 0
-    assert abs(edge.declaredSquaredArgument() - edge.squaredArgument()) < 1e-15
+    edge.set_length(1.0 + 0.0j)
+    assert edge.squared_winding() == 0
+    assert edge.squared_sheet() == 0
+    assert abs(edge.declared_squared_argument() - edge.squared_argument()) < 1e-15
 
 
 def test_the_declaration_does_not_move_any_bucket():
     """Spacelike, timelike, lightlike and mixed all classify as before."""
     _, edge = _edge()
-    for length, predicate in ((1.0 + 0.0j, "isSpacelike"),
-                              (0.0 + 1.0j, "isTimelike"),
-                              (1.0 + 1.0j, "isNull"),
-                              (1.0 + 0.3j, "isMixed")):
-        edge.setLength(length)
+    for length, predicate in ((1.0 + 0.0j, "is_spacelike"),
+                              (0.0 + 1.0j, "is_timelike"),
+                              (1.0 + 1.0j, "is_null"),
+                              (1.0 + 0.3j, "is_mixed")):
+        edge.set_length(length)
         assert getattr(edge, predicate)(), f"{length} is not {predicate}"
 
 
@@ -97,11 +97,11 @@ def test_set_length_redeclares_the_sheet():
     restarts: carrying a winding across it would assert a path that was never
     walked."""
     _, edge = _edge()
-    edge.setLength(1.0 + 0.0j)
+    edge.set_length(1.0 + 0.0j)
     _continue_squared_along(edge, _arc(2.0 * math.pi, _STEPS))
-    assert edge.squaredWinding() == 1
-    edge.setLength(1.0 + 0.0j)
-    assert edge.squaredWinding() == 0
+    assert edge.squared_winding() == 1
+    edge.set_length(1.0 + 0.0j)
+    assert edge.squared_winding() == 0
 
 
 # --------------------------------------------------------------------------- #
@@ -112,36 +112,36 @@ def test_a_full_turn_of_the_squared_length_returns_the_other_root():
     its branch point comes back to the same squared length and the opposite
     root, and the edge says so."""
     _, edge = _edge()
-    edge.setLength(1.0 + 0.0j)
+    edge.set_length(1.0 + 0.0j)
     _continue_squared_along(edge, _arc(2.0 * math.pi, _STEPS))
-    assert edge.squaredWinding() == 1
-    assert edge.squaredSheet() == 1
-    assert abs(edge.declaredSquaredArgument() - 2.0 * math.pi) < 1e-9
+    assert edge.squared_winding() == 1
+    assert edge.squared_sheet() == 1
+    assert abs(edge.declared_squared_argument() - 2.0 * math.pi) < 1e-9
     # l^2 is back where it started, so the causal character is too.
-    assert edge.isSpacelike()
+    assert edge.is_spacelike()
     # And the edge is the other root: the length itself has turned to -1.
-    assert abs(edge.getLength() - (-1.0 + 0.0j)) < 1e-9
+    assert abs(edge.get_length() - (-1.0 + 0.0j)) < 1e-9
 
 
 def test_two_turns_return_the_declared_root():
     _, edge = _edge()
-    edge.setLength(1.0 + 0.0j)
+    edge.set_length(1.0 + 0.0j)
     _continue_squared_along(edge, _arc(4.0 * math.pi, 2 * _STEPS))
-    assert edge.squaredWinding() == 2
-    assert edge.squaredSheet() == 0
-    assert abs(edge.getLength() - (1.0 + 0.0j)) < 1e-9
+    assert edge.squared_winding() == 2
+    assert edge.squared_sheet() == 0
+    assert abs(edge.get_length() - (1.0 + 0.0j)) < 1e-9
 
 
 def test_the_declaration_and_the_stored_root_are_one_statement():
     """The invariant: the stored l is always (-1)**w times the principal root of
     l^2, so the winding never names a root the edge is not."""
     _, edge = _edge()
-    edge.setLength(1.0 + 0.0j)
+    edge.set_length(1.0 + 0.0j)
     for theta in _arc(4.0 * math.pi, 4 * _STEPS):
-        edge.continueLength(cmath.exp(0.5j * theta))
-        squared = edge.getLength() ** 2
-        expected = cmath.sqrt(squared) * (-1) ** edge.squaredSheet()
-        assert abs(edge.getLength() - expected) < 1e-9, f"broken at {theta}"
+        edge.continue_length(cmath.exp(0.5j * theta))
+        squared = edge.get_length() ** 2
+        expected = cmath.sqrt(squared) * (-1) ** edge.squared_sheet()
+        assert abs(edge.get_length() - expected) < 1e-9, f"broken at {theta}"
 
 
 def test_the_declaration_survives_the_cut_the_principal_argument_wraps_at():
@@ -152,13 +152,13 @@ def test_the_declaration_survives_the_cut_the_principal_argument_wraps_at():
     overshoot = 0.2
     total = math.pi + overshoot
     _, edge = _edge()
-    edge.setLength(1.0 + 0.0j)
+    edge.set_length(1.0 + 0.0j)
     _continue_squared_along(edge, _arc(-total, 2 * _STEPS))
-    assert edge.squaredWinding() == -1
-    assert abs(edge.squaredArgument() - (math.pi - overshoot)) < 1e-9
-    assert abs(edge.declaredSquaredArgument() + total) < 1e-9
+    assert edge.squared_winding() == -1
+    assert abs(edge.squared_argument() - (math.pi - overshoot)) < 1e-9
+    assert abs(edge.declared_squared_argument() + total) < 1e-9
     # Neither reading calls it definite: l^2 is genuinely complex here.
-    assert edge.isMixed()
+    assert edge.is_mixed()
 
 
 def test_a_timelike_edge_declares_which_lip_of_the_cut_it_sits_on():
@@ -169,26 +169,26 @@ def test_a_timelike_edge_declares_which_lip_of_the_cut_it_sits_on():
     the sheet is further information about the same causal edge, not a
     reclassification of it."""
     _, edge = _edge()
-    edge.setLength(0.0 + 1.0j)          # l^2 = -1, reached from above
-    assert edge.isTimelike()
-    assert abs(edge.squaredArgument() - math.pi) < 1e-12
-    assert abs(edge.declaredSquaredArgument() - math.pi) < 1e-12
-    assert edge.squaredSheet() == 0
+    edge.set_length(0.0 + 1.0j)          # l^2 = -1, reached from above
+    assert edge.is_timelike()
+    assert abs(edge.squared_argument() - math.pi) < 1e-12
+    assert abs(edge.declared_squared_argument() - math.pi) < 1e-12
+    assert edge.squared_sheet() == 0
 
-    edge.setLength(0.0 - 1.0j)          # l^2 = -1, reached from below
-    assert edge.isTimelike()
-    assert abs(edge.squaredArgument() - math.pi) < 1e-12
-    assert abs(edge.declaredSquaredArgument() + math.pi) < 1e-12
-    assert edge.squaredSheet() == 1
+    edge.set_length(0.0 - 1.0j)          # l^2 = -1, reached from below
+    assert edge.is_timelike()
+    assert abs(edge.squared_argument() - math.pi) < 1e-12
+    assert abs(edge.declared_squared_argument() + math.pi) < 1e-12
+    assert edge.squared_sheet() == 1
 
 
 def test_a_declared_winding_needs_no_path():
     """One full turn declared without walking one: the length is untouched, the
     causal bucket is untouched, and the declared argument has advanced by 2*pi."""
     _, edge = _edge()
-    edge.setLength(1.0 + 0.0j)
-    edge.declareSquaredTurns(1)
-    assert edge.squaredWinding() == 2
-    assert edge.squaredSheet() == 0
-    assert edge.isSpacelike()
-    assert abs(edge.declaredSquaredArgument() - 4.0 * math.pi) < 1e-15
+    edge.set_length(1.0 + 0.0j)
+    edge.declare_squared_turns(1)
+    assert edge.squared_winding() == 2
+    assert edge.squared_sheet() == 0
+    assert edge.is_spacelike()
+    assert abs(edge.declared_squared_argument() - 4.0 * math.pi) < 1e-15

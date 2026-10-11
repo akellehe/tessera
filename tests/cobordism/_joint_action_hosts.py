@@ -20,8 +20,8 @@ are: ``divisions = 2`` has one interior vertex, ``3`` has eight, and so on.
 connection-stiffness numbers on.
 
 Every builder sets both edge fields explicitly. The squared length is written
-through ``setLength(sqrt(z))``, because the mesh stores the length and not its
-square; the connection is written through ``setPhase``, the stored coordinate of
+through ``set_length(sqrt(z))``, because the mesh stores the length and not its
+square; the connection is written through ``set_phase``, the stored coordinate of
 the link ``U = exp(i phi)``.
 """
 
@@ -38,22 +38,22 @@ def _apply_geometry(spacetime, squared, phase):
     give a host a deterministic non-uniform metric and a deterministic
     connection without touching the mesh itself.
     """
-    for index, edge in enumerate(spacetime.getEdgeList().toVector()):
-        edge.setLength(cmath.sqrt(complex(squared(index))))
-        edge.setPhase(complex(phase(index)))
+    for index, edge in enumerate(spacetime.get_edge_list().to_vector()):
+        edge.set_length(cmath.sqrt(complex(squared(index))))
+        edge.set_phase(complex(phase(index)))
     return spacetime
 
 
 def sphere3(squared=lambda index: 1.0, phase=lambda index: 0.0):
     """The boundary of the 4-simplex as a closed 3-complex."""
     cells = [list(cell) for cell in itertools.combinations(range(5), 4)]
-    spacetime = T.Spacetime.fromVertexTuples(3, cells, 1.0, 0.0)
+    spacetime = T.Spacetime.from_vertex_tuples(3, cells, 1.0, 0.0)
     return _apply_geometry(spacetime, squared, phase)
 
 
 def tetrahedron(squared=lambda index: 1.0, phase=lambda index: 0.0):
     """A single tetrahedron: four vertices, six edges, four triangles."""
-    spacetime = T.Spacetime.fromVertexTuples(3, [[0, 1, 2, 3]], 1.0, 0.0)
+    spacetime = T.Spacetime.from_vertex_tuples(3, [[0, 1, 2, 3]], 1.0, 0.0)
     return _apply_geometry(spacetime, squared, phase)
 
 
@@ -121,12 +121,12 @@ def kuhn_ball(divisions=2, scale=lambda index, squared: squared,
     ``scale`` is applied to that squared length, with the edge index and the
     flat value, so a caller can perturb the flat metric deterministically.
     """
-    spacetime = T.Spacetime.fromVertexTuples(3, kuhn_cells(divisions), 1.0, 0.0)
-    for index, edge in enumerate(spacetime.getEdgeList().toVector()):
-        source = kuhn_grid_position(int(edge.getSource().getId()), divisions)
-        target = kuhn_grid_position(int(edge.getTarget().getId()), divisions)
+    spacetime = T.Spacetime.from_vertex_tuples(3, kuhn_cells(divisions), 1.0, 0.0)
+    for index, edge in enumerate(spacetime.get_edge_list().to_vector()):
+        source = kuhn_grid_position(int(edge.get_source().get_id()), divisions)
+        target = kuhn_grid_position(int(edge.get_target().get_id()), divisions)
         squared = sum((left - right) ** 2
                       for left, right in zip(source, target))
-        edge.setLength(cmath.sqrt(complex(scale(index, squared))))
-        edge.setPhase(complex(phase(index)))
+        edge.set_length(cmath.sqrt(complex(scale(index, squared))))
+        edge.set_phase(complex(phase(index)))
     return spacetime

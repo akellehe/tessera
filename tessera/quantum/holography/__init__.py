@@ -28,13 +28,13 @@ Quickstart
 >>> cfg.tdvp = TDVPConfig()
 >>> cfg.tdvp.N = 10; cfg.tdvp.a = 1.0; cfg.tdvp.g = 1.0
 >>> cfg.tdvp.m = 0.5; cfg.tdvp.L0 = 0.0
->>> cfg.tdvp.dmrgMaxBondDim = 32; cfg.tdvp.dmrgNSweeps = 10
+>>> cfg.tdvp.dmrg_max_bond_dim = 32; cfg.tdvp.dmrg_n_sweeps = 10
 >>> cfg.tdvp.i0 = 3; cfg.tdvp.d = 3
 >>> cfg.tdvp.dt = 0.2; cfg.tdvp.T = 0.4
->>> cfg.tdvp.snapshotEvery = 1
->>> cfg.tdvp.maxBondDim = 60
+>>> cfg.tdvp.snapshot_every = 1
+>>> cfg.tdvp.max_bond_dim = 60
 >>> result = EmergentSpectralDimension(cfg).compute()
->>> result.dInfinity > 0
+>>> result.d_infinity > 0
 True
 """
 

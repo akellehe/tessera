@@ -29,9 +29,9 @@ def _host(jitter=True):
     spacetime = T.Spacetime(T.Metric(True, T.Signature(4, T.Lorentzian)), T.CDT,
                             1.0, 1.0, T.PREFERRED, T.SimplexBoundarySphere(4))
     spacetime.build()
-    for index, edge in enumerate(spacetime.getEdgeList().toVector()):
+    for index, edge in enumerate(spacetime.get_edge_list().to_vector()):
         squared = 1.0 + (0.01 * (index % 6) if jitter else 0.0)
-        edge.setLength(cmath.sqrt(complex(squared)))
+        edge.set_length(cmath.sqrt(complex(squared)))
     return spacetime
 
 
@@ -99,7 +99,7 @@ class HodgeDegreeBitIdentityTest(unittest.TestCase):
             with self.subTest(degree=degree):
                 node = _node(hodge_degrees=[degree], spacetime=spacetime)
                 expected = (node.hodge_entropy_weight *
-                            laplacian.spectralEntropyGradientNorm(degree, MODE))
+                            laplacian.spectral_entropy_gradient_norm(degree, MODE))
                 self.assertEqual(node.objective_terms().hodge_stationarity,
                                  expected)
 
@@ -111,7 +111,7 @@ class HodgeDegreeBitIdentityTest(unittest.TestCase):
         """
         spacetime = _host()
         laplacian = cob.HodgeLaplacian(spacetime)
-        edge_count = len(spacetime.getEdgeList().toVector())
+        edge_count = len(spacetime.get_edge_list().to_vector())
         degree = 1
 
         context = cob.ObjectiveContext()
@@ -126,9 +126,9 @@ class HodgeDegreeBitIdentityTest(unittest.TestCase):
 
         produced = cob.JointStationarityObjective().direction(direction_context)
 
-        base = laplacian.spectralEntropyGradient(degree, MODE)
+        base = laplacian.spectral_entropy_gradient(degree, MODE)
         ascent_direction = [complex(component).conjugate() for component in base]
-        derivative = laplacian.spectralEntropyGradientDirectionalDerivative(
+        derivative = laplacian.spectral_entropy_gradient_directional_derivative(
             degree, ascent_direction, MODE)
         expected = [1.0 * 2.0 * complex(component).conjugate()
                     for component in derivative]
@@ -150,10 +150,10 @@ class HodgeDegreeBitIdentityTest(unittest.TestCase):
         direction_context = cob.ObjectiveDirectionContext()
         direction_context.scalar = context
         direction_context.edge_count = len(
-            spacetime.getEdgeList().toVector())
+            spacetime.get_edge_list().to_vector())
         produced = cob.JointStationarityObjective().direction(direction_context)
         self.assertEqual(produced.baseline,
-                         laplacian.spectralEntropyGradientNorm(1, MODE))
+                         laplacian.spectral_entropy_gradient_norm(1, MODE))
 
     def test_a_uniform_weight_of_one_changes_nothing(self):
         """Multiplying by exactly 1 is exact, so declaring it is a no-op."""
@@ -253,7 +253,7 @@ class HodgeDegreeWeightTest(unittest.TestCase):
     def test_the_weight_reaches_the_descent_direction(self):
         """A weight must move the direction, not only the reported scalar."""
         spacetime = _host()
-        edge_count = len(spacetime.getEdgeList().toVector())
+        edge_count = len(spacetime.get_edge_list().to_vector())
 
         def ascent(weight):
             context = cob.ObjectiveContext()

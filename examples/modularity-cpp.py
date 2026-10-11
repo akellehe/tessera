@@ -106,19 +106,19 @@ def _build_cdt(d, n_simplices):
     st = tessera.Spacetime(metric, tessera.CDT, 1.0, 1.0,
                            tessera.PREFERRED, tessera.Toroid())
     st.build(n_simplices)
-    target = max(st.getN41(), 1)
+    target = max(st.get_n41(), 1)
     cdt = tessera.CDTSimulation(st, 2.2, 0.5, 0.6, 1.0 / target, target)
     return cdt, st
 
 
 def _make_config(args):
     cfg = tessera.ModularityOptimizerConfig()
-    cfg.targetDq = args.target_dq
-    cfg.maxIterations = args.max_iterations
-    cfg.nDiffusionWalks = args.n_diffusion_walks
-    cfg.maxSigma = args.max_sigma
-    cfg.epsilonQMax = args.epsilon_q_max
-    cfg.targetNModules = args.target_n_modules
+    cfg.target_dq = args.target_dq
+    cfg.max_iterations = args.max_iterations
+    cfg.n_diffusion_walks = args.n_diffusion_walks
+    cfg.max_sigma = args.max_sigma
+    cfg.epsilon_q_max = args.epsilon_q_max
+    cfg.target_n_modules = args.target_n_modules
     return cfg
 
 
@@ -126,13 +126,13 @@ def _sweep_with_bar(opt, cdt, st, direction, max_iter, label_prefix, M):
     """Run one sweep direction with a TTY-aware progress bar (matches
     the look of the original modularity.py output)."""
     desc = f"{label_prefix} {'↑ up  ' if direction == 'up' else '↓ down'}"
-    initial_q = st.modularityOnSkeleton(M)
+    initial_q = st.modularity_on_skeleton(M)
     with ProgressBar(total=max_iter, desc=desc) as bar:
         # Initial state line.
         bar.update(current=0, force=True,
                    Q=f"{initial_q:.4f}", dQ="+0.000",
-                   N4=st.getTopSimplexCount(),
-                   N0=st.getVertexCount(),
+                   N4=st.get_top_simplex_count(),
+                   N0=st.get_vertex_count(),
                    meas=1)
 
         def cb(it, mi, q, n_meas):
@@ -140,30 +140,30 @@ def _sweep_with_bar(opt, cdt, st, direction, max_iter, label_prefix, M):
                 current=it,
                 Q=f"{q:.4f}",
                 dQ=f"{q - initial_q:+.3f}",
-                N4=st.getTopSimplexCount(),
-                N0=st.getVertexCount(),
+                N4=st.get_top_simplex_count(),
+                N0=st.get_vertex_count(),
                 meas=n_meas,
-                ok=opt.getNAccepted(),
-                ko=opt.getNRolledBack(),
+                ok=opt.get_n_accepted(),
+                ko=opt.get_n_rolled_back(),
             )
 
         ms = opt.sweep(cdt, direction, progress=cb)
         bar.update(force=True,
                    Q=f"{ms[-1].Q:.4f}",
                    dQ=f"{ms[-1].Q - initial_q:+.3f}",
-                   N4=st.getTopSimplexCount(),
-                   N0=st.getVertexCount(),
+                   N4=st.get_top_simplex_count(),
+                   N0=st.get_vertex_count(),
                    meas=len(ms),
-                   ok=opt.getNAccepted(),
-                   ko=opt.getNRolledBack())
+                   ok=opt.get_n_accepted(),
+                   ko=opt.get_n_rolled_back())
 
     logger.info(
         "  %s done: %d iter, %d accepted, %d rolled back, "
         "%d no-eligible-move, %d measurements; "
         "Q: %.4f → %.4f (Δ%+.4f)",
         direction, ms[-1].iter,
-        opt.getNAccepted(), opt.getNRolledBack(),
-        opt.getNNoMove(), len(ms),
+        opt.get_n_accepted(), opt.get_n_rolled_back(),
+        opt.get_n_no_move(), len(ms),
         ms[0].Q, ms[-1].Q, ms[-1].Q - ms[0].Q,
     )
     return ms
@@ -173,8 +173,8 @@ def _run_one_d(d, args):
     """Build a d-dim CDT spacetime, optionally thermalize, then run the
     modularity optimizer up + down (depending on --direction)."""
     cdt, st = _build_cdt(d, args.n_simplices)
-    label = (f"CDT(d={d}, Toroid) on {st.getTopSimplexCount()} simplices, "
-             f"{st.getVertexCount()} vertices")
+    label = (f"CDT(d={d}, Toroid) on {st.get_top_simplex_count()} simplices, "
+             f"{st.get_vertex_count()} vertices")
     logger.info("--- d=%d ---", d)
     logger.info("Initial: %s", label)
 
@@ -184,7 +184,7 @@ def _run_one_d(d, args):
         cdt.tune()
         cdt.sweep(args.cdt_thermalize)
         logger.info("Thermalized: %d simplices, %d vertices",
-                    st.getTopSimplexCount(), st.getVertexCount())
+                    st.get_top_simplex_count(), st.get_vertex_count())
 
     cfg = _make_config(args)
     opt = tessera.ModularityOptimizer(cfg, seed=args.seed + d)
@@ -221,8 +221,8 @@ def _plot_dimension_sweep(measurements_by_d, direction, save_path):
         if not ms:
             continue
         Q = np.array([m.Q for m in ms])
-        Dl = np.array([m.dsLarge for m in ms])
-        Ds = np.array([m.dsSmall for m in ms])
+        Dl = np.array([m.ds_large for m in ms])
+        Ds = np.array([m.ds_small for m in ms])
         order = np.argsort(Q)
         color = cmap(norm(d))
         ax_l.plot(Q[order], Dl[order], color=color, marker="o",

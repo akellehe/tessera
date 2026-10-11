@@ -2,7 +2,7 @@
 # All rights reserved.
 """Simplex geometry of the meshes the recursion driver builds.
 
-Both drivers build their complexes with `Spacetime.fromVertexTuples` and write
+Both drivers build their complexes with `Spacetime.from_vertex_tuples` and write
 complex edge lengths (`recursion.build_level`, `baryon_poles.build_host`); the
 primal Regge term then reads each top simplex's content, dihedral angles and
 deficits (`mesh::Simplex`). The expected values are the closed forms of the
@@ -32,18 +32,18 @@ from tessera import cobordism as cob
 
 
 def _regular(dimension, squared=1.0):
-    spacetime = T.Spacetime.fromVertexTuples(
+    spacetime = T.Spacetime.from_vertex_tuples(
         dimension, [list(range(dimension + 1))], 1.0, 0.0)
-    for edge in spacetime.getEdgeList().toVector():
-        edge.setLength(cmath.sqrt(complex(squared)))
-    return spacetime, spacetime.getTopSimplices()[0]
+    for edge in spacetime.get_edge_list().to_vector():
+        edge.set_length(cmath.sqrt(complex(squared)))
+    return spacetime, spacetime.get_top_simplices()[0]
 
 
 def _hinges(simplex):
     seen, out = set(), []
-    for facet in simplex.getFacets():
-        for hinge in facet.getFacets():
-            key = tuple(sorted(v.getId() for v in hinge.getVertices()))
+    for facet in simplex.get_facets():
+        for hinge in facet.get_facets():
+            key = tuple(sorted(v.get_id() for v in hinge.get_vertices()))
             if key not in seen:
                 seen.add(key)
                 out.append(hinge)
@@ -59,7 +59,7 @@ def test_the_regular_unit_simplex_content(d):
     _, simplex = _regular(d)
     expected = math.sqrt(d + 1) / (math.factorial(d) * 2 ** (d / 2))
     assert complex(simplex.volume()) == pytest.approx(expected, rel=1e-14)
-    gram = np.asarray(simplex.gramMatrix()).reshape(d, d)
+    gram = np.asarray(simplex.gram_matrix()).reshape(d, d)
     np.testing.assert_allclose(gram, 0.5 * (np.eye(d) + np.ones((d, d))),
                                atol=1e-15)
     assert cmath.sqrt(np.linalg.det(gram)) / math.factorial(d) == \
@@ -75,7 +75,7 @@ def test_the_regular_dihedral_angle_is_arccos_one_over_d(d):
     hinges = _hinges(simplex)
     assert len(hinges) == math.comb(d + 1, d - 1)
     for hinge in hinges:
-        angle = complex(simplex.dihedralAngle(hinge))
+        angle = complex(simplex.dihedral_angle(hinge))
         assert angle.real == pytest.approx(math.acos(1.0 / d), abs=1e-14)
         assert abs(angle.imag) < 1e-15
 
@@ -85,7 +85,7 @@ def test_the_cayley_menger_determinant(d):
     """det CM = (-1)^{d+1} 2^d (d!)^2 V_d^2: -3, 4, -5 and 6 for the regular
     unit simplices of dimension 2 to 5."""
     _, simplex = _regular(d)
-    cm = np.asarray(simplex.cayleyMengerMatrix()).reshape(d + 2, d + 2)
+    cm = np.asarray(simplex.cayley_menger_matrix()).reshape(d + 2, d + 2)
     volume = math.sqrt(d + 1) / (math.factorial(d) * 2 ** (d / 2))
     expected = (-1) ** (d + 1) * 2 ** d * math.factorial(d) ** 2 * volume ** 2
     assert np.linalg.det(cm) == pytest.approx(expected, rel=1e-13)
@@ -100,7 +100,7 @@ def test_the_regular_tetrahedron_of_the_run_scales_as_squared_length():
     assert complex(simplex.volume()) == pytest.approx(
         8.0 ** 1.5 / (6.0 * math.sqrt(2.0)), rel=1e-14)
     for hinge in _hinges(simplex):
-        assert complex(simplex.dihedralAngle(hinge)).real == pytest.approx(
+        assert complex(simplex.dihedral_angle(hinge)).real == pytest.approx(
             math.acos(1.0 / 3.0), abs=1e-14)
 
 
@@ -108,13 +108,13 @@ def test_a_timelike_leg_gives_an_imaginary_content():
     """A triangle with s_01 = 1, s_02 = -1 (timelike), s_12 = 0 has
     G = diag(1, -1), det G = -1, so its content sqrt(det G) / 2 is imaginary
     of modulus 1/2 and its square is -1/4."""
-    spacetime = T.Spacetime.fromVertexTuples(2, [[0, 1, 2]], 1.0, 0.0)
+    spacetime = T.Spacetime.from_vertex_tuples(2, [[0, 1, 2]], 1.0, 0.0)
     squared = {(0, 1): 1.0, (0, 2): -1.0, (1, 2): 0.0}
-    for edge in spacetime.getEdgeList().toVector():
-        a, b = sorted((int(edge.getSource().getId()),
-                       int(edge.getTarget().getId())))
-        edge.setLength(cmath.sqrt(complex(squared[(a, b)])))
-    simplex = spacetime.getTopSimplices()[0]
+    for edge in spacetime.get_edge_list().to_vector():
+        a, b = sorted((int(edge.get_source().get_id()),
+                       int(edge.get_target().get_id())))
+        edge.set_length(cmath.sqrt(complex(squared[(a, b)])))
+    simplex = spacetime.get_top_simplices()[0]
     content = complex(simplex.volume())
     assert abs(content.real) < 1e-15
     assert abs(content.imag) == pytest.approx(0.5, rel=1e-14)
@@ -127,19 +127,19 @@ def test_a_degenerate_simplex_is_refused_by_name():
     content; its Hodge star is refused as 'primal volume is zero (degenerate
     simplex)' and its spacelike admissibility as 'inadmissible spacelike
     simplex'."""
-    spacetime = T.Spacetime.fromVertexTuples(3, [[0, 1, 2, 3]], 1.0, 0.0)
+    spacetime = T.Spacetime.from_vertex_tuples(3, [[0, 1, 2, 3]], 1.0, 0.0)
     corners = {0: (0, 0), 1: (1, 0), 2: (0, 1), 3: (1, 1)}
-    for edge in spacetime.getEdgeList().toVector():
-        a, b = int(edge.getSource().getId()), int(edge.getTarget().getId())
+    for edge in spacetime.get_edge_list().to_vector():
+        a, b = int(edge.get_source().get_id()), int(edge.get_target().get_id())
         (xa, ya), (xb, yb) = corners[a], corners[b]
-        edge.setLength(cmath.sqrt(complex((xa - xb) ** 2 + (ya - yb) ** 2)))
-    simplex = spacetime.getTopSimplices()[0]
+        edge.set_length(cmath.sqrt(complex((xa - xb) ** 2 + (ya - yb) ** 2)))
+    simplex = spacetime.get_top_simplices()[0]
     assert abs(complex(simplex.volume())) < 1e-15
     with pytest.raises(RuntimeError, match="primal volume is zero "
                                            "\\(degenerate simplex\\)"):
-        simplex.hodgeStar()
+        simplex.hodge_star()
     with pytest.raises(RuntimeError, match="inadmissible spacelike simplex"):
-        simplex.assertSpacelikeAdmissible()
+        simplex.assert_spacelike_admissible()
 
 
 def _regge(spacetime, branch):
@@ -166,8 +166,8 @@ def test_the_continued_sheet_is_continuous_where_the_principal_one_jumps():
     values = {}
     for sign in (1, -1):
         spacetime, _ = _regular(3)
-        first = spacetime.getEdgeList().toVector()[0]
-        first.setLength(cmath.sqrt(1.0 + sign * 1e-10j))
+        first = spacetime.get_edge_list().to_vector()[0]
+        first.set_length(cmath.sqrt(1.0 + sign * 1e-10j))
         values[sign] = (_regge(spacetime, cob.ReggeBranch.Continued),
                         _regge(spacetime, cob.ReggeBranch.Principal))
     continued = [values[s][0] for s in (1, -1)]

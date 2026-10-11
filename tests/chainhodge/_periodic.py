@@ -16,18 +16,18 @@ def cubic_grid(n, a=1.0):
 def covariant_torus(grid, kappa=(0.0, 0.0, 0.0), crossover=512, measure_certificate=False):
     """(K, base ChainHodge, CovariantChainHodge) of the grid with the flat
     connection of the crystal momentum `kappa` (reciprocal coordinates)."""
-    K = cob.ChainComplex.fromTopCells(grid.cells())
-    edges = K.kSimplexVertices(1)
-    base = ch.ChainHodge(K, grid.squaredLengths(edges), ch.Preset.L2, ch.Branch.Continuation,
+    K = cob.ChainComplex.from_top_cells(grid.cells())
+    edges = K.k_simplex_vertices(1)
+    base = ch.ChainHodge(K, grid.squared_lengths(edges), ch.Preset.L2, ch.Branch.Continuation,
                          crossover)
-    U = ch.Connection(K, grid.blochLinks(edges, list(kappa)))
+    U = ch.Connection(K, grid.bloch_links(edges, list(kappa)))
     return K, base, ch.CovariantChainHodge(base, U, 7, measure_certificate)
 
 
 def free_levels(grid, kappa, count):
     """The lowest `count` values of |k + G|^2 on the cubic cell of the grid,
     with k = 2 pi kappa / a and G = 2 pi n / a, sorted ascending."""
-    a = np.sqrt(grid.latticeGram()[0][0])
+    a = np.sqrt(grid.lattice_gram()[0][0])
     span = range(-4, 5)
     levels = sorted(
         (2 * np.pi / a) ** 2 * ((kappa[0] + i) ** 2 + (kappa[1] + j) ** 2 + (kappa[2] + l) ** 2)

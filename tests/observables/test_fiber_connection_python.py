@@ -70,7 +70,7 @@ def _anchored_profile():
     band[3, 2] = np.sqrt(0.2)
     anchor = obs.ColorAnchor([obs.OrientedTriangle([0, 1, 2], [1, 1, 1]),
                               obs.OrientedTriangle([0, 1, 3], [1, 1, 1])])
-    anchor.declareWeights([0.75, 0.25])
+    anchor.declare_weights([0.75, 0.25])
     return anchor.evaluate(band, weights)
 
 
@@ -80,7 +80,7 @@ def _open_anchor_gate():
     The exactness contract gates the colour-specific kernels on this
     certificate, so every lift/projective fixture below has to carry one.
     """
-    return obs.ColorAnchor.gateFor(_anchored_profile())
+    return obs.ColorAnchor.gate_for(_anchored_profile())
 
 
 GATE = _open_anchor_gate()
@@ -138,7 +138,7 @@ def _fiber(cells, right, left=None, weights=None, *, degree=1, accepted=True,
     _split("right_frame", right, record)
     _split("left_frame", left, record)
     _split("weights", weights, record)
-    return obs.SpectralFiber.fromRecord(record)
+    return obs.SpectralFiber.from_record(record)
 
 
 def _unit_fiber(base_id, r, **kw):
@@ -175,19 +175,19 @@ def _from_simplices(num_vertices, simplices, ids=None):
     st = tessera.Spacetime(metric, tessera.HERMITIAN_WEIGHTED, 1.0, 1.0,
                            tessera.PREFERRED, tessera.Toroid())
     ids = list(range(num_vertices)) if ids is None else ids
-    verts = [st.createVertex(i) for i in ids]
+    verts = [st.create_vertex(i) for i in ids]
     for simplex in simplices:
-        st.createSimplex([verts[i] for i in simplex])
-    for e in st.getEdgeList().toVector():
-        e.setLength(1.0 + 0j)
-        e.setPhase(0.0)
+        st.create_simplex([verts[i] for i in simplex])
+    for e in st.get_edge_list().to_vector():
+        e.set_length(1.0 + 0j)
+        e.set_phase(0.0)
     return st
 
 
 def _set_phase(st, a, b, phi):
-    for e in st.getEdgeList().toVector():
-        if {e.getSource().getId(), e.getTarget().getId()} == {a, b}:
-            e.setPhase(phi if e.getSource().getId() == a else -phi)
+    for e in st.get_edge_list().to_vector():
+        if {e.get_source().get_id(), e.get_target().get_id()} == {a, b}:
+            e.set_phase(phi if e.get_source().get_id() == a else -phi)
             return
     raise AssertionError(f"edge ({a},{b}) not found")
 
@@ -198,8 +198,8 @@ def _tracker_fiber(st, support, degree, band=0):
     # the analysis declares the permissive localization cap, which accepts
     # any MEASURED localization.
     cfg = obs.SpectralFiberConfig()
-    cfg.maxLocalizationExcess = 1.0
-    read = obs.SpectralFiberTracker(st, cfg).enumerateBands(support, degree)
+    cfg.max_localization_excess = 1.0
+    read = obs.SpectralFiberTracker(st, cfg).enumerate_bands(support, degree)
     return read.fibers[band]
 
 
@@ -215,8 +215,8 @@ class TestChainTransferSources(unittest.TestCase):
         # different block, asserted here so the distinction stays pinned.
         st = _from_simplices(3, [(0, 1), (1, 2), (2, 0)])
         _set_phase(st, 0, 1, 0.7)
-        L = np.array(cob.HodgeLaplacian(st).connectionLaplacian()).reshape(3, 3)
-        block = np.asarray(obs.FiberConnection.chainTransfer(
+        L = np.array(cob.HodgeLaplacian(st).connection_laplacian()).reshape(3, 3)
+        block = np.asarray(obs.FiberConnection.chain_transfer(
             st, 0, [[0]], [[1]]))
         self.assertAlmostEqual(abs(block[0, 0] - L[0, 1]), 0.0, delta=MACHINE)
         # oriented U(1) entry: -l^2 e^{i phi} with the stored orientation
@@ -228,13 +228,13 @@ class TestChainTransferSources(unittest.TestCase):
     def test_degree1_block_matches_whole_operator(self):
         # bowtie: two triangles sharing vertex 0 — the connecting simplices
         st = _from_simplices(5, [(0, 1, 2), (0, 3, 4)])
-        cc = cob.ChainComplex.fromSpacetime(st)
-        cells = [tuple(c) for c in cc.kSimplexVertices(1)]
+        cc = cob.ChainComplex.from_spacetime(st)
+        cells = [tuple(c) for c in cc.k_simplex_vertices(1)]
         L = np.array(cob.HodgeLaplacian(st).laplacian(1)).reshape(
             len(cells), len(cells))
         cells_a = [c for c in cells if set(c) <= {0, 1, 2}]
         cells_b = [c for c in cells if set(c) <= {0, 3, 4}]
-        block = np.asarray(obs.FiberConnection.chainTransfer(
+        block = np.asarray(obs.FiberConnection.chain_transfer(
             st, 1, [list(c) for c in cells_a], [list(c) for c in cells_b]))
         idx = {c: i for i, c in enumerate(cells)}
         expected = np.array([[L[idx[ra], idx[cb]] for cb in cells_b]
@@ -245,29 +245,29 @@ class TestChainTransferSources(unittest.TestCase):
 
     def test_disconnected_components_have_zero_transfer(self):
         st = _from_simplices(6, [(0, 1, 2), (3, 4, 5)])
-        block = np.asarray(obs.FiberConnection.chainTransfer(
+        block = np.asarray(obs.FiberConnection.chain_transfer(
             st, 1, [[0, 1], [1, 2], [0, 2]], [[3, 4], [4, 5], [3, 5]]))
         self.assertEqual(np.abs(block).max(), 0.0)
 
     def test_unknown_cell_raises(self):
         st = _from_simplices(3, [(0, 1), (1, 2), (2, 0)])
         with self.assertRaises(ValueError):
-            obs.FiberConnection.chainTransfer(st, 0, [[0]], [[9]])
+            obs.FiberConnection.chain_transfer(st, 0, [[0]], [[9]])
 
     def test_negative_degree_raises(self):
         st = _from_simplices(3, [(0, 1), (1, 2), (2, 0)])
         with self.assertRaises(ValueError):
-            obs.FiberConnection.chainTransfer(st, -1, [[0]], [[1]])
+            obs.FiberConnection.chain_transfer(st, -1, [[0]], [[1]])
 
     def test_response_transfer_returns_the_effective_block(self):
         # P4 path; components {0,1} / {2,3}: L_eff = [[1,-1],[-1,1]], one
         # kept cell per component, so the intercomponent block is [[-1]].
         L = [[1, -1, 0, 0], [-1, 2, -1, 0], [0, -1, 2, -1], [0, 0, -1, 1]]
         flat = [complex(x) for row in L for x in row]
-        q = cob.RecursiveQuotient.overMatrix(flat, 4, [], [[0, 1], [2, 3]])
-        network = q.responseNetwork()
-        fwd = np.asarray(obs.FiberConnection.responseTransfer(network, 0, 1))
-        bwd = np.asarray(obs.FiberConnection.responseTransfer(network, 1, 0))
+        q = cob.RecursiveQuotient.over_matrix(flat, 4, [], [[0, 1], [2, 3]])
+        network = q.response_network()
+        fwd = np.asarray(obs.FiberConnection.response_transfer(network, 0, 1))
+        bwd = np.asarray(obs.FiberConnection.response_transfer(network, 1, 0))
         np.testing.assert_allclose(fwd, [[-1.0]], rtol=0, atol=MACHINE)
         np.testing.assert_allclose(bwd, [[-1.0]], rtol=0, atol=MACHINE)
 
@@ -278,40 +278,40 @@ class TestChainTransferSources(unittest.TestCase):
                      [0, -1, 2, -1], [0, 0, -1, 1]]
         L[4:, 4:] = [[1, -1], [-1, 1]]
         flat = [complex(x) for x in L.reshape(-1)]
-        q = cob.RecursiveQuotient.overMatrix(flat, 6, [],
+        q = cob.RecursiveQuotient.over_matrix(flat, 6, [],
                                              [[0, 1], [2, 3], [4, 5]])
-        network = q.responseNetwork()
-        block = np.asarray(obs.FiberConnection.responseTransfer(network, 0, 2))
+        network = q.response_network()
+        block = np.asarray(obs.FiberConnection.response_transfer(network, 0, 2))
         self.assertEqual(block.shape[0],
-                         network.stalkDimensions[0])
+                         network.stalk_dimensions[0])
         self.assertEqual(block.shape[1],
-                         network.stalkDimensions[2])
+                         network.stalk_dimensions[2])
         if block.size:
             self.assertEqual(np.abs(block).max(), 0.0)
 
     def test_response_transfer_bad_component_raises(self):
         L = [[1, -1, 0, 0], [-1, 2, -1, 0], [0, -1, 2, -1], [0, 0, -1, 1]]
         flat = [complex(x) for row in L for x in row]
-        q = cob.RecursiveQuotient.overMatrix(flat, 4, [], [[0, 1], [2, 3]])
+        q = cob.RecursiveQuotient.over_matrix(flat, 4, [], [[0, 1], [2, 3]])
         with self.assertRaises(IndexError):
-            obs.FiberConnection.responseTransfer(q.responseNetwork(), 0, 7)
+            obs.FiberConnection.response_transfer(q.response_network(), 0, 7)
 
     def test_response_route_transport_is_exactly_unitary(self):
         # The coarse [[-1]] block between two rank-1 stalk fibers is a unit
         # transfer: |M| = 1, V = -1, determinant phase -1.
         L = [[1, -1, 0, 0], [-1, 2, -1, 0], [0, -1, 2, -1], [0, 0, -1, 1]]
         flat = [complex(x) for row in L for x in row]
-        q = cob.RecursiveQuotient.overMatrix(flat, 4, [], [[0, 1], [2, 3]])
+        q = cob.RecursiveQuotient.over_matrix(flat, 4, [], [[0, 1], [2, 3]])
         transfer = np.asarray(
-            obs.FiberConnection.responseTransfer(q.responseNetwork(), 0, 1))
+            obs.FiberConnection.response_transfer(q.response_network(), 0, 1))
         conn = obs.FiberConnection()
         a = _unit_fiber(100, 1)
         b = _unit_fiber(200, 1)
         read = conn.transport(a, b, transfer)
         self.assertTrue(read.accepted)
-        self.assertAlmostEqual(abs(read.unitaryMap[0, 0] + 1.0), 0.0,
+        self.assertAlmostEqual(abs(read.unitary_map[0, 0] + 1.0), 0.0,
                                delta=MACHINE)
-        self.assertAlmostEqual(abs(read.determinantPhase + 1.0), 0.0,
+        self.assertAlmostEqual(abs(read.determinant_phase + 1.0), 0.0,
                                delta=MACHINE)
 
 
@@ -327,29 +327,29 @@ class TestTransportGates(unittest.TestCase):
     def test_identity_transport(self):
         read = self.conn.transport(self.A, self.B, np.eye(3))
         self.assertTrue(read.accepted)
-        self.assertEqual(read.numericalRank, 3)
+        self.assertEqual(read.numerical_rank, 3)
         self.assertAlmostEqual(read.leakage, 0.0, delta=MACHINE)
-        np.testing.assert_allclose(read.unitaryMap, np.eye(3), rtol=0,
+        np.testing.assert_allclose(read.unitary_map, np.eye(3), rtol=0,
                                    atol=MACHINE)
-        self.assertAlmostEqual(abs(read.determinantPhase - 1.0), 0.0,
+        self.assertAlmostEqual(abs(read.determinant_phase - 1.0), 0.0,
                                delta=MACHINE)
         self.assertTrue(read.certificate.holds())
 
     def test_known_unitary_polar_factor_is_the_unitary(self):
         u = _random_unitary(np.random.default_rng(7), 3)
         read = self.conn.transport(self.A, self.B, u)
-        np.testing.assert_allclose(read.rawMap, u, rtol=0, atol=MACHINE)
-        np.testing.assert_allclose(read.unitaryMap, u, rtol=0, atol=MACHINE)
+        np.testing.assert_allclose(read.raw_map, u, rtol=0, atol=MACHINE)
+        np.testing.assert_allclose(read.unitary_map, u, rtol=0, atol=MACHINE)
         self.assertAlmostEqual(
-            abs(read.determinantPhase - np.linalg.det(u)), 0.0, delta=1e-10)
+            abs(read.determinant_phase - np.linalg.det(u)), 0.0, delta=1e-10)
 
     def test_leaking_map_rejected_before_polar_though_polar_exists(self):
         u = _random_unitary(np.random.default_rng(3), 3)
         m = np.diag([0.5, 2.0, 1.0]) @ u
         read = self.conn.transport(self.A, self.B, m)
         self.assertFalse(read.accepted)
-        self.assertIn("leaking", read.rejectionReason)
-        self.assertEqual(read.unitaryMap.size, 0)  # nothing was normalized
+        self.assertIn("leaking", read.rejection_reason)
+        self.assertEqual(read.unitary_map.size, 0)  # nothing was normalized
         self.assertFalse(read.certificate.holds())
         # the polar factor EXISTS (numpy) — the point is we refused it
         w, _, vh = np.linalg.svd(m)
@@ -360,53 +360,53 @@ class TestTransportGates(unittest.TestCase):
         self.assertAlmostEqual(
             read.leakage,
             np.linalg.norm(m.conj().T @ m - np.eye(3), 2), delta=SOLVER)
-        np.testing.assert_allclose(sorted(read.singularValues),
+        np.testing.assert_allclose(sorted(read.singular_values),
                                    [0.5, 1.0, 2.0], rtol=0, atol=MACHINE)
 
     def test_rank_deficient_overlap_rejected(self):
         m = np.diag([1.0, 1.0, 0.0])
         read = self.conn.transport(self.A, self.B, m)
         self.assertFalse(read.accepted)
-        self.assertIn("rank-deficient", read.rejectionReason)
-        self.assertEqual(read.numericalRank, 2)
+        self.assertIn("rank-deficient", read.rejection_reason)
+        self.assertEqual(read.numerical_rank, 2)
 
     def test_ill_conditioned_overlap_rejected(self):
         # full numerical rank at 1e-9 relative, conditioning 5e8 > 1e8 cap
         m = np.diag([1.0, 1.0, 2e-9])
         read = self.conn.transport(self.A, self.B, m)
         self.assertFalse(read.accepted)
-        self.assertIn("ill-conditioned", read.rejectionReason)
-        self.assertEqual(read.numericalRank, 3)
-        self.assertGreater(read.overlapConditionNumber, 1e8)
+        self.assertIn("ill-conditioned", read.rejection_reason)
+        self.assertEqual(read.numerical_rank, 3)
+        self.assertGreater(read.overlap_condition_number, 1e8)
 
     def test_uncertified_endpoint_band_rejected(self):
         stale = _fiber([[40], [41], [42]], np.eye(3), accepted=False)
         read = self.conn.transport(self.A, stale, np.eye(3))
         self.assertFalse(read.accepted)
-        self.assertIn("uncertified", read.rejectionReason)
+        self.assertIn("uncertified", read.rejection_reason)
 
     def test_endpoint_gap_floor_rejects(self):
         cfg = obs.FiberConnectionConfig()
-        cfg.minEndpointGap = 0.5
+        cfg.min_endpoint_gap = 0.5
         conn = obs.FiberConnection(cfg)
         narrow = _fiber([[50], [51], [52]], np.eye(3), lower_gap=0.1,
                         upper_gap=2.0)
         read = conn.transport(self.A, narrow, np.eye(3))
         self.assertFalse(read.accepted)
-        self.assertIn("gap", read.rejectionReason)
+        self.assertIn("gap", read.rejection_reason)
 
     def test_frame_conditioning_cap_rejects(self):
         skewed = _fiber([[60], [61], [62]], np.eye(3), cond=1e12)
         read = self.conn.transport(self.A, skewed, np.eye(3))
         self.assertFalse(read.accepted)
-        self.assertIn("conditioning", read.rejectionReason)
+        self.assertIn("conditioning", read.rejection_reason)
 
     def test_rank_mismatch_rejected_with_rectangular_raw_map(self):
         two = _fiber([[70], [71]], np.eye(2))
         read = self.conn.transport(two, self.B, np.zeros((2, 3)) + np.eye(3)[:2])
         self.assertFalse(read.accepted)
-        self.assertIn("rank mismatch", read.rejectionReason)
-        self.assertEqual(read.rawMap.shape, (2, 3))
+        self.assertIn("rank mismatch", read.rejection_reason)
+        self.assertEqual(read.raw_map.shape, (2, 3))
 
     def test_degree_mismatch_raises(self):
         other = _fiber([[80], [81], [82]], np.eye(3), degree=2)
@@ -420,18 +420,18 @@ class TestTransportGates(unittest.TestCase):
     def test_diagnostics_are_reported_on_rejected_reads(self):
         m = np.diag([0.5, 2.0, 1.0])
         read = self.conn.transport(self.A, self.B, m)
-        self.assertEqual(len(read.singularValues), 3)
-        self.assertEqual(read.toPositiveSignature, 3)
-        self.assertEqual(read.fromNegativeSignature, 0)
-        self.assertEqual(read.toGap, 1.0)
-        self.assertEqual(read.frameConditionNumber, 1.0)
+        self.assertEqual(len(read.singular_values), 3)
+        self.assertEqual(read.to_positive_signature, 3)
+        self.assertEqual(read.from_negative_signature, 0)
+        self.assertEqual(read.to_gap, 1.0)
+        self.assertEqual(read.frame_condition_number, 1.0)
         self.assertIn("REJECTED", read.describe())
 
     def test_config_thresholds_take_effect(self):
         cfg = obs.FiberConnectionConfig()
-        cfg.leakageTolerance = 10.0  # caller-declared loose gate
+        cfg.leakage_tolerance = 10.0  # caller-declared loose gate
         conn = obs.FiberConnection(cfg)
-        self.assertEqual(conn.config().leakageTolerance, 10.0)
+        self.assertEqual(conn.config().leakage_tolerance, 10.0)
         m = np.diag([0.9, 1.1, 1.0])
         read = conn.transport(self.A, self.B, m)
         self.assertTrue(read.accepted)  # within the declared tolerance
@@ -457,10 +457,10 @@ class TestGaugeCovariance(unittest.TestCase):
             base = conn.transport(a0, b0, t)
             changed = conn.transport(a1, b1, t)
             np.testing.assert_allclose(
-                changed.rawMap, g_a.conj().T @ base.rawMap @ g_b,
+                changed.raw_map, g_a.conj().T @ base.raw_map @ g_b,
                 rtol=0, atol=MACHINE)
             np.testing.assert_allclose(
-                changed.unitaryMap, g_a.conj().T @ base.unitaryMap @ g_b,
+                changed.unitary_map, g_a.conj().T @ base.unitary_map @ g_b,
                 rtol=0, atol=MACHINE)
 
     def test_diagnostics_are_frame_invariant(self):
@@ -473,8 +473,8 @@ class TestGaugeCovariance(unittest.TestCase):
                               _fiber([[4], [5], [6]], np.eye(3)), t)
         changed = conn.transport(_fiber([[1], [2], [3]], g_a),
                                  _fiber([[4], [5], [6]], g_b), t)
-        np.testing.assert_allclose(changed.singularValues,
-                                   base.singularValues, rtol=0, atol=MACHINE)
+        np.testing.assert_allclose(changed.singular_values,
+                                   base.singular_values, rtol=0, atol=MACHINE)
         self.assertAlmostEqual(changed.leakage, base.leakage, delta=MACHINE)
         self.assertEqual(changed.accepted, base.accepted)
 
@@ -501,11 +501,11 @@ class TestGaugeCovariance(unittest.TestCase):
             changed.holonomy, g0.conj().T @ base.holonomy @ g0,
             rtol=0, atol=MACHINE)
         # base-point conjugation observables are invariant
-        self.assertAlmostEqual(abs(changed.normalizedTrace
-                                   - base.normalizedTrace), 0.0, delta=MACHINE)
+        self.assertAlmostEqual(abs(changed.normalized_trace
+                                   - base.normalized_trace), 0.0, delta=MACHINE)
         self.assertAlmostEqual(abs(changed.determinant - base.determinant),
                                0.0, delta=MACHINE)
-        self.assertAlmostEqual(abs(changed.adjointTrace - base.adjointTrace),
+        self.assertAlmostEqual(abs(changed.adjoint_trace - base.adjoint_trace),
                                0.0, delta=1e-10)
 
     def test_krein_frame_change_is_bifundamental(self):
@@ -544,8 +544,8 @@ class TestGaugeCovariance(unittest.TestCase):
         changed = conn.transport(krein_fiber(1, g_a), krein_fiber(11, g_b),
                                  transfer)
         self.assertTrue(changed.accepted)
-        np.testing.assert_allclose(changed.unitaryMap,
-                                   g_a.conj().T @ base.unitaryMap @ g_b,
+        np.testing.assert_allclose(changed.unitary_map,
+                                   g_a.conj().T @ base.unitary_map @ g_b,
                                    rtol=0, atol=1e-10)
 
 
@@ -561,12 +561,12 @@ class TestIdentityAndReverse(unittest.TestCase):
         self.assertTrue(read.closed)
         np.testing.assert_allclose(read.holonomy, np.eye(3), rtol=0,
                                    atol=MACHINE)
-        self.assertAlmostEqual(abs(read.normalizedTrace - 1.0), 0.0,
+        self.assertAlmostEqual(abs(read.normalized_trace - 1.0), 0.0,
                                delta=MACHINE)
         self.assertAlmostEqual(abs(read.determinant - 1.0), 0.0,
                                delta=MACHINE)
         # chi_adj(1) = dim of the adjoint = r^2 - 1
-        self.assertAlmostEqual(abs(read.adjointTrace - 8.0), 0.0,
+        self.assertAlmostEqual(abs(read.adjoint_trace - 8.0), 0.0,
                                delta=MACHINE)
 
     def test_reverse_link_is_the_adjoint_with_nontrivial_weights(self):
@@ -582,18 +582,18 @@ class TestIdentityAndReverse(unittest.TestCase):
         transfer = np.diag(1.0 / np.sqrt(w_a)) @ u @ np.diag(np.sqrt(w_b))
         conn = obs.FiberConnection()
         fwd = conn.transport(a, b, transfer)
-        rev = conn.transportReverse(a, b, transfer)
+        rev = conn.transport_reverse(a, b, transfer)
         self.assertTrue(fwd.accepted and rev.accepted)
-        np.testing.assert_allclose(rev.rawMap, fwd.rawMap.conj().T,
+        np.testing.assert_allclose(rev.raw_map, fwd.raw_map.conj().T,
                                    rtol=0, atol=MACHINE)
-        np.testing.assert_allclose(rev.unitaryMap,
-                                   fwd.unitaryMap.conj().T,
+        np.testing.assert_allclose(rev.unitary_map,
+                                   fwd.unitary_map.conj().T,
                                    rtol=0, atol=MACHINE)
-        np.testing.assert_allclose(rev.unitaryMap @ fwd.unitaryMap,
+        np.testing.assert_allclose(rev.unitary_map @ fwd.unitary_map,
                                    np.eye(3), rtol=0, atol=MACHINE)
         # direction bookkeeping swaps
-        self.assertEqual(rev.toKey, fwd.fromKey)
-        self.assertEqual(rev.fromKey, fwd.toKey)
+        self.assertEqual(rev.to_key, fwd.from_key)
+        self.assertEqual(rev.from_key, fwd.to_key)
 
     def test_forward_then_reverse_loop_is_identity(self):
         conn = obs.FiberConnection()
@@ -601,7 +601,7 @@ class TestIdentityAndReverse(unittest.TestCase):
         b = _unit_fiber(11, 2)
         u = _rotation(0.8)
         fwd = conn.transport(a, b, u)
-        rev = conn.transportReverse(a, b, u)
+        rev = conn.transport_reverse(a, b, u)
         read = conn.holonomy([fwd, rev])
         self.assertTrue(read.closed)
         np.testing.assert_allclose(read.holonomy, np.eye(2), rtol=0,
@@ -622,12 +622,12 @@ class TestWilsonObservables(unittest.TestCase):
         total = sum(thetas)
         np.testing.assert_allclose(read.holonomy, _rotation(total),
                                    rtol=0, atol=MACHINE)
-        self.assertAlmostEqual(abs(read.normalizedTrace
+        self.assertAlmostEqual(abs(read.normalized_trace
                                    - math.cos(total)), 0.0, delta=MACHINE)
         self.assertAlmostEqual(abs(read.determinant - 1.0), 0.0,
                                delta=MACHINE)
         self.assertTrue(read.unitary)
-        self.assertLess(read.unitarityResidual, MACHINE)
+        self.assertLess(read.unitarity_residual, MACHINE)
         self.assertTrue(read.certificate.holds())
 
     def test_determinant_line_is_the_product_of_link_determinants(self):
@@ -637,7 +637,7 @@ class TestWilsonObservables(unittest.TestCase):
         links = [conn.transport(fibers[i], fibers[(i + 1) % 3],
                                 _random_unitary(rng, 3)) for i in range(3)]
         read = conn.holonomy(links)
-        expected = np.prod([np.linalg.det(l.unitaryMap) for l in links])
+        expected = np.prod([np.linalg.det(l.unitary_map) for l in links])
         self.assertAlmostEqual(abs(read.determinant - expected), 0.0,
                                delta=1e-10)
 
@@ -648,7 +648,7 @@ class TestWilsonObservables(unittest.TestCase):
                  conn.transport(b, c, np.eye(2))]
         read = conn.holonomy(links)
         self.assertFalse(read.closed)
-        self.assertEqual(read.loopLength, 2)
+        self.assertEqual(read.loop_length, 2)
 
     def test_rejected_link_refuses_to_multiply(self):
         conn = obs.FiberConnection()
@@ -678,19 +678,19 @@ class TestWilsonObservables(unittest.TestCase):
                               conn.transport(b, a, u.conj().T @ u)])
         h = read.holonomy
         kron = np.kron(h.conj(), h)  # vec(H M H^dag) = (conj(H) x H) vec(M)
-        p8 = np.asarray(obs.ColorFiber.adjointOctetProjector())
-        np.testing.assert_allclose(read.adjointMatrix, p8 @ kron @ p8,
+        p8 = np.asarray(obs.ColorFiber.adjoint_octet_projector())
+        np.testing.assert_allclose(read.adjoint_matrix, p8 @ kron @ p8,
                                    rtol=0, atol=1e-10)
         # center-blind: Ad(omega H) = Ad(H)
         np.testing.assert_allclose(
-            np.asarray(obs.FiberConnection.adjointRepresentation(OMEGA * h)),
-            read.adjointMatrix, rtol=0, atol=1e-10)
+            np.asarray(obs.FiberConnection.adjoint_representation(OMEGA * h)),
+            read.adjoint_matrix, rtol=0, atol=1e-10)
         # trace of the octet restriction is the adjoint character
         self.assertAlmostEqual(
-            abs(np.trace(read.adjointMatrix) - read.adjointTrace), 0.0,
+            abs(np.trace(read.adjoint_matrix) - read.adjoint_trace), 0.0,
             delta=1e-9)
         self.assertAlmostEqual(
-            abs(read.adjointTrace - (abs(np.trace(h)) ** 2 - 1.0)), 0.0,
+            abs(read.adjoint_trace - (abs(np.trace(h)) ** 2 - 1.0)), 0.0,
             delta=1e-10)
 
     def test_generic_rank_has_no_adjoint_matrix_but_a_character(self):
@@ -698,9 +698,9 @@ class TestWilsonObservables(unittest.TestCase):
         a, b = _unit_fiber(1, 2), _unit_fiber(11, 2)
         read = conn.holonomy([conn.transport(a, b, _rotation(0.4)),
                               conn.transport(b, a, _rotation(-0.4))])
-        self.assertEqual(read.adjointMatrix.size, 0)
+        self.assertEqual(read.adjoint_matrix.size, 0)
         self.assertAlmostEqual(
-            abs(read.adjointTrace
+            abs(read.adjoint_trace
                 - (abs(np.trace(read.holonomy)) ** 2 - 1.0)),
             0.0, delta=MACHINE)
 
@@ -726,15 +726,15 @@ class TestRankThreeCenter(unittest.TestCase):
     def test_all_three_cube_root_branches(self):
         u = _random_unitary(np.random.default_rng(29), 3)
         read = self.conn.transport(self.A, self.B, u)
-        delta = read.determinantPhase
+        delta = read.determinant_phase
         root = cmath.exp(1j * cmath.phase(delta) / 3.0)
         adjoints, traces = [], []
         for s in range(3):
-            branch = read.unitaryMap / (root * OMEGA ** s)
+            branch = read.unitary_map / (root * OMEGA ** s)
             # every branch is a genuine SU(3) lift
             self.assertLess(abs(np.linalg.det(branch) - 1.0), 1e-10)
             adjoints.append(np.asarray(
-                obs.FiberConnection.adjointRepresentation(branch)))
+                obs.FiberConnection.adjoint_representation(branch)))
             traces.append(np.trace(branch))
         # projective/adjoint reads agree on ALL THREE branches
         np.testing.assert_allclose(adjoints[0], adjoints[1], rtol=0,
@@ -749,27 +749,27 @@ class TestRankThreeCenter(unittest.TestCase):
 
     def test_projective_representative_is_special_unitary(self):
         u = _random_unitary(np.random.default_rng(31), 3)
-        rep = np.asarray(obs.FiberConnection.projectiveRepresentative(u, GATE))
+        rep = np.asarray(obs.FiberConnection.projective_representative(u, GATE))
         self.assertLess(abs(np.linalg.det(rep) - 1.0), 1e-10)
         # same projective class for every center twist of the input
         rep_twisted = np.asarray(
-            obs.FiberConnection.projectiveRepresentative(OMEGA * u, GATE))
+            obs.FiberConnection.projective_representative(OMEGA * u, GATE))
         ratios = [np.linalg.norm(rep_twisted - (OMEGA ** s) * rep)
                   for s in range(3)]
         self.assertLess(min(ratios), 1e-10)
 
     def test_fundamental_lift_branches_shift_by_center(self):
         links = self._center_loop(0.4)
-        lifts = [self.conn.fundamentalLift(links, GATE, s) for s in range(3)]
+        lifts = [self.conn.fundamental_lift(links, GATE, s) for s in range(3)]
         for lift in lifts:
             self.assertTrue(lift.valid)
-            self.assertLess(lift.detResidual, 1e-12)
+            self.assertLess(lift.det_residual, 1e-12)
             self.assertLess(
                 np.linalg.norm(np.asarray(lift.lift).conj().T
                                @ np.asarray(lift.lift) - np.eye(3), 2),
                 1e-12)
         # the recorded center sector is branch-INDEPENDENT
-        self.assertEqual({l.centerSector for l in lifts}, {0})
+        self.assertEqual({l.center_sector for l in lifts}, {0})
         # the lift itself shifts by omega^{-s}
         base = np.asarray(lifts[0].lift)
         np.testing.assert_allclose(np.asarray(lifts[1].lift),
@@ -777,35 +777,35 @@ class TestRankThreeCenter(unittest.TestCase):
         np.testing.assert_allclose(np.asarray(lifts[2].lift),
                                    base / OMEGA ** 2, rtol=0, atol=1e-12)
         # projective/adjoint reads of the lift are branch-independent
-        ad = [np.asarray(obs.FiberConnection.adjointRepresentation(
+        ad = [np.asarray(obs.FiberConnection.adjoint_representation(
             np.asarray(l.lift))) for l in lifts]
         np.testing.assert_allclose(ad[0], ad[1], rtol=0, atol=1e-10)
         np.testing.assert_allclose(ad[0], ad[2], rtol=0, atol=1e-10)
         # and the fundamental traces are the three distinct lifts
         self.assertAlmostEqual(
-            abs(lifts[1].liftTrace - lifts[0].liftTrace / OMEGA), 0.0,
+            abs(lifts[1].lift_trace - lifts[0].lift_trace / OMEGA), 0.0,
             delta=1e-12)
 
     def test_known_center_loop_returns_the_analytic_sector(self):
         # three links of determinant phase 2*pi/3: Theta = 2*pi, sector 1
-        lift = self.conn.fundamentalLift(self._center_loop(TWO_PI / 3.0), GATE)
+        lift = self.conn.fundamental_lift(self._center_loop(TWO_PI / 3.0), GATE)
         self.assertTrue(lift.valid)
-        self.assertEqual(lift.centerSector, 1)
-        self.assertAlmostEqual(lift.accumulatedDeterminantPhase, TWO_PI,
+        self.assertEqual(lift.center_sector, 1)
+        self.assertAlmostEqual(lift.accumulated_determinant_phase, TWO_PI,
                                delta=MACHINE)
         # conjugate loop: Theta = -2*pi, sector 2 (= -1 mod 3)
-        lift_bar = self.conn.fundamentalLift(self._center_loop(-TWO_PI / 3.0), GATE)
-        self.assertEqual(lift_bar.centerSector, 2)
+        lift_bar = self.conn.fundamental_lift(self._center_loop(-TWO_PI / 3.0), GATE)
+        self.assertEqual(lift_bar.center_sector, 2)
         # trivial loop: sector 0
-        lift0 = self.conn.fundamentalLift(self._center_loop(0.1), GATE)
-        self.assertEqual(lift0.centerSector, 0)
+        lift0 = self.conn.fundamental_lift(self._center_loop(0.1), GATE)
+        self.assertEqual(lift0.center_sector, 0)
 
     def test_lift_refuses_generic_rank(self):
         two_a, two_b = _unit_fiber(31, 2), _unit_fiber(41, 2)
         link = self.conn.transport(two_a, two_b, _rotation(0.3))
-        lift = self.conn.fundamentalLift([link], GATE)
+        lift = self.conn.fundamental_lift([link], GATE)
         self.assertFalse(lift.valid)
-        self.assertIn("rank", lift.invalidReason)
+        self.assertIn("rank", lift.invalid_reason)
         self.assertFalse(lift.certificate.holds())
 
     def test_lift_refuses_gl_transport(self):
@@ -816,16 +816,16 @@ class TestRankThreeCenter(unittest.TestCase):
                     self_adjoint=False)
         link = self.conn.transport(nn, self.B, np.eye(3))
         self.assertTrue(link.accepted)
-        self.assertEqual(link.unitaryMap.size, 0)
-        lift = self.conn.fundamentalLift([link], GATE)
+        self.assertEqual(link.unitary_map.size, 0)
+        lift = self.conn.fundamental_lift([link], GATE)
         self.assertFalse(lift.valid)
-        self.assertIn("GL", lift.invalidReason)
+        self.assertIn("GL", lift.invalid_reason)
 
     def test_lift_determinant_identity(self):
         links = self._center_loop(0.7)
-        lift = self.conn.fundamentalLift(links, GATE)
+        lift = self.conn.fundamental_lift(links, GATE)
         h = np.asarray(self.conn.holonomy(links).holonomy)
-        theta = lift.accumulatedDeterminantPhase
+        theta = lift.accumulated_determinant_phase
         self.assertAlmostEqual(
             abs(np.linalg.det(h) - cmath.exp(1j * theta)), 0.0, delta=1e-12)
         np.testing.assert_allclose(np.asarray(lift.lift),
@@ -835,7 +835,7 @@ class TestRankThreeCenter(unittest.TestCase):
     def test_bad_branch_raises(self):
         links = self._center_loop(0.2)
         with self.assertRaises(ValueError):
-            self.conn.fundamentalLift(links, GATE, 3)
+            self.conn.fundamental_lift(links, GATE, 3)
 
 
 # =========================================================================== #
@@ -852,18 +852,18 @@ class TestDeterminantWinding(unittest.TestCase):
 
     def test_closed_family_integer_winding(self):
         family = self._family([TWO_PI * k / 8 for k in range(8)])
-        read = self.conn.closedFamilyWinding(family)
+        read = self.conn.closed_family_winding(family)
         self.assertEqual(read.winding, 1)
-        self.assertEqual(read.windingClosure, "closed-family")
-        self.assertAlmostEqual(read.accumulatedPhase, TWO_PI, delta=MACHINE)
-        self.assertAlmostEqual(read.maxPhaseStep, TWO_PI / 8, delta=MACHINE)
+        self.assertEqual(read.winding_closure, "closed-family")
+        self.assertAlmostEqual(read.accumulated_phase, TWO_PI, delta=MACHINE)
+        self.assertAlmostEqual(read.max_phase_step, TWO_PI / 8, delta=MACHINE)
         self.assertTrue(read.certificate.holds())
 
     def test_double_winding(self):
         family = self._family([math.pi * k / 2 for k in range(8)])
-        read = self.conn.closedFamilyWinding(family)
+        read = self.conn.closed_family_winding(family)
         self.assertEqual(read.winding, 2)
-        self.assertAlmostEqual(read.accumulatedPhase, 2 * TWO_PI,
+        self.assertAlmostEqual(read.accumulated_phase, 2 * TWO_PI,
                                delta=MACHINE)
 
     def test_orientation_reversal_flips_the_sign(self):
@@ -872,37 +872,37 @@ class TestDeterminantWinding(unittest.TestCase):
         # reversed); inverting each map is LINK reversal, a different
         # operation.
         family = self._family([TWO_PI * k / 8 for k in range(8)])
-        self.assertEqual(self.conn.closedFamilyWinding(family).winding, 1)
+        self.assertEqual(self.conn.closed_family_winding(family).winding, 1)
         self.assertEqual(
-            self.conn.closedFamilyWinding(list(reversed(family))).winding,
+            self.conn.closed_family_winding(list(reversed(family))).winding,
             -1)
 
     def test_single_sample_family_winds_zero(self):
-        read = self.conn.closedFamilyWinding(self._family([0.3]))
+        read = self.conn.closed_family_winding(self._family([0.3]))
         self.assertEqual(read.winding, 0)
 
     def test_unaccepted_sample_invalidates(self):
         family = self._family([0.0, TWO_PI / 4])
         bad = self.conn.transport(self.A, self.B, np.diag([0.1, 1.0, 1.0]))
         self.assertFalse(bad.accepted)
-        read = self.conn.closedFamilyWinding(family + [bad])
+        read = self.conn.closed_family_winding(family + [bad])
         self.assertIsNone(read.winding)
-        self.assertIn("not an accepted transport", read.invalidationReason)
+        self.assertIn("not an accepted transport", read.invalidation_reason)
         self.assertFalse(read.certificate.holds())
 
     def test_aliasing_step_invalidates(self):
         family = self._family([0.0, math.pi])
-        read = self.conn.closedFamilyWinding(family)
+        read = self.conn.closed_family_winding(family)
         self.assertIsNone(read.winding)
-        self.assertIn("aliasing", read.invalidationReason)
+        self.assertIn("aliasing", read.invalidation_reason)
 
     def test_rank_change_invalidates(self):
         family = self._family([0.0, 0.4])
         two = self.conn.transport(_unit_fiber(31, 2), _unit_fiber(41, 2),
                                   _rotation(0.1))
-        read = self.conn.closedFamilyWinding(family + [two])
+        read = self.conn.closed_family_winding(family + [two])
         self.assertIsNone(read.winding)
-        self.assertIn("rank", read.invalidationReason)
+        self.assertIn("rank", read.invalidation_reason)
 
     def test_open_segment_agrees_under_both_declared_closures(self):
         # segment with unit-determinant endpoints accumulating 2*pi
@@ -912,36 +912,36 @@ class TestDeterminantWinding(unittest.TestCase):
         # endpoints (V(0) = V(end) = I exactly)
         matched = obs.WindingClosureSpec()
         matched.mode = obs.WindingClosureSpec.Mode.MATCHED_REFERENCE
-        matched.referenceId = "constant-identity-reference"
-        matched.referenceTransports = [np.eye(3)] * len(segment)
-        by_reference = self.conn.openSegmentWinding(segment, matched)
+        matched.reference_id = "constant-identity-reference"
+        matched.reference_transports = [np.eye(3)] * len(segment)
+        by_reference = self.conn.open_segment_winding(segment, matched)
         # boundary-register trivializations at both endpoints
         trivialized = obs.WindingClosureSpec()
         trivialized.mode = obs.WindingClosureSpec.Mode.ENDPOINT_TRIVIALIZATION
-        trivialized.referenceId = "register-identity-frames"
-        trivialized.startTrivialization = np.eye(3)
-        trivialized.endTrivialization = np.eye(3)
-        by_registers = self.conn.openSegmentWinding(segment, trivialized)
+        trivialized.reference_id = "register-identity-frames"
+        trivialized.start_trivialization = np.eye(3)
+        trivialized.end_trivialization = np.eye(3)
+        by_registers = self.conn.open_segment_winding(segment, trivialized)
         self.assertEqual(by_reference.winding, 1)
         self.assertEqual(by_registers.winding, 1)
-        self.assertEqual(by_reference.windingClosure, "matched-reference")
-        self.assertEqual(by_registers.windingClosure,
+        self.assertEqual(by_reference.winding_closure, "matched-reference")
+        self.assertEqual(by_registers.winding_closure,
                          "endpoint-trivialization")
-        self.assertEqual(by_reference.windingReferenceId,
+        self.assertEqual(by_reference.winding_reference_id,
                          "constant-identity-reference")
-        self.assertLess(by_reference.closureDefect, MACHINE)
+        self.assertLess(by_reference.closure_defect, MACHINE)
         self.assertTrue(by_reference.certificate.holds())
         self.assertTrue(by_registers.certificate.holds())
 
     def test_open_segment_without_closure_is_unknown(self):
         segment = self._family([TWO_PI * k / 4 for k in range(5)])
-        read = self.conn.openSegmentWinding(segment,
+        read = self.conn.open_segment_winding(segment,
                                             obs.WindingClosureSpec())
         self.assertIsNone(read.winding)
-        self.assertEqual(read.windingClosure, "none")
-        self.assertIn("no closure declared", read.invalidationReason)
+        self.assertEqual(read.winding_closure, "none")
+        self.assertIn("no closure declared", read.invalidation_reason)
         # the raw open-path phase is reported, but never as an integer claim
-        self.assertAlmostEqual(read.accumulatedPhase, TWO_PI, delta=MACHINE)
+        self.assertAlmostEqual(read.accumulated_phase, TWO_PI, delta=MACHINE)
         self.assertFalse(read.certificate.holds())
 
     def test_open_segment_orientation_reversal(self):
@@ -949,45 +949,45 @@ class TestDeterminantWinding(unittest.TestCase):
         forward = self._family([TWO_PI * k / 4 for k in range(5)])
         spec = obs.WindingClosureSpec()
         spec.mode = obs.WindingClosureSpec.Mode.ENDPOINT_TRIVIALIZATION
-        spec.startTrivialization = np.eye(3)
-        spec.endTrivialization = np.eye(3)
-        self.assertEqual(self.conn.openSegmentWinding(forward, spec).winding,
+        spec.start_trivialization = np.eye(3)
+        spec.end_trivialization = np.eye(3)
+        self.assertEqual(self.conn.open_segment_winding(forward, spec).winding,
                          1)
         self.assertEqual(
-            self.conn.openSegmentWinding(list(reversed(forward)),
+            self.conn.open_segment_winding(list(reversed(forward)),
                                          spec).winding, -1)
 
     def test_mismatched_reference_is_graded_honestly(self):
         segment = self._family([TWO_PI * k / 8 for k in range(5)])  # open end
         spec = obs.WindingClosureSpec()
         spec.mode = obs.WindingClosureSpec.Mode.MATCHED_REFERENCE
-        spec.referenceTransports = [np.eye(3)] * len(segment)
-        read = self.conn.openSegmentWinding(segment, spec)
+        spec.reference_transports = [np.eye(3)] * len(segment)
+        read = self.conn.open_segment_winding(segment, spec)
         # the reference does NOT match the far endpoint: defect reported and
         # the closure certificate refuses to hold
-        self.assertGreater(read.closureDefect, 0.1)
+        self.assertGreater(read.closure_defect, 0.1)
         self.assertFalse(read.certificate.holds())
 
     def test_reference_length_mismatch_raises(self):
         segment = self._family([0.0, 0.1])
         spec = obs.WindingClosureSpec()
         spec.mode = obs.WindingClosureSpec.Mode.MATCHED_REFERENCE
-        spec.referenceTransports = [np.eye(3)]
+        spec.reference_transports = [np.eye(3)]
         with self.assertRaises(ValueError):
-            self.conn.openSegmentWinding(segment, spec)
+            self.conn.open_segment_winding(segment, spec)
 
     def test_trivialization_shape_mismatch_raises(self):
         segment = self._family([0.0, 0.1])
         spec = obs.WindingClosureSpec()
         spec.mode = obs.WindingClosureSpec.Mode.ENDPOINT_TRIVIALIZATION
-        spec.startTrivialization = np.eye(2)
-        spec.endTrivialization = np.eye(3)
+        spec.start_trivialization = np.eye(2)
+        spec.end_trivialization = np.eye(3)
         with self.assertRaises(ValueError):
-            self.conn.openSegmentWinding(segment, spec)
+            self.conn.open_segment_winding(segment, spec)
 
     def test_empty_family_raises(self):
         with self.assertRaises(ValueError):
-            self.conn.closedFamilyWinding([])
+            self.conn.closed_family_winding([])
 
 
 # =========================================================================== #
@@ -1017,7 +1017,7 @@ class TestKreinAndNonNormal(unittest.TestCase):
                               transfer)
         self.assertTrue(read.accepted)
         self.assertLess(read.leakage, MACHINE)  # J-isometry defect
-        v = np.asarray(read.unitaryMap)
+        v = np.asarray(read.unitary_map)
         # inertia retained: V^dag J V = J exactly (pseudo-unitary)
         np.testing.assert_allclose(v.conj().T @ self.J @ v, self.J,
                                    rtol=0, atol=1e-10)
@@ -1036,13 +1036,13 @@ class TestKreinAndNonNormal(unittest.TestCase):
                          self_adjoint=False)
         read = conn.transport(self._krein_fiber(1), flipped, np.eye(3))
         self.assertFalse(read.accepted)
-        self.assertIn("signature mismatch", read.rejectionReason)
-        self.assertEqual(read.unitaryMap.size, 0)
+        self.assertIn("signature mismatch", read.rejection_reason)
+        self.assertEqual(read.unitary_map.size, 0)
         # inertia was reported, not silently Euclideanized
-        self.assertEqual((read.toPositiveSignature, read.toNegativeSignature),
+        self.assertEqual((read.to_positive_signature, read.to_negative_signature),
                          (2, 1))
-        self.assertEqual((read.fromPositiveSignature,
-                          read.fromNegativeSignature), (1, 2))
+        self.assertEqual((read.from_positive_signature,
+                          read.from_negative_signature), (1, 2))
 
     def test_krein_loop_retains_the_metric(self):
         conn = obs.FiberConnection()
@@ -1065,7 +1065,7 @@ class TestKreinAndNonNormal(unittest.TestCase):
         a = self._krein_fiber(1)
         read = conn.holonomy([conn.transport(a, a, t)])
         h = np.asarray(read.holonomy)
-        self.assertLess(read.unitarityResidual, 1e-10)  # J-defect
+        self.assertLess(read.unitarity_residual, 1e-10)  # J-defect
         self.assertGreater(np.linalg.norm(h.conj().T @ h - np.eye(3), 2),
                            0.1)  # Euclidean defect is real and large
         self.assertTrue(read.certificate.holds())
@@ -1080,9 +1080,9 @@ class TestKreinAndNonNormal(unittest.TestCase):
         a = self._krein_fiber(1)
         link = conn.transport(a, a, t)
         self.assertTrue(link.accepted)
-        lift = conn.fundamentalLift([link], GATE)
+        lift = conn.fundamental_lift([link], GATE)
         self.assertFalse(lift.valid)
-        self.assertIn("positive regime", lift.invalidReason)
+        self.assertIn("positive regime", lift.invalid_reason)
 
     def _nonnormal_fiber(self, base, seed=13):
         rng = np.random.default_rng(seed)
@@ -1099,18 +1099,18 @@ class TestKreinAndNonNormal(unittest.TestCase):
         t = np.diag([1.0, 2.0, 3.0]).astype(complex)
         read = conn.transport(nn, b, t)
         # the LEFT frame is used: M = Psi^dag W T Phi_B
-        np.testing.assert_allclose(read.rawMap, psi.conj().T @ t,
+        np.testing.assert_allclose(read.raw_map, psi.conj().T @ t,
                                    rtol=0, atol=MACHINE)
         self.assertTrue(read.accepted)
-        self.assertEqual(read.unitaryMap.size, 0)  # GL(r,C) retained
+        self.assertEqual(read.unitary_map.size, 0)  # GL(r,C) retained
         self.assertEqual(read.regime, cob.CertificateRegime.NonNormal)
         # conditioning and leakage are part of the observable
-        self.assertGreater(read.overlapConditionNumber, 1.0)
+        self.assertGreater(read.overlap_condition_number, 1.0)
         self.assertTrue(np.isfinite(read.leakage))
         # the determinant phase is never discarded
-        det = np.linalg.det(read.rawMap)
+        det = np.linalg.det(read.raw_map)
         self.assertAlmostEqual(
-            abs(read.determinantPhase - det / abs(det)), 0.0, delta=1e-10)
+            abs(read.determinant_phase - det / abs(det)), 0.0, delta=1e-10)
 
     def test_no_unitary_wilson_value_outside_the_positive_domain(self):
         conn = obs.FiberConnection()
@@ -1122,7 +1122,7 @@ class TestKreinAndNonNormal(unittest.TestCase):
         self.assertFalse(read.unitary)  # the GL product, flagged as such
         np.testing.assert_allclose(
             read.holonomy,
-            np.asarray(fwd.rawMap) @ np.asarray(back.rawMap),
+            np.asarray(fwd.raw_map) @ np.asarray(back.raw_map),
             rtol=0, atol=MACHINE)
         self.assertEqual(read.certificate.regime,
                          cob.CertificateRegime.NonNormal)
@@ -1139,8 +1139,8 @@ class TestKreinAndNonNormal(unittest.TestCase):
                             regime="non-normal", self_adjoint=False)
         b_changed = _fiber([[11], [12], [13]], np.asarray(np.eye(3)) @ g_b)
         changed = conn.transport(nn_changed, b_changed, t)
-        np.testing.assert_allclose(changed.rawMap,
-                                   g_a.conj().T @ base.rawMap @ g_b,
+        np.testing.assert_allclose(changed.raw_map,
+                                   g_a.conj().T @ base.raw_map @ g_b,
                                    rtol=0, atol=1e-10)
 
 
@@ -1162,13 +1162,13 @@ class TestSpacetimeEndToEnd(unittest.TestCase):
             self.assertTrue(f.accepted)
             self.assertEqual(f.rank(), 1)
         conn = obs.FiberConnection()
-        read = conn.holonomyOnSpacetime(st, fibers)
+        read = conn.holonomy_on_spacetime(st, fibers)
         self.assertTrue(read.closed and read.unitary)
         # H = (-1)^3 e^{i Phi_cycle} for the oriented cycle 0->1->2->0
         wl = obs.WilsonLoop(st)
-        verts = sorted(st.getVertexList().toVector(),
-                       key=lambda v: v.getId())
-        wilson = wl.evaluateU1Connection([verts[0], verts[1], verts[2]])
+        verts = sorted(st.get_vertex_list().to_vector(),
+                       key=lambda v: v.get_id())
+        wilson = wl.evaluate_u1_connection([verts[0], verts[1], verts[2]])
         h = complex(np.asarray(read.holonomy)[0, 0])
         self.assertAlmostEqual(abs(h), 1.0, delta=SOLVER)
         diff = cmath.phase(-h) - wilson.value.real
@@ -1186,14 +1186,14 @@ class TestSpacetimeEndToEnd(unittest.TestCase):
         self.assertEqual(fiber_a.rank(), fiber_b.rank())
         r = fiber_a.rank()
         conn = obs.FiberConnection()
-        fwd = conn.transportOnSpacetime(st, fiber_a, fiber_b)
-        rev = conn.transportOnSpacetime(st, fiber_b, fiber_a)
+        fwd = conn.transport_on_spacetime(st, fiber_a, fiber_b)
+        rev = conn.transport_on_spacetime(st, fiber_b, fiber_a)
         # W-self-adjoint operator: reversing the link is the adjoint
-        np.testing.assert_allclose(np.asarray(rev.rawMap),
-                                   np.asarray(fwd.rawMap).conj().T,
+        np.testing.assert_allclose(np.asarray(rev.raw_map),
+                                   np.asarray(fwd.raw_map).conj().T,
                                    rtol=0, atol=SOLVER)
         # the leakage report is honest against numpy
-        m = np.asarray(fwd.rawMap)
+        m = np.asarray(fwd.raw_map)
         self.assertAlmostEqual(
             fwd.leakage, np.linalg.norm(m.conj().T @ m - np.eye(r), 2),
             delta=SOLVER)
@@ -1202,14 +1202,14 @@ class TestSpacetimeEndToEnd(unittest.TestCase):
         st = self._phased_triangle({(0, 1): 0.9})
         fibers = [_tracker_fiber(st, [i], 0) for i in range(3)]
         conn = obs.FiberConnection()
-        direct = conn.transportOnSpacetime(st, fibers[0], fibers[1])
-        transfer = obs.FiberConnection.chainTransfer(
-            st, 0, fibers[0].cellVertices(), fibers[1].cellVertices())
+        direct = conn.transport_on_spacetime(st, fibers[0], fibers[1])
+        transfer = obs.FiberConnection.chain_transfer(
+            st, 0, fibers[0].cell_vertices(), fibers[1].cell_vertices())
         explicit = conn.transport(fibers[0], fibers[1], transfer)
-        np.testing.assert_allclose(np.asarray(direct.rawMap),
-                                   np.asarray(explicit.rawMap),
+        np.testing.assert_allclose(np.asarray(direct.raw_map),
+                                   np.asarray(explicit.raw_map),
                                    rtol=0, atol=MACHINE)
-        self.assertEqual(direct.toKey, explicit.toKey)
+        self.assertEqual(direct.to_key, explicit.to_key)
 
     def test_cell_order_permutation_leaves_the_read_invariant(self):
         # permuting the fiber's cell rows (frame + transfer alike) is a pure
@@ -1224,19 +1224,19 @@ class TestSpacetimeEndToEnd(unittest.TestCase):
         conn = obs.FiberConnection()
         r0 = conn.transport(a0, b, t)
         r1 = conn.transport(a1, b, t[perm, :])
-        np.testing.assert_allclose(r0.rawMap, r1.rawMap, rtol=0, atol=MACHINE)
-        np.testing.assert_allclose(r0.unitaryMap, r1.unitaryMap, rtol=0,
+        np.testing.assert_allclose(r0.raw_map, r1.raw_map, rtol=0, atol=MACHINE)
+        np.testing.assert_allclose(r0.unitary_map, r1.unitary_map, rtol=0,
                                    atol=MACHINE)
-        self.assertEqual(r0.toKey, r1.toKey)
+        self.assertEqual(r0.to_key, r1.to_key)
 
     def test_fiber_key_is_order_and_multiplicity_invariant(self):
         a = _fiber([[1, 2], [2, 3], [1, 3]], np.eye(3))
         b = _fiber([[3, 1], [3, 2], [2, 1]], np.eye(3))
-        self.assertEqual(obs.FiberConnection.fiberKey(a),
-                         obs.FiberConnection.fiberKey(b))
+        self.assertEqual(obs.FiberConnection.fiber_key(a),
+                         obs.FiberConnection.fiber_key(b))
         c = _fiber([[4, 2], [2, 3], [1, 3]], np.eye(3))
-        self.assertNotEqual(obs.FiberConnection.fiberKey(a),
-                            obs.FiberConnection.fiberKey(c))
+        self.assertNotEqual(obs.FiberConnection.fiber_key(a),
+                            obs.FiberConnection.fiber_key(c))
 
     def test_vertex_relabeling_preserves_the_invariants(self):
         phases = {(0, 1): 0.4, (1, 2): 1.1, (2, 0): -0.3}
@@ -1247,12 +1247,12 @@ class TestSpacetimeEndToEnd(unittest.TestCase):
         _set_phase(st2, 50, 90, 1.1)
         _set_phase(st2, 90, 70, -0.3)
         conn = obs.FiberConnection()
-        r1 = conn.holonomyOnSpacetime(
+        r1 = conn.holonomy_on_spacetime(
             st, [_tracker_fiber(st, [i], 0) for i in (0, 1, 2)])
-        r2 = conn.holonomyOnSpacetime(
+        r2 = conn.holonomy_on_spacetime(
             st2, [_tracker_fiber(st2, [i], 0) for i in (70, 50, 90)])
         # the loop scalar is identical under global relabeling
-        self.assertAlmostEqual(abs(r1.normalizedTrace - r2.normalizedTrace),
+        self.assertAlmostEqual(abs(r1.normalized_trace - r2.normalized_trace),
                                0.0, delta=SOLVER)
         self.assertAlmostEqual(abs(r1.determinant - r2.determinant), 0.0,
                                delta=SOLVER)
@@ -1271,23 +1271,23 @@ class TestCaching(unittest.TestCase):
         return st, fibers
 
     def _assert_reads_equal(self, a, b):
-        np.testing.assert_allclose(np.asarray(a.rawMap),
-                                   np.asarray(b.rawMap), rtol=0, atol=0)
-        np.testing.assert_allclose(np.asarray(a.unitaryMap),
-                                   np.asarray(b.unitaryMap), rtol=0, atol=0)
+        np.testing.assert_allclose(np.asarray(a.raw_map),
+                                   np.asarray(b.raw_map), rtol=0, atol=0)
+        np.testing.assert_allclose(np.asarray(a.unitary_map),
+                                   np.asarray(b.unitary_map), rtol=0, atol=0)
         self.assertEqual(a.accepted, b.accepted)
         self.assertEqual(a.leakage, b.leakage)
-        self.assertEqual(list(a.singularValues), list(b.singularValues))
+        self.assertEqual(list(a.singular_values), list(b.singular_values))
 
     def test_cached_transport_equals_cold(self):
         st, fibers = self._square()
         cache = cob.AnalyticCache(st)
         conn = obs.FiberConnection()
-        cold = conn.transportOnSpacetime(st, fibers[0], fibers[1])
-        first = conn.transportOnSpacetimeCached(cache, st, fibers[0],
+        cold = conn.transport_on_spacetime(st, fibers[0], fibers[1])
+        first = conn.transport_on_spacetime_cached(cache, st, fibers[0],
                                                 fibers[1])
         hits_before = cache.hits
-        second = conn.transportOnSpacetimeCached(cache, st, fibers[0],
+        second = conn.transport_on_spacetime_cached(cache, st, fibers[0],
                                                  fibers[1])
         self.assertEqual(cache.hits, hits_before + 1)
         self._assert_reads_equal(cold, first)
@@ -1306,8 +1306,8 @@ class TestCaching(unittest.TestCase):
         _set_phase(st, 0, 1, 0.5)
         cache = cob.AnalyticCache(st)
         conn = obs.FiberConnection()
-        left = obs.SpectralFiberTracker(st).enumerateBands([0, 1], 0)
-        right = obs.SpectralFiberTracker(st).enumerateBands([2, 3], 0)
+        left = obs.SpectralFiberTracker(st).enumerate_bands([0, 1], 0)
+        right = obs.SpectralFiberTracker(st).enumerate_bands([2, 3], 0)
         if len(left.fibers) < 2 or len(right.fibers) < 2:
             self.skipTest("fixture did not produce two bands per component")
         # Every band combination of the SAME component pair, in one cache:
@@ -1315,9 +1315,9 @@ class TestCaching(unittest.TestCase):
         # first combination's read.
         for i in range(2):
             for j in range(2):
-                cached = conn.transportOnSpacetimeCached(
+                cached = conn.transport_on_spacetime_cached(
                     cache, st, left.fibers[i], right.fibers[j])
-                cold = conn.transportOnSpacetime(st, left.fibers[i],
+                cold = conn.transport_on_spacetime(st, left.fibers[i],
                                                  right.fibers[j])
                 self._assert_reads_equal(cached, cold)
         # Four distinct band pairs over one component pair: four entries.
@@ -1327,12 +1327,12 @@ class TestCaching(unittest.TestCase):
         st, fibers = self._square()
         cache = cob.AnalyticCache(st)
         conn = obs.FiberConnection()
-        fwd = conn.transportOnSpacetimeCached(cache, st, fibers[0], fibers[1])
-        bwd = conn.transportOnSpacetimeCached(cache, st, fibers[1], fibers[0])
+        fwd = conn.transport_on_spacetime_cached(cache, st, fibers[0], fibers[1])
+        bwd = conn.transport_on_spacetime_cached(cache, st, fibers[1], fibers[0])
         # same component union, opposite direction: distinct entries
-        self.assertEqual(fwd.toKey, bwd.fromKey)
-        np.testing.assert_allclose(np.asarray(bwd.rawMap),
-                                   np.asarray(fwd.rawMap).conj().T,
+        self.assertEqual(fwd.to_key, bwd.from_key)
+        np.testing.assert_allclose(np.asarray(bwd.raw_map),
+                                   np.asarray(fwd.raw_map).conj().T,
                                    rtol=0, atol=SOLVER)
         self.assertEqual(cache.size, 2)
 
@@ -1340,52 +1340,52 @@ class TestCaching(unittest.TestCase):
         st, fibers = self._square()
         cache = cob.AnalyticCache(st)
         conn = obs.FiberConnection()
-        ab_before = conn.transportOnSpacetimeCached(cache, st, fibers[0],
+        ab_before = conn.transport_on_spacetime_cached(cache, st, fibers[0],
                                                     fibers[1])
-        cd_before = conn.transportOnSpacetimeCached(cache, st, fibers[2],
+        cd_before = conn.transport_on_spacetime_cached(cache, st, fibers[2],
                                                     fibers[3])
         # metric move on edge (2,3): publish its star
         _set_phase(st, 2, 3, 0.9)
         star = cob.TouchedStar()
-        star.addChangedEdge(2, 3)
+        star.add_changed_edge(2, 3)
         cache.publish(star)
         hits_before = cache.hits
-        ab_after = conn.transportOnSpacetimeCached(cache, st, fibers[0],
+        ab_after = conn.transport_on_spacetime_cached(cache, st, fibers[0],
                                                    fibers[1])
         # the disjoint sibling was SERVED from cache
         self.assertEqual(cache.hits, hits_before + 1)
         self._assert_reads_equal(ab_before, ab_after)
         # the touched transport was recomputed and equals a cold read
-        cd_after = conn.transportOnSpacetimeCached(cache, st, fibers[2],
+        cd_after = conn.transport_on_spacetime_cached(cache, st, fibers[2],
                                                    fibers[3])
-        cd_cold = conn.transportOnSpacetime(st, fibers[2], fibers[3])
+        cd_cold = conn.transport_on_spacetime(st, fibers[2], fibers[3])
         self._assert_reads_equal(cd_after, cd_cold)
         self.assertGreater(
-            np.abs(np.asarray(cd_after.rawMap)
-                   - np.asarray(cd_before.rawMap)).max(), 1e-3)
+            np.abs(np.asarray(cd_after.raw_map)
+                   - np.asarray(cd_before.raw_map)).max(), 1e-3)
 
     def test_loop_product_cache_cold_equals_cached(self):
         st, fibers = self._square()
         cache = cob.AnalyticCache(st)
         conn = obs.FiberConnection()
-        cold = conn.holonomyOnSpacetime(st, fibers)
-        first = conn.holonomyOnSpacetimeCached(cache, st, fibers)
-        second = conn.holonomyOnSpacetimeCached(cache, st, fibers)
+        cold = conn.holonomy_on_spacetime(st, fibers)
+        first = conn.holonomy_on_spacetime_cached(cache, st, fibers)
+        second = conn.holonomy_on_spacetime_cached(cache, st, fibers)
         for read in (first, second):
             np.testing.assert_allclose(np.asarray(read.holonomy),
                                        np.asarray(cold.holonomy),
                                        rtol=0, atol=0)
-            self.assertEqual(read.normalizedTrace, cold.normalizedTrace)
+            self.assertEqual(read.normalized_trace, cold.normalized_trace)
 
     def test_loop_order_does_not_collide_in_the_cache(self):
         st, fibers = self._square()
         cache = cob.AnalyticCache(st)
         conn = obs.FiberConnection()
-        loop_a = conn.holonomyOnSpacetimeCached(
+        loop_a = conn.holonomy_on_spacetime_cached(
             cache, st, [fibers[0], fibers[1], fibers[2], fibers[3]])
-        loop_b = conn.holonomyOnSpacetimeCached(
+        loop_b = conn.holonomy_on_spacetime_cached(
             cache, st, [fibers[0], fibers[3], fibers[2], fibers[1]])
-        cold_b = conn.holonomyOnSpacetime(
+        cold_b = conn.holonomy_on_spacetime(
             st, [fibers[0], fibers[3], fibers[2], fibers[1]])
         np.testing.assert_allclose(np.asarray(loop_b.holonomy),
                                    np.asarray(cold_b.holonomy),
@@ -1400,23 +1400,23 @@ class TestCaching(unittest.TestCase):
         cache = cob.AnalyticCache(st)
         conn = obs.FiberConnection()
         # a loop over {0,1} only (there and back) and the full square loop
-        small_before = conn.holonomyOnSpacetimeCached(
+        small_before = conn.holonomy_on_spacetime_cached(
             cache, st, [fibers[0], fibers[1]])
-        full_before = conn.holonomyOnSpacetimeCached(cache, st, fibers)
+        full_before = conn.holonomy_on_spacetime_cached(cache, st, fibers)
         _set_phase(st, 2, 3, 1.3)
         star = cob.TouchedStar()
-        star.addChangedEdge(2, 3)
+        star.add_changed_edge(2, 3)
         cache.publish(star)
         hits_before = cache.hits
-        small_after = conn.holonomyOnSpacetimeCached(
+        small_after = conn.holonomy_on_spacetime_cached(
             cache, st, [fibers[0], fibers[1]])
         # untouched loop: product AND its two links all served from cache
         self.assertEqual(cache.hits, hits_before + 1)
-        self.assertEqual(small_after.normalizedTrace,
-                         small_before.normalizedTrace)
+        self.assertEqual(small_after.normalized_trace,
+                         small_before.normalized_trace)
         # the touched loop recomputes and equals cold
-        full_after = conn.holonomyOnSpacetimeCached(cache, st, fibers)
-        full_cold = conn.holonomyOnSpacetime(st, fibers)
+        full_after = conn.holonomy_on_spacetime_cached(cache, st, fibers)
+        full_cold = conn.holonomy_on_spacetime(st, fibers)
         np.testing.assert_allclose(np.asarray(full_after.holonomy),
                                    np.asarray(full_cold.holonomy),
                                    rtol=0, atol=0)
@@ -1426,11 +1426,11 @@ class TestCaching(unittest.TestCase):
     def test_disabled_cache_still_computes_correctly(self):
         st, fibers = self._square()
         cache = cob.AnalyticCache(st)
-        cache.setEnabled(False)
+        cache.set_enabled(False)
         conn = obs.FiberConnection()
-        read = conn.transportOnSpacetimeCached(cache, st, fibers[0],
+        read = conn.transport_on_spacetime_cached(cache, st, fibers[0],
                                                fibers[1])
-        cold = conn.transportOnSpacetime(st, fibers[0], fibers[1])
+        cold = conn.transport_on_spacetime(st, fibers[0], fibers[1])
         self._assert_reads_equal(read, cold)
 
 
@@ -1451,64 +1451,64 @@ class TestRecordSerialization(unittest.TestCase):
     def test_accepted_transport_round_trip(self):
         u = _random_unitary(np.random.default_rng(2), 3)
         read = self.conn.transport(self.A, self.B, u)
-        rec = read.toRecord()
-        back = obs.FiberTransportRead.fromRecord(rec)
-        self.assertEqual(self._delta(rec, back.toRecord()), 0.0)
-        np.testing.assert_allclose(np.asarray(back.unitaryMap),
-                                   np.asarray(read.unitaryMap),
+        rec = read.to_record()
+        back = obs.FiberTransportRead.from_record(rec)
+        self.assertEqual(self._delta(rec, back.to_record()), 0.0)
+        np.testing.assert_allclose(np.asarray(back.unitary_map),
+                                   np.asarray(read.unitary_map),
                                    rtol=0, atol=0)
-        self.assertEqual(back.toKey, read.toKey)
+        self.assertEqual(back.to_key, read.to_key)
         self.assertEqual(back.accepted, True)
         # the rank-three quartet travels: full U(3) factor + det V (and
         # thereby the PU(3) class, which V alone determines)
         np.testing.assert_allclose(
-            np.asarray(obs.FiberConnection.projectiveRepresentative(
-                np.asarray(back.unitaryMap), GATE)),
-            np.asarray(obs.FiberConnection.projectiveRepresentative(
-                np.asarray(read.unitaryMap), GATE)), rtol=0, atol=0)
+            np.asarray(obs.FiberConnection.projective_representative(
+                np.asarray(back.unitary_map), GATE)),
+            np.asarray(obs.FiberConnection.projective_representative(
+                np.asarray(read.unitary_map), GATE)), rtol=0, atol=0)
 
     def test_rejected_transport_round_trip(self):
         read = self.conn.transport(self.A, self.B, np.diag([0.5, 2.0, 1.0]))
-        back = obs.FiberTransportRead.fromRecord(read.toRecord())
-        self.assertEqual(self._delta(read.toRecord(), back.toRecord()), 0.0)
+        back = obs.FiberTransportRead.from_record(read.to_record())
+        self.assertEqual(self._delta(read.to_record(), back.to_record()), 0.0)
         self.assertFalse(back.accepted)
-        self.assertEqual(back.rejectionReason, read.rejectionReason)
-        self.assertEqual(back.unitaryMap.size, 0)
+        self.assertEqual(back.rejection_reason, read.rejection_reason)
+        self.assertEqual(back.unitary_map.size, 0)
         self.assertFalse(back.certificate.holds())
 
     def test_lift_round_trip_carries_the_center_sector(self):
         links = [_phase_link(self.conn, self.A, self.B, TWO_PI / 3.0)
                  for _ in range(3)]
-        lift = self.conn.fundamentalLift(links, GATE, 2)
-        back = obs.FundamentalLiftRead.fromRecord(lift.toRecord())
-        self.assertEqual(self._delta(lift.toRecord(), back.toRecord()), 0.0)
-        self.assertEqual(back.centerSector, 1)
-        self.assertEqual(back.baseBranch, 2)
+        lift = self.conn.fundamental_lift(links, GATE, 2)
+        back = obs.FundamentalLiftRead.from_record(lift.to_record())
+        self.assertEqual(self._delta(lift.to_record(), back.to_record()), 0.0)
+        self.assertEqual(back.center_sector, 1)
+        self.assertEqual(back.base_branch, 2)
         np.testing.assert_allclose(np.asarray(back.lift),
                                    np.asarray(lift.lift), rtol=0, atol=0)
 
     def test_winding_round_trip_known_and_unknown(self):
         family = [_phase_link(self.conn, self.A, self.B, TWO_PI * k / 8)
                   for k in range(8)]
-        known = self.conn.closedFamilyWinding(family)
-        back = obs.DeterminantWindingRead.fromRecord(known.toRecord())
-        self.assertEqual(self._delta(known.toRecord(), back.toRecord()), 0.0)
+        known = self.conn.closed_family_winding(family)
+        back = obs.DeterminantWindingRead.from_record(known.to_record())
+        self.assertEqual(self._delta(known.to_record(), back.to_record()), 0.0)
         self.assertEqual(back.winding, 1)
         # unknown stays unknown — never rehydrated as zero
-        unknown = self.conn.openSegmentWinding(family,
+        unknown = self.conn.open_segment_winding(family,
                                                obs.WindingClosureSpec())
-        back_u = obs.DeterminantWindingRead.fromRecord(unknown.toRecord())
+        back_u = obs.DeterminantWindingRead.from_record(unknown.to_record())
         self.assertIsNone(back_u.winding)
-        self.assertEqual(back_u.windingClosure, "none")
+        self.assertEqual(back_u.winding_closure, "none")
 
     def test_unknown_schema_version_is_rejected(self):
         read = self.conn.transport(self.A, self.B, np.eye(3))
-        rec = read.toRecord()
+        rec = read.to_record()
         rec["schema_version"] = 99
         with self.assertRaises(ValueError):
-            obs.FiberTransportRead.fromRecord(rec)
+            obs.FiberTransportRead.from_record(rec)
         with self.assertRaises(ValueError):
-            obs.FundamentalLiftRead.fromRecord(rec)
+            obs.FundamentalLiftRead.from_record(rec)
 
 
 if __name__ == "__main__":
@@ -1536,26 +1536,26 @@ class TestSpecHolonomyDiagnostics(unittest.TestCase):
     def test_every_required_diagnostic_is_measured(self):
         links = self._links()
         loop = obs.FiberConnection().holonomy(links)
-        for name in ("maxLeakage", "minEndpointGap",
-                     "maxFrameConditionNumber", "minSingularValue"):
+        for name in ("max_leakage", "min_endpoint_gap",
+                     "max_frame_condition_number", "min_singular_value"):
             self.assertFalse(math.isnan(getattr(loop, name)),
                              name + " must be measured, never NaN, on an "
                                     "accepted holonomy")
-        self.assertGreaterEqual(loop.minNumericalRank, 1)
+        self.assertGreaterEqual(loop.min_numerical_rank, 1)
 
     def test_each_diagnostic_is_the_worst_case_over_the_links(self):
         links = self._links()
         loop = obs.FiberConnection().holonomy(links)
-        self.assertAlmostEqual(loop.maxLeakage,
+        self.assertAlmostEqual(loop.max_leakage,
                                max(l.leakage for l in links), delta=MACHINE)
-        self.assertAlmostEqual(loop.maxFrameConditionNumber,
-                               max(l.frameConditionNumber for l in links),
+        self.assertAlmostEqual(loop.max_frame_condition_number,
+                               max(l.frame_condition_number for l in links),
                                delta=MACHINE)
         self.assertAlmostEqual(
-            loop.minEndpointGap,
-            min(min(l.toGap, l.fromGap) for l in links), delta=MACHINE)
-        self.assertEqual(loop.minNumericalRank,
-                         min(l.numericalRank for l in links))
+            loop.min_endpoint_gap,
+            min(min(l.to_gap, l.from_gap) for l in links), delta=MACHINE)
+        self.assertEqual(loop.min_numerical_rank,
+                         min(l.numerical_rank for l in links))
 
 
 # --------------------------------------------------------------------------- #
@@ -1581,22 +1581,22 @@ class TestAnchorGatedColourKernels(unittest.TestCase):
 
     def test_projective_representative_refuses_without_an_anchor(self):
         with self.assertRaises(ValueError) as caught:
-            obs.FiberConnection.projectiveRepresentative(np.eye(3),
+            obs.FiberConnection.projective_representative(np.eye(3),
                                                          obs.AnchorGate())
         self.assertIn("triangle-anchor", str(caught.exception))
 
     def test_projective_representative_admits_an_anchored_band(self):
         rep = np.asarray(
-            obs.FiberConnection.projectiveRepresentative(np.eye(3), GATE))
+            obs.FiberConnection.projective_representative(np.eye(3), GATE))
         np.testing.assert_allclose(rep, np.eye(3), rtol=0, atol=MACHINE)
 
     def test_fundamental_lift_refuses_without_an_anchor(self):
-        lift = self.conn.fundamentalLift([self.link], obs.AnchorGate())
+        lift = self.conn.fundamental_lift([self.link], obs.AnchorGate())
         self.assertFalse(lift.valid)
-        self.assertIn("triangle-anchor", lift.invalidReason)
+        self.assertIn("triangle-anchor", lift.invalid_reason)
 
     def test_fundamental_lift_admits_an_anchored_band(self):
-        lift = self.conn.fundamentalLift([self.link], GATE)
+        lift = self.conn.fundamental_lift([self.link], GATE)
         self.assertTrue(lift.valid)
         self.assertEqual(lift.rank, 3)
 
@@ -1605,9 +1605,9 @@ class TestAnchorGatedColourKernels(unittest.TestCase):
         # the contract gates the kernel, so that refusal comes first.
         link = self.conn.transport(_unit_fiber(31, 2), _unit_fiber(41, 2),
                                     np.eye(2))
-        lift = self.conn.fundamentalLift([link], obs.AnchorGate())
+        lift = self.conn.fundamental_lift([link], obs.AnchorGate())
         self.assertFalse(lift.valid)
-        self.assertIn("triangle-anchor", lift.invalidReason)
+        self.assertIn("triangle-anchor", lift.invalid_reason)
 
 
 class TestAnchorAcceptancePredicate(unittest.TestCase):
@@ -1623,40 +1623,40 @@ class TestAnchorAcceptancePredicate(unittest.TestCase):
         weights = np.array([2.0, 0.5, 1.25])
         rng = np.random.default_rng(61)
         frame = rng.normal(size=(3, 3)) + 1j * rng.normal(size=(3, 3))
-        band = obs.ColorAnchor.orthonormalizeFrame(frame, weights)
+        band = obs.ColorAnchor.orthonormalize_frame(frame, weights)
         anchor = obs.ColorAnchor([obs.OrientedTriangle([0, 1, 2], [1, 1, 1])])
         profile = anchor.evaluate(band, weights)
         self.assertTrue(math.isnan(profile.phase_coherence))
         self.assertFalse(obs.ColorAnchor.accepts(profile))
-        self.assertFalse(obs.ColorAnchor.gateFor(profile).accepted)
+        self.assertFalse(obs.ColorAnchor.gate_for(profile).accepted)
 
     def test_a_measured_anchor_passes(self):
         profile = self._profile()
         self.assertTrue(obs.ColorAnchor.accepts(profile))
-        self.assertTrue(obs.ColorAnchor.gateFor(profile).accepted)
+        self.assertTrue(obs.ColorAnchor.gate_for(profile).accepted)
 
     def test_missing_evidence_is_refused_not_scored_zero(self):
         # A default-constructed profile declared no weighting at all: that is
         # ABSENT evidence, and it must be named as such.
-        gate = obs.ColorAnchor.gateFor(obs.AnchorProfile())
+        gate = obs.ColorAnchor.gate_for(obs.AnchorProfile())
         self.assertFalse(gate.accepted)
         self.assertIn("absent", gate.refusal_reason)
 
     def test_a_score_below_the_floor_is_refused_and_named(self):
         profile = self._profile()
-        gate = obs.ColorAnchor.gateFor(profile, min_score=1.5)
+        gate = obs.ColorAnchor.gate_for(profile, min_score=1.5)
         self.assertFalse(gate.accepted)
         self.assertIn("atlas score", gate.refusal_reason)
 
     def test_a_coherence_below_the_floor_is_refused_and_named(self):
         profile = self._profile()
-        gate = obs.ColorAnchor.gateFor(profile, min_phase_coherence=1.5)
+        gate = obs.ColorAnchor.gate_for(profile, min_phase_coherence=1.5)
         self.assertFalse(gate.accepted)
         self.assertIn("coherence", gate.refusal_reason)
 
     def test_the_gate_records_what_admitted_it(self):
         profile = self._profile()
-        gate = obs.ColorAnchor.gateFor(profile)
+        gate = obs.ColorAnchor.gate_for(profile)
         self.assertEqual(gate.weighting_id, profile.weighting_id)
         self.assertAlmostEqual(gate.score, profile.score, delta=MACHINE)
         self.assertAlmostEqual(gate.phase_coherence, profile.phase_coherence,

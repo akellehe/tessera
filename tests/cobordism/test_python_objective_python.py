@@ -26,16 +26,16 @@ def _complex_sphere4():
                      T.CDT, 1.0, 1.0, T.PREFERRED,
                      T.SimplexBoundarySphere(4))
     st.build()
-    for index, edge in enumerate(st.getEdgeList().toVector()):
+    for index, edge in enumerate(st.get_edge_list().to_vector()):
         z = complex(1.0 + 0.019 * (index % 5),
                     0.011 * (1 + index % 4))
-        edge.setLength(cmath.sqrt(z))
+        edge.set_length(cmath.sqrt(z))
     return st
 
 
 def _first_vertices(st, count=3):
-    return {vertex.getId()
-            for vertex in st.getVertexList().toVector()[:count]}
+    return {vertex.get_id()
+            for vertex in st.get_vertex_list().to_vector()[:count]}
 
 
 def _node(st, degree=3, gamma=0.0):
@@ -290,8 +290,8 @@ class QuadraticObjective(cob.CobordismObjective):
 
     @staticmethod
     def _squared_lengths(spacetime):
-        return [complex(edge.getLength()) ** 2
-                for edge in spacetime.getEdgeList().toVector()]
+        return [complex(edge.get_length()) ** 2
+                for edge in spacetime.get_edge_list().to_vector()]
 
     def name(self):
         return "python_quadratic"
@@ -353,8 +353,8 @@ class EndToEndRunTest(unittest.TestCase):
         node = _node(st)
         node.set_objective(QuadraticObjective())
         node.run_stage2(beta=1.0, max_iters=25)
-        for edge in st.getEdgeList().toVector():
-            self.assertAlmostEqual(complex(edge.getLength()) ** 2, 1.0,
+        for edge in st.get_edge_list().to_vector():
+            self.assertAlmostEqual(complex(edge.get_length()) ** 2, 1.0,
                                    places=9)
 
 

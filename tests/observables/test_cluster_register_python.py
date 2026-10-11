@@ -39,12 +39,12 @@ def _from_simplices(num_vertices, simplices, ids=None):
     st = tessera.Spacetime(metric, tessera.HERMITIAN_WEIGHTED, 1.0, 1.0,
                            tessera.PREFERRED, tessera.Toroid())
     ids = list(range(num_vertices)) if ids is None else ids
-    verts = [st.createVertex(i) for i in ids]
+    verts = [st.create_vertex(i) for i in ids]
     for simplex in simplices:
-        st.createSimplex([verts[i] for i in simplex])
-    for e in st.getEdgeList().toVector():
-        e.setLength(1.0 + 0j)
-        e.setPhase(0.0)
+        st.create_simplex([verts[i] for i in simplex])
+    for e in st.get_edge_list().to_vector():
+        e.set_length(1.0 + 0j)
+        e.set_phase(0.0)
     return st
 
 
@@ -109,7 +109,7 @@ def _fiber(cells, right, left=None, weights=None, *, degree=1, accepted=True,
     _split("right_frame", right, record)
     _split("left_frame", left, record)
     _split("weights", weights, record)
-    return obs.SpectralFiber.fromRecord(record)
+    return obs.SpectralFiber.from_record(record)
 
 
 def _vertex_fiber(vertex_ids, **kw):
@@ -131,8 +131,8 @@ def _pm_config():
     cfg = tessera.PersistentModularityConfig()
     cfg.resolutions = [1.0]
     cfg.restarts = 4
-    cfg.baseSeed = 0
-    cfg.overlapThreshold = 0.0   # keep the track alive so the READ gates it
+    cfg.base_seed = 0
+    cfg.overlap_threshold = 0.0   # keep the track alive so the READ gates it
     return cfg
 
 
@@ -141,13 +141,13 @@ def _track(frames, migrate=0):
 
     `FrameTrack` is read-only by design and a hand-built one would be a
     fabricated measurement, so the lifetime and the adjacent-frame overlap
-    both come out of `PersistentModularity.trackAcrossFrames` — the
+    both come out of `PersistentModularity.track_across_frames` — the
     specification's own supplier of the two quantities.
 
     `migrate` cells leave the tracked clique from the second frame onward,
     which is what actually lowers the adjacent-frame Jaccard.  The overlap
     this achieves is a MEASURED property of the fixture, so callers read
-    `track.minAdjacentOverlap` rather than asking for a value: the tracker
+    `track.min_adjacent_overlap` rather than asking for a value: the tracker
     stops following the clique once too many cells leave, so overlaps below
     about 0.5 are simply not reachable this way and pretending otherwise
     would be a fixture that lies.
@@ -160,15 +160,15 @@ def _track(frames, migrate=0):
         kept = base[:6 - migrate] if t > 0 else base
         _clique_edges(kept, src, tgt)
         _clique_edges(other + (base[6 - migrate:] if t > 0 else []), src, tgt)
-        graph = tessera.PersistentModularity.fromWeightedEdges(
+        graph = tessera.PersistentModularity.from_weighted_edges(
             src, tgt, [1.0] * len(src))
         frames_out.append(graph.discover(1.0, _pm_config()).components)
     src, tgt = [], []
     _clique_edges(base, src, tgt)
     _clique_edges(other, src, tgt)
-    graph = tessera.PersistentModularity.fromWeightedEdges(
+    graph = tessera.PersistentModularity.from_weighted_edges(
         src, tgt, [1.0] * len(src))
-    tracks = graph.trackAcrossFrames(frames_out, 0.0)
+    tracks = graph.track_across_frames(frames_out, 0.0)
     if not tracks:
         raise AssertionError("fixture produced no frame track")
     # The track covering the most frames is the tracked clique's.
@@ -222,7 +222,7 @@ class TestFiberOnACluster(ClusterRegisterCase):
                          "fixture must have no emergent hole at all")
         read = self.read()
         self.assertTrue(read.accepted, read.describe())
-        self.assertEqual(list(read.failedConjuncts), [])
+        self.assertEqual(list(read.failed_conjuncts), [])
         self.assertEqual(list(read.unmeasured), [])
 
     def test_the_fiber_is_the_bands_frame_range(self):
@@ -232,8 +232,8 @@ class TestFiberOnACluster(ClusterRegisterCase):
         self.assertEqual(read.rank, self.band.rank())
         self.assertEqual(read.degree, self.band.degree())
         np.testing.assert_allclose(
-            np.asarray(read.band.rightFrame()),
-            np.asarray(self.band.rightFrame()))
+            np.asarray(read.band.right_frame()),
+            np.asarray(self.band.right_frame()))
 
     def test_no_rank_is_requested(self):
         """The read never asks for a particular rank — a rank-2 band is read
@@ -259,16 +259,16 @@ class TestSixConjunctsEnforced(ClusterRegisterCase):
                                 self.transports)
         self.assertFalse(read.accepted)
         self.assertIn(obs.RegisterConjunct.CLUSTER_SUPPORT,
-                      list(read.failedConjuncts))
-        self.assertEqual(read.supportPieces, 2)
-        self.assertFalse(read.supportConnected)
+                      list(read.failed_conjuncts))
+        self.assertEqual(read.support_pieces, 2)
+        self.assertFalse(read.support_connected)
 
     def test_connected_support_passes_that_conjunct(self):
         read = self.read()
-        self.assertTrue(read.supportConnected)
-        self.assertEqual(read.supportPieces, 1)
+        self.assertTrue(read.support_connected)
+        self.assertEqual(read.support_pieces, 1)
         self.assertNotIn(obs.RegisterConjunct.CLUSTER_SUPPORT,
-                         list(read.failedConjuncts))
+                         list(read.failed_conjuncts))
 
     def test_uncertified_band_fails_localized_projector_by_name(self):
         band = _vertex_fiber(self.support, accepted=False,
@@ -276,15 +276,15 @@ class TestSixConjunctsEnforced(ClusterRegisterCase):
         read = self.read(band=band)
         self.assertFalse(read.accepted)
         self.assertIn(obs.RegisterConjunct.LOCALIZED_PROJECTOR,
-                      list(read.failedConjuncts))
+                      list(read.failed_conjuncts))
 
     def test_zero_band_gap_fails_band_gap_by_name(self):
         band = _vertex_fiber(self.support, gap=0.0)
         read = self.read(band=band)
         self.assertFalse(read.accepted)
         self.assertIn(obs.RegisterConjunct.BAND_GAP,
-                      list(read.failedConjuncts))
-        self.assertEqual(read.bandGap, 0.0)
+                      list(read.failed_conjuncts))
+        self.assertEqual(read.band_gap, 0.0)
 
     def test_low_neighbour_overlap_fails_that_conjunct_by_name(self):
         """The tracker stops following a clique once too many cells leave, so
@@ -293,17 +293,17 @@ class TestSixConjunctsEnforced(ClusterRegisterCase):
         the fixture actually achieved — the measurement stays honest and the
         threshold does the work it exists to do."""
         track = _track(frames=3, migrate=1)
-        achieved = track.minAdjacentOverlap
+        achieved = track.min_adjacent_overlap
         self.assertLess(achieved, 1.0,
                         "fixture must actually lower the overlap")
         cfg = obs.ClusterRegisterConfig()
-        cfg.minNeighbourOverlap = achieved + 0.05
+        cfg.min_neighbour_overlap = achieved + 0.05
         read = obs.ClusterRegister(cfg).read(
             self.st, self.support, self.band, track, self.transports)
         self.assertFalse(read.accepted)
         self.assertIn(obs.RegisterConjunct.NEIGHBOUR_OVERLAP,
-                      list(read.failedConjuncts))
-        self.assertAlmostEqual(read.neighbourOverlap, achieved)
+                      list(read.failed_conjuncts))
+        self.assertAlmostEqual(read.neighbour_overlap, achieved)
 
     def test_single_frame_fails_frame_lifetime_by_name(self):
         """'lifetime across MULTIPLE cobordism frames' — one frame is not a
@@ -311,21 +311,21 @@ class TestSixConjunctsEnforced(ClusterRegisterCase):
         read = self.read(track=_track(frames=1))
         self.assertFalse(read.accepted)
         self.assertIn(obs.RegisterConjunct.FRAME_LIFETIME,
-                      list(read.failedConjuncts))
-        self.assertEqual(read.frameLifetime, 1.0)
+                      list(read.failed_conjuncts))
+        self.assertEqual(read.frame_lifetime, 1.0)
 
     def test_large_leakage_fails_transport_leakage_by_name(self):
         read = self.read(transports=[_transport(0.5)])
         self.assertFalse(read.accepted)
         self.assertIn(obs.RegisterConjunct.TRANSPORT_LEAKAGE,
-                      list(read.failedConjuncts))
-        self.assertGreater(read.transportLeakage,
-                           read.thresholds.maxTransportLeakage)
+                      list(read.failed_conjuncts))
+        self.assertGreater(read.transport_leakage,
+                           read.thresholds.max_transport_leakage)
 
     def test_leakage_is_the_worst_over_the_supplied_transports(self):
         read = self.read(transports=[_transport(0.0), _transport(0.5),
                                      _transport(0.0)])
-        self.assertGreater(read.transportLeakage, 0.1)
+        self.assertGreater(read.transport_leakage, 0.1)
 
     def test_every_conjunct_is_independently_decisive(self):
         """Spoiling any ONE conjunct blocks acceptance — none is redundant
@@ -343,19 +343,19 @@ class TestSixConjunctsEnforced(ClusterRegisterCase):
             with self.subTest(conjunct=name):
                 read = self.read(**override)
                 self.assertFalse(read.accepted)
-                self.assertIn(name, list(read.failedConjuncts))
+                self.assertIn(name, list(read.failed_conjuncts))
 
         # The overlap conjunct is spoiled by its threshold rather than by an
         # unreachable fixture overlap; see the dedicated test above.
         with self.subTest(conjunct=obs.RegisterConjunct.NEIGHBOUR_OVERLAP):
             cfg = obs.ClusterRegisterConfig()
-            cfg.minNeighbourOverlap = self.track.minAdjacentOverlap + 0.05
+            cfg.min_neighbour_overlap = self.track.min_adjacent_overlap + 0.05
             read = obs.ClusterRegister(cfg).read(
                 self.st, self.support, self.band, self.track,
                 self.transports)
             self.assertFalse(read.accepted)
             self.assertIn(obs.RegisterConjunct.NEIGHBOUR_OVERLAP,
-                          list(read.failedConjuncts))
+                          list(read.failed_conjuncts))
 
 
 # --------------------------------------------------------------------------- #
@@ -372,9 +372,9 @@ class TestUnmeasuredIsNotFailed(ClusterRegisterCase):
         self.assertIn(obs.RegisterUnmeasured.NO_FRAME_TRACK,
                       list(read.unmeasured))
         self.assertNotIn(obs.RegisterConjunct.FRAME_LIFETIME,
-                         list(read.failedConjuncts))
-        self.assertTrue(math.isnan(read.frameLifetime))
-        self.assertTrue(math.isnan(read.neighbourOverlap))
+                         list(read.failed_conjuncts))
+        self.assertTrue(math.isnan(read.frame_lifetime))
+        self.assertTrue(math.isnan(read.neighbour_overlap))
 
     def test_absent_transports_leave_leakage_unmeasured_not_small(self):
         """Absence of transports is NOT evidence of small leakage."""
@@ -383,8 +383,8 @@ class TestUnmeasuredIsNotFailed(ClusterRegisterCase):
         self.assertIn(obs.RegisterUnmeasured.NO_TRANSPORT,
                       list(read.unmeasured))
         self.assertNotIn(obs.RegisterConjunct.TRANSPORT_LEAKAGE,
-                         list(read.failedConjuncts))
-        self.assertTrue(math.isnan(read.transportLeakage))
+                         list(read.failed_conjuncts))
+        self.assertTrue(math.isnan(read.transport_leakage))
 
     def test_unmeasured_localization_is_named_not_failed(self):
         band = _vertex_fiber(self.support, localization_excess=NAN)
@@ -392,7 +392,7 @@ class TestUnmeasuredIsNotFailed(ClusterRegisterCase):
         self.assertFalse(read.accepted)
         self.assertIn(obs.RegisterUnmeasured.LOCALIZATION_UNMEASURED,
                       list(read.unmeasured))
-        self.assertTrue(math.isnan(read.localizationExcess))
+        self.assertTrue(math.isnan(read.localization_excess))
 
     def test_failure_and_absence_are_disjoint_vocabularies(self):
         """No name appears in both lists: a measured shortfall and a missing
@@ -402,7 +402,7 @@ class TestUnmeasuredIsNotFailed(ClusterRegisterCase):
             with self.subTest(override=sorted(override)):
                 read = self.read(**override)
                 self.assertEqual(
-                    set(read.failedConjuncts) & set(read.unmeasured), set())
+                    set(read.failed_conjuncts) & set(read.unmeasured), set())
 
 
 # --------------------------------------------------------------------------- #
@@ -414,8 +414,8 @@ class TestRegimeReporting(ClusterRegisterCase):
         read = self.read()
         self.assertEqual(read.regime.regime,
                          cob.CertificateRegime.PositiveSemidefinite)
-        self.assertAlmostEqual(read.regime.gramDefect, 0.0)
-        self.assertEqual(read.regime.negativeSignature, 0)
+        self.assertAlmostEqual(read.regime.gram_defect, 0.0)
+        self.assertEqual(read.regime.negative_signature, 0)
 
     def test_hermitian_indefinite_reports_inertia_and_normalizability(self):
         """'record the inertia of Phi^dagger W Phi and normalize it to
@@ -428,10 +428,10 @@ class TestRegimeReporting(ClusterRegisterCase):
         read = self.read(band=band)
         self.assertEqual(read.regime.regime,
                          cob.CertificateRegime.HermitianIndefinite)
-        self.assertEqual(read.regime.positiveSignature, 1)
-        self.assertEqual(read.regime.negativeSignature, 1)
-        self.assertEqual(read.regime.neutralSignature, 0)
-        self.assertTrue(read.regime.signatureNormalizable)
+        self.assertEqual(read.regime.positive_signature, 1)
+        self.assertEqual(read.regime.negative_signature, 1)
+        self.assertEqual(read.regime.neutral_signature, 0)
+        self.assertTrue(read.regime.signature_normalizable)
 
     def test_a_neutral_direction_is_reported_as_not_normalizable(self):
         band = _fiber([[0], [1], [2]],
@@ -440,8 +440,8 @@ class TestRegimeReporting(ClusterRegisterCase):
                       regime="hermitian-indefinite",
                       localization_excess=ALL_LOCALIZED)
         read = self.read(band=band)
-        self.assertEqual(read.regime.neutralSignature, 1)
-        self.assertFalse(read.regime.signatureNormalizable)
+        self.assertEqual(read.regime.neutral_signature, 1)
+        self.assertFalse(read.regime.signature_normalizable)
 
     def test_negative_signature_is_never_called_an_antiparticle(self):
         band = _vertex_fiber(self.support, pos=0, neg=1,
@@ -459,11 +459,11 @@ class TestRegimeReporting(ClusterRegisterCase):
                              left_res=3e-13, frame_cond=7.5)
         read = self.read(band=band)
         self.assertEqual(read.regime.regime, cob.CertificateRegime.NonNormal)
-        self.assertAlmostEqual(read.regime.eigenResidual, 1e-13)
-        self.assertAlmostEqual(read.regime.leftResidual, 3e-13)
-        self.assertAlmostEqual(read.regime.frameConditionNumber, 7.5)
-        self.assertNotEqual(read.regime.eigenResidual,
-                            read.regime.leftResidual)
+        self.assertAlmostEqual(read.regime.eigen_residual, 1e-13)
+        self.assertAlmostEqual(read.regime.left_residual, 3e-13)
+        self.assertAlmostEqual(read.regime.frame_condition_number, 7.5)
+        self.assertNotEqual(read.regime.eigen_residual,
+                            read.regime.left_residual)
 
 
 # --------------------------------------------------------------------------- #
@@ -478,7 +478,7 @@ class TestHoweverProposed(ClusterRegisterCase):
         channel through which to veto a certified fiber."""
         signature = (obs.ClusterRegister.read.__doc__ or "").split(")")[0]
         for accepted in ("st", "support", "band", "track",
-                         "externalTransports"):
+                         "external_transports"):
             self.assertIn(accepted, signature)
         for absent in ("modularity", "proposer", "partition", "community",
                        "strategy"):
@@ -493,18 +493,18 @@ class TestHoweverProposed(ClusterRegisterCase):
         reversed_ = self.reader.read(self.st, [2, 1, 0], self.band,
                                      self.track, self.transports)
         self.assertEqual(forward.accepted, reversed_.accepted)
-        self.assertEqual(forward.supportPieces, reversed_.supportPieces)
-        self.assertEqual(list(forward.failedConjuncts),
-                         list(reversed_.failedConjuncts))
+        self.assertEqual(forward.support_pieces, reversed_.support_pieces)
+        self.assertEqual(list(forward.failed_conjuncts),
+                         list(reversed_.failed_conjuncts))
 
     def test_a_disagreeing_proposer_cannot_veto_a_certified_fiber(self):
         """A modularity run that splits the triangle into singletons does not
         change the verdict on the whole-triangle support: acceptance is
         conditioned only on the six conjuncts."""
-        pm = obs.PersistentModularity.fromSpacetime(self.st)
+        pm = obs.PersistentModularity.from_spacetime(self.st)
         cfg = obs.PersistentModularityConfig()
         cfg.resolutions = [50.0]        # a resolution that shatters it
-        report = pm.scanResolutions(cfg)
+        report = pm.scan_resolutions(cfg)
         proposed = [list(c.support) for c in report.slices[0].components]
         self.assertGreater(len(proposed), 1,
                            "fixture must actually disagree with the support")
@@ -519,33 +519,33 @@ class TestSupportConnectivity(unittest.TestCase):
 
     def test_connected_support(self):
         st = _triangle()
-        connected, pieces = obs.ClusterRegister.supportConnectivity(
+        connected, pieces = obs.ClusterRegister.support_connectivity(
             st, [0, 1, 2])
         self.assertTrue(connected)
         self.assertEqual(pieces, 1)
 
     def test_two_pieces(self):
         st = _two_triangles()
-        connected, pieces = obs.ClusterRegister.supportConnectivity(
+        connected, pieces = obs.ClusterRegister.support_connectivity(
             st, [0, 1, 2, 10, 11, 12])
         self.assertFalse(connected)
         self.assertEqual(pieces, 2)
 
     def test_singleton_is_connected(self):
         st = _triangle()
-        connected, pieces = obs.ClusterRegister.supportConnectivity(st, [1])
+        connected, pieces = obs.ClusterRegister.support_connectivity(st, [1])
         self.assertTrue(connected)
         self.assertEqual(pieces, 1)
 
     def test_empty_support_is_not_connected_and_has_no_pieces(self):
         st = _triangle()
-        connected, pieces = obs.ClusterRegister.supportConnectivity(st, [])
+        connected, pieces = obs.ClusterRegister.support_connectivity(st, [])
         self.assertFalse(connected)
         self.assertEqual(pieces, 0)
 
     def test_unknown_ids_are_ignored_not_counted(self):
         st = _triangle()
-        connected, pieces = obs.ClusterRegister.supportConnectivity(
+        connected, pieces = obs.ClusterRegister.support_connectivity(
             st, [0, 1, 2, 9999])
         # 9999 is not in the complex, so it induces its own isolated piece.
         self.assertFalse(connected)
@@ -559,38 +559,38 @@ class TestRecordRoundTrip(ClusterRegisterCase):
 
     def test_round_trip_preserves_every_channel(self):
         read = self.read()
-        again = obs.ClusterRegisterRead.fromRecord(read.toRecord())
+        again = obs.ClusterRegisterRead.from_record(read.to_record())
         self.assertEqual(again.accepted, read.accepted)
         self.assertEqual(again.rank, read.rank)
         self.assertEqual(again.degree, read.degree)
         self.assertEqual(list(again.support), list(read.support))
-        self.assertEqual(again.supportPieces, read.supportPieces)
-        self.assertEqual(again.regime.positiveSignature,
-                         read.regime.positiveSignature)
-        self.assertEqual(list(again.failedConjuncts),
-                         list(read.failedConjuncts))
+        self.assertEqual(again.support_pieces, read.support_pieces)
+        self.assertEqual(again.regime.positive_signature,
+                         read.regime.positive_signature)
+        self.assertEqual(list(again.failed_conjuncts),
+                         list(read.failed_conjuncts))
         self.assertEqual(list(again.unmeasured), list(read.unmeasured))
 
     def test_nan_channels_survive_as_nan_not_zero(self):
         read = self.read(track=None, transports=[])
-        again = obs.ClusterRegisterRead.fromRecord(read.toRecord())
-        self.assertTrue(math.isnan(again.frameLifetime))
-        self.assertTrue(math.isnan(again.neighbourOverlap))
-        self.assertTrue(math.isnan(again.transportLeakage))
+        again = obs.ClusterRegisterRead.from_record(read.to_record())
+        self.assertTrue(math.isnan(again.frame_lifetime))
+        self.assertTrue(math.isnan(again.neighbour_overlap))
+        self.assertTrue(math.isnan(again.transport_leakage))
 
     def test_unknown_schema_version_is_rejected(self):
         """A reader that guessed at an unknown schema would silently
         misread a checkpoint, so it refuses instead."""
-        record = self.read().toRecord()
+        record = self.read().to_record()
         record["schema_version"] = 999
         with self.assertRaises(ValueError):
-            obs.ClusterRegisterRead.fromRecord(record)
+            obs.ClusterRegisterRead.from_record(record)
 
     def test_a_foreign_record_type_is_rejected(self):
-        record = self.read().toRecord()
+        record = self.read().to_record()
         record["record_type"] = "spectral_fiber"
         with self.assertRaises(ValueError):
-            obs.ClusterRegisterRead.fromRecord(record)
+            obs.ClusterRegisterRead.from_record(record)
 
 
 # --------------------------------------------------------------------------- #
@@ -616,7 +616,7 @@ class TestNoTargetConditioning(unittest.TestCase):
         second = reader.read(st, [0, 1, 2], band, None, [])
         self.assertEqual(first.accepted, second.accepted)
         self.assertEqual(list(first.unmeasured), list(second.unmeasured))
-        self.assertEqual(first.supportPieces, second.supportPieces)
+        self.assertEqual(first.support_pieces, second.support_pieces)
 
     def test_no_hole_vocabulary_survives_in_the_read(self):
         st = _triangle()
@@ -655,20 +655,20 @@ class TestRealHost(unittest.TestCase):
             len(list(cob.MultiCobordism.emergent_holes(st, 1))), 0,
             "the acceptance criterion needs a host with NO hole")
 
-        pm = obs.PersistentModularity.fromSpacetime(st)
+        pm = obs.PersistentModularity.from_spacetime(st)
         cfg = obs.PersistentModularityConfig()
         cfg.resolutions = [1.0]
-        comps = list(pm.scanResolutions(cfg).slices[0].components)
+        comps = list(pm.scan_resolutions(cfg).slices[0].components)
         self.assertGreaterEqual(len(comps), 2)
 
         supports = [[int(v) for v in c.support] for c in comps]
-        tracks = pm.trackAcrossFrames([comps, comps, comps], 0.5)
+        tracks = pm.track_across_frames([comps, comps, comps], 0.5)
         self.assertTrue(tracks)
 
         tracker = obs.SpectralFiberTracker(st, obs.SpectralFiberConfig())
-        band_a = list(tracker.enumerateBands(supports[0], 1).fibers)[0]
-        band_b = list(tracker.enumerateBands(supports[1], 1).fibers)[0]
-        transport = obs.FiberConnection().transportOnSpacetime(
+        band_a = list(tracker.enumerate_bands(supports[0], 1).fibers)[0]
+        band_b = list(tracker.enumerate_bands(supports[1], 1).fibers)[0]
+        transport = obs.FiberConnection().transport_on_spacetime(
             st, band_a, band_b)
 
         read = obs.ClusterRegister().read(
@@ -678,38 +678,38 @@ class TestRealHost(unittest.TestCase):
         # on measurements rather than on absent evidence.
         self.assertEqual(list(read.unmeasured), [],
                          "every conjunct must be decided on evidence")
-        self.assertTrue(read.supportConnected)
-        self.assertEqual(read.supportPieces, 1)
-        for value in (read.localizationExcess, read.bandGap,
-                      read.neighbourOverlap, read.frameLifetime,
-                      read.transportLeakage):
+        self.assertTrue(read.support_connected)
+        self.assertEqual(read.support_pieces, 1)
+        for value in (read.localization_excess, read.band_gap,
+                      read.neighbour_overlap, read.frame_lifetime,
+                      read.transport_leakage):
             self.assertFalse(math.isnan(value))
-        self.assertGreaterEqual(read.frameLifetime, 2.0)
+        self.assertGreaterEqual(read.frame_lifetime, 2.0)
 
     def test_a_real_refusal_names_a_measured_reason(self):
         """A refusal is a result.  On this host the external transport is
         rank-deficient, so leakage is MEASURED and fails — the register is
         refused for a reason, not for missing evidence."""
         st = self._host()
-        pm = obs.PersistentModularity.fromSpacetime(st)
+        pm = obs.PersistentModularity.from_spacetime(st)
         cfg = obs.PersistentModularityConfig()
         cfg.resolutions = [1.0]
-        comps = list(pm.scanResolutions(cfg).slices[0].components)
+        comps = list(pm.scan_resolutions(cfg).slices[0].components)
         supports = [[int(v) for v in c.support] for c in comps]
-        tracks = pm.trackAcrossFrames([comps, comps, comps], 0.5)
+        tracks = pm.track_across_frames([comps, comps, comps], 0.5)
         tracker = obs.SpectralFiberTracker(st, obs.SpectralFiberConfig())
-        band_a = list(tracker.enumerateBands(supports[0], 1).fibers)[0]
-        band_b = list(tracker.enumerateBands(supports[1], 1).fibers)[0]
-        transport = obs.FiberConnection().transportOnSpacetime(
+        band_a = list(tracker.enumerate_bands(supports[0], 1).fibers)[0]
+        band_b = list(tracker.enumerate_bands(supports[1], 1).fibers)[0]
+        transport = obs.FiberConnection().transport_on_spacetime(
             st, band_a, band_b)
 
         read = obs.ClusterRegister().read(
             st, supports[0], band_a, tracks[0], [transport])
         if read.accepted:
             self.skipTest("this host's transport certified; nothing refused")
-        self.assertTrue(read.failedConjuncts,
+        self.assertTrue(read.failed_conjuncts,
                         "a refusal must name at least one conjunct")
-        for name in read.failedConjuncts:
+        for name in read.failed_conjuncts:
             self.assertIn(name, (
                 obs.RegisterConjunct.CLUSTER_SUPPORT,
                 obs.RegisterConjunct.LOCALIZED_PROJECTOR,

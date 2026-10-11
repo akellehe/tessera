@@ -35,11 +35,11 @@ def _chain_spacetime(step_sq):
                            tessera.PREFERRED, tessera.SolidSimplex(2))
     verts = []
     for t in range(len(step_sq) + 1):
-        v = st.createVertex(t)
-        v.setTime(float(t))
+        v = st.create_vertex(t)
+        v.set_time(float(t))
         verts.append(v)
     for t, sq in enumerate(step_sq):
-        st.createEdge(verts[t], verts[t + 1], cmath.sqrt(complex(sq)))
+        st.create_edge(verts[t], verts[t + 1], cmath.sqrt(complex(sq)))
     return st, verts
 
 
@@ -47,12 +47,12 @@ class TestMatterActionClassifier(unittest.TestCase):
     def test_timelike_worldline_proper_time(self):
         # steps l^2 = -4 and -9: S = -M*(2 + 3)
         st, verts = _chain_spacetime([-4.0, -9.0])
-        for e in st.getEdgeList().toVector():
-            self.assertTrue(e.isTimelike())   # the canonical classifier
+        for e in st.get_edge_list().to_vector():
+            self.assertTrue(e.is_timelike())   # the canonical classifier
         matter = tessera.MatterConfiguration()
-        matter.setWorldlineMass(verts[1], 1.5, st)
+        matter.set_worldline_mass(verts[1], 1.5, st)
         solver = tessera.ReggeSolver(st, matter)
-        self.assertAlmostEqual(solver.matterAction(), -1.5 * 5.0, delta=1e-12)
+        self.assertAlmostEqual(solver.matter_action(), -1.5 * 5.0, delta=1e-12)
 
     def test_degenerate_worldline_contributes_zero(self):
         # l = 0 is a DEGENERATE (absent) edge, not a lightlike ray. The two were
@@ -60,14 +60,14 @@ class TestMatterActionClassifier(unittest.TestCase):
         # only vanish when the edge itself does (#870). Either way it is not
         # timelike, so it carries no proper time.
         st, verts = _chain_spacetime([0.0, 0.0])
-        for e in st.getEdgeList().toVector():
-            self.assertTrue(e.isDegenerate())
-            self.assertFalse(e.isNull())
-            self.assertFalse(e.isTimelike())
+        for e in st.get_edge_list().to_vector():
+            self.assertTrue(e.is_degenerate())
+            self.assertFalse(e.is_null())
+            self.assertFalse(e.is_timelike())
         matter = tessera.MatterConfiguration()
-        matter.setWorldlineMass(verts[1], 2.0, st)
+        matter.set_worldline_mass(verts[1], 2.0, st)
         solver = tessera.ReggeSolver(st, matter)
-        self.assertEqual(solver.matterAction(), 0.0)
+        self.assertEqual(solver.matter_action(), 0.0)
 
     def test_a_genuinely_lightlike_worldline_contributes_zero(self):
         # The case the old classifier could not express: Re(l) == Im(l) > 0, so
@@ -76,32 +76,32 @@ class TestMatterActionClassifier(unittest.TestCase):
         # than because the edge is absent.
         st, verts = _chain_spacetime([1.0, 1.0])
         component = math.sqrt(0.5)
-        for e in st.getEdgeList().toVector():
-            e.setLength(complex(component, component))
-            self.assertTrue(e.isNull())
-            self.assertFalse(e.isDegenerate())
-            self.assertFalse(e.isTimelike())
+        for e in st.get_edge_list().to_vector():
+            e.set_length(complex(component, component))
+            self.assertTrue(e.is_null())
+            self.assertFalse(e.is_degenerate())
+            self.assertFalse(e.is_timelike())
         matter = tessera.MatterConfiguration()
-        matter.setWorldlineMass(verts[1], 2.0, st)
+        matter.set_worldline_mass(verts[1], 2.0, st)
         solver = tessera.ReggeSolver(st, matter)
-        self.assertEqual(solver.matterAction(), 0.0)
+        self.assertEqual(solver.matter_action(), 0.0)
 
     def test_spacelike_steps_do_not_contribute(self):
         # one timelike step (l^2 = -4) and one spacelike (l^2 = +1):
         # only the timelike step carries proper time.
         st, verts = _chain_spacetime([-4.0, 1.0])
         matter = tessera.MatterConfiguration()
-        matter.setWorldlineMass(verts[1], 1.0, st)
+        matter.set_worldline_mass(verts[1], 1.0, st)
         solver = tessera.ReggeSolver(st, matter)
-        self.assertAlmostEqual(solver.matterAction(), -2.0, delta=1e-12)
+        self.assertAlmostEqual(solver.matter_action(), -2.0, delta=1e-12)
 
     def test_total_action_includes_matter_term(self):
         st, verts = _chain_spacetime([-4.0, -9.0])
         matter = tessera.MatterConfiguration()
-        matter.setWorldlineMass(verts[1], 1.0, st)
+        matter.set_worldline_mass(verts[1], 1.0, st)
         solver = tessera.ReggeSolver(st, matter)
-        self.assertAlmostEqual(solver.totalAction() - solver.reggeAction(),
-                               solver.matterAction(), delta=1e-12)
+        self.assertAlmostEqual(solver.total_action() - solver.regge_action(),
+                               solver.matter_action(), delta=1e-12)
 
 
 if __name__ == "__main__":

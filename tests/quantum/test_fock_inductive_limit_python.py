@@ -6,12 +6,12 @@ The infinite Fock space is the direct limit of the finite stages under the
 vacuum embedding, and the maps carried along it are consistent only when
 ``||iota_M V_M - V_{M+1} iota_M|| -> 0`` over a refinement sequence. That is a
 statement about a SEQUENCE: one pair of stages gives one number and establishes
-no limit. `LazyFockEngine.inductiveLimit` measures the defect at every adjacent
+no limit. `LazyFockEngine.inductive_limit` measures the defect at every adjacent
 pair of a sequence on one and the same carried subspace, and
 `tessera.drivers.fock` drives it over a stated fixture.
 
 The expected defect is computed by hand rather than re-derived through the
-bindings. With V_M the second quantization dGamma(h_M) of the stage's
+bindings. With V_M the second quantization d_gamma(h_M) of the stage's
 one-particle operator, and a carried state b occupying only modes of the first
 stage, the step from stage M to stage M+1 adds exactly the terms of dGamma that
 involve the new mode M. On such a state the new mode is empty, so a_M and n_M
@@ -65,13 +65,13 @@ class TestTheDefectFallsAlongARefinementSequence(unittest.TestCase):
                          list(range(config["first_stage_modes"],
                                     config["first_stage_modes"]
                                     + config["stages"])))
-        self.assertEqual(read.activeDimension, 1 << config["active_modes"])
+        self.assertEqual(read.active_dimension, 1 << config["active_modes"])
         self.assertTrue(read.falls)
         self.assertTrue(read.certificate.holds())
         # Every step falls by the fixture's decay ratio, so the worst ratio is
         # that ratio and the sequence is geometric.
-        self.assertAlmostEqual(read.largestRatio, config["decay"], delta=1e-9)
-        self.assertLess(read.lastDefect, read.defects[0])
+        self.assertAlmostEqual(read.largest_ratio, config["decay"], delta=1e-9)
+        self.assertLess(read.last_defect, read.defects[0])
 
     def test_each_defect_is_the_new_mode_coupling(self):
         """The hand-computed value: sqrt(2) * t * r ** M at the step that adds
@@ -91,13 +91,13 @@ class TestTheDefectFallsAlongARefinementSequence(unittest.TestCase):
         config = fock.build_config()
         stages = fock.fock_stages(fock.one_particle_stages(config))
         engine = fock.qu.LazyFockEngine(len(stages[-1].modes))
-        read = engine.inductiveLimit(stages, [[]])
-        self.assertEqual(read.activeDimension, 1)
+        read = engine.inductive_limit(stages, [[]])
+        self.assertEqual(read.active_dimension, 1)
         self.assertEqual(max(read.defects), 0.0)
         # Nothing falls from zero to zero, and the read says so rather than
         # reporting a limit it did not measure.
         self.assertFalse(read.falls)
-        self.assertEqual(read.largestRatio, 0.0)
+        self.assertEqual(read.largest_ratio, 0.0)
 
     def test_a_sequence_that_does_not_decouple_does_not_fall(self):
         """A refinement whose added modes couple as strongly as the ones before
@@ -108,14 +108,14 @@ class TestTheDefectFallsAlongARefinementSequence(unittest.TestCase):
             stages=len(operators), first_stage_modes=operators[0].shape[0]),
             operators=operators)
         self.assertFalse(read.falls)
-        self.assertAlmostEqual(read.largestRatio, 1.0, delta=1e-12)
+        self.assertAlmostEqual(read.largest_ratio, 1.0, delta=1e-12)
         expected = math.sqrt(2.0) * 0.3
         for defect in read.defects:
             self.assertAlmostEqual(defect, expected, delta=1e-12)
         self.assertFalse(record["falls"])
 
     def test_the_stage_map_is_the_second_quantization(self):
-        """dGamma(h) is number-preserving and annihilates the vacuum, so its
+        """d_gamma(h) is number-preserving and annihilates the vacuum, so its
         first column is exactly zero and its dimension is 2 ** modes."""
         stages = fock.fock_stages(fock.one_particle_stages(fock.build_config()))
         for stage in stages:
@@ -133,7 +133,7 @@ class TestRefusals(unittest.TestCase):
         stages = fock.fock_stages(fock.one_particle_stages(fock.build_config()))
         engine = fock.qu.LazyFockEngine(len(stages[-1].modes))
         with self.assertRaisesRegex(ValueError, "at least two stages"):
-            engine.inductiveLimit(stages[:1], [[], [0]])
+            engine.inductive_limit(stages[:1], [[], [0]])
 
     def test_a_sequence_too_short_to_fall_is_refused(self):
         with self.assertRaisesRegex(ValueError, "at least three stages"):

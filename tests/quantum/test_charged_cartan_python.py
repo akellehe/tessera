@@ -5,14 +5,14 @@ Mirrors the C++ suites
 ``tests/quantum/test_interaction_simulation_v02.cpp`` and
 ``tests/quantum/test_sigma_ab_choi_state.cpp`` at the API surface that's
 relevant from Python — including the new accessors added in issue #22
-(``quditChargeOf``, ``quditStateOf``, ``quditJointStateFor``).
+(``qudit_charge_of``, ``qudit_state_of``, ``qudit_joint_state_for``).
 
 Skips cleanly when tessera was built without TESSERA_QUANTUM=1.
 
 Coverage:
 
 * ``featureQuditBasis = True`` smoke (4-dim path runs end-to-end).
-* ``featureChoiSigmaAB`` defaults ``True`` on a fresh config (the
+* ``feature_choi_sigma_ab`` defaults ``True`` on a fresh config (the
   v0.2 + #16 fix is on out of the box).
 * Choi auto-clears when ``featureQuditBasis = False``: no exception,
   no behaviour change vs. the legacy path.
@@ -22,13 +22,13 @@ Coverage:
   mask physics).
 * Backward-compat: ``featureChoiSigmaAB = False`` reproduces the legacy
   I/4 proxy + intermittent Q-drift.
-* ``annihilate`` + ``pairCreate`` smoke + Q-conservation when both fire.
-* ``getChargeProfile`` + ``getChargeCorrelation`` smoke.
-* ``quditChargeOf`` returns ±1 on integer-charge eigenstates and 0 on
+* ``annihilate`` + ``pair_create`` smoke + Q-conservation when both fire.
+* ``get_charge_profile`` + ``get_charge_correlation`` smoke.
+* ``qudit_charge_of`` returns ±1 on integer-charge eigenstates and 0 on
   the I/4 proxy.
-* ``quditStateOf`` returns a 4×4 unit-trace density matrix (or ``None``
+* ``qudit_state_of`` returns a 4×4 unit-trace density matrix (or ``None``
   for vertices with no stored state).
-* ``quditJointStateFor`` returns a 16×16 Hermitian unit-trace matrix.
+* ``qudit_joint_state_for`` returns a 16×16 Hermitian unit-trace matrix.
 * Spectral-dimension survives Choi-on at small T (ballpark sanity, not
   the full β-scan).
 """
@@ -63,18 +63,18 @@ def _make_cfg(n=4, seed=0, *,
               j_cc=1.0, j_ss=0.25, mass_shift=0.0, gamma_cp=0.0,
               target=200):
     cfg = q.InteractionConfig()
-    cfg.nSystems = n
+    cfg.n_systems = n
     cfg.a = 1.0; cfg.g = 1.0; cfg.m = 0.5; cfg.dt = 0.25
-    cfg.beta = 3e-4; cfg.epsilonI = 1e-10
-    cfg.targetInteractions = target
-    cfg.delaunayEdges = _delaunay_edges(n, seed=seed + 999)
+    cfg.beta = 3e-4; cfg.epsilon_i = 1e-10
+    cfg.target_interactions = target
+    cfg.delaunay_edges = _delaunay_edges(n, seed=seed + 999)
     cfg.seed = seed; cfg.quiet = True
-    cfg.featureQuditBasis = qudit
-    cfg.featureChoiSigmaAB = choi
-    cfg.j_chargeCharge = j_cc; cfg.j_spinSpin = j_ss
-    cfg.massShift = mass_shift; cfg.gammaCpViolation = gamma_cp
-    cfg.dtPair = 0.25
-    cfg.initialChargeMode = q.InitialChargeMode.ALTERNATING
+    cfg.feature_qudit_basis = qudit
+    cfg.feature_choi_sigma_ab = choi
+    cfg.j_charge_charge = j_cc; cfg.j_spin_spin = j_ss
+    cfg.mass_shift = mass_shift; cfg.gamma_cp_violation = gamma_cp
+    cfg.dt_pair = 0.25
+    cfg.initial_charge_mode = q.InitialChargeMode.ALTERNATING
     return cfg
 
 
@@ -89,22 +89,22 @@ class TestV02ConfigDefaults(unittest.TestCase):
     def test_choi_default_is_on(self):
         """The Σ_AB Choi state fix (#16) is on out of the box."""
         cfg = q.InteractionConfig()
-        self.assertTrue(cfg.featureChoiSigmaAB,
+        self.assertTrue(cfg.feature_choi_sigma_ab,
                         "featureChoiSigmaAB should default to True")
 
     def test_qudit_default_is_off(self):
         """The 4-dim qudit basis is opt-in (Schwinger marginal is the
         default 2-dim path)."""
         cfg = q.InteractionConfig()
-        self.assertFalse(cfg.featureQuditBasis)
+        self.assertFalse(cfg.feature_qudit_basis)
 
     def test_charged_cartan_pair_h_defaults(self):
         """Sanity on the H_pair parameters: nonzero couplings plus
         zero CP-violation by default."""
         cfg = q.InteractionConfig()
-        self.assertAlmostEqual(cfg.j_chargeCharge, 1.0)
-        self.assertAlmostEqual(cfg.j_spinSpin, 0.25)
-        self.assertEqual(cfg.gammaCpViolation, 0.0)
+        self.assertAlmostEqual(cfg.j_charge_charge, 1.0)
+        self.assertAlmostEqual(cfg.j_spin_spin, 0.25)
+        self.assertEqual(cfg.gamma_cp_violation, 0.0)
 
 
 # ---------------------------------------------------------------------------
@@ -120,10 +120,10 @@ class TestV02QuditBasisSmoke(unittest.TestCase):
         cfg = _make_cfg(n=4, seed=1, qudit=True, choi=True, target=80)
         sim = q.InteractionSimulation(cfg)
         sim.tune()
-        self.assertGreaterEqual(sim.interactionCount, 1)
+        self.assertGreaterEqual(sim.interaction_count, 1)
         # Spectral dim is finite at at least one sigma in the diffusion regime
         sigmas = list(np.logspace(-1, 4, 8))
-        dS = sim.getSpectralDimension(sigmas, 10)
+        dS = sim.get_spectral_dimension(sigmas, 10)
         self.assertTrue(any(math.isfinite(d) for d in dS))
 
     def test_choi_auto_clears_when_qudit_off(self):
@@ -133,7 +133,7 @@ class TestV02QuditBasisSmoke(unittest.TestCase):
         cfg = _make_cfg(n=4, seed=2, qudit=False, choi=True, target=50)
         sim = q.InteractionSimulation(cfg)
         sim.tune()
-        self.assertGreaterEqual(sim.interactionCount, 1)
+        self.assertGreaterEqual(sim.interaction_count, 1)
 
 
 # ---------------------------------------------------------------------------
@@ -156,7 +156,7 @@ class TestV02QConservation(unittest.TestCase):
                                 gamma_cp=0.0, target=200)
                 sim = q.InteractionSimulation(cfg)
                 sim.tune()
-                Q = sim.getGlobalCharge()
+                Q = sim.get_global_charge()
                 self.assertLess(abs(Q), self.Q_TOL,
                                 f"|Q|={abs(Q):.3e} above tol "
                                 f"{self.Q_TOL:.0e} at seed={seed} (Choi on, "
@@ -177,7 +177,7 @@ class TestV02QConservation(unittest.TestCase):
                             gamma_cp=0.5, target=200)
             sim = q.InteractionSimulation(cfg)
             sim.tune()
-            if abs(sim.getGlobalCharge()) > 1e-3:
+            if abs(sim.get_global_charge()) > 1e-3:
                 any_drift = True
                 break
         self.assertTrue(
@@ -200,9 +200,9 @@ class TestV02PerVertexObservables(unittest.TestCase):
         cfg = _make_cfg(n=4, seed=3, qudit=True, choi=True, target=10)
         sim = q.InteractionSimulation(cfg)
         # No tune yet — read initial-layer states directly
-        verts = sim.getSpacetime().getVertexList().toVector()
+        verts = sim.get_spacetime().get_vertex_list().to_vector()
         for i, v in enumerate(verts[:4]):
-            q_v = sim.quditChargeOf(v)
+            q_v = sim.qudit_charge_of(v)
             expected = +1.0 if i % 2 == 0 else -1.0
             self.assertAlmostEqual(
                 q_v, expected, places=10,
@@ -214,10 +214,10 @@ class TestV02PerVertexObservables(unittest.TestCase):
         for vertices with stored states, or None otherwise."""
         cfg = _make_cfg(n=4, seed=4, qudit=True, choi=True, target=10)
         sim = q.InteractionSimulation(cfg)
-        verts = sim.getSpacetime().getVertexList().toVector()
+        verts = sim.get_spacetime().get_vertex_list().to_vector()
         for v in verts[:4]:
-            rho = sim.quditStateOf(v)
-            self.assertIsNotNone(rho, f"qudit state missing for vertex {v.getId()}")
+            rho = sim.qudit_state_of(v)
+            self.assertIsNotNone(rho, f"qudit state missing for vertex {v.get_id()}")
             self.assertEqual(rho.shape, (4, 4))
             self.assertAlmostEqual(np.trace(rho).real, 1.0, places=10)
             self.assertLess(np.abs(np.trace(rho).imag), 1e-12)
@@ -229,10 +229,10 @@ class TestV02PerVertexObservables(unittest.TestCase):
         is the stored correlated 16×16 ρ_XY. Unit-trace, Hermitian."""
         cfg = _make_cfg(n=4, seed=5, qudit=True, choi=True, target=10)
         sim = q.InteractionSimulation(cfg)
-        verts = sim.getSpacetime().getVertexList().toVector()
+        verts = sim.get_spacetime().get_vertex_list().to_vector()
         # Pick the first edge from the config's Delaunay edges
-        i, j = cfg.delaunayEdges[0]
-        rho_xy = sim.quditJointStateFor(verts[i], verts[j])
+        i, j = cfg.delaunay_edges[0]
+        rho_xy = sim.qudit_joint_state_for(verts[i], verts[j])
         self.assertEqual(rho_xy.shape, (16, 16))
         self.assertAlmostEqual(np.trace(rho_xy).real, 1.0, places=10)
         self.assertTrue(np.allclose(rho_xy, rho_xy.conj().T, atol=1e-10),
@@ -249,30 +249,30 @@ class TestV02ChargeProfile(unittest.TestCase):
 
     def test_charge_profile_initial_layer_balance_v01(self):
         """With ALTERNATING initial charges on an even N (v0.1 path —
-        ``getChargeProfile`` reads the v0.1 ``chargeOf_`` map, which
+        ``get_charge_profile`` reads the v0.1 ``chargeOf_`` map, which
         is only populated under ``featureCharges = True`` /
         ``useCharges = True`` and the legacy 2-dim Schwinger
         marginal), the initial slice has equal counts of + and −,
         zero net charge."""
         cfg = _make_cfg(n=4, seed=6, qudit=False, choi=False, target=30)
-        cfg.featureCharges = True
-        cfg.useCharges = True
+        cfg.feature_charges = True
+        cfg.use_charges = True
         sim = q.InteractionSimulation(cfg)
-        profile = sim.getChargeProfile()
+        profile = sim.get_charge_profile()
         self.assertGreaterEqual(len(profile), 1)
         n_pos, n_zero, n_neg, sum_q = profile[0]
         self.assertEqual(int(n_pos), int(n_neg))
         self.assertAlmostEqual(sum_q, 0.0, places=10)
 
     def test_charge_correlation_returns_vector_v01(self):
-        """``getChargeCorrelation(maxDist=2)`` returns a length-2
+        """``get_charge_correlation(maxDist=2)`` returns a length-2
         vector under the v0.1 path (it also reads ``chargeOf_``)."""
         cfg = _make_cfg(n=4, seed=7, qudit=False, choi=False, target=50)
-        cfg.featureCharges = True
-        cfg.useCharges = True
+        cfg.feature_charges = True
+        cfg.use_charges = True
         sim = q.InteractionSimulation(cfg)
         sim.tune()
-        corr = sim.getChargeCorrelation(2)
+        corr = sim.get_charge_correlation(2)
         self.assertEqual(len(corr), 2)
 
 
@@ -295,7 +295,7 @@ class TestV02AnnihilatePairCreate(unittest.TestCase):
         # exercise the call sites.
         for _ in range(5):
             sim.annihilate()
-            sim.pairCreate()
+            sim.pair_create()
 
 
 # ---------------------------------------------------------------------------
@@ -314,7 +314,7 @@ class TestV02ChoiVsLegacyGeometry(unittest.TestCase):
         sim_on = q.InteractionSimulation(_make_cfg(**kwargs, choi=True))
         sim_off = q.InteractionSimulation(_make_cfg(**kwargs, choi=False))
         sim_on.tune(); sim_off.tune()
-        self.assertEqual(sim_on.interactionCount, sim_off.interactionCount)
+        self.assertEqual(sim_on.interaction_count, sim_off.interaction_count)
 
 
 if __name__ == "__main__":

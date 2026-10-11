@@ -86,7 +86,7 @@ def run_point(k0, delta, n_simplices, nSweeps,
     sig = tessera.Signature(4, tessera.Lorentzian)
     metric = tessera.Metric(True, sig)
     st = tessera.Spacetime(metric=metric,
-                         spacetimeType=tessera.CDT,
+                         spacetime_type=tessera.CDT,
                          alpha=1.0,
                          a=1.0,
                          foliation=tessera.PREFERRED,
@@ -102,7 +102,7 @@ def run_point(k0, delta, n_simplices, nSweeps,
     d = 4 # Hardcoded dimensions
     k4 = (k0 + 6 * delta) / (2 * d - 2) - 2 * delta
     epsilon = 1. / target
-    cdt = tessera.CDTSimulation(spacetime=st, k0=k0, k4=k4, delta=delta, epsilon=epsilon, targetN41=target)
+    cdt = tessera.CDTSimulation(spacetime=st, k0=k0, k4=k4, delta=delta, epsilon=epsilon, target_n41=target)
 
     # tune() adjusts k4 to the pseudo-critical value for this (k0,delta)
     # and runs 20 feedback sweeps during which the system grows to target.
@@ -118,12 +118,12 @@ def run_point(k0, delta, n_simplices, nSweeps,
         cdt.sweep(batch, progress=sweep_cb)
         _ph("sweeping", start + batch, nSweeps)
 
-    profile = cdt.getVolumeProfile()
-    n0 = st.getVertexCount()
-    n41 = st.getN41()
-    n32 = st.getN32()
-    rates = cdt.getAcceptanceRates()
-    k4 = cdt.getK4()
+    profile = cdt.get_volume_profile()
+    n0 = st.get_vertex_count()
+    n41 = st.get_n41()
+    n32 = st.get_n32()
+    rates = cdt.get_acceptance_rates()
+    k4 = cdt.get_k4()
 
     return {
         'profile': profile,

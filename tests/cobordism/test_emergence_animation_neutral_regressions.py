@@ -42,16 +42,16 @@ class _Fiber:
     @staticmethod
     def certificate():
         return SimpleNamespace(
-            lowerGap=0.5, upperGap=1.5, localization=0.25,
-            localizationExcess=0.0, gramDefect=0.0)
+            lower_gap=0.5, upper_gap=1.5, localization=0.25,
+            localization_excess=0.0, gram_defect=0.0)
 
 
 def _quark(winding):
     return SimpleNamespace(
-        classification="quark", determinantWinding=winding, colorRank=3,
-        triangleAnchorScore=1.0, triangleAnchorMaxTerm=1.0,
-        triangleAnchorParticipation=3.0, anchorPhaseDispersion=0.0,
-        anchorPhaseCoherence=1.0, failedCertificates=[])
+        classification="quark", determinant_winding=winding, color_rank=3,
+        triangle_anchor_score=1.0, triangle_anchor_max_term=1.0,
+        triangle_anchor_participation=3.0, anchor_phase_dispersion=0.0,
+        anchor_phase_coherence=1.0, failed_certificates=[])
 
 
 class NeutralReadoutRegressionTest(unittest.TestCase):
@@ -75,7 +75,7 @@ class NeutralReadoutRegressionTest(unittest.TestCase):
             def __init__(self, _spacetime, _settings):
                 self.calls = 0
 
-            def enumerateBands(self, _support, _degree):
+            def enumerate_bands(self, _support, _degree):
                 self.calls += 1
                 if self.calls == 1:
                     raise RuntimeError("first component failed")
@@ -86,7 +86,7 @@ class NeutralReadoutRegressionTest(unittest.TestCase):
         class Classifier:
 
             @staticmethod
-            def classifyQuark(evidence):
+            def classify_quark(evidence):
                 captured.append(evidence.component)
                 return _quark(1)
 
@@ -115,7 +115,7 @@ class NeutralReadoutRegressionTest(unittest.TestCase):
         class Connection:
 
             @staticmethod
-            def transportOnSpacetime(_spacetime, _to_fiber, _from_fiber):
+            def transport_on_spacetime(_spacetime, _to_fiber, _from_fiber):
                 raise RuntimeError("singular overlap")
 
         frame = object.__new__(ea.EmergenceFrame)
@@ -131,49 +131,49 @@ class NeutralReadoutRegressionTest(unittest.TestCase):
     def test_crossings_use_regular_re_tau_level_and_actual_quark_reads(self):
         temporal = SimpleNamespace(
             certified=True, tau=[0j, 10 + 4j, 20 - 2j],
-            failedCertificates=[])
+            failed_certificates=[])
         calls = {"mass": [], "baryon": [], "levels": []}
         mass_read = SimpleNamespace(
-            crossingMass=3.0, admissibleCrossings=3, refusedCrossings=0,
+            crossing_mass=3.0, admissible_crossings=3, refused_crossings=0,
             calibrated=True, units="proper-time")
         baryon_read = SimpleNamespace(
-            baryonNumber=1.0, quarkTubes=3, signDefects=[])
+            baryon_number=1.0, quark_tubes=3, sign_defects=[])
 
         class Tube:
 
             def __init__(self):
-                self.determinantWinding = None
+                self.determinant_winding = None
 
         class CrossingReadouts:
 
             @staticmethod
-            def temporalFunction(_spacetime, _boundary):
+            def temporal_function(_spacetime, _boundary):
                 return temporal
 
             @staticmethod
-            def crossingMass(tubes, _temporal, level, _reference):
+            def crossing_mass(tubes, _temporal, level, _reference):
                 calls["mass"].append(list(tubes))
                 calls["levels"].append(level)
                 return mass_read
 
             @staticmethod
-            def baryonNumber(tubes, _temporal, level, _reference):
+            def baryon_number(tubes, _temporal, level, _reference):
                 calls["baryon"].append(list(tubes))
                 calls["levels"].append(level)
                 return baryon_read
 
             @staticmethod
-            def chargePowerProfile(_tubes, _temporal, _level):
+            def charge_power_profile(_tubes, _temporal, _level):
                 return SimpleNamespace(
                     eigenvalues=[], power=[], normalized=False, monopole=0.0,
-                    failedCertificates=[])
+                    failed_certificates=[])
 
             @staticmethod
             def crossing(tube, _temporal, level):
                 calls["levels"].append(level)
                 return SimpleNamespace(
-                    tubeId=tube.tubeId, sign=1, admissible=True,
-                    perpendicular=1 + 0j, failedCertificates=[])
+                    tube_id=tube.tube_id, sign=1, admissible=True,
+                    perpendicular=1 + 0j, failed_certificates=[])
 
         fibers = [_Fiber("zero"), _Fiber("one"), _Fiber("two"),
                   _Fiber("three")]
@@ -193,11 +193,11 @@ class NeutralReadoutRegressionTest(unittest.TestCase):
         self.assertEqual(result["level"], 5.0)
         self.assertTrue(all(level == 5.0 for level in calls["levels"]))
         tubes = calls["mass"][0]
-        self.assertEqual([tube.tubeId for tube in tubes],
+        self.assertEqual([tube.tube_id for tube in tubes],
                          ["band-0", "band-1", "band-2", "band-3"])
-        self.assertEqual([tube.certifiedQuarkTube for tube in tubes],
+        self.assertEqual([tube.certified_quark_tube for tube in tubes],
                          [True, False, True, True])
-        self.assertEqual([tube.determinantWinding for tube in tubes],
+        self.assertEqual([tube.determinant_winding for tube in tubes],
                          [1, None, None, -1])
         self.assertEqual(frame.crossing_candidate_quarks,
                          [quarks[0], quarks[2], quarks[3]])
@@ -212,11 +212,11 @@ class NeutralReadoutRegressionTest(unittest.TestCase):
         class Classifier:
 
             @staticmethod
-            def classifyBaryon(evidence):
+            def classify_baryon(evidence):
                 captured["evidence"] = evidence
                 return SimpleNamespace(
                     classification="candidate", confidence=0.5,
-                    failedCertificates=["binding"])
+                    failed_certificates=["binding"])
 
         frame.quarks = [quarks[0], quarks[2], quarks[3]]
         with mock.patch.object(ea.obs, "BaryonCandidateEvidence", Evidence), \
@@ -224,52 +224,52 @@ class NeutralReadoutRegressionTest(unittest.TestCase):
             frame._read_verdict()
         evidence = captured["evidence"]
         self.assertEqual(evidence.quarks, frame.quarks)
-        self.assertIs(evidence.crossingMass, mass_read)
-        self.assertIs(evidence.crossingBaryon, baryon_read)
+        self.assertIs(evidence.crossing_mass, mass_read)
+        self.assertIs(evidence.crossing_baryon, baryon_read)
 
     def test_candidate_crossing_failures_survive_into_verdict_and_json(self):
         temporal = SimpleNamespace(
-            certified=True, tau=[0j, 1 + 0j], failedCertificates=[])
+            certified=True, tau=[0j, 1 + 0j], failed_certificates=[])
         mass_read = SimpleNamespace(
-            crossingMass=4.0, admissibleCrossings=4, refusedCrossings=0,
+            crossing_mass=4.0, admissible_crossings=4, refused_crossings=0,
             calibrated=True, units="proper-time")
         baryon_read = SimpleNamespace(
-            baryonNumber=1.0, quarkTubes=3, signDefects=[])
+            baryon_number=1.0, quark_tubes=3, sign_defects=[])
 
         class Tube:
 
             def __init__(self):
-                self.determinantWinding = None
+                self.determinant_winding = None
 
         class CrossingReadouts:
 
             @staticmethod
-            def temporalFunction(_spacetime, _boundary):
+            def temporal_function(_spacetime, _boundary):
                 return temporal
 
             @staticmethod
-            def crossingMass(tubes, _temporal, _level, _reference):
+            def crossing_mass(tubes, _temporal, _level, _reference):
                 if len(tubes) == 3:
                     raise RuntimeError("candidate mass exploded")
                 return mass_read
 
             @staticmethod
-            def baryonNumber(tubes, _temporal, _level, _reference):
+            def baryon_number(tubes, _temporal, _level, _reference):
                 if len(tubes) == 3:
                     raise RuntimeError("candidate baryon exploded")
                 return baryon_read
 
             @staticmethod
-            def chargePowerProfile(_tubes, _temporal, _level):
+            def charge_power_profile(_tubes, _temporal, _level):
                 return SimpleNamespace(
                     eigenvalues=[], power=[], normalized=False, monopole=0.0,
-                    failedCertificates=[])
+                    failed_certificates=[])
 
             @staticmethod
             def crossing(tube, _temporal, _level):
                 return SimpleNamespace(
-                    tubeId=tube.tubeId, sign=1, admissible=True,
-                    perpendicular=1 + 0j, failedCertificates=[])
+                    tube_id=tube.tube_id, sign=1, admissible=True,
+                    perpendicular=1 + 0j, failed_certificates=[])
 
         failures = [
             "candidate crossing mass failed: candidate mass exploded",
@@ -303,11 +303,11 @@ class NeutralReadoutRegressionTest(unittest.TestCase):
                 class Classifier:
 
                     @staticmethod
-                    def classifyBaryon(evidence):
+                    def classify_baryon(evidence):
                         captured["evidence"] = evidence
                         return SimpleNamespace(
                             classification="candidate", confidence=0.5,
-                            failedCertificates=["binding"])
+                            failed_certificates=["binding"])
 
                 frame.quarks = quarks[:3]
                 with mock.patch.object(
@@ -316,9 +316,9 @@ class NeutralReadoutRegressionTest(unittest.TestCase):
                             ea.obs, "ParticleClusters", Classifier):
                     verdict = frame._read_verdict()
                 self.assertFalse(
-                    hasattr(captured["evidence"], "crossingMass"))
+                    hasattr(captured["evidence"], "crossing_mass"))
                 self.assertFalse(
-                    hasattr(captured["evidence"], "crossingBaryon"))
+                    hasattr(captured["evidence"], "crossing_baryon"))
                 self.assertEqual(verdict, {
                     "classification": "candidate", "confidence": 0.5,
                     "reasons": ["binding"], "readFailures": failures,

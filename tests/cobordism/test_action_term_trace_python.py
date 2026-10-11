@@ -72,7 +72,7 @@ def test_the_terms_sum_to_the_stationarity_exactly():
     terms = action.term_gradients()
     assert [t.name for t in terms] == TERMS + ["constraint 1", "constraint 2",
                                                "constraint 3"]
-    n = len(spacetime.getEdgeList().toVector())
+    n = len(spacetime.get_edge_list().to_vector())
     lengths = sum(np.asarray(t.length_stationarity) for t in terms)
     links = sum(np.asarray(t.link_stationarity) for t in terms)
     assert all(len(t.length_stationarity) == n and

@@ -31,16 +31,16 @@ def _heavy_quark_config(
     cfg = TDVPConfig()
     cfg.N = N
     cfg.a = 1.0; cfg.g = 1.0; cfg.m = m; cfg.L0 = 0.0
-    cfg.dmrgMaxBondDim = 32; cfg.dmrgNSweeps = 10
+    cfg.dmrg_max_bond_dim = 32; cfg.dmrg_n_sweeps = 10
     cfg.i0 = i0; cfg.d = d
     cfg.dt = dt
     cfg.T = T if T is not None else d * cfg.a
-    cfg.maxBondDim = maxBondDim
+    cfg.max_bond_dim = maxBondDim
     cfg.cutoff = 1e-10
-    cfg.krylovDim = 12
-    cfg.snapshotEvery = snapshotEvery
-    cfg.recordSpectra = recordSpectra
-    cfg.recordPoset = recordPoset
+    cfg.krylov_dim = 12
+    cfg.snapshot_every = snapshotEvery
+    cfg.record_spectra = recordSpectra
+    cfg.record_poset = recordPoset
     return cfg
 
 
@@ -71,28 +71,28 @@ class TestTDVPConfigDefaults(unittest.TestCase):
         self.assertEqual(cfg.d, 5)
         self.assertAlmostEqual(cfg.T, 2.0)
         self.assertAlmostEqual(cfg.dt, 0.1)
-        self.assertEqual(cfg.dmrgNSweeps, 10)
-        self.assertEqual(cfg.snapshotEvery, 5)
+        self.assertEqual(cfg.dmrg_n_sweeps, 10)
+        self.assertEqual(cfg.snapshot_every, 5)
 
 
 @unittest.skipUnless(HAVE_QUANTUM, "tessera built without TESSERA_QUANTUM=1")
 class TestParityValidation(unittest.TestCase):
     def test_even_i0_rejected(self) -> None:
         cfg = _heavy_quark_config(i0=4, d=5)
-        cfg.quenchEnforceParity = True
+        cfg.quench_enforce_parity = True
         with self.assertRaises(Exception):
             SchwingerQuench(cfg).evolve()
 
     def test_even_d_rejected(self) -> None:
         cfg = _heavy_quark_config(i0=3, d=4)
-        cfg.quenchEnforceParity = True
+        cfg.quench_enforce_parity = True
         with self.assertRaises(Exception):
             SchwingerQuench(cfg).evolve()
 
     def test_parity_bypass_runs(self) -> None:
         cfg = _heavy_quark_config(N=12, m=20.0, i0=4, d=4, T=0.4, dt=0.1,
                                   snapshotEvery=2)
-        cfg.quenchEnforceParity = False
+        cfg.quench_enforce_parity = False
         r = SchwingerQuench(cfg).evolve()
         self.assertGreater(len(r.snapshots), 0)
 
@@ -106,7 +106,7 @@ class TestFluxTube(unittest.TestCase):
         r = SchwingerQuench(cfg).evolve()
         s0 = r.snapshots[0]
         ref = _expected_flux_tube_L(cfg.N, cfg.i0, cfg.d)
-        for n, (v, vref) in enumerate(zip(s0.lProfile, ref), start=1):
+        for n, (v, vref) in enumerate(zip(s0.l_profile, ref), start=1):
             self.assertLess(
                 abs(v - vref), 0.05,
                 msg=f"link {n}: got {v}, expected {vref}",
@@ -118,7 +118,7 @@ class TestFluxTube(unittest.TestCase):
         r = SchwingerQuench(cfg).evolve()
         mid = r.snapshots[len(r.snapshots) // 2]
         ref = _expected_flux_tube_L(cfg.N, cfg.i0, cfg.d)
-        for n, (v, vref) in enumerate(zip(mid.lProfile, ref), start=1):
+        for n, (v, vref) in enumerate(zip(mid.l_profile, ref), start=1):
             self.assertLess(
                 abs(v - vref), 0.05,
                 msg=f"t={mid.time} link {n}: got {v}, expected {vref}",
@@ -138,7 +138,7 @@ class TestFluxTube(unittest.TestCase):
                                   T=2.0, dt=0.1, snapshotEvery=5)
         r = SchwingerQuench(cfg).evolve()
         for snap in r.snapshots:
-            total_sz = 0.5 * sum(snap.zProfile)
+            total_sz = 0.5 * sum(snap.z_profile)
             self.assertLess(abs(total_sz), 1e-8,
                             msg=f"t={snap.time}: total Sz = {total_sz}")
 
@@ -170,7 +170,7 @@ class TestObservableRecording(unittest.TestCase):
                                   recordSpectra=False, recordPoset=False)
         r = SchwingerQuench(cfg).evolve()
         self.assertEqual(len(r.snapshots[0].spectra.intervals), 0)
-        self.assertEqual(r.snapshots[0].poset.getNodeCount, 0)
+        self.assertEqual(r.snapshots[0].poset.get_node_count, 0)
 
     def test_record_spectra_populates(self) -> None:
         cfg = _heavy_quark_config(N=8, i0=1, d=3, T=0.2, dt=0.1,
@@ -179,7 +179,7 @@ class TestObservableRecording(unittest.TestCase):
         r = SchwingerQuench(cfg).evolve()
         for snap in r.snapshots:
             self.assertEqual(len(snap.spectra.intervals), 35)
-            self.assertEqual(snap.poset.getNodeCount, 0)
+            self.assertEqual(snap.poset.get_node_count, 0)
 
     def test_record_poset_populates(self) -> None:
         cfg = _heavy_quark_config(N=8, i0=1, d=3, T=0.2, dt=0.1,
@@ -187,7 +187,7 @@ class TestObservableRecording(unittest.TestCase):
                                   recordSpectra=True, recordPoset=True)
         r = SchwingerQuench(cfg).evolve()
         for snap in r.snapshots:
-            self.assertEqual(snap.poset.getNodeCount, 35)
+            self.assertEqual(snap.poset.get_node_count, 35)
 
     def test_schmidt_spectra_normalization_invariant(self) -> None:
         """PLAN.md §9: every Schmidt spectrum sums to 1 even after TDVP

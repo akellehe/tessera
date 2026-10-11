@@ -14,7 +14,7 @@ Mode reference:
 * ``DEFICIT_ANGLE`` on a hinge loop: W = ((d-2) + 2 cos(eps_h)) / d.
   Flat hinge ⇒ W = 1; large positive or negative deficit pulls W toward
   (d-2)/d and below.
-* ``COMBINATORIAL``: W = loop length; ``enclosedHinges`` and
+* ``COMBINATORIAL``: W = loop length; ``enclosed_hinges`` and
   ``contractible`` carry the topological readings instead.
 * ``CAUSAL``: W = signed time-orientation winding; non-zero values
   mark loops that cross the CDT foliation.
@@ -55,7 +55,7 @@ def equilibrate(st, n_sweeps: int):
     Skip if n_sweeps == 0."""
     if n_sweeps <= 0:
         return
-    target = st.getN41() if hasattr(st, "getN41") else 0
+    target = st.get_n41() if hasattr(st, "get_n41") else 0
     if target == 0:
         return
     cdt = tessera.CDTSimulation(st, 2.2, 0.5, 0.6, 1.0 / max(target, 1), target)
@@ -86,16 +86,16 @@ def main():
 
     # Sweep every hinge in DEFICIT_ANGLE mode.
     wl = tessera.WilsonLoop(st)
-    wl.measureAllHinges(tessera.WilsonMode.DEFICIT_ANGLE)
-    meas = wl.getMeasurements()
+    wl.measure_all_hinges(tessera.WilsonMode.DEFICIT_ANGLE)
+    meas = wl.get_measurements()
     if not meas:
         print("[abort] no measurable hinges in the triangulation — "
               "is the build size too small?")
         return
 
     values = [m.value for m in meas]
-    sizes  = [m.loopSize for m in meas]
-    avg_by_size = wl.getAverageBySize()
+    sizes  = [m.loop_size for m in meas]
+    avg_by_size = wl.get_average_by_size()
 
     # The deficit-angle Wilson value sits at 1 for a flat hinge; the
     # deviation tells you the local curvature scale. (d-2)/d is the

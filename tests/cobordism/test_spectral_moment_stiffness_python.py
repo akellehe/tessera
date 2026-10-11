@@ -43,31 +43,31 @@ def torus(n, jitter=0.0, seed=0):
                 c[axis] += 1
                 path.append(index(c))
             cells.append(path)
-    spacetime = T.Spacetime.fromVertexTuples(3, cells, 1.0, 0.0)
+    spacetime = T.Spacetime.from_vertex_tuples(3, cells, 1.0, 0.0)
     coordinates = {index(c): np.array(c, dtype=float) for c in itertools.product(range(n), repeat=3)}
     rng = np.random.default_rng(seed)
     steps, midpoints = [], []
-    for edge in spacetime.getEdgeList().toVector():
-        a, b = coordinates[edge.getSource().getId()], coordinates[edge.getTarget().getId()]
+    for edge in spacetime.get_edge_list().to_vector():
+        a, b = coordinates[edge.get_source().get_id()], coordinates[edge.get_target().get_id()]
         d = b - a
         d -= n * np.rint(d / n)
-        edge.setLength(math.sqrt(float(d @ d) * (1.0 + jitter * rng.standard_normal())))
+        edge.set_length(math.sqrt(float(d @ d) * (1.0 + jitter * rng.standard_normal())))
         steps.append(d)
         midpoints.append(a + 0.5 * d)
     return spacetime, np.array(steps), np.array(midpoints), coordinates
 
 
 def squared_lengths(spacetime):
-    return np.array([edge.getLength() ** 2 for edge in spacetime.getEdgeList().toVector()])
+    return np.array([edge.get_length() ** 2 for edge in spacetime.get_edge_list().to_vector()])
 
 
 def set_squared_lengths(spacetime, values):
-    for edge, value in zip(spacetime.getEdgeList().toVector(), values):
-        edge.setLength(np.sqrt(complex(value)))
+    for edge, value in zip(spacetime.get_edge_list().to_vector(), values):
+        edge.set_length(np.sqrt(complex(value)))
 
 
 def moments(spacetime, k, m):
-    return np.asarray(cob.HodgeLaplacian(spacetime).localSpectralMoments(k, m))
+    return np.asarray(cob.HodgeLaplacian(spacetime).local_spectral_moments(k, m))
 
 
 @pytest.mark.parametrize("k", [0, 1])
@@ -77,14 +77,14 @@ def test_the_local_moments_are_the_diagonals_of_the_powers_and_sum_to_the_power_
     L = np.asarray(hodge.laplacian(k))
     size = int(round(math.sqrt(L.size)))
     L = L.reshape(size, size)
-    local = np.asarray(hodge.localSpectralMoments(k, 3)).reshape(size, 3)
+    local = np.asarray(hodge.local_spectral_moments(k, 3)).reshape(size, 3)
     power = np.eye(size)
     for j in range(3):
         power = power @ L
         assert np.abs(local[:, j] - np.diag(power)).max() < 1e-10 * max(1.0, np.abs(np.diag(power)).max())
         assert local[:, j].sum() == pytest.approx(np.trace(power), rel=1e-12)
     with pytest.raises(ValueError):
-        hodge.localSpectralMoments(k, 0)
+        hodge.local_spectral_moments(k, 0)
 
 
 @pytest.mark.parametrize("k", [0, 1])
@@ -92,10 +92,10 @@ def test_the_stiffness_vanishes_with_its_gradient_at_the_carrier(k):
     spacetime, _, _, _ = torus(3, jitter=0.05)
     hodge = cob.HodgeLaplacian(spacetime)
     reference = list(moments(spacetime, k, len(COEFFICIENTS)))
-    assert abs(hodge.spectralMomentStiffness(k, reference, COEFFICIENTS)) < 1e-24
-    assert np.abs(hodge.spectralMomentStiffnessGradient(k, reference, COEFFICIENTS)).max() < 1e-12
+    assert abs(hodge.spectral_moment_stiffness(k, reference, COEFFICIENTS)) < 1e-24
+    assert np.abs(hodge.spectral_moment_stiffness_gradient(k, reference, COEFFICIENTS)).max() < 1e-12
     with pytest.raises(ValueError):
-        hodge.spectralMomentStiffness(k, reference[:-1], COEFFICIENTS)
+        hodge.spectral_moment_stiffness(k, reference[:-1], COEFFICIENTS)
 
 
 @pytest.mark.parametrize("k", [0, 1])
@@ -109,7 +109,7 @@ def test_the_gradient_and_the_hessian_product_are_exact(k):
     moved = carrier * (1.0 + 0.03 * rng.standard_normal(len(carrier)) + 0.01j * rng.standard_normal(len(carrier)))
     set_squared_lengths(spacetime, moved)
     hodge = cob.HodgeLaplacian(spacetime)
-    gradient = np.asarray(hodge.spectralMomentStiffnessGradient(k, reference, COEFFICIENTS))
+    gradient = np.asarray(hodge.spectral_moment_stiffness_gradient(k, reference, COEFFICIENTS))
     step = 1e-6
     for e in rng.choice(len(moved), 6, replace=False):
         values = []
@@ -117,21 +117,21 @@ def test_the_gradient_and_the_hessian_product_are_exact(k):
             shifted = moved.copy()
             shifted[e] += sign * step
             set_squared_lengths(spacetime, shifted)
-            values.append(cob.HodgeLaplacian(spacetime).spectralMomentStiffness(k, reference, COEFFICIENTS))
+            values.append(cob.HodgeLaplacian(spacetime).spectral_moment_stiffness(k, reference, COEFFICIENTS))
         assert gradient[e] == pytest.approx((values[0] - values[1]) / (2.0 * step), rel=1e-6, abs=1e-9)
     direction = rng.standard_normal(len(moved)) + 1j * rng.standard_normal(len(moved))
     set_squared_lengths(spacetime, moved)
-    product = np.asarray(cob.HodgeLaplacian(spacetime).spectralMomentStiffnessHessianProduct(
+    product = np.asarray(cob.HodgeLaplacian(spacetime).spectral_moment_stiffness_hessian_product(
         k, reference, COEFFICIENTS, list(direction)))
     gradients = []
     for sign in (1.0, -1.0):
         set_squared_lengths(spacetime, moved + sign * step * direction)
-        gradients.append(np.asarray(cob.HodgeLaplacian(spacetime).spectralMomentStiffnessGradient(
+        gradients.append(np.asarray(cob.HodgeLaplacian(spacetime).spectral_moment_stiffness_gradient(
             k, reference, COEFFICIENTS)))
     difference = (gradients[0] - gradients[1]) / (2.0 * step)
     assert np.abs(product - difference).max() < 1e-6 * np.abs(product).max()
     with pytest.raises(RuntimeError):
-        cob.HodgeLaplacian(spacetime).spectralMomentStiffnessHessianProduct(k, reference, COEFFICIENTS, [0.0])
+        cob.HodgeLaplacian(spacetime).spectral_moment_stiffness_hessian_product(k, reference, COEFFICIENTS, [0.0])
 
 
 def test_at_the_carrier_the_hessian_is_the_gauss_newton_form():
@@ -144,7 +144,7 @@ def test_at_the_carrier_the_hessian_is_the_gauss_newton_form():
     rng = np.random.default_rng(4)
     for _ in range(3):
         v = rng.standard_normal(len(carrier))
-        product = np.asarray(cob.HodgeLaplacian(spacetime).spectralMomentStiffnessHessianProduct(
+        product = np.asarray(cob.HodgeLaplacian(spacetime).spectral_moment_stiffness_hessian_product(
             k, reference, COEFFICIENTS, list(v.astype(complex))))
         step = 1e-6
         velocities = []
@@ -160,7 +160,7 @@ def test_at_the_carrier_the_hessian_is_the_gauss_newton_form():
 
 def _rayleigh(spacetime, k, v):
     reference = list(moments(spacetime, k, len(COEFFICIENTS)))
-    product = np.asarray(cob.HodgeLaplacian(spacetime).spectralMomentStiffnessHessianProduct(
+    product = np.asarray(cob.HodgeLaplacian(spacetime).spectral_moment_stiffness_hessian_product(
         k, reference, COEFFICIENTS, list(v.astype(complex))))
     return float(np.real(v @ product)) / float(v @ v)
 
@@ -172,9 +172,9 @@ def _directions(n, steps, midpoints, coordinates, spacetime):
         "uniform traceless": steps[:, 1] ** 2 - steps[:, 2] ** 2,
         "traceless wave": np.cos(q * midpoints[:, 0]) * (steps[:, 1] ** 2 - steps[:, 2] ** 2),
         "dilation": np.sum(steps ** 2, axis=1),
-        "vertex displacement": np.array([2.0 * d @ (displacement[e.getTarget().getId()]
-                                                    - displacement[e.getSource().getId()])
-                                         for e, d in zip(spacetime.getEdgeList().toVector(), steps)]),
+        "vertex displacement": np.array([2.0 * d @ (displacement[e.get_target().get_id()]
+                                                    - displacement[e.get_source().get_id()])
+                                         for e, d in zip(spacetime.get_edge_list().to_vector(), steps)]),
     }
 
 
@@ -244,7 +244,7 @@ def test_the_objectives_carry_the_stiffness_only_when_it_is_declared():
     context.moment_stiffness_degrees = [k]
     context.moment_stiffness_coefficients = COEFFICIENTS
     context.moment_stiffness_reference = [list(reference)]
-    value = cob.HodgeLaplacian(spacetime).spectralMomentStiffness(k, list(reference), COEFFICIENTS)
+    value = cob.HodgeLaplacian(spacetime).spectral_moment_stiffness(k, list(reference), COEFFICIENTS)
     assert value.real > 0.0
     for objective in (cob.JointStationarityObjective(), cob.LegacyObjective()):
         terms = objective.terms(context)
@@ -268,7 +268,7 @@ def test_a_node_declares_the_stiffness_about_its_current_geometry():
     set_squared_lengths(spacetime, carrier * (1.0 + 0.02 * np.random.default_rng(6)
                                               .standard_normal(len(carrier))))
     stiffened = node.objective()
-    value = cob.HodgeLaplacian(spacetime).spectralMomentStiffness(
+    value = cob.HodgeLaplacian(spacetime).spectral_moment_stiffness(
         0, list(reference), COEFFICIENTS)
     assert value.real > 0.0
     node.set_moment_stiffness(0.0, [0], COEFFICIENTS)
@@ -289,11 +289,11 @@ def kuhn_ball(n=4):
                 c[axis] += 1
                 path.append(index(c))
             cells.append(path)
-    spacetime = T.Spacetime.fromVertexTuples(3, cells, 1.0, 0.0)
+    spacetime = T.Spacetime.from_vertex_tuples(3, cells, 1.0, 0.0)
     coordinates = {index(c): np.array(c, dtype=float) for c in itertools.product(range(n + 1), repeat=3)}
-    for edge in spacetime.getEdgeList().toVector():
-        d = coordinates[edge.getTarget().getId()] - coordinates[edge.getSource().getId()]
-        edge.setLength(math.sqrt(float(d @ d)))
+    for edge in spacetime.get_edge_list().to_vector():
+        d = coordinates[edge.get_target().get_id()] - coordinates[edge.get_source().get_id()]
+        edge.set_length(math.sqrt(float(d @ d)))
     return spacetime
 
 
@@ -311,8 +311,8 @@ def test_the_stiffness_is_positive_on_the_range_of_the_hellmann_feynman_force():
     psi = np.real(vectors[:, order[1]])                             # the lowest mode above the constant
     psi /= np.linalg.norm(psi)
     force = []
-    for edge in spacetime.getEdgeList().toVector():
-        dL = np.asarray(hodge.laplacianGradient(0, edge.getSource().getId(), edge.getTarget().getId()))
+    for edge in spacetime.get_edge_list().to_vector():
+        dL = np.asarray(hodge.laplacian_gradient(0, edge.get_source().get_id(), edge.get_target().get_id()))
         force.append(-float(np.real(psi @ dL.reshape(size, size) @ psi)))
     force = np.array(force)
     assert np.abs(force).max() > 1e-6

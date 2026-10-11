@@ -55,7 +55,7 @@ def test_flat_torus_calibrates_the_intersection_sign():
             i, j = (int(v) for v in edges[int(e)])
             out.append((i, j) if sign > 0 else (j, i))
         return out
-    a, b = cycle(torus.cycle_A()), cycle(torus.cycle_B())
+    a, b = cycle(torus.cycle_a()), cycle(torus.cycle_b())
     read = SurfacePeriods(faces, lengths, [a], [b], root_face=faces[0])
     form, residual = read.intersection_form([a, b])
     assert (form == np.array([[0, 1], [-1, 0]])).all() and residual <= 1e-9

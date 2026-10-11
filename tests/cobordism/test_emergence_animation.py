@@ -105,8 +105,8 @@ class DriveTest(unittest.TestCase):
         geometry to stay real -- stage 2 rotates `z` freely within the
         allowable domain."""
         host = ea.build_cobordism_host(SMALL, ea.DECLARED_HOST_SEED)
-        squared = [complex(edge.getLength()) ** 2
-                   for edge in host.getEdgeList().toVector()]
+        squared = [complex(edge.get_length()) ** 2
+                   for edge in host.get_edge_list().to_vector()]
         self.assertTrue(squared)
         for value in squared:
             self.assertAlmostEqual(value, 1.0, places=12)
@@ -217,9 +217,9 @@ class AbsenceTest(unittest.TestCase):
         one asserting that -- it is a tripwire, not a specification.
         """
         host = ea.build_cobordism_host(SMALL, ea.DECLARED_HOST_SEED)
-        temporal = obs.CrossingReadouts.temporalFunction(
+        temporal = obs.CrossingReadouts.temporal_function(
             host, ea.boundary_vertices(host))
-        reasons = [str(r) for r in temporal.failedCertificates]
+        reasons = [str(r) for r in temporal.failed_certificates]
         if temporal.certified:
             self.assertEqual(reasons, [])
             return
@@ -409,8 +409,8 @@ class OverlayTest(unittest.TestCase):
 
 def _squared_lengths(spacetime):
     """Every edge's `l^2`, which is what a disposition is read as."""
-    return [complex(edge.getLength()) ** 2
-            for edge in spacetime.getEdgeList().toVector()]
+    return [complex(edge.get_length()) ** 2
+            for edge in spacetime.get_edge_list().to_vector()]
 
 
 class EdgeDispositionTest(unittest.TestCase):
@@ -458,9 +458,9 @@ class EdgeDispositionTest(unittest.TestCase):
                                        epsilon=0.0)
         layer = ea._hop_layers(host, ea.boundary_vertices(host))
         across, within = 0, 0
-        for edge in host.getEdgeList().toVector():
+        for edge in host.get_edge_list().to_vector():
             a, b = ea._edge_endpoints(edge)
-            value = complex(edge.getLength()) ** 2
+            value = complex(edge.get_length()) ** 2
             if layer.get(a, 0) != layer.get(b, 0):
                 across += 1
                 self.assertAlmostEqual(value.real, -1.0, places=12)
@@ -482,9 +482,9 @@ class EdgeDispositionTest(unittest.TestCase):
         layer = ea._hop_layers(host, ea.boundary_vertices(host))
         rotated = -cmath.exp(-2j * epsilon)
         across = 0
-        for edge in host.getEdgeList().toVector():
+        for edge in host.get_edge_list().to_vector():
             a, b = ea._edge_endpoints(edge)
-            value = complex(edge.getLength()) ** 2
+            value = complex(edge.get_length()) ** 2
             expected = rotated if layer.get(a, 0) != layer.get(b, 0) else 1.0
             across += layer.get(a, 0) != layer.get(b, 0)
             self.assertAlmostEqual(value, expected, places=12)
@@ -521,8 +521,8 @@ class EdgeDispositionTest(unittest.TestCase):
         counts = {}
         for disposition in ea.EdgeDisposition.ALL:
             host = ea.build_cobordism_host(SMALL, 3, disposition)
-            counts[disposition] = (len(host.getEdgeList().toVector()),
-                                   len(host.getTopSimplices()))
+            counts[disposition] = (len(host.get_edge_list().to_vector()),
+                                   len(host.get_top_simplices()))
         self.assertEqual(len(set(counts.values())), 1, counts)
 
     def test_an_unknown_disposition_fails_loudly_and_by_name(self):
@@ -553,13 +553,13 @@ class InstanceCertificateTest(unittest.TestCase):
     rotation epsilon."""
 
     def _margin(self, disposition, epsilon=ea.DECLARED_EPSILON):
-        return cob.HodgeLaplacian.kontsevichSegalMargin(
+        return cob.HodgeLaplacian.kontsevich_segal_margin(
             ea.build_cobordism_host(SMALL, ea.DECLARED_HOST_SEED, disposition,
                                     epsilon=epsilon))
 
     def test_the_default_seed_is_allowable(self):
         self.assertAlmostEqual(
-            cob.HodgeLaplacian.kontsevichSegalMargin(
+            cob.HodgeLaplacian.kontsevich_segal_margin(
                 ea.build_cobordism_host(SMALL, ea.DECLARED_HOST_SEED)),
             math.pi, places=9)
 
@@ -595,7 +595,7 @@ class InstanceCertificateTest(unittest.TestCase):
                 self.assertIsNone(record["epsilon"])
                 self.assertEqual(
                     record["margin"],
-                    cob.HodgeLaplacian.kontsevichSegalMargin(frame.spacetime))
+                    cob.HodgeLaplacian.kontsevich_segal_margin(frame.spacetime))
                 self.assertEqual(record["allowable"], record["margin"] > 0.0)
                 # The configuration space of the default metric is the
                 # closure of the allowable domain, so a drive never leaves it.

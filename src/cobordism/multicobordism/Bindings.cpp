@@ -71,7 +71,7 @@ void register_cobordism_multicobordism(py::module_ &m) {
   py::class_<MultiCobordism::BoundaryBlock>(m, "MultiCobordismBlock",
       "An emergent boundary block of a MultiCobordism (an input or output): the "
       "vertex set whose own sub-complex carries the block, and its target period "
-      "vector. Read the block's sub-complex with Spacetime.fromVertexTuples over the "
+      "vector. Read the block's sub-complex with Spacetime.from_vertex_tuples over the "
       "cells inside `vertices`, then its holes with MultiCobordism.emergent_holes.")
       .def_property_readonly(
           "vertices",
@@ -434,16 +434,16 @@ void register_cobordism_multicobordism(py::module_ &m) {
            py::arg("einstein_hilbert") = true,
            py::arg("real_squared_lengths_only") = false,
            py::arg("metric_source"))
-      .def("metricSource", &MultiCobordism::metricSource,
+      .def("metric_source", &MultiCobordism::metricSource,
            "Where every Hodge operator this node scores takes its metric from.")
-      .def("geometryAdmissible", &MultiCobordism::geometryAdmissible, py::arg("spacetime"),
+      .def("geometry_admissible", &MultiCobordism::geometryAdmissible, py::arg("spacetime"),
            "Whitney pencil: whether the geometry lies in the closure of the Kontsevich-Segal "
            "allowable domain (margin >= 0); always true under DiagonalWeights.")
       .def_static("betti", &MultiCobordism::betti, py::arg("st"))
       .def_static("emergent_holes", &MultiCobordism::emergentHoles,
                   py::arg("st"), py::arg("k"))
       .def_static("regge_action_gradient", &MultiCobordism::reggeActionGradient, py::arg("st"))
-      .def_static("nearKernelResidualGradient",
+      .def_static("near_kernel_residual_gradient",
            [](const std::shared_ptr<Spacetime> &st, int k, std::size_t n,
               std::optional<HodgeLaplacian::MetricSource> source) {
              return MultiCobordism::nearKernelResidualGradient(
@@ -457,7 +457,7 @@ void register_cobordism_multicobordism(py::module_ &m) {
            "Re(g) and -Im(g) are the two directional derivatives and conj(g) is "
            "the steepest-ascent direction. Certified by the scale-invariance "
            "Euler identity sum l^2 g = 0 in both parts.")
-      .def_static("nearKernelResidual",
+      .def_static("near_kernel_residual",
            [](const std::shared_ptr<Spacetime> &st, int k, std::size_t n,
               std::optional<HodgeLaplacian::MetricSource> source) {
              return MultiCobordism::nearKernelResidual(
@@ -479,7 +479,7 @@ void register_cobordism_multicobordism(py::module_ &m) {
            "gradient (the period residual is a step function in the topology). "
            "The count comes from the TARGETS (one register per target "
            "component), never a constant.")
-      .def_static("singularValueHalfSumRatio",
+      .def_static("singular_value_half_sum_ratio",
            [](const std::shared_ptr<Spacetime> &st, int k,
               std::optional<HodgeLaplacian::MetricSource> source) {
              return MultiCobordism::singularValueHalfSumRatio(
@@ -496,7 +496,7 @@ void register_cobordism_multicobordism(py::module_ &m) {
            "no target enters — what the register carries is read afterwards. "
            "An empty degree (no k-cells) scores the worst case 1; a single "
            "mode or an identically-zero L_k scores 0.")
-      .def("expectedRegisterCount", &MultiCobordism::expectedRegisterCount,
+      .def("expected_register_count", &MultiCobordism::expectedRegisterCount,
            "The number of registers the targets ask for: the largest component "
            "count over every input and output target vector.")
       .def_static("r_state",
@@ -797,7 +797,7 @@ void register_cobordism_multicobordism(py::module_ &m) {
       .def_static("dual_frame", &MultiCobordism::dualFrame, py::arg("complex"), py::arg("degree"),
            py::arg("cells"), py::arg("images"),
            "The dual of a frame under the transpose pairing of `complex`'s own chain-level Whitney "
-           "pencil at `degree`: with M_k the pencil's Whitney mass matrix (CovariantChainHodge.Minv, "
+           "pencil at `degree`: with M_k the pencil's Whitney mass matrix (CovariantChainHodge.m_inv, "
            "PencilLayer.pencil(...).B) restricted to `cells` and B = Z.T @ M_k @ Z the frame's pairing, "
            "Z^vee = Z @ inv(B).T, so that Z^vee.T @ M_k @ Z == I (the BlockFrame contract; the "
            "canonical left frame at U = 1). Read-only on the complex. Refuses by name a "
@@ -939,7 +939,7 @@ void register_cobordism_multicobordism(py::module_ &m) {
       .def_static("seed_collar", &MultiCobordism::seedCollar, py::arg("surface_a"), py::arg("surface_b"),
            py::arg("layers") = 1, py::arg("twist") = std::vector<std::uint64_t>{},
            "The SurfaceSeed of the COLLAR between two surfaces of identical combinatorics: "
-           "T^2 x I over their shared triangulation (Spacetime.prismCells, `layers` product layers), "
+           "T^2 x I over their shared triangulation (Spacetime.prism_cells, `layers` product layers), "
            "layer 0 = surface A, last layer = surface B, the surfaces' lengths verbatim, the auto-wired "
            "length on every other edge, zero phases, gated once as a whole by dualComplexIsValid and "
            "refused by name; a combinatorial mismatch is refused by name. Seed both id sets as input "
@@ -1149,7 +1149,7 @@ void register_cobordism_multicobordism(py::module_ &m) {
       .def("uncovered_input_faces", &MultiCobordism::uncoveredInputFaces,
            "The faces of the surface input blocks that no top cell covers.")
       .def("bridge_phase_complete", &MultiCobordism::bridgePhaseComplete,
-           "Every surface face has exactly one top cell on it and getBoundary() is exactly the "
+           "Every surface face has exactly one top cell on it and get_boundary() is exactly the "
            "union of the surface faces: the boundary of W is the surfaces. True by construction "
            "on a collar seed; false without surface inputs.")
       .def("seed_outputs", &MultiCobordism::seedOutputs, py::arg("seeds"))
@@ -1522,7 +1522,7 @@ Right -- re-read after each drive call:
            py::arg("degrees"), py::arg("coefficients"),
            "Declare the spectral-moment stiffness of the geometric action about the CURRENT geometry, the "
            "carrier: its local spectral moments at `degrees` are recorded as the reference, and the objective "
-           "gains beta_M sum_k Re S_M,k (HodgeLaplacian.spectralMomentStiffness). Weight 0 removes it.")
+           "gains beta_M sum_k Re S_M,k (HodgeLaplacian.spectral_moment_stiffness). Weight 0 removes it.")
       .def_property_readonly("moment_stiffness_weight", &MultiCobordism::momentStiffnessWeight)
       .def_property_readonly("moment_stiffness_degrees", &MultiCobordism::momentStiffnessDegrees)
       .def_property_readonly("moment_stiffness_coefficients", &MultiCobordism::momentStiffnessCoefficients)
@@ -1532,7 +1532,7 @@ Right -- re-read after each drive call:
            "to the carried modes' cells.")
       .def("carried_state_energy_gradient",
            &MultiCobordism::carriedStateEnergyGradient, py::arg("st"),
-           "Exact analytic dE/dz per edge in getEdgeList() order.")
+           "Exact analytic dE/dz per edge in get_edge_list() order.")
       .def("carried_state_purity_defect",
            &MultiCobordism::carriedStatePurityDefect,
            "The purity defect ||Gamma^2 - Gamma||_F of the carried "

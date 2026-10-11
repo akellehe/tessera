@@ -23,7 +23,7 @@ DIAGONAL = cob.HodgeMetricSource.DiagonalWeights
 
 def _diagonal(st):
     """The diagonal-weight operator, named: the closed forms below are its."""
-    return cob.HodgeLaplacian(st, cob.HodgeLaplacian.defaultWeightConvention(), DIAGONAL)
+    return cob.HodgeLaplacian(st, cob.HodgeLaplacian.default_weight_convention(), DIAGONAL)
 
 
 # --------------------------------------------------------------------------- #
@@ -39,9 +39,9 @@ def _build_topology(topology):
 
 
 def _set_uniform(st, squared_length=1.0, phase=0.0):
-    for e in st.getEdgeList().toVector():
-        e.setLength(cmath.sqrt(complex(squared_length)))
-        e.setPhase(phase)
+    for e in st.get_edge_list().to_vector():
+        e.set_length(cmath.sqrt(complex(squared_length)))
+        e.set_phase(phase)
     return st
 
 
@@ -50,7 +50,7 @@ def _triangle(phase=0.0):
     st = _build_topology(tessera.SimplexBoundarySphere(1))
     _set_uniform(st, 1.0, 0.0)
     if phase:
-        st.getEdgeList().toVector()[0].setPhase(phase)
+        st.get_edge_list().to_vector()[0].set_phase(phase)
     return st
 
 
@@ -71,18 +71,18 @@ def _from_simplices(num_vertices, simplices):
     metric = tessera.Metric(True, sig)
     st = tessera.Spacetime(metric, tessera.HERMITIAN_WEIGHTED, 1.0, 1.0,
                            tessera.PREFERRED, tessera.Toroid())
-    verts = [st.createVertex(i) for i in range(num_vertices)]
+    verts = [st.create_vertex(i) for i in range(num_vertices)]
     for simplex in simplices:
-        st.createSimplex([verts[i] for i in simplex])
+        st.create_simplex([verts[i] for i in simplex])
     return st
 
 
 def _triangle_one_timelike(alpha):
     """The 3-cycle 0-1-2-0 with edge (1,2) timelike (l² = -alpha²)."""
     st = _set_uniform(_from_simplices(3, [(0, 1), (1, 2), (2, 0)]), 1.0, 0.0)
-    for e in st.getEdgeList().toVector():
-        if {e.getSource().getId(), e.getTarget().getId()} == {1, 2}:
-            e.setLength(cmath.sqrt(complex(-(alpha ** 2))))
+    for e in st.get_edge_list().to_vector():
+        if {e.get_source().get_id(), e.get_target().get_id()} == {1, 2}:
+            e.set_length(cmath.sqrt(complex(-(alpha ** 2))))
     return st
 
 
@@ -113,14 +113,14 @@ class TestCochain(unittest.TestCase):
         for i, simplex in enumerate(h.simplices()):
             self.assertEqual(h.amplitude(i), coeffs[i])     # by index
             self.assertEqual(h[i], coeffs[i])               # __getitem__
-            self.assertEqual(h.amplitudeFor(simplex), coeffs[i])  # by simplex id
+            self.assertEqual(h.amplitude_for(simplex), coeffs[i])  # by simplex id
 
     def test_amplitude_out_of_range_raises(self):
         h = cob.HodgeLaplacian(_triangle()).harmonics()[0]
         with self.assertRaises(IndexError):
             h.amplitude(99)
         with self.assertRaises(IndexError):
-            h.amplitudeFor([12345])  # no such vertex in the ordering
+            h.amplitude_for([12345])  # no such vertex in the ordering
 
     def test_inner_product_matches_numpy_vdot(self):
         # <a, b> = sum conj(a_i) b_i = np.vdot(a, b), across the full eigenbasis.
@@ -128,17 +128,17 @@ class TestCochain(unittest.TestCase):
         for a in evecs:
             for b in evecs:
                 ca, cb = np.asarray(a.coeffs()), np.asarray(b.coeffs())
-                self.assertAlmostEqual(a.innerProduct(b), complex(np.vdot(ca, cb)),
+                self.assertAlmostEqual(a.inner_product(b), complex(np.vdot(ca, cb)),
                                        places=12)
 
     def test_eigenbasis_is_orthonormal(self):
         # The SelfAdjointEigenSolver basis of the U(1) CONNECTION operator:
         # <v_i, v_j> = delta_ij. (L_k is non-self-adjoint at every degree, so
         # its eigenvectors carry no orthonormality claim.)
-        evecs = cob.HodgeLaplacian(_triangle()).connectionSpectrum().eigenvectors()
+        evecs = cob.HodgeLaplacian(_triangle()).connection_spectrum().eigenvectors()
         for i, a in enumerate(evecs):
             for j, b in enumerate(evecs):
-                self.assertAlmostEqual(a.innerProduct(b), 1.0 if i == j else 0.0,
+                self.assertAlmostEqual(a.inner_product(b), 1.0 if i == j else 0.0,
                                        places=10)
 
     def test_norm_matches_numpy(self):
@@ -164,7 +164,7 @@ class TestCochain(unittest.TestCase):
         v0 = hl.spectrum(0).eigenvectors()[0]   # degree 0
         v1 = hl.spectrum(1).eigenvectors()[0]   # degree 1
         with self.assertRaises(ValueError):
-            v0.innerProduct(v1)
+            v0.inner_product(v1)
 
 
 # --------------------------------------------------------------------------- #
@@ -191,8 +191,8 @@ class TestSpectrum(unittest.TestCase):
 
     def test_hermitian_eigenvalues_are_real_and_ascending(self):
         # The Hermitian regime lives on the U(1) CONNECTION spectrum (#805).
-        sp = cob.HodgeLaplacian(_triangle()).connectionSpectrum()
-        self.assertTrue(sp.isHermitian())
+        sp = cob.HodgeLaplacian(_triangle()).connection_spectrum()
+        self.assertTrue(sp.is_hermitian())
         evals = sp.eigenvalues()
         self.assertEqual(evals.dtype, np.dtype("complex128"))
         np.testing.assert_allclose(evals.imag, 0.0, atol=1e-12)
@@ -209,7 +209,7 @@ class TestSpectrum(unittest.TestCase):
     def test_eigenvectors_match_flat_accessor_columns(self):
         # spectrum().eigenvectors()[j].coeffs() == column j of the flat eigenvectors().
         hl = cob.HodgeLaplacian(_torus())
-        n1 = cob.ChainComplex.fromSpacetime(_torus()).numSimplices(1)
+        n1 = cob.ChainComplex.from_spacetime(_torus()).num_simplices(1)
         flat = np.array(hl.eigenvectors(1), dtype=complex).reshape(n1, n1)
         for j, v in enumerate(hl.spectrum(1).eigenvectors()):
             np.testing.assert_allclose(np.asarray(v.coeffs()), flat[:, j], atol=1e-12)
@@ -263,7 +263,7 @@ class TestHarmonicAnchors(unittest.TestCase):
         # that L_0 has no link phase. The default covariant h_0(s, U) carries
         # the link, so the flux lifts its zero mode as well.
         st = _triangle(math.pi)
-        self.assertEqual(len(cob.HodgeLaplacian(st).connectionHarmonics()), 0)
+        self.assertEqual(len(cob.HodgeLaplacian(st).connection_harmonics()), 0)
         self.assertEqual(len(_diagonal(st).harmonics(0)), 1)
         self.assertEqual(len(cob.HodgeLaplacian(st).harmonics(0)), 0)
 
@@ -272,7 +272,7 @@ class TestHarmonicAnchors(unittest.TestCase):
         torus = _torus()
         harm = cob.HodgeLaplacian(torus).harmonics(1)
         self.assertEqual(len(harm), 2)
-        n1 = cob.ChainComplex.fromSpacetime(torus).numSimplices(1)
+        n1 = cob.ChainComplex.from_spacetime(torus).num_simplices(1)
         for h in harm:
             self.assertEqual(h.degree(), 1)
             self.assertEqual(h.size(), n1)
@@ -284,7 +284,7 @@ class TestHarmonicAnchors(unittest.TestCase):
         self.assertEqual(len(harm), 1)
         self.assertEqual(harm[0].degree(), 2)
         self.assertEqual(harm[0].size(),
-                         cob.ChainComplex.fromSpacetime(torus).numSimplices(2))
+                         cob.ChainComplex.from_spacetime(torus).num_simplices(2))
 
 
 # --------------------------------------------------------------------------- #
@@ -294,7 +294,7 @@ class TestSpectrumCache(unittest.TestCase):
 
     def test_is_not_hermitian_and_eigenvalues_are_complex_typed(self):
         sp = _diagonal(_triangle_one_timelike(1.0)).spectrum(1)
-        self.assertFalse(sp.isHermitian())
+        self.assertFalse(sp.is_hermitian())
         self.assertEqual(sp.eigenvalues().dtype, np.dtype("complex128"))
         # closed form {0, 3, 1 - 2/alpha} with alpha=1 -> {0, 3, -1}: indefinite.
         np.testing.assert_allclose(np.sort(sp.eigenvalues().real), [-1.0, 0.0, 3.0],

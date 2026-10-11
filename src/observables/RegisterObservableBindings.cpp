@@ -27,8 +27,8 @@ saved combinatorial and metric description back into a live,
 skeleton-complete Spacetime, and produces a relabeled copy for the relabel
 gate. Never builds a spacetime of its own and never re-runs the dynamics
 (those live in ProtonSynthesis / ProtonIngredients / MultiCobordism); it
-reads a recorded geometry back through ``Spacetime.fromVertexTuples``, completing
-the facet skeleton with ``materializeFacets``.)doc")
+reads a recorded geometry back through ``Spacetime.from_vertex_tuples``, completing
+the facet skeleton with ``materialize_facets``.)doc")
       .def_static("load", &LiveComplex::load, py::arg("cells"),
                   py::arg("squared_lengths"), py::arg("vertex_times"),
                   py::arg("dimensions"),
@@ -77,7 +77,7 @@ it never builds, solves, or materializes anything.)doc")
       .def("dropped_holes", &RegisterContext::droppedHoles)
       .def("holes_used", &RegisterContext::holesUsed)
       .def("holes_total", &RegisterContext::holesTotal)
-      .def("bK", &RegisterContext::bK)
+      .def("b_k", &RegisterContext::bK)
       .def("betti", &RegisterContext::betti)
       .def("holes_vs_betti_divergent",
            &RegisterContext::holesVsBettiDivergent)

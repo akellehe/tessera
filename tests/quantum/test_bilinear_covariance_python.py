@@ -17,7 +17,7 @@ Jordan-Wigner chains build |Xi_R> and |Xi_L> as Fock vectors by applying
 LINEAR smeared creations to the vacuum, the left state is read by the plain
 transpose (<Xi_L| X |Xi_R> = psi_L^T X psi_R, the contraction by the dual
 mode, never a conjugate), and the evolution is the dense Fock exponential of
-dGamma(h) on each side. Every covariance quantity is compared against it.
+d_gamma(h) on each side. Every covariance quantity is compared against it.
 
 Acceptance (#1186): for a complex-symmetric h the evolved Gamma stays
 idempotent and reproduces the dense exterior-algebra evolution; for a
@@ -169,41 +169,41 @@ class TestBiorthogonalConstruction(unittest.TestCase):
 
     def test_gamma_is_the_transpose_product_and_idempotent(self) -> None:
         phi, left = biorthogonal_pair(5, 2, seed=1)
-        state = CovarianceState.fromBiorthogonalFrames(phi, left)
+        state = CovarianceState.from_biorthogonal_frames(phi, left)
         self.assertEqual(state.dual(), CovarianceDual.Transpose)
         gamma = np.array(state.gamma())
         np.testing.assert_allclose(gamma, phi @ left.T, rtol=0, atol=1e-14)
-        np.testing.assert_array_equal(np.array(state.rightFrame()), phi)
-        np.testing.assert_array_equal(np.array(state.leftFrame()), left)
-        self.assertLess(state.dualityDefect(), MACHINE)
-        self.assertLess(state.purityDefect(), MACHINE)
-        self.assertLess(abs(state.particleNumber() - 2.0), MACHINE)
+        np.testing.assert_array_equal(np.array(state.right_frame()), phi)
+        np.testing.assert_array_equal(np.array(state.left_frame()), left)
+        self.assertLess(state.duality_defect(), MACHINE)
+        self.assertLess(state.purity_defect(), MACHINE)
+        self.assertLess(abs(state.particle_number() - 2.0), MACHINE)
         # An algebraic covariance, not a density matrix: not Hermitian.
-        self.assertGreater(state.hermiticityDefect(), 0.1)
+        self.assertGreater(state.hermiticity_defect(), 0.1)
 
     def test_hermitian_adjoint_states_carry_no_frames(self) -> None:
-        state = CovarianceState.fromSlaterFrame(orthonormal(4, 2, seed=2))
+        state = CovarianceState.from_slater_frame(orthonormal(4, 2, seed=2))
         self.assertEqual(state.dual(), CovarianceDual.HermitianAdjoint)
-        self.assertEqual(np.array(state.rightFrame()).size, 0)
-        self.assertEqual(np.array(state.leftFrame()).size, 0)
-        self.assertTrue(math.isnan(state.dualityDefect()))
+        self.assertEqual(np.array(state.right_frame()).size, 0)
+        self.assertEqual(np.array(state.left_frame()).size, 0)
+        self.assertTrue(math.isnan(state.duality_defect()))
 
     def test_no_occupied_duals_is_the_vacuum(self) -> None:
         empty = np.zeros((4, 0), dtype=complex)
-        state = CovarianceState.fromBiorthogonalFrames(empty, empty)
+        state = CovarianceState.from_biorthogonal_frames(empty, empty)
         np.testing.assert_array_equal(np.array(state.gamma()),
                                       np.zeros((4, 4)))
-        self.assertEqual(state.wickParity().value, 1.0 + 0j)
-        self.assertEqual(state.dualityDefect(), 0.0)
+        self.assertEqual(state.wick_parity().value, 1.0 + 0j)
+        self.assertEqual(state.duality_defect(), 0.0)
 
     def test_shapes_are_validated(self) -> None:
         phi, left = biorthogonal_pair(4, 2, seed=3)
         with self.assertRaises(ValueError):
-            CovarianceState.fromBiorthogonalFrames(phi, left[:, :1])
+            CovarianceState.from_biorthogonal_frames(phi, left[:, :1])
         with self.assertRaises(ValueError):
-            CovarianceState.fromBiorthogonalFrames(phi, left[:3, :])
+            CovarianceState.from_biorthogonal_frames(phi, left[:3, :])
         with self.assertRaises(ValueError):
-            CovarianceState.fromBiorthogonalFrames(
+            CovarianceState.from_biorthogonal_frames(
                 np.zeros((0, 1), dtype=complex), np.zeros((0, 1), dtype=complex))
 
     def test_an_unpaired_left_frame_is_reported_never_repaired(self) -> None:
@@ -212,14 +212,14 @@ class TestBiorthogonalConstruction(unittest.TestCase):
         rng = np.random.default_rng(4)
         phi = cplx(rng, 4, 2)
         left = cplx(rng, 4, 2)
-        state = CovarianceState.fromBiorthogonalFrames(phi, left)
+        state = CovarianceState.from_biorthogonal_frames(phi, left)
         np.testing.assert_allclose(np.array(state.gamma()), phi @ left.T,
                                    rtol=0, atol=1e-14)
-        self.assertGreater(state.dualityDefect(), 0.1)
-        self.assertGreater(state.purityDefect(), 0.1)
-        self.assertFalse(state.purityCertificate(1e-9).holds())
-        read = state.wickParity()
-        self.assertAlmostEqual(read.residual, state.dualityDefect(), places=14)
+        self.assertGreater(state.duality_defect(), 0.1)
+        self.assertGreater(state.purity_defect(), 0.1)
+        self.assertFalse(state.purity_certificate(1e-9).holds())
+        read = state.wick_parity()
+        self.assertAlmostEqual(read.residual, state.duality_defect(), places=14)
         self.assertFalse(read.certificate.holds())
 
 
@@ -234,7 +234,7 @@ class TestBiorthogonalWick(unittest.TestCase):
 
     def setUp(self) -> None:
         self.phi, self.left = biorthogonal_pair(self.M, self.N, self.SEED)
-        self.state = CovarianceState.fromBiorthogonalFrames(self.phi,
+        self.state = CovarianceState.from_biorthogonal_frames(self.phi,
                                                             self.left)
         self.fock = BilinearFock(self.M)
         self.psi_r = self.fock.wedge(self.phi)
@@ -256,15 +256,15 @@ class TestBiorthogonalWick(unittest.TestCase):
             dense_val = self.fock.pair(
                 self.psi_l, self.fock.adag[mode] @ self.fock.a[mode],
                 self.psi_r)
-            self.assertLess(abs(self.state.wickOccupation(mode).value -
+            self.assertLess(abs(self.state.wick_occupation(mode).value -
                                 dense_val), MACHINE)
         parity = self.fock.pair(self.psi_l, self.fock.parity(), self.psi_r)
-        self.assertLess(abs(self.state.wickParity().value - parity), MACHINE)
+        self.assertLess(abs(self.state.wick_parity().value - parity), MACHINE)
         dim = 2 ** self.M
         sub = np.eye(dim, dtype=complex)
         for m in (0, 3):
             sub = sub @ (np.eye(dim) - 2 * self.fock.adag[m] @ self.fock.a[m])
-        self.assertLess(abs(self.state.wickSubsetParity([0, 3]).value -
+        self.assertLess(abs(self.state.wick_subset_parity([0, 3]).value -
                             self.fock.pair(self.psi_l, sub, self.psi_r)),
                         MACHINE)
 
@@ -278,7 +278,7 @@ class TestBiorthogonalWick(unittest.TestCase):
             for a in reversed(annihilators):
                 op = op @ f.a[a]
             dense_val = f.pair(self.psi_l, op, self.psi_r)
-            read = self.state.wickNormalOrdered(creators, annihilators)
+            read = self.state.wick_normal_ordered(creators, annihilators)
             self.assertLess(abs(read.value - dense_val), MACHINE)
 
     def test_transpose_gram_determinant_is_the_linear_smearing(self) -> None:
@@ -289,7 +289,7 @@ class TestBiorthogonalWick(unittest.TestCase):
         op = (f.creation(v[:, 0]) @ f.creation(v[:, 1]) @
               f.contraction(w[:, 1]) @ f.contraction(w[:, 0]))
         dense_val = f.pair(self.psi_l, op, self.psi_r)
-        read = self.state.wickTransposeGramDeterminant(v, w)
+        read = self.state.wick_transpose_gram_determinant(v, w)
         scale = max(1.0, abs(dense_val))
         self.assertLess(abs(read.value - dense_val) / scale, MACHINE)
         gamma = np.array(self.state.gamma())
@@ -297,10 +297,10 @@ class TestBiorthogonalWick(unittest.TestCase):
                         scale, MACHINE)
         # It differs from the conjugate-smeared read exactly by w -> conj(w).
         self.assertLess(
-            abs(self.state.wickGramDeterminant(v, w.conj()).value -
+            abs(self.state.wick_gram_determinant(v, w.conj()).value -
                 read.value) / scale, MACHINE)
         self.assertEqual(
-            self.state.wickTransposeGramDeterminant(v, w[:, :1]).value, 0j)
+            self.state.wick_transpose_gram_determinant(v, w[:, :1]).value, 0j)
 
     def test_bilinear_moments_match_the_dense_pairing(self) -> None:
         rng = np.random.default_rng(13)
@@ -308,22 +308,22 @@ class TestBiorthogonalWick(unittest.TestCase):
         b = cplx(rng, self.M, self.M)
         f = self.fock
         dense_val = f.pair(self.psi_l, f.dgamma(a) @ f.dgamma(b), self.psi_r)
-        read = self.state.wickBilinearMoment([a, b])
+        read = self.state.wick_bilinear_moment([a, b])
         self.assertLess(abs(read.value - dense_val) / max(1, abs(dense_val)),
                         MACHINE)
 
     def test_reads_grade_on_the_pairing_not_on_hermiticity(self) -> None:
-        read = self.state.wickOccupation(1)
+        read = self.state.wick_occupation(1)
         # A transition amplitude is complex: that is signal, not leakage.
         self.assertGreater(abs(read.value.imag), 1e-3)
-        self.assertEqual(read.residual, self.state.dualityDefect())
+        self.assertEqual(read.residual, self.state.duality_defect())
         self.assertTrue(read.certificate.holds())
         self.assertEqual(read.certificate.grade,
                          cob.CertificateGrade.AlgebraicallyExact)
         # The regime is verified on Gamma: a non-Hermitian covariance.
         self.assertEqual(read.certificate.regime,
                          cob.CertificateRegime.NonNormal)
-        self.assertTrue(self.state.purityCertificate(1e-10).holds())
+        self.assertTrue(self.state.purity_certificate(1e-10).holds())
 
 
 # ─── evolution through the two frames ──────────────────────────────────────
@@ -350,23 +350,23 @@ class TestTwoFrameEvolution(unittest.TestCase):
         self.assertLess(np.abs(h - h.T).max(), 1e-15)
         self.assertGreater(np.abs(h - h.conj().T).max(), 0.1)
         t = 0.7
-        state = CovarianceState.fromBiorthogonalFrames(phi, left)
+        state = CovarianceState.from_biorthogonal_frames(phi, left)
         state.evolve(h, t)
         fock, psi_l, psi_r = self.dense_evolution(phi, left, h, t)
         self.assertLess(abs(complex(psi_l @ psi_r) - 1.0), 1e-11)
         dense_gamma = fock.two_point(psi_l, psi_r)
         self.assertLess(relative(state.gamma(), dense_gamma), 1e-11)
         # Idempotency, the pairing and the trace survive exactly.
-        self.assertLess(state.purityDefect(), 1e-12)
-        self.assertLess(state.dualityDefect(), 1e-12)
-        self.assertLess(abs(state.particleNumber() - self.N), 1e-12)
+        self.assertLess(state.purity_defect(), 1e-12)
+        self.assertLess(state.duality_defect(), 1e-12)
+        self.assertLess(abs(state.particle_number() - self.N), 1e-12)
         # ... and so do the reads.
         parity = fock.pair(psi_l, fock.parity(), psi_r)
-        self.assertLess(abs(state.wickParity().value - parity), 1e-11)
+        self.assertLess(abs(state.wick_parity().value - parity), 1e-11)
         # The frames themselves moved as the whitepaper states.
-        np.testing.assert_allclose(np.array(state.rightFrame()),
+        np.testing.assert_allclose(np.array(state.right_frame()),
                                    expm(-1j * h * t) @ phi, atol=1e-12)
-        np.testing.assert_allclose(np.array(state.leftFrame()),
+        np.testing.assert_allclose(np.array(state.left_frame()),
                                    expm(1j * h * t).T @ left, atol=1e-12)
 
     def test_gamma_obeys_the_commutator_equation(self) -> None:
@@ -376,13 +376,13 @@ class TestTwoFrameEvolution(unittest.TestCase):
         phi, left = biorthogonal_pair(self.M, self.N, seed=23)
         h = complex_symmetric(self.M, seed=24)
         gamma0 = phi @ left.T
-        state = CovarianceState.fromBiorthogonalFrames(phi, left)
+        state = CovarianceState.from_biorthogonal_frames(phi, left)
         state.evolve(h, 0.4)
         expected = expm(-0.4j * h) @ gamma0 @ expm(0.4j * h)
         self.assertLess(relative(state.gamma(), expected), 1e-12)
         eps = 1e-5
-        plus = CovarianceState.fromBiorthogonalFrames(phi, left)
-        minus = CovarianceState.fromBiorthogonalFrames(phi, left)
+        plus = CovarianceState.from_biorthogonal_frames(phi, left)
+        minus = CovarianceState.from_biorthogonal_frames(phi, left)
         plus.evolve(h, eps)
         minus.evolve(h, -eps)
         derivative = (np.array(plus.gamma()) - np.array(minus.gamma())) / (2 * eps)
@@ -398,24 +398,24 @@ class TestTwoFrameEvolution(unittest.TestCase):
         for i in range(self.M):
             h[i, i] = 0.2 - 0.1j
         np.testing.assert_allclose(
-            np.array(CovarianceState.complexPropagator(h, 0.9)),
+            np.array(CovarianceState.complex_propagator(h, 0.9)),
             expm(-0.9j * h), rtol=0, atol=1e-14)
         phi, left = biorthogonal_pair(self.M, self.N, seed=25)
-        state = CovarianceState.fromBiorthogonalFrames(phi, left)
+        state = CovarianceState.from_biorthogonal_frames(phi, left)
         state.evolve(h, 0.9)
         fock, psi_l, psi_r = self.dense_evolution(phi, left, h, 0.9)
         self.assertLess(relative(state.gamma(), fock.two_point(psi_l, psi_r)),
                         1e-11)
-        self.assertLess(state.purityDefect(), 1e-12)
+        self.assertLess(state.purity_defect(), 1e-12)
         # The Hermitian-adjoint path still refuses it, loudly.
         with self.assertRaises(ValueError):
-            CovarianceState.fromOccupations(np.ones(self.M)).evolve(h, 0.9)
+            CovarianceState.from_occupations(np.ones(self.M)).evolve(h, 0.9)
 
     def test_group_property(self) -> None:
         phi, left = biorthogonal_pair(self.M, self.N, seed=26)
         h = complex_symmetric(self.M, seed=27)
-        s_a = CovarianceState.fromBiorthogonalFrames(phi, left)
-        s_b = CovarianceState.fromBiorthogonalFrames(phi, left)
+        s_a = CovarianceState.from_biorthogonal_frames(phi, left)
+        s_b = CovarianceState.from_biorthogonal_frames(phi, left)
         s_a.evolve(h, 0.3)
         s_a.evolve(h, 0.5)
         s_b.evolve(h, 0.8)
@@ -427,27 +427,27 @@ class TestTwoFrameEvolution(unittest.TestCase):
     def test_evolve_equals_transport_by_the_complex_propagator(self) -> None:
         phi, left = biorthogonal_pair(self.M, self.N, seed=28)
         h = complex_symmetric(self.M, seed=29)
-        s_a = CovarianceState.fromBiorthogonalFrames(phi, left)
-        s_b = CovarianceState.fromBiorthogonalFrames(phi, left)
+        s_a = CovarianceState.from_biorthogonal_frames(phi, left)
+        s_b = CovarianceState.from_biorthogonal_frames(phi, left)
         s_a.evolve(h, 0.37)
-        s_b.applyTransport(CovarianceState.complexPropagator(h, 0.37))
+        s_b.apply_transport(CovarianceState.complex_propagator(h, 0.37))
         self.assertLess(relative(s_a.gamma(), s_b.gamma()), 1e-13)
-        self.assertLess(relative(s_a.leftFrame(), s_b.leftFrame()), 1e-13)
+        self.assertLess(relative(s_a.left_frame(), s_b.left_frame()), 1e-13)
 
     def test_idempotency_across_two_hundred_steps(self) -> None:
         # The long-evolution bar: two alternating complex-symmetric
         # generators, 200 steps. Non-unitary evolution changes the frame
         # scales, so the defects are reported relative to ||Gamma||.
         phi, left = biorthogonal_pair(self.M, self.N, seed=30)
-        state = CovarianceState.fromBiorthogonalFrames(phi, left)
+        state = CovarianceState.from_biorthogonal_frames(phi, left)
         h1 = complex_symmetric(self.M, seed=31)
         h2 = complex_symmetric(self.M, seed=32)
         for step in range(200):
             state.evolve(h1 if step % 2 == 0 else h2, 0.02)
         gamma = np.array(state.gamma())
         scale = max(1.0, np.linalg.norm(gamma))
-        self.assertLess(state.purityDefect() / scale, 1e-11)
-        self.assertLess(state.dualityDefect(), 1e-11)
+        self.assertLess(state.purity_defect() / scale, 1e-11)
+        self.assertLess(state.duality_defect(), 1e-11)
         self.assertLess(abs(np.trace(gamma) - self.N), 1e-10)
         eigs = np.sort_complex(np.linalg.eigvals(gamma))
         np.testing.assert_allclose(np.sort(np.abs(eigs)),
@@ -458,18 +458,18 @@ class TestTwoFrameEvolution(unittest.TestCase):
         phi, left = biorthogonal_pair(self.M, self.N, seed=33)
         rng = np.random.default_rng(34)
         u = np.eye(self.M) + 0.4 * cplx(rng, self.M, self.M)
-        state = CovarianceState.fromBiorthogonalFrames(phi, left)
-        state.applyTransport(u)
-        np.testing.assert_allclose(np.array(state.rightFrame()), u @ phi,
+        state = CovarianceState.from_biorthogonal_frames(phi, left)
+        state.apply_transport(u)
+        np.testing.assert_allclose(np.array(state.right_frame()), u @ phi,
                                    atol=1e-13)
-        np.testing.assert_allclose(np.array(state.leftFrame()),
+        np.testing.assert_allclose(np.array(state.left_frame()),
                                    np.linalg.inv(u).T @ left, atol=1e-12)
-        self.assertLess(state.dualityDefect(), 1e-12)
+        self.assertLess(state.duality_defect(), 1e-12)
         self.assertLess(
             relative(state.gamma(), u @ phi @ left.T @ np.linalg.inv(u)), 1e-12)
         singular = np.ones((self.M, self.M), dtype=complex)
         with self.assertRaises(ValueError):
-            state.applyTransport(singular)
+            state.apply_transport(singular)
 
 
 # ─── the Hermitian special case ────────────────────────────────────────────
@@ -484,13 +484,13 @@ class TestHermitianSpecialCase(unittest.TestCase):
     def test_propagators_agree_for_hermitian_h(self) -> None:
         h = random_hermitian(self.M, seed=41)
         np.testing.assert_allclose(
-            np.array(CovarianceState.complexPropagator(h, 0.6)),
+            np.array(CovarianceState.complex_propagator(h, 0.6)),
             np.array(CovarianceState.propagator(h, 0.6)), rtol=0, atol=1e-13)
 
     def test_evolution_equals_the_present_path(self) -> None:
         q = orthonormal(self.M, self.N, seed=42)
-        hermitian = CovarianceState.fromSlaterFrame(q)
-        transpose = CovarianceState.fromBiorthogonalFrames(q, q.conj())
+        hermitian = CovarianceState.from_slater_frame(q)
+        transpose = CovarianceState.from_biorthogonal_frames(q, q.conj())
         np.testing.assert_allclose(np.array(transpose.gamma()),
                                    np.array(hermitian.gamma()), atol=1e-14)
         h1 = random_hermitian(self.M, seed=43)
@@ -501,14 +501,14 @@ class TestHermitianSpecialCase(unittest.TestCase):
             transpose.evolve(h, 0.05)
         self.assertLess(relative(transpose.gamma(), hermitian.gamma()), 1e-12)
         # The pair stays the *-structure pair: Phi~ = conj(Phi).
-        np.testing.assert_allclose(np.array(transpose.leftFrame()),
-                                   np.array(transpose.rightFrame()).conj(),
+        np.testing.assert_allclose(np.array(transpose.left_frame()),
+                                   np.array(transpose.right_frame()).conj(),
                                    atol=1e-12)
         for read_t, read_h in (
-                (transpose.wickParity(), hermitian.wickParity()),
-                (transpose.wickOccupation(2), hermitian.wickOccupation(2)),
-                (transpose.wickNormalOrdered([0, 1], [1, 0]),
-                 hermitian.wickNormalOrdered([0, 1], [1, 0]))):
+                (transpose.wick_parity(), hermitian.wick_parity()),
+                (transpose.wick_occupation(2), hermitian.wick_occupation(2)),
+                (transpose.wick_normal_ordered([0, 1], [1, 0]),
+                 hermitian.wick_normal_ordered([0, 1], [1, 0]))):
             self.assertLess(abs(read_t.value - read_h.value), 1e-12)
             # The regime is verified on Gamma, so a Hermitian pair reads as
             # the positive regime on either path.
@@ -523,15 +523,15 @@ class TestHermitianSpecialCase(unittest.TestCase):
         def hartree(gamma):
             return h0 + 0.8 * np.diag(np.diag(gamma).real).astype(complex)
 
-        hermitian = CovarianceState.fromSlaterFrame(q)
-        transpose = CovarianceState.fromBiorthogonalFrames(q, q.conj())
-        reads_h = hermitian.meanFieldEvolve(hartree, 0.05, 40)
-        reads_t = transpose.meanFieldEvolve(hartree, 0.05, 40)
+        hermitian = CovarianceState.from_slater_frame(q)
+        transpose = CovarianceState.from_biorthogonal_frames(q, q.conj())
+        reads_h = hermitian.mean_field_evolve(hartree, 0.05, 40)
+        reads_t = transpose.mean_field_evolve(hartree, 0.05, 40)
         self.assertLess(relative(transpose.gamma(), hermitian.gamma()), 1e-11)
         for rh, rt in zip(reads_h, reads_t):
             self.assertTrue(rt.certificate.holds())
-            self.assertTrue(math.isnan(rh.dualityDefect))
-            self.assertLess(rt.dualityDefect, 1e-12)
+            self.assertTrue(math.isnan(rh.duality_defect))
+            self.assertLess(rt.duality_defect, 1e-12)
 
 
 # ─── the self-consistent loop on a complex covariance ──────────────────────
@@ -553,10 +553,10 @@ class TestComplexMeanField(unittest.TestCase):
 
     def test_loop_certifies_every_step_and_matches_manual_steps(self) -> None:
         phi, left = biorthogonal_pair(self.M, self.N, seed=52)
-        looped = CovarianceState.fromBiorthogonalFrames(phi, left)
-        manual = CovarianceState.fromBiorthogonalFrames(phi, left)
+        looped = CovarianceState.from_biorthogonal_frames(phi, left)
+        manual = CovarianceState.from_biorthogonal_frames(phi, left)
         h_of_gamma = self.generator()
-        reads = looped.meanFieldEvolve(h_of_gamma, 0.05, 40)
+        reads = looped.mean_field_evolve(h_of_gamma, 0.05, 40)
         for _ in range(40):
             manual.evolve(h_of_gamma(np.array(manual.gamma())), 0.05)
         np.testing.assert_array_equal(np.array(looped.gamma()),
@@ -564,15 +564,15 @@ class TestComplexMeanField(unittest.TestCase):
         self.assertEqual(len(reads), 40)
         for read in reads:
             self.assertTrue(read.certificate.holds())
-            self.assertLess(read.purityDefect, 1e-11)
-            self.assertLess(read.dualityDefect, 1e-11)
+            self.assertLess(read.purity_defect, 1e-11)
+            self.assertLess(read.duality_defect, 1e-11)
             # The generator's non-Hermiticity is reported, not graded.
-            self.assertGreater(read.generatorHermiticityDefect, 0.01)
+            self.assertGreater(read.generator_hermiticity_defect, 0.01)
 
     def test_hermitian_path_refuses_a_complex_self_consistent_h(self) -> None:
-        state = CovarianceState.fromSlaterFrame(orthonormal(self.M, self.N, 53))
+        state = CovarianceState.from_slater_frame(orthonormal(self.M, self.N, 53))
         with self.assertRaises(ValueError):
-            state.meanFieldEvolve(self.generator(), 0.05, 3)
+            state.mean_field_evolve(self.generator(), 0.05, 3)
 
 
 # ─── checkpoint serialization of the pair ──────────────────────────────────
@@ -582,39 +582,39 @@ class TestBiorthogonalRecord(unittest.TestCase):
 
     def test_round_trip_keeps_the_frames_and_gamma_bit_exact(self) -> None:
         phi, left = biorthogonal_pair(5, 2, seed=61)
-        state = CovarianceState.fromBiorthogonalFrames(phi, left)
+        state = CovarianceState.from_biorthogonal_frames(phi, left)
         state.evolve(complex_symmetric(5, seed=62), 0.5)
-        record = state.toRecord()
+        record = state.to_record()
         self.assertEqual(record["dual"], "transpose")
         self.assertEqual(record["frame_columns"], 2)
-        replayed = CovarianceState.fromRecord(record)
+        replayed = CovarianceState.from_record(record)
         self.assertEqual(replayed.dual(), CovarianceDual.Transpose)
-        self.assertEqual(replayed.covarianceHash(), state.covarianceHash())
+        self.assertEqual(replayed.covariance_hash(), state.covariance_hash())
         np.testing.assert_array_equal(np.array(replayed.gamma()),
                                       np.array(state.gamma()))
-        np.testing.assert_array_equal(np.array(replayed.leftFrame()),
-                                      np.array(state.leftFrame()))
-        self.assertEqual(replayed.wickParity().value,
-                         state.wickParity().value)
+        np.testing.assert_array_equal(np.array(replayed.left_frame()),
+                                      np.array(state.left_frame()))
+        self.assertEqual(replayed.wick_parity().value,
+                         state.wick_parity().value)
 
     def test_records_without_a_dual_are_hermitian_adjoint(self) -> None:
-        state = CovarianceState.fromOccupations(np.array([1.0, 0.0]))
-        record = state.toRecord()
+        state = CovarianceState.from_occupations(np.array([1.0, 0.0]))
+        record = state.to_record()
         self.assertEqual(record["dual"], "hermitian-adjoint")
         del record["dual"]
-        self.assertEqual(CovarianceState.fromRecord(record).dual(),
+        self.assertEqual(CovarianceState.from_record(record).dual(),
                          CovarianceDual.HermitianAdjoint)
         record["dual"] = "sesquilinear-ish"
         with self.assertRaises(ValueError):
-            CovarianceState.fromRecord(record)
+            CovarianceState.from_record(record)
 
     def test_corrupt_frame_payload_is_rejected(self) -> None:
         phi, left = biorthogonal_pair(4, 2, seed=63)
-        record = CovarianceState.fromBiorthogonalFrames(phi, left).toRecord()
+        record = CovarianceState.from_biorthogonal_frames(phi, left).to_record()
         record["left_frame_re"] = record["left_frame_re"][:-1]
         record["left_frame_im"] = record["left_frame_im"][:-1]
         with self.assertRaises(ValueError):
-            CovarianceState.fromRecord(record)
+            CovarianceState.from_record(record)
 
 
 if __name__ == "__main__":

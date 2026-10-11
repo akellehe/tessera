@@ -27,15 +27,15 @@ MC = cob.MultiCobordism
 
 
 def _pentatope_host():
-    return tessera.Spacetime.fromVertexTuples(4, [[0, 1, 2, 3, 4]], 1.0, 0.0)
+    return tessera.Spacetime.from_vertex_tuples(4, [[0, 1, 2, 3, 4]], 1.0, 0.0)
 
 
 def _dispositions(st):
     hist = collections.Counter()
-    for e in st.getEdgeList().toVector():
-        if e.isTimelike():
+    for e in st.get_edge_list().to_vector():
+        if e.is_timelike():
             hist["timelike"] += 1
-        elif e.isNull():
+        elif e.is_null():
             hist["null"] += 1
         else:
             hist["spacelike"] += 1
@@ -43,13 +43,13 @@ def _dispositions(st):
 
 
 class TestConeInTimelikeFlag(unittest.TestCase):
-    """SurgicalCone.coneIn(timelike=...) writes only the apex edges."""
+    """SurgicalCone.cone_in(timelike=...) writes only the apex edges."""
 
     def _cone(self, timelike):
         st = _pentatope_host()
         cone = cob.SurgicalCone(st)
         facet = [0, 1, 2, 3]
-        ok, reason = cone.coneIn(facet, timelike=timelike)
+        ok, reason = cone.cone_in(facet, timelike=timelike)
         self.assertTrue(ok, f"cone-in rejected: {reason}")
         return st
 
@@ -63,15 +63,15 @@ class TestConeInTimelikeFlag(unittest.TestCase):
     def test_timelike_writes_apex_edges_only(self):
         st = self._cone(timelike=True)
         # The apex is the vertex that did not exist in the seed pentatope.
-        apex = max(v.getId() for v in st.getVertexList().toVector())
+        apex = max(v.get_id() for v in st.get_vertex_list().to_vector())
         self.assertGreater(apex, 4, "the apex must be a fresh vertex")
-        for e in st.getEdgeList().toVector():
-            a, b = e.getSource().getId(), e.getTarget().getId()
+        for e in st.get_edge_list().to_vector():
+            a, b = e.get_source().get_id(), e.get_target().get_id()
             if apex in (a, b):
-                self.assertTrue(e.isTimelike(),
+                self.assertTrue(e.is_timelike(),
                                 f"apex edge ({a},{b}) must be timelike")
             else:
-                self.assertFalse(e.isTimelike(),
+                self.assertFalse(e.is_timelike(),
                                  f"pre-existing edge ({a},{b}) must be untouched")
 
 

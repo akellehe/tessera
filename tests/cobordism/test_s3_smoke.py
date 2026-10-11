@@ -9,7 +9,7 @@ the 2+1 D ``S^2 x I`` proton sector cannot carry (see
 ``docs/design/s3_dimensional_spike.md``).
 
 It is deliberately **isolated**: it builds the ``S^3`` complex purely from the
-already-bound, dimension-generic ``Spacetime.fromVertexTuples`` / ``Spacetime.prismCells``
+already-bound, dimension-generic ``Spacetime.from_vertex_tuples`` / ``Spacetime.prism_cells``
 and reads the spectrum off ``HodgeLaplacian`` -- it adds **no** production C++ and
 shares **no** state with the 2+1 D proton pipeline, so it cannot perturb the
 golden proton results (``tests/cobordism/test_epic410_invariants.py`` is the
@@ -17,14 +17,14 @@ guard for that).
 
 The minimal closed ``S^3`` is the boundary of the 4-simplex, ``dDelta^4`` (the
 5-cell): 5 vertices, 10 edges, 10 triangles, 5 tetrahedra, Betti ``[1, 0, 0, 1]``.
-``prismCells`` Freudenthal-extrudes its 5 tetrahedra one layer into a 4D
+``prism_cells`` Freudenthal-extrudes its 5 tetrahedra one layer into a 4D
 ``S^3 x I`` (20 four-simplices) -- the first time the ``n = 4`` top-cell path is
 exercised here.
 
-Why ``prismCells`` and not ``Spacetime::symmetricStackCells`` for the stack:
-``symmetricStackCells`` is 2D-only -- it cones *triangles* and skips any base
+Why ``prism_cells`` and not ``Spacetime::symmetricStackCells`` for the stack:
+``symmetric_stack_cells`` is 2D-only -- it cones *triangles* and skips any base
 cell with ``t.size() != 3`` (``src/spacetime/Spacetime.cpp:437``), so on a
-tetrahedral ``S^3`` base it returns an empty interior. ``prismCells`` is
+tetrahedral ``S^3`` base it returns an empty interior. ``prism_cells`` is
 dimension-generic (it Freudenthal-splits any m-vertex base cell), so it is the
 existing tool that reaches ``n = 4`` without new production code. The symmetric
 apex generalization to a tetrahedral base is the recommended *future* build,
@@ -82,13 +82,13 @@ def _boundary_4simplex_cells():
 
 def _closed_s3():
     """The closed ``S^3`` = ``dDelta^4`` on the uniform ``l^2 = 1`` metric."""
-    return tessera.Spacetime.fromVertexTuples(3, _boundary_4simplex_cells(), 1.0, 0.0)
+    return tessera.Spacetime.from_vertex_tuples(3, _boundary_4simplex_cells(), 1.0, 0.0)
 
 
 def _s3_cross_interval():
     """``S^3 x I`` = one Freudenthal-extruded layer of ``dDelta^4`` (4D top cells)."""
-    stacked = tessera.Spacetime.prismCells(_boundary_4simplex_cells(), 1)
-    return tessera.Spacetime.fromVertexTuples(4, stacked, 1.0, 0.0)
+    stacked = tessera.Spacetime.prism_cells(_boundary_4simplex_cells(), 1)
+    return tessera.Spacetime.from_vertex_tuples(4, stacked, 1.0, 0.0)
 
 
 def _kernel_dims(hl, top_k, metric=True, tol=ZERO_TOL):
@@ -110,10 +110,10 @@ class TestS3Smoke(unittest.TestCase):
         """F1: ``dDelta^4`` is a genuine 3-complex (top cells are tetrahedra)."""
         st = _closed_s3()
         self.assertEqual(cob.CombinatorialDimension().compute(st), 3.0)
-        cc = cob.ChainComplex.fromSpacetime(st)
+        cc = cob.ChainComplex.from_spacetime(st)
         # f-vector pins the triangulation: 5 verts, 10 edges, 10 tris, 5 tets.
-        self.assertEqual(list(cc.fVector()), [5, 10, 10, 5])
-        self.assertEqual(cc.eulerCharacteristic(), 0)  # chi(S^3) = 0
+        self.assertEqual(list(cc.f_vector()), [5, 10, 10, 5])
+        self.assertEqual(cc.euler_characteristic(), 0)  # chi(S^3) = 0
 
     def test_f2_s3_betti_from_hodge_spectrum(self):
         """F2: ``spectrum(k)`` runs k=0..3 and ``#{|lambda|<1e-9} == [1,0,0,1]``."""
@@ -122,22 +122,22 @@ class TestS3Smoke(unittest.TestCase):
         # spectrum(k) must not raise for any k up to the top dimension.
         for k in range(4):
             self.assertEqual(len(hl.spectrum(k)), cob.ChainComplex
-                             .fromSpacetime(st).numSimplices(k))
+                             .from_spacetime(st).num_simplices(k))
         # The harmonic dims equal the S^3 Betti vector exactly (volume + unit
         # weights both, mirroring the Hodge hardening suite's rigor).
         for metric in (True, False):
             self.assertEqual(_kernel_dims(hl, 3, metric), S3_BETTI,
                              msg=f"metric={metric}")
         # Independent combinatorial cross-check (rational Betti).
-        self.assertEqual(list(cob.ChainComplex.fromSpacetime(st)
-                              .bettiNumbers()), S3_BETTI)
+        self.assertEqual(list(cob.ChainComplex.from_spacetime(st)
+                              .betti_numbers()), S3_BETTI)
 
     def test_f3_stacked_s3xi_dimension(self):
         """F3: ``S^3 x I`` is a genuine 4-complex -- the n=4 top path, no raise."""
         st = _s3_cross_interval()
         self.assertEqual(cob.CombinatorialDimension().compute(st), 4.0)
         # 5 tets x 4 Freudenthal four-simplices per layer = 20 top cells.
-        self.assertEqual(cob.ChainComplex.fromSpacetime(st).numSimplices(4), 20)
+        self.assertEqual(cob.ChainComplex.from_spacetime(st).num_simplices(4), 20)
         # The n=4 Hodge path runs for every degree without raising.
         hl = cob.HodgeLaplacian(st)
         for k in range(5):
@@ -147,8 +147,8 @@ class TestS3Smoke(unittest.TestCase):
 
     def test_f4_boundary_detection(self):
         """F4: closed S^3 has empty boundary; S^3 x I has dW = S^3 ⊔ S^3."""
-        self.assertEqual(_closed_s3().getBoundary(), [])
-        boundary = _s3_cross_interval().getBoundary()
+        self.assertEqual(_closed_s3().get_boundary(), [])
+        boundary = _s3_cross_interval().get_boundary()
         # dW = two S^3 copies, 5 tetrahedra each = 10 boundary tetrahedra.
         self.assertEqual(len(boundary), 10)
         self.assertEqual(len(_facet_connected_components(boundary)), 2)

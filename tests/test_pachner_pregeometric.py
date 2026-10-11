@@ -15,7 +15,7 @@ generalized so the 3D bistellar moves run on a *pre-geometric*
 
 The CDT-orientation / time-slice guard is dropped (a manifold-
 preservation check stands in for it) and the move dimension is read off
-the actual top cell rather than the metric signature.  A ``boundaryFixed``
+the actual top cell rather than the metric signature.  A ``boundary_fixed``
 flag additionally restricts a move to the interior so the boundary
 face-set ``∂W`` (codim-1 faces in exactly one top cell) stays fixed.
 
@@ -54,7 +54,7 @@ PRE = tessera.PachnerMode.PreGeometric
 def _spacetime(dim, topology=None):
     """A ``dim``-dimensional spacetime.  The signature dimension is what
     makes the (dim)-cells register as *top* simplices, so it must match
-    the manifold dimension for ``getRandomTopSimplex`` to see them."""
+    the manifold dimension for ``get_random_top_simplex`` to see them."""
     sig = tessera.Signature(dim, tessera.Lorentzian)
     metric = tessera.Metric(True, sig)
     topo = topology if topology is not None else tessera.SolidSimplex(dim)
@@ -80,12 +80,12 @@ def _t3():
 
 def _tops(st):
     """Top-dimensional cells as sorted vertex-id tuples (plain ints)."""
-    sizes = [len(s.getVertices()) for s in st.getSimplices()]
+    sizes = [len(s.get_vertices()) for s in st.get_simplices()]
     if not sizes:
         return []
     top = max(sizes)
-    return [tuple(sorted(v.getId() for v in s.getVertices()))
-            for s in st.getSimplices() if len(s.getVertices()) == top]
+    return [tuple(sorted(v.get_id() for v in s.get_vertices()))
+            for s in st.get_simplices() if len(s.get_vertices()) == top]
 
 
 def _facet_counts(tops):
@@ -108,7 +108,7 @@ def _is_closed_pseudomanifold(tops):
 
 
 def _betti(st):
-    return cobordism.ChainComplex.fromSpacetime(st).bettiNumbers()
+    return cobordism.ChainComplex.from_spacetime(st).betti_numbers()
 
 
 def _make(cls, st, seed, boundary_fixed=False):
@@ -148,7 +148,7 @@ def _run_sequence(st, n_moves, classes=_BISTELLAR, boundary_fixed=False,
 def _d2_zero(st):
     """∂_{k-1} ∘ ∂_k = 0 for the chain complex of the current triangulation —
     the chain-complex axiom, and a non-corruption check on the moved complex."""
-    return cobordism.ChainComplex.fromSpacetime(st).boundaryComposesToZero()
+    return cobordism.ChainComplex.from_spacetime(st).boundary_composes_to_zero()
 
 
 def _is_pseudomanifold_with_boundary(tops):
@@ -187,7 +187,7 @@ class TestPreGeometricClosedT3(unittest.TestCase):
 
     def test_random_interior_moves_preserve_homology(self):
         st = _built(_t3())
-        st.setSeed(20240601)
+        st.set_seed(20240601)
         before_tops = set(_tops(st))
 
         counts = _run_sequence(st, n_moves=40)
@@ -205,7 +205,7 @@ class TestPreGeometricClosedT3(unittest.TestCase):
 
     def test_homology_preserved_after_each_move(self):
         st = _built(_t3())
-        st.setSeed(7)
+        st.set_seed(7)
 
         def check(s):
             self.assertEqual(_betti(s), [1, 3, 3, 1])
@@ -228,9 +228,9 @@ class TestBoundaryFixedBipyramid(unittest.TestCase):
     @staticmethod
     def _bipyramid():
         st = _spacetime(3)
-        v = [st.createVertex(i) for i in range(5)]
-        st.createSimplex([v[0], v[1], v[2], v[3]])  # tet 0123
-        st.createSimplex([v[0], v[1], v[2], v[4]])  # tet 0124
+        v = [st.create_vertex(i) for i in range(5)]
+        st.create_simplex([v[0], v[1], v[2], v[3]])  # tet 0123
+        st.create_simplex([v[0], v[1], v[2], v[4]])  # tet 0124
         return st
 
     def test_setup_has_one_interior_facet(self):
@@ -250,7 +250,7 @@ class TestBoundaryFixedBipyramid(unittest.TestCase):
             m = _make(tessera.FlipMove, st, seed, boundary_fixed=True)
             if m.propose():
                 self.assertEqual(m.mode(), PRE)
-                self.assertTrue(m.boundaryFixed())
+                self.assertTrue(m.boundary_fixed())
                 self.assertTrue(m.apply())
                 flipped = m
                 break
@@ -301,8 +301,8 @@ class TestBoundaryFixedSolidSimplex(unittest.TestCase):
 
     def test_interior_moves_fix_boundary_and_grow_interior(self):
         st = _built(tessera.SolidSimplex(3))
-        st.setSeed(101)
-        n0_before = st.getVertexCount()
+        st.set_seed(101)
+        n0_before = st.get_vertex_count()
         ntops_before = len(_tops(st))
 
         # After every successful boundary-fixed move ∂W is unchanged.
@@ -317,7 +317,7 @@ class TestBoundaryFixedSolidSimplex(unittest.TestCase):
 
         # ∂W fixed, interior genuinely larger.
         self.assertEqual(_boundary(_tops(st)), self.S2)
-        self.assertGreater(st.getVertexCount(), n0_before)
+        self.assertGreater(st.get_vertex_count(), n0_before)
         self.assertGreater(len(_tops(st)), ntops_before)
 
 
@@ -340,9 +340,9 @@ class TestPreGeometricAddRemoveRoundTrip(unittest.TestCase):
 
     def test_add_creates_d_plus_1_cells_one_vertex(self):
         st = _built(tessera.SolidSimplex(3))
-        n0, ntop = st.getVertexCount(), len(_tops(st))
+        n0, ntop = st.get_vertex_count(), len(_tops(st))
         self._apply_add(st)
-        self.assertEqual(st.getVertexCount(), n0 + 1)
+        self.assertEqual(st.get_vertex_count(), n0 + 1)
         self.assertEqual(len(_tops(st)), ntop + 3)  # 1 -> d+1 = 4 in 3D
         # A 1->4 subdivision is interior: ∂W (the S^2) is untouched.
         self.assertEqual(_boundary(_tops(st)), self.S2)
@@ -350,18 +350,18 @@ class TestPreGeometricAddRemoveRoundTrip(unittest.TestCase):
     def test_add_rollback_restores_state(self):
         st = _built(tessera.SolidSimplex(3))
         before = sorted(_tops(st))
-        n0 = st.getVertexCount()
+        n0 = st.get_vertex_count()
         m = self._apply_add(st)
-        self.assertTrue(m.isApplied())
+        self.assertTrue(m.is_applied())
         m.rollback()
-        self.assertFalse(m.isApplied())
+        self.assertFalse(m.is_applied())
         self.assertEqual(sorted(_tops(st)), before)
-        self.assertEqual(st.getVertexCount(), n0)
+        self.assertEqual(st.get_vertex_count(), n0)
 
     def test_add_then_remove_returns_to_start(self):
         st = _built(tessera.SolidSimplex(3))
         before = sorted(_tops(st))
-        n0 = st.getVertexCount()
+        n0 = st.get_vertex_count()
 
         self._apply_add(st)
         self.assertEqual(len(_tops(st)), len(before) + 3)
@@ -376,7 +376,7 @@ class TestPreGeometricAddRemoveRoundTrip(unittest.TestCase):
             self.fail("pre-geometric remove never fired")
 
         self.assertEqual(sorted(_tops(st)), before)
-        self.assertEqual(st.getVertexCount(), n0)
+        self.assertEqual(st.get_vertex_count(), n0)
 
 
 # =====================================================================
@@ -401,10 +401,10 @@ class TestCDTDefaultsUnchanged(unittest.TestCase):
                     tessera.RemoveMove):
             m = cls(st, 0)
             self.assertEqual(m.mode(), tessera.PachnerMode.CDT)
-            self.assertFalse(m.boundaryFixed())
+            self.assertFalse(m.boundary_fixed())
         add = tessera.AddMove(st, 0)
         self.assertEqual(add.mode(), tessera.PachnerMode.CDT)
-        self.assertFalse(add.boundaryFixed())
+        self.assertFalse(add.boundary_fixed())
 
     def test_spacetimetype_cdt_not_shadowed(self):
         # Regression guard: tessera.CDT must remain SpacetimeType.CDT,
@@ -425,7 +425,7 @@ class TestCDTDefaultsUnchanged(unittest.TestCase):
         for seed in range(400):
             for cls in (tessera.FlipMove, tessera.ShiftMove, tessera.AddMove):
                 m = cls(st, seed)
-                if m.mode() != tessera.PachnerMode.CDT or m.boundaryFixed():
+                if m.mode() != tessera.PachnerMode.CDT or m.boundary_fixed():
                     continue
                 if m.propose() and m.apply():
                     applied = m
@@ -434,7 +434,7 @@ class TestCDTDefaultsUnchanged(unittest.TestCase):
                 break
         self.assertIsNotNone(applied, "no CDT move applied on the foliated complex")
         self.assertEqual(applied.mode(), tessera.PachnerMode.CDT)
-        self.assertFalse(applied.boundaryFixed())
+        self.assertFalse(applied.boundary_fixed())
 
 
 # =====================================================================
@@ -465,7 +465,7 @@ class TestDijkgraafWittenZInvariance(unittest.TestCase):
                          "cobordism.DijkgraafWitten unavailable (#108)")
     def test_z_invariant_under_interior_pachner_sweep(self):
         st = _built(tessera.SphereCircleProduct())
-        st.setSeed(11)
+        st.set_seed(11)
 
         # Convention anchor: Z_Trivial(S^2 x S^1) = 2^{b_1 - 1} = 1, and the
         # Sign cocycle agrees here (the cup cube vanishes on S^2 x S^1).
@@ -480,7 +480,7 @@ class TestDijkgraafWittenZInvariance(unittest.TestCase):
         while depth < 18 and seed < 6000:
             for cls in classes:
                 # Cap |V| so the flat space (2^{|V|-1+b_1}) stays enumerable.
-                if cls is tessera.AddMove and st.getVertexCount() >= 16:
+                if cls is tessera.AddMove and st.get_vertex_count() >= 16:
                     continue
                 m = _make(cls, st, seed)
                 if m.propose() and m.apply():
@@ -518,7 +518,7 @@ class TestPreGeometricBoundaryAlgebra(unittest.TestCase):
 
     def test_d_squared_zero_after_each_interior_move_on_t3(self):
         st = _built(_t3())
-        st.setSeed(31337)
+        st.set_seed(31337)
         self.assertTrue(_d2_zero(st))
 
         def check(s):
@@ -550,7 +550,7 @@ class TestPreGeometricHomologyS2xS1(unittest.TestCase):
 
     def test_random_interior_moves_preserve_homology(self):
         st = _built(_s2s1())
-        st.setSeed(909)
+        st.set_seed(909)
         before = set(_tops(st))
 
         def check(s):
@@ -585,9 +585,9 @@ class TestBoundaryFixedCylinder(unittest.TestCase):
 
     def test_interior_moves_fix_boundary_and_grow_interior(self):
         st = _cylinder()
-        st.setSeed(2024)
+        st.set_seed(2024)
         boundary_before = _boundary(_tops(st))
-        n0 = st.getVertexCount()
+        n0 = st.get_vertex_count()
         ntops0 = len(_tops(st))
         self.assertGreater(len(boundary_before), 0)
 
@@ -600,7 +600,7 @@ class TestBoundaryFixedCylinder(unittest.TestCase):
         self.assertGreater(counts["AddMove"], 0, f"no subdivisions fired: {counts}")
         # ∂W byte-identical; interior genuinely larger.
         self.assertEqual(_boundary(_tops(st)), boundary_before)
-        self.assertGreater(st.getVertexCount(), n0)
+        self.assertGreater(st.get_vertex_count(), n0)
         self.assertGreater(len(_tops(st)), ntops0)
 
 

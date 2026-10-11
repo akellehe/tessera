@@ -3,7 +3,7 @@
 """A static potential as the phase of the timelike edges of the history complex.
 
 The history of a cell K over one tick is W = K x [0, 1], triangulated by
-`Spacetime.prismCells`. Its fiber edges (the edges with a time component) carry
+`Spacetime.prism_cells`. Its fiber edges (the edges with a time component) carry
 the Euclidean squared length `tau^2` on top of their spatial part, and the
 non-compact part of the connection, Im(phi_e) = tau * V_e with V_e the mean of
 the potential over the edge: the link read forward in time, from the lower
@@ -59,15 +59,15 @@ class HistorySlab:
     def __init__(self, cell, tau, potential=None, mass=1.0):
         self.cell, self.tau, self.mass = cell, float(tau), float(mass)
         n = cell.size
-        self.cells = tessera.Spacetime.prismCells(cell.grid.cells(), 1)
-        self.complex = cob.ChainComplex.fromTopCells(self.cells)
-        edges = self.complex.kSimplexVertices(1)
+        self.cells = tessera.Spacetime.prism_cells(cell.grid.cells(), 1)
+        self.complex = cob.ChainComplex.from_top_cells(self.cells)
+        edges = self.complex.k_simplex_vertices(1)
         V = np.zeros(n) if potential is None else np.asarray(potential, dtype=float)
         squared, links = [], []
         for x, y in edges:
             level_x, level_y = x // n, y // n
             a, b = x % n, y % n
-            spatial = 0.0 if a == b else cell.grid.squaredLength(a, b)
+            spatial = 0.0 if a == b else cell.grid.squared_length(a, b)
             timelike = level_x != level_y
             squared.append(complex(spatial + (self.tau ** 2 if timelike else 0.0)))
             # The canonical orientation runs forward in time (the lower level has
@@ -100,7 +100,7 @@ class HistorySlab:
 
     def max_curvature(self):
         """max |F_t - 1| over the triangles: zero iff the potential is a pure gauge."""
-        return max(abs(self.connection.curvature(*t) - 1.0) for t in self.complex.kSimplexVertices(2))
+        return max(abs(self.connection.curvature(*t) - 1.0) for t in self.complex.k_simplex_vertices(2))
 
 
 def static_levels(cell, potential, mass, count):
@@ -137,22 +137,22 @@ def klein_gordon_levels(cell, mass, count):
 
 def history_spacetime(cell, tau, potential=None, layers=1):
     """The history K x [0, layers] as a `Spacetime` whose edges carry the
-    declared fields: the Euclidean squared lengths through `Edge.setLength` and
-    the potential as the non-compact part of the phase through `Edge.setPhase`.
+    declared fields: the Euclidean squared lengths through `Edge.set_length` and
+    the potential as the non-compact part of the phase through `Edge.set_phase`.
     The stored phase is the connection on the edge's own source-to-target
     orientation, so an edge stored forward in time gets phi = -i tau V_e (link
     exp(tau V_e), as in `HistorySlab`) and one stored backward gets +i tau V_e."""
     n = cell.size
     V = np.zeros(n) if potential is None else np.asarray(potential, dtype=float)
-    cells = tessera.Spacetime.prismCells(cell.grid.cells(), layers)
-    spacetime = tessera.Spacetime.fromVertexTuples(4, cells, 1.0, 0.0)
-    for edge in spacetime.getEdgeList().toVector():
-        x, y = edge.getSource().getId(), edge.getTarget().getId()
+    cells = tessera.Spacetime.prism_cells(cell.grid.cells(), layers)
+    spacetime = tessera.Spacetime.from_vertex_tuples(4, cells, 1.0, 0.0)
+    for edge in spacetime.get_edge_list().to_vector():
+        x, y = edge.get_source().get_id(), edge.get_target().get_id()
         a, b = x % n, y % n
         ticks = y // n - x // n
-        spatial = 0.0 if a == b else cell.grid.squaredLength(a, b)
-        edge.setLength(complex(np.sqrt(spatial + (tau * ticks) ** 2)))
-        edge.setPhase(-1j * tau * ticks * 0.5 * (V[a] + V[b]))
+        spatial = 0.0 if a == b else cell.grid.squared_length(a, b)
+        edge.set_length(complex(np.sqrt(spatial + (tau * ticks) ** 2)))
+        edge.set_phase(-1j * tau * ticks * 0.5 * (V[a] + V[b]))
     return spacetime
 
 
@@ -169,9 +169,9 @@ def layered_response(cell, tau, potential, mass, layers=2):
     outer = list(range(n)) + list(range(layers * n, (layers + 1) * n))
     interface = cob.PencilLayer.cells_within(assembled, 0, outer)
     result = cob.PencilLayer.boundary_response(assembled, 0, interface, -mass ** 2)
-    order = np.argsort([int(assembled.complex.kSimplexVertices(0)[i][0]) for i in result.interface])
+    order = np.argsort([int(assembled.complex.k_simplex_vertices(0)[i][0]) for i in result.interface])
     F = np.asarray(result.response)[np.ix_(order, order)]
-    return F, cob.PencilLayer.assembly_residual(assembled, 0), result.solveResidual
+    return F, cob.PencilLayer.assembly_residual(assembled, 0), result.solve_residual
 
 
 def fiber_edge_stiffness(cell, tau, fiber_phase):
@@ -195,7 +195,7 @@ def fiber_edge_stiffness(cell, tau, fiber_phase):
     n = cell.size
     phase = np.asarray(fiber_phase, dtype=float)
     pattern = np.array([0.5 * (phase[x % n] + phase[y % n]) if x // n != y // n else 0.0
-                        for x, y in slab.complex.kSimplexVertices(1)])
+                        for x, y in slab.complex.k_simplex_vertices(1)])
     boundary = slab.base.boundary(2)
     curvature = boundary.T @ pattern
-    return float((curvature @ (slab.base.Minv(2) @ curvature)).real)
+    return float((curvature @ (slab.base.m_inv(2) @ curvature)).real)

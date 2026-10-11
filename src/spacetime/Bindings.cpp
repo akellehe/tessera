@@ -75,13 +75,13 @@ the signature, not the topology.)doc");
   py::class_<Sphere, Topology, std::shared_ptr<Sphere> >(m, "Sphere",
       "Spherical spatial topology S^{d-1}.")
       .def(py::init<>())
-      .def("build", &Sphere::build, py::arg("spacetime"), py::arg("numSimplices"),
+      .def("build", &Sphere::build, py::arg("spacetime"), py::arg("num_simplices"),
            "Build a spherical initial triangulation with the given number of simplices.");
 
   py::class_<Cylinder, Topology, std::shared_ptr<Cylinder> >(m, "Cylinder",
       "Cylindrical spatial topology with open time boundaries.")
       .def(py::init<>())
-      .def("build", &Cylinder::build, py::arg("spacetime"), py::arg("numSimplices"),
+      .def("build", &Cylinder::build, py::arg("spacetime"), py::arg("num_simplices"),
            "Build a cylindrical triangulation with the given number of simplices.");
 
   py::class_<Toroid, Topology, std::shared_ptr<Toroid> >(m, "Toroid",
@@ -93,7 +93,7 @@ d*(d+1) simplices covering all CDT orientation types (d,1), (d-1,2),
 numbers of (4,1), (3,2), (2,3), and (1,4) types, enabling all five
 Pachner moves (add, remove, flip, iflip, shift).)doc")
       .def(py::init<>())
-      .def("build", &Toroid::build, py::arg("spacetime"), py::arg("numSimplices"),
+      .def("build", &Toroid::build, py::arg("spacetime"), py::arg("num_simplices"),
            "Build a toroidal staircase triangulation with the given number of simplices.");
 
   // Exact, fixed minimal triangulations (cobordism fixtures). Unlike the CDT
@@ -106,7 +106,7 @@ Pachner moves (add, remove, flip, iflip, shift).)doc")
       .def(py::init<int>(), py::arg("n"))
       .def("n", &SimplexBoundarySphere::n, "Dimension n of the sphere.")
       .def("build", &SimplexBoundarySphere::build, py::arg("spacetime"),
-           py::arg("numSimplices") = 0,
+           py::arg("num_simplices") = 0,
            "Build S^n = ∂Δ^{n+1} (numSimplices ignored).");
 
   py::class_<SolidSimplex, Topology, std::shared_ptr<SolidSimplex> >(
@@ -116,7 +116,7 @@ Pachner moves (add, remove, flip, iflip, shift).)doc")
       .def(py::init<int>(), py::arg("n"))
       .def("n", &SolidSimplex::n, "Dimension n of the simplex.")
       .def("build", &SolidSimplex::build, py::arg("spacetime"),
-           py::arg("numSimplices") = 0,
+           py::arg("num_simplices") = 0,
            "Build the solid n-simplex (numSimplices ignored).");
 
   py::class_<RealProjectivePlane, Topology,
@@ -125,7 +125,7 @@ Pachner moves (add, remove, flip, iflip, shift).)doc")
       "non-orientable. Exact and pre-geometric; build() ignores numSimplices.")
       .def(py::init<>())
       .def("build", &RealProjectivePlane::build, py::arg("spacetime"),
-           py::arg("numSimplices") = 0,
+           py::arg("num_simplices") = 0,
            "Build the 6-vertex RP^2 (numSimplices ignored).");
 
   py::class_<ComplexProjectivePlane, Topology,
@@ -135,7 +135,7 @@ Pachner moves (add, remove, flip, iflip, shift).)doc")
       "pre-geometric; build() ignores numSimplices.")
       .def(py::init<>())
       .def("build", &ComplexProjectivePlane::build, py::arg("spacetime"),
-           py::arg("numSimplices") = 0,
+           py::arg("num_simplices") = 0,
            "Build the 9-vertex CP^2 (numSimplices ignored).");
 
   py::class_<SimplicialProduct, Topology, std::shared_ptr<SimplicialProduct> >(
@@ -146,7 +146,7 @@ Pachner moves (add, remove, flip, iflip, shift).)doc")
       .def(py::init<std::shared_ptr<Topology>, std::shared_ptr<Topology> >(),
            py::arg("left"), py::arg("right"))
       .def("build", &SimplicialProduct::build, py::arg("spacetime"),
-           py::arg("numSimplices") = 0,
+           py::arg("num_simplices") = 0,
            "Build the product complex (numSimplices ignored).");
 
   py::class_<PeriodicKuhnGrid, Topology, std::shared_ptr<PeriodicKuhnGrid> >(
@@ -169,30 +169,30 @@ Reference: Kuhn, "Some combinatorial lemmas in topology", 1960.)doc")
            "The cubic cell of side a with n divisions per axis.")
       .def("dimension", &PeriodicKuhnGrid::dimension)
       .def("build", &PeriodicKuhnGrid::build, py::arg("spacetime"),
-           py::arg("numSimplices") = 0,
+           py::arg("num_simplices") = 0,
            "Build the grid and set every edge length to sqrt(s_e) (numSimplices ignored).")
       .def("divisions", &PeriodicKuhnGrid::divisions)
-      .def("latticeGram", &PeriodicKuhnGrid::latticeGram)
-      .def("stepMetric", &PeriodicKuhnGrid::stepMetric, "g_ab = A_ab / (N_a N_b).")
-      .def("vertexCount", &PeriodicKuhnGrid::vertexCount)
-      .def("vertexId", &PeriodicKuhnGrid::vertexId, py::arg("i"), py::arg("j"), py::arg("l"),
+      .def("lattice_gram", &PeriodicKuhnGrid::latticeGram)
+      .def("step_metric", &PeriodicKuhnGrid::stepMetric, "g_ab = A_ab / (N_a N_b).")
+      .def("vertex_count", &PeriodicKuhnGrid::vertexCount)
+      .def("vertex_id", &PeriodicKuhnGrid::vertexId, py::arg("i"), py::arg("j"), py::arg("l"),
            "The id of grid index (i, j, l), each index reduced modulo its division.")
-      .def("gridIndex", &PeriodicKuhnGrid::gridIndex, py::arg("id"))
-      .def("fractionalCoordinates", &PeriodicKuhnGrid::fractionalCoordinates, py::arg("id"),
+      .def("grid_index", &PeriodicKuhnGrid::gridIndex, py::arg("id"))
+      .def("fractional_coordinates", &PeriodicKuhnGrid::fractionalCoordinates, py::arg("id"),
            "(i/N1, j/N2, l/N3): the vertex position in units of the lattice vectors.")
       .def("cells", &PeriodicKuhnGrid::cells,
            "The 6*N1*N2*N3 tetrahedra as sorted vertex-id tuples, sorted.")
       .def("displacement", &PeriodicKuhnGrid::displacement, py::arg("x"), py::arg("y"),
            "The unwrapped integer displacement of the directed edge x -> y.")
-      .def("squaredLength", &PeriodicKuhnGrid::squaredLength, py::arg("x"), py::arg("y"))
-      .def("squaredLengths", &PeriodicKuhnGrid::squaredLengths, py::arg("edges"),
+      .def("squared_length", &PeriodicKuhnGrid::squaredLength, py::arg("x"), py::arg("y"))
+      .def("squared_lengths", &PeriodicKuhnGrid::squaredLengths, py::arg("edges"),
            "Squared lengths of the given vertex-id pairs, in the given order.")
-      .def("blochPhase", &PeriodicKuhnGrid::blochPhase, py::arg("x"), py::arg("y"),
+      .def("bloch_phase", &PeriodicKuhnGrid::blochPhase, py::arg("x"), py::arg("y"),
            py::arg("kappa"), "2 pi sum_a kappa_a n_a / N_a for the directed edge x -> y.")
-      .def("blochLinks", &PeriodicKuhnGrid::blochLinks, py::arg("edges"), py::arg("kappa"),
+      .def("bloch_links", &PeriodicKuhnGrid::blochLinks, py::arg("edges"), py::arg("kappa"),
            "exp(i blochPhase) per edge read from its first vertex to its second, in the "
-           "given order: the link list of chainhodge.Connection for kSimplexVertices(1).")
-      .def("fundamentalCycle", &PeriodicKuhnGrid::fundamentalCycle, py::arg("axis"),
+           "given order: the link list of chainhodge.Connection for k_simplex_vertices(1).")
+      .def("fundamental_cycle", &PeriodicKuhnGrid::fundamentalCycle, py::arg("axis"),
            py::arg("base") = 0,
            "The closed walk of N_axis axis steps from base around the torus, as directed "
            "steps (u, v).");
@@ -204,7 +204,7 @@ Reference: Kuhn, "Some combinatorial lemmas in topology", 1960.)doc")
       "for T^3. Exact and pre-geometric; build() ignores numSimplices.")
       .def(py::init<>())
       .def("build", &SphereCircleProduct::build, py::arg("spacetime"),
-           py::arg("numSimplices") = 0,
+           py::arg("num_simplices") = 0,
            "Build S^2 x S^1 (numSimplices ignored).");
 
   py::class_<RealProjectiveSpace, Topology,
@@ -216,7 +216,7 @@ Reference: Kuhn, "Some combinatorial lemmas in topology", 1960.)doc")
       "build() ignores numSimplices.")
       .def(py::init<>())
       .def("build", &RealProjectiveSpace::build, py::arg("spacetime"),
-           py::arg("numSimplices") = 0,
+           py::arg("num_simplices") = 0,
            "Build the 11-vertex RP^3 (numSimplices ignored).");
 
   py::class_<StellarSubdivision, Topology,
@@ -228,7 +228,7 @@ Reference: Kuhn, "Some combinatorial lemmas in topology", 1960.)doc")
       "Exact and pre-geometric; build() ignores numSimplices.")
       .def(py::init<std::shared_ptr<Topology> >(), py::arg("base"))
       .def("build", &StellarSubdivision::build, py::arg("spacetime"),
-           py::arg("numSimplices") = 0,
+           py::arg("num_simplices") = 0,
            "Build the subdivided complex (numSimplices ignored).");
   // ========================================
   // Metric
@@ -243,10 +243,10 @@ Args:
     coordinateFree: If True, squared lengths are stored on edges directly.
     signature: The metric signature (Lorentzian or Euclidean).)doc")
       .def(py::init<bool, Signature &>(),
-           py::arg("coordinateFree"),
+           py::arg("coordinate_free"),
            py::arg("signature"))
-      .def("getSquaredLength", &Metric::getSquaredLength,
-           py::arg("sourceCoords"), py::arg("targetCoords"),
+      .def("get_squared_length", &Metric::getSquaredLength,
+           py::arg("source_coords"), py::arg("target_coords"),
            "Compute the squared length of an edge from vertex coordinates.");
   // ========================================
   // Enums
@@ -271,8 +271,8 @@ Args:
 Args:
     dimensions: Number of spacetime dimensions d (e.g. 4 for 4D CDT).
     signatureType: Lorentzian or Euclidean.)doc")
-      .def(py::init<int, SignatureType>(), py::arg("dimensions"), py::arg("signatureType"))
-      .def("getDiagonal", &Signature::getDiagonal,
+      .def(py::init<int, SignatureType>(), py::arg("dimensions"), py::arg("signature_type"))
+      .def("get_diagonal", &Signature::getDiagonal,
            "Return the diagonal entries of the metric signature tensor.");
 
   py::enum_<SpacetimeType>(m, "SpacetimeType",
@@ -315,7 +315,7 @@ Typical construction::
              std::optional<std::shared_ptr<Topology> >
            >(),
            py::arg("metric"),
-           py::arg("spacetimeType"),
+           py::arg("spacetime_type"),
            py::arg("alpha"),
            py::arg("a"),
            py::arg("foliation"),
@@ -331,27 +331,27 @@ Args:
     topology: Spatial topology (Toroid or Sphere).)doc"
       )
       .def(py::init<>(), "Create an empty spacetime with default 4D Lorentzian CDT settings.")
-      .def("setSeed", &Spacetime::setSeed, py::arg("seed"),
+      .def("set_seed", &Spacetime::setSeed, py::arg("seed"),
            R"doc(Seed the spacetime's internal RNG deterministically.
 
-The RNG drives ``getRandomVertex`` / ``getRandomSimplex`` /
-``getRandomTopSimplex`` — i.e. the first-step sigma selection in
+The RNG drives ``get_random_vertex`` / ``get_random_simplex`` /
+``get_random_top_simplex`` — i.e. the first-step sigma selection in
 every Pachner move (ShiftMove, FlipMove, IFlipMove, AddMove,
 RemoveMove). Use this in tests that need byte-identical reproducibility
 across processes; otherwise the default seed comes from
 ``std::random_device`` and varies per construction.)doc")
-      .def("getVertexList", &Spacetime::getVertexList,
+      .def("get_vertex_list", &Spacetime::getVertexList,
            "Return the VertexList containing all vertices.")
-      .def("getSimplicesWithOrientation",
+      .def("get_simplices_with_orientation",
            &Spacetime::getSimplicesWithOrientation,
            py::arg("orientation"),
            py::return_value_policy::reference,
            "Return all top simplices with the given CDT orientation.")
-      .def("getEdgeList", &Spacetime::getEdgeList,
+      .def("get_edge_list", &Spacetime::getEdgeList,
            "Return the EdgeList containing all edges.")
-      .def("getConnectedComponents", &Spacetime::getConnectedComponents, py::return_value_policy::reference,
+      .def("get_connected_components", &Spacetime::getConnectedComponents, py::return_value_policy::reference,
            "Return the connected components of the simplicial complex.")
-      .def("getDualAdjacency", &Spacetime::getDualAdjacency,
+      .def("get_dual_adjacency", &Spacetime::getDualAdjacency,
            R"doc(Return the dual graph of the top-dimensional triangulation as COO arrays.
 
 Two top simplices are adjacent when they share a (d-1)-face.  Returns
@@ -360,22 +360,22 @@ internal top-simplex array and N is the number of top simplices.
 
 One C++ call instead of O(N) Python round trips over
 simplices/facets/cofaces.)doc")
-      .def("getDualGraph", &Spacetime::getDualGraph,
+      .def("get_dual_graph", &Spacetime::getDualGraph,
            R"doc(Return the dual graph as a SparseGraph.
 
-Equivalent to ``SparseGraph::fromCOO(*getDualAdjacency())`` but
+Equivalent to ``SparseGraph::fromCOO(*get_dual_adjacency())`` but
 avoids the intermediate Python conversion.)doc")
-      .def("modularityOnSkeleton", &Spacetime::modularityOnSkeleton,
+      .def("modularity_on_skeleton", &Spacetime::modularityOnSkeleton,
            py::arg("M"),
            R"doc(Newman-Girvan modularity Q on the vertex/edge 1-skeleton.
 
 Implicit labels: ``label(v) = v.id() % M``.  Returns 0 if M < 2,
 the graph has no edges, or the spacetime has no vertices.)doc")
-      .def("getSpectralDimensionOnSkeleton",
+      .def("get_spectral_dimension_on_skeleton",
            &Spacetime::getSpectralDimensionOnSkeleton,
-           py::arg("sigmas"), py::arg("krylovDim"),
-           py::arg("filter"), py::arg("topK") = 4,
-           py::arg("skeletonDim") = 1,
+           py::arg("sigmas"), py::arg("krylov_dim"),
+           py::arg("filter"), py::arg("top_k") = 4,
+           py::arg("skeleton_dim") = 1,
            R"doc(D_S(σ) on the weighted 1-skeleton of top simplices that
 pass ``filter``.
 
@@ -383,41 +383,41 @@ Walks the simplex list keeping those with ``size() == topK + 1`` for
 which ``filter.accept(s)`` is true, unions their edges with weights
 ``w_uv = I_max · exp(-sqrt(|squaredLength_uv|))``, builds the
 unnormalised weighted Laplacian ``L = D - W``, and returns
-``SpectralGraph.spectralDimension`` of the heat-kernel return
-probability. Sits next to ``modularityOnSkeleton``.
+``SpectralGraph.spectral_dimension`` of the heat-kernel return
+probability. Sits next to ``modularity_on_skeleton``.
 
 Only ``skeletonDim == 1`` is supported.)doc")
-      .def("getTimeSlices", &Spacetime::getTimeSlices,
+      .def("get_time_slices", &Spacetime::getTimeSlices,
            "Return sorted list of integer time values in the triangulation.")
-      .def("getVerticesAtTime", &Spacetime::getVerticesAtTime,
+      .def("get_vertices_at_time", &Spacetime::getVerticesAtTime,
            py::arg("t"), py::return_value_policy::reference,
            "Return all vertices at integer time t.")
-      .def("getSpatialSubgraph", &Spacetime::getSpatialSubgraph,
+      .def("get_spatial_subgraph", &Spacetime::getSpatialSubgraph,
            py::arg("t"), py::return_value_policy::reference,
            "Return (vertices, spacelike_edges) at time t.")
-      .def("bfsDistances", &Spacetime::bfsDistances,
-           py::arg("center"), py::arg("maxDepth") = -1,
+      .def("bfs_distances", &Spacetime::bfsDistances,
+           py::arg("center"), py::arg("max_depth") = -1,
            "BFS distances from center through spacelike edges.  Returns {id: dist}.")
-      .def("build", &Spacetime::build, py::arg("numSimplices") = 3, py::call_guard<py::gil_scoped_release>(),
+      .def("build", &Spacetime::build, py::arg("num_simplices") = 3, py::call_guard<py::gil_scoped_release>(),
            R"doc(Build the initial triangulation with approximately n_simplices top simplices.
 
 Uses the topology's builder (e.g. Toroid staircase triangulation) to
 create the initial simplicial complex.  The actual number of simplices
 may differ slightly due to slab quantization.)doc")
-      .def("metricRevisionKey", &Spacetime::metricRevisionKey,
+      .def("metric_revision_key", &Spacetime::metricRevisionKey,
            "Monotone metric revision: structural revision + every live edge's "
            "length and phase revision counters. Strictly increases under any "
            "mutation (creation, setLength, setPhase, simplex register/"
            "unregister, edge removal), so it can key caches and assert "
            "invariants.")
-      .def_static("fromSimplices",
+      .def_static("from_simplices",
            py::overload_cast<int, const std::vector<SimplexPtr> &,
                              const std::optional<std::vector<std::complex<double>>> &,
                              const std::optional<std::vector<std::complex<double>>> &>(
                &Spacetime::fromSimplices),
            py::arg("dimensions"), py::arg("cells"),
-           py::arg("edgeWeights") = std::optional<std::vector<std::complex<double>>>{},
-           py::arg("edgePhases") = std::optional<std::vector<std::complex<double>>>{},
+           py::arg("edge_weights") = std::optional<std::vector<std::complex<double>>>{},
+           py::arg("edge_phases") = std::optional<std::vector<std::complex<double>>>{},
            R"doc(Build a complex from existing simplices, carrying their geometry.
 
 Each cell's edges are read for their squared length and Hermitian phase, and the
@@ -430,7 +430,7 @@ edge is one edge; a disagreement raises rather than picking a winner.
 edgeWeights and edgePhases override what the cells carry. Each, if given, must
 have exactly one entry per edge of the resulting complex, in the order
 described on fromVertexTuples.)doc")
-      .def_static("fromVertexTuples",
+      .def_static("from_vertex_tuples",
            py::overload_cast<int, const std::vector<std::vector<std::uint64_t>> &,
                              double, std::complex<double>,
                              const std::optional<std::vector<double>> &,
@@ -440,9 +440,9 @@ described on fromVertexTuples.)doc")
            py::arg("dimensions"), py::arg("cells"),
            py::arg("weight") = 1.0,
            py::arg("phase") = std::complex<double>{0.0, 0.0},
-           py::arg("vertexTimes") = std::optional<std::vector<double>>{},
-           py::arg("edgeWeights") = std::optional<std::vector<std::complex<double>>>{},
-           py::arg("edgePhases") = std::optional<std::vector<std::complex<double>>>{},
+           py::arg("vertex_times") = std::optional<std::vector<double>>{},
+           py::arg("edge_weights") = std::optional<std::vector<std::complex<double>>>{},
+           py::arg("edge_phases") = std::optional<std::vector<std::complex<double>>>{},
            R"doc(Build a pre-geometric complex from an explicit list of top cells.
 
 Creates a coordinate-free Lorentzian ``dimensions``-D CDT spacetime, one vertex
@@ -457,7 +457,7 @@ geometry by one of two rules:
     ``weight`` and ``phase`` are ignored.
 
 The time coordinate is always arity one — a vertex carries ``[t]`` or no
-coordinate, never the length-2/3 vector that makes ``Vertex.getTime`` throw.
+coordinate, never the length-2/3 vector that makes ``Vertex.get_time`` throw.
 
 Args:
     dimensions: Metric/signature dimension d; pass (d+1)-vertex cells so they
@@ -469,7 +469,7 @@ Args:
         given).
     vertexTimes: Optional per-vertex time indexed by vertex id; its presence
         selects the tracked-metric rule. Must index every vertex id in cells.)doc")
-      .def_static("prismCells", &Spacetime::prismCells,
+      .def_static("prism_cells", &Spacetime::prismCells,
            py::arg("cells"), py::arg("layers") = 1,
            py::arg("twist") =
                std::optional<std::unordered_map<std::uint64_t, std::uint64_t>>{},
@@ -491,8 +491,8 @@ Args:
 
 Returns:
     The prism's top cells as sorted vertex-id tuples, uniqued and sorted.)doc")
-      .def_static("symmetricStackCells", &Spacetime::symmetricStackCells,
-           py::arg("baseCells"), py::arg("nApexSlices") = 1,
+      .def_static("symmetric_stack_cells", &Spacetime::symmetricStackCells,
+           py::arg("base_cells"), py::arg("n_apex_slices") = 1,
            R"doc(The symmetric apex stacking of a triangulated d-manifold.
 
 A label-independent alternative to prismCells via coface mirroring (no
@@ -525,7 +525,7 @@ Returns:
       // keep_alive on the result list does not work (a Python list cannot be a
       // keep-alive target), so we cast each element with reference_internal,
       // which ties its lifetime to the Spacetime (self).
-      .def("getSimplices",
+      .def("get_simplices",
            [](py::object self) {
              py::list out;
              for (const auto &s : py::cast<Spacetime &>(self).getSimplices())
@@ -533,7 +533,7 @@ Returns:
              return out;
            },
            "Return all simplices (every dimension) registered in the complex.")
-      .def("getTopSimplices",
+      .def("get_top_simplices",
            [](py::object self) {
              py::list out;
              for (const auto &s : py::cast<Spacetime &>(self).getTopSimplices())
@@ -542,10 +542,10 @@ Returns:
            },
            R"doc(Return the top-dimensional simplices in dual-node order.
 
-Element i is dual node i in getDualAdjacency(), so per-node data (vertex
+Element i is dual node i in get_dual_adjacency(), so per-node data (vertex
 sets, times, ...) can be attached to the dual COO without re-deriving the
 top-simplex indexing from Python.)doc")
-      .def("getExternalSimplices",
+      .def("get_external_simplices",
            [](py::object self) {
              py::list out;
              for (const auto &s : py::cast<Spacetime &>(self).getExternalSimplices())
@@ -553,7 +553,7 @@ top-simplex indexing from Python.)doc")
              return out;
            },
            "Return simplices on the boundary of the complex.")
-      .def("getBoundary", &Spacetime::getBoundary,
+      .def("get_boundary", &Spacetime::getBoundary,
            R"doc(Return the boundary surface as codimension-one faces.
 
 The faces (one dimension below the top simplices) that belong to exactly
@@ -561,10 +561,10 @@ one top simplex, as sorted vertex-id tuples. Computed by facet-counting
 from the top simplices, so it is side-effect-free and robust to lazily
 materialized facets. A closed manifold returns an empty list.
 
-Unlike getExternalSimplices (which returns whole boundary top cells and
+Unlike get_external_simplices (which returns whole boundary top cells and
 materializes facets as a side-effect), this returns the boundary faces
 themselves and leaves the complex untouched.)doc")
-      .def("materializeFacets",
+      .def("materialize_facets",
            static_cast<void (Spacetime::*)() noexcept>(
                &Spacetime::materializeFacets),
            R"doc(Force lazy facet materialization to a fixpoint.
@@ -573,14 +573,14 @@ Creates and registers every face of every dimension (down to the
 vertices) and wires up the coface incidence. This is the side-effect
 getExternalSimplices performs internally, exposed for callers that want
 the materialization without the boundary scan.)doc")
-      .def("createEdge",
+      .def("create_edge",
            static_cast<EdgePtr (Spacetime::*)(const VertexPtr &, const VertexPtr &) const>(&
              Spacetime::createEdge),
            py::arg("source"),
            py::arg("target"),
            py::return_value_policy::reference,
            "Create an edge between two vertices as a NULL edge (l^2 = 0).")
-      .def("createEdge",
+      .def("create_edge",
            static_cast<EdgePtr (Spacetime::*)(const VertexPtr &, const VertexPtr &,
                                               std::complex<double>) const>(&
              Spacetime::createEdge),
@@ -589,19 +589,19 @@ the materialization without the boundary scan.)doc")
            py::arg("length"),
            py::return_value_policy::reference,
            "Create an edge between two vertices with a specified complex LENGTH (pass sqrt(l2) to give it by squared value)!")
-      .def("createVertex",
+      .def("create_vertex",
            static_cast<VertexPtr (Spacetime::*)(const std::uint64_t) const noexcept>(
              &Spacetime::createVertex),
            py::arg("id"),
            py::return_value_policy::reference,
            "Create a vertex with the given ID (auto-assigned coordinates).")
-      .def("createVertex",
+      .def("create_vertex",
            static_cast<VertexPtr (Spacetime::*)(const std::uint64_t, const std::vector<double> &) const noexcept>(
              &Spacetime::createVertex),
            py::arg("id"), py::arg("coordinates"),
            py::return_value_policy::reference,
            "Create a vertex with the given ID and coordinates (first = time).")
-      .def("createSimplex",
+      .def("create_simplex",
            py::overload_cast<const std::vector<VertexPtr> &>(
              &Spacetime::createSimplex),
            py::arg("vertices"),
@@ -610,14 +610,14 @@ the materialization without the boundary scan.)doc")
 
 Returns (simplex, created) where created is True if the simplex was
 new, False if it already existed (dedup by fingerprint).)doc")
-      .def("createSimplexTracked",
+      .def("create_simplex_tracked",
            [](Spacetime &self, const std::vector<VertexPtr> &vertices) {
                auto r = self.createSimplexTracked(vertices);
                return py::make_tuple(r.simplex, r.created, r.newEdges);
            },
            py::arg("vertices"),
            py::return_value_policy::reference,
-           R"doc(Like createSimplex(vertices) but also returns the edges
+           R"doc(Like create_simplex(vertices) but also returns the edges
 that this call freshly inserted into the EdgeList.
 
 Returns (simplex, created, newEdges) where:
@@ -628,48 +628,48 @@ Returns (simplex, created, newEdges) where:
 
 Used by transactional Pachner moves so rollback can undo edge
 insertions.)doc")
-      .def("createSimplex",
+      .def("create_simplex",
            py::overload_cast<const std::vector<VertexPtr> &, const std::vector<EdgePtr> &>(
              &Spacetime::createSimplex),
            py::arg("vertices"),
            py::arg("edges"),
            py::return_value_policy::reference,
            "Create a simplex from the given vertices and edges.")
-      .def("createSimplex",
+      .def("create_simplex",
            py::overload_cast<const std::tuple<uint8_t, uint8_t> &>(&Spacetime::createSimplex),
            py::arg("orientation"),
            py::return_value_policy::reference,
            R"doc(Create a seed simplex with the given orientation.
 
 Automatically creates vertices at times 0 and 1.  Useful for building
-minimal test lattices, e.g. createSimplex((1, 4)) for a (1,4) simplex.)doc")
-      .def("getTopSimplexCount", &Spacetime::getTopSimplexCount,
+minimal test lattices, e.g. create_simplex((1, 4)) for a (1,4) simplex.)doc")
+      .def("get_top_simplex_count", &Spacetime::getTopSimplexCount,
            R"doc(The number of top-dimensional simplices, N4 in 4D CDT.
 
 Counted from the live top-cell list, so it holds for any complex. It is not
 N41 + N32: those count only the cells carrying a CDT causal type, and a cell
 outside that classification -- every cell of an all-spacelike complex, for
 instance -- appears in neither. Under a CDT foliation the two agree.)doc")
-      .def("getVertexCount", &Spacetime::getVertexCount,
+      .def("get_vertex_count", &Spacetime::getVertexCount,
            "Return N0, the total number of vertices.")
-      .def("getN41", &Spacetime::getN41,
+      .def("get_n41", &Spacetime::getN41,
            R"doc(Return N41: the count of (d,1) + (1,d) type simplices.
 
 This is the volume the CDT path integral is fixed at. Reference:
 Ambjorn, Jurkiewicz & Loll, arXiv:hep-th/0505154.)doc")
-      .def("getN32", &Spacetime::getN32,
+      .def("get_n32", &Spacetime::getN32,
            "Return N32: the count of (d-1,2) + (2,d-1) type simplices.")
-      .def("getRandomSimplex",
+      .def("get_random_simplex",
            static_cast<SimplexPtr (Spacetime::*)()>(&Spacetime::getRandomSimplex),
            py::return_value_policy::reference,
            py::keep_alive<0, 1>(),  // single handle (weak-referenceable) keeps the Spacetime alive
            "Return a uniformly random simplex from the complex (any dimension).")
-      .def("getRandomTopSimplex",
+      .def("get_random_top_simplex",
            static_cast<SimplexPtr (Spacetime::*)()>(&Spacetime::getRandomTopSimplex),
            py::return_value_policy::reference,
            py::keep_alive<0, 1>(),
            "Return a uniformly random top-dimensional simplex.")
-      .def("getTopVertexCount", &Spacetime::getTopVertexCount,
+      .def("get_top_vertex_count", &Spacetime::getTopVertexCount,
            R"doc(Return the vertex count of a top-dimensional simplex (d+1).
 
 d is the metric signature's dimension. This is the single source of truth
@@ -677,36 +677,36 @@ for what registers as a top cell: a simplex joins topSimplicesVec (and is
 seen by getBoundary/getRandomTopSimplex) exactly when its vertex count
 equals this. Build a fixture with Signature(topology.dimension(), ...) so
 its top cells match.)doc")
-      .def("getRandomVertex",
+      .def("get_random_vertex",
            static_cast<VertexPtr (Spacetime::*)()>(&Spacetime::getRandomVertex),
            py::return_value_policy::reference,
            py::keep_alive<0, 1>(),
            "Return a uniformly random vertex.")
-      .def("removeSimplex", &Spacetime::removeSimplex, py::arg("simplex"),
+      .def("remove_simplex", &Spacetime::removeSimplex, py::arg("simplex"),
            "Remove a top-dimensional simplex from the complex.")
-      .def("pruneOrphanedSimplices",
+      .def("prune_orphaned_simplices",
            static_cast<std::size_t (Spacetime::*)()>(
                &Spacetime::pruneOrphanedSimplices),
            "Unregister sub-simplices (facets/hinges) orphaned by a move — "
            "registered but no longer a face of any current top cell. Returns "
            "the count pruned. Restores the simplex set to the exact closure of "
            "the top cells (bit-identical across an apply/rollback round trip).")
-      .def("reclaimSimplexSlots", &Spacetime::reclaimSimplexSlots,
+      .def("reclaim_simplex_slots", &Spacetime::reclaimSimplexSlots,
            "Make the storage slots freed since the last call available for "
            "reuse, and return how many were released. Call it where no Pachner "
            "move is in flight: a move captures SimplexPtr in propose() and "
            "reads them in apply(), so a slot freed during the move must not be "
            "handed back out until it finishes. CDT::sweep calls this itself at "
            "the end of every sweep.")
-      .def("freeSimplexSlotCount", &Spacetime::freeSimplexSlotCount,
+      .def("free_simplex_slot_count", &Spacetime::freeSimplexSlotCount,
            "Storage slots held for reuse right now.")
-      .def("pendingSimplexSlotCount", &Spacetime::pendingSimplexSlotCount,
+      .def("pending_simplex_slot_count", &Spacetime::pendingSimplexSlotCount,
            "Slots freed since the last reclaimSimplexSlots, not yet reusable.")
-      .def("simplexStorageSize", &Spacetime::simplexStorageSize,
+      .def("simplex_storage_size", &Spacetime::simplexStorageSize,
            "Slots ever allocated, live or free. Without slot reuse this equals "
            "the number of simplices the spacetime has ever created; with it, it "
            "settles at the live count plus one sweep of churn.")
-      .def("swapVertexLabels", &Spacetime::swapVertexLabels, py::arg("v1"), py::arg("v2"),
+      .def("swap_vertex_labels", &Spacetime::swapVertexLabels, py::arg("v1"), py::arg("v2"),
            R"doc(Swap the integer IDs of two vertices.
 
 Atomically re-keys all dependent data structures: VertexList,
@@ -721,13 +721,13 @@ No-op if v1 and v2 are the same vertex.)doc")
                        int nFrames, int delayCentiseconds) {
           renderSpacetime(st, path, panelSize, layoutIters,
                           tilt, spin, precession, nFrames, delayCentiseconds);
-      }, py::arg("path"), py::arg("panelSize") = 800,
-         py::arg("layoutIters") = 500,
+      }, py::arg("path"), py::arg("panel_size") = 800,
+         py::arg("layout_iters") = 500,
          py::arg("tilt") = 25.0,
          py::arg("spin") = 1,
          py::arg("precession") = 1,
-         py::arg("nFrames") = 36,
-         py::arg("delayCs") = 15,
+         py::arg("n_frames") = 36,
+         py::arg("delay_cs") = 15,
            R"doc(Render the spacetime to an image file.
 
 Uses a force-directed layout (time fixed, spatial coordinates
@@ -814,25 +814,25 @@ arXiv:hep-th/0105267.)doc")
            "True on success.")
       .def("rollback", &PachnerMove::rollback,
            "Restore the spacetime to its pre-apply state.  Idempotent.")
-      .def("isApplied", &PachnerMove::isApplied,
+      .def("is_applied", &PachnerMove::isApplied,
            "True iff apply() has been called and not rolled back.")
-      .def("dN0", &PachnerMove::dN0,
+      .def("d_n0", &PachnerMove::dN0,
            "Combinatorial change in vertex count.")
-      .def("dN41", &PachnerMove::dN41,
+      .def("d_n41", &PachnerMove::dN41,
            "Combinatorial change in N41-type top-simplex count.")
-      .def("dN32", &PachnerMove::dN32,
+      .def("d_n32", &PachnerMove::dN32,
            "Combinatorial change in N32-type top-simplex count.")
-      .def("metropolisLogPrefactor", &PachnerMove::metropolisLogPrefactor,
+      .def("metropolis_log_prefactor", &PachnerMove::metropolisLogPrefactor,
            "log of the Metropolis combinatorial prefactor.")
-      .def("touchedVertexIds", &PachnerMove::touchedVertexIds,
+      .def("touched_vertex_ids", &PachnerMove::touchedVertexIds,
            "IDs of the vertices whose neighborhood the move re-arranges. "
            "Used for informed (community-aware) proposals.")
-      .def("moveType", &PachnerMove::moveType,
+      .def("move_type", &PachnerMove::moveType,
            "Move-type tag: one of 'add', 'remove', 'flip', 'iflip', "
            "'shift'.")
       .def("mode", &PachnerMove::mode,
            "Validity regime: PachnerMode.CDT or PachnerMode.PreGeometric.")
-      .def("boundaryFixed", &PachnerMove::boundaryFixed,
+      .def("boundary_fixed", &PachnerMove::boundaryFixed,
            "True iff the move is restricted to the interior (∂W fixed).");
 
   py::class_<AddMove, PachnerMove>(m, "AddMove",
@@ -850,14 +850,14 @@ Brunekreef, Gorlich & Loll, "Simulating CDT quantum gravity" (2023).)doc")
            py::arg("spacetime"), py::arg("seed"),
            py::arg("relabel") = true,
            py::arg("mode") = PachnerMode::CDT,
-           py::arg("boundaryFixed") = false,
+           py::arg("boundary_fixed") = false,
            py::keep_alive<1, 2>(),
            "Construct an add move bound to ``spacetime`` with a fresh "
            "RNG seeded from ``seed``.  ``relabel`` controls whether the "
            "new vertex's ID is swap-relabeled with a random existing "
            "vertex on apply().  ``mode=PachnerMode.PreGeometric`` runs "
            "the 1->(d+1) stellar subdivision on a coordinate-free "
-           "complex; ``boundaryFixed`` restricts the move to the "
+           "complex; ``boundary_fixed`` restricts the move to the "
            "interior (a no-op for add, which never touches ∂W).");
 
   py::class_<FlipMove, PachnerMove>(m, "FlipMove",
@@ -869,13 +869,13 @@ Inverse: IFlipMove.)doc")
       .def(py::init<Spacetime *, std::uint64_t, PachnerMode, bool>(),
            py::arg("spacetime"), py::arg("seed"),
            py::arg("mode") = PachnerMode::CDT,
-           py::arg("boundaryFixed") = false,
+           py::arg("boundary_fixed") = false,
            py::keep_alive<1, 2>(),
            "Construct a (2,d) flip move bound to ``spacetime`` with a "
            "fresh ``std::mt19937`` seeded with ``seed``.  "
            "``mode=PachnerMode.PreGeometric`` runs the 2->(d+1) bistellar "
            "flip on a coordinate-free complex (drops the CDT orientation "
-           "guard, adds a manifold check); ``boundaryFixed`` keeps it "
+           "guard, adds a manifold check); ``boundary_fixed`` keeps it "
            "interior (∂W fixed).");
 
   py::class_<RemoveMove, PachnerMove>(m, "RemoveMove",
@@ -892,13 +892,13 @@ lengths), and recreates the 2d removed simplices.)doc")
       .def(py::init<Spacetime *, std::uint64_t, PachnerMode, bool>(),
            py::arg("spacetime"), py::arg("seed"),
            py::arg("mode") = PachnerMode::CDT,
-           py::arg("boundaryFixed") = false,
+           py::arg("boundary_fixed") = false,
            py::keep_alive<1, 2>(),
            "Construct a remove move bound to ``spacetime`` with a fresh "
            "RNG seeded from ``seed``.  ``mode=PachnerMode.PreGeometric`` "
            "runs the (d+1)->1 stellar weld (inverse of the pre-geometric "
            "add) on a coordinate-free complex; the move is interior by "
-           "construction, so ``boundaryFixed`` adds no restriction.");
+           "construction, so ``boundary_fixed`` adds no restriction.");
 
   py::class_<IFlipMove, PachnerMove>(m, "IFlipMove",
       R"doc(Transactional inverse (d, 2) flip move.
@@ -912,12 +912,12 @@ either new simplex would already exist in the lattice.)doc")
       .def(py::init<Spacetime *, std::uint64_t, PachnerMode, bool>(),
            py::arg("spacetime"), py::arg("seed"),
            py::arg("mode") = PachnerMode::CDT,
-           py::arg("boundaryFixed") = false,
+           py::arg("boundary_fixed") = false,
            py::keep_alive<1, 2>(),
            "Construct an inverse flip bound to ``spacetime`` with a "
            "fresh ``std::mt19937`` seeded with ``seed``.  "
            "``mode=PachnerMode.PreGeometric`` runs the (d+1)->2 bistellar "
-           "flip on a coordinate-free complex; ``boundaryFixed`` rejects "
+           "flip on a coordinate-free complex; ``boundary_fixed`` rejects "
            "flips that would collapse an edge on ∂W.");
 
   py::class_<ShiftMove, PachnerMove>(m, "ShiftMove",
@@ -930,16 +930,16 @@ dN41 + dN32 = 0.)doc")
       .def(py::init<Spacetime *, std::uint64_t, PachnerMode, bool>(),
            py::arg("spacetime"), py::arg("seed"),
            py::arg("mode") = PachnerMode::CDT,
-           py::arg("boundaryFixed") = false,
+           py::arg("boundary_fixed") = false,
            py::keep_alive<1, 2>(),
            R"doc(Construct a shift move bound to ``spacetime``, using a
 fresh ``std::mt19937`` seeded with ``seed`` for the proposal.
 
 ``mode=PachnerMode.PreGeometric`` drops the CDT orientation guard;
-``boundaryFixed`` only fires shifts whose whole region is interior.
+``boundary_fixed`` only fires shifts whose whole region is interior.
 
 For sweeps that share a single Markov chain across many moves, drive
-moves via ``CDT.proposeShift()`` instead.)doc");
+moves via ``CDT.propose_shift()`` instead.)doc");
 
   // Each Pachner move's canonical type name, exposed so Python callers that
   // dispatch on it reference the same definition C++ does rather than re-spelling

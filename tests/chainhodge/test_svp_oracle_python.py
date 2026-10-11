@@ -58,7 +58,7 @@ def instances():
     _, sE = torus33(1.0, 1.0, 1.0)
     K6, s6, _ = flat_torus(6, 0.25, False, seed=1)
     K6L, s6L, _ = flat_torus(6, 0.25, True, seed=1)
-    K2 = cob.ChainComplex.fromTopCells([[0, 1, 2], [0, 1, 3], [0, 2, 3], [1, 2, 3], [2, 3, 4]])
+    K2 = cob.ChainComplex.from_top_cells([[0, 1, 2], [0, 1, 3], [0, 2, 3], [1, 2, 3], [2, 3, 4]])
     return {"T6 Lorentzian 3x3": (K, sL, "lorentzian"),
             "T7 Euclidean 3x3": (K, sE, "euclidean"),
             "F1 Euclidean N=6": (K6, s6, "euclidean"),
@@ -80,7 +80,7 @@ def test_metrics_agree_with_the_dense_oracle(name, preset, svp_records):
             code = ch.WhitneyMass.assemble(K, s, k, KS).toarray()
             oracle = svp.whitney_reference(K, s, k)
         else:
-            code = ch.WhitneyMass.assembleGrassmann(K, s, k).toarray()
+            code = ch.WhitneyMass.assemble_grassmann(K, s, k).toarray()
             oracle = svp.grassmann_reference(K, s, k)
         agreement[f"M_{k}" if preset == "L2" else f"G_{k}"] = relative(code, oracle)
     for k in range(1, K.dimension() + 1):
@@ -104,7 +104,7 @@ def test_pencil_spectrum_and_harmonic_space_agree_with_the_dense_oracle(name, pr
     K, s, signature = instances()[name]
     started = time.time()
     hodge = ch.ChainHodge(K, s, L2 if preset == "L2" else ALL, KS)
-    read = hodge.harmonicChains(1)
+    read = hodge.harmonic_chains(1)
     pencil = hodge.pencil(1)
     if preset == "L2":
         A, B = svp.whitney_pencil_reference(K, s, 1)
@@ -151,7 +151,7 @@ def test_grassmann_is_exact_on_rational_squared_lengths(N, lorentz, svp_records)
     hodge = ch.ChainHodge(K, s, ALL, KS)
     agreement = {}
     for k in range(3):
-        code = ch.WhitneyMass.assembleGrassmann(K, s, k).toarray()
+        code = ch.WhitneyMass.assemble_grassmann(K, s, k).toarray()
         rational = svp.rational_grassmann(K, exact, k)
         value = np.array([[float(v) for v in row] for row in rational])
         agreement[f"G_{k}"] = relative(code, value)
@@ -174,10 +174,10 @@ def test_the_topology_is_exact_and_the_rational_kernel_has_that_dimension(N, lor
     started = time.time()
     K, s, exact = svp.dyadic_torus(N, lorentz)
     hodge = ch.ChainHodge(K, s, ALL, KS)
-    read = hodge.harmonicChains(1)
+    read = hodge.harmonic_chains(1)
     betti = svp.integer_betti(K)
     G1 = svp.rational_grassmann(K, exact, 1)
-    n1 = K.numSimplices(1)
+    n1 = K.num_simplices(1)
     rows = [[Fraction(v) for v in row] for row in svp.integer_boundary(K, 1)]
     d2 = svp.integer_boundary(K, 2)
     for column in range(len(d2[0])):

@@ -24,7 +24,7 @@ def _make_cdt(n_simplices=50):
     st = tessera.Spacetime(metric, tessera.CDT, 1.0, 1.0, tessera.PREFERRED,
                          tessera.Toroid())
     st.build(n_simplices)
-    target = st.getTopSimplexCount()
+    target = st.get_top_simplex_count()
     cdt = tessera.CDTSimulation(st, 2.2, 0.5, 0.6, 1.0 / max(target, 1), target)
     return cdt, st
 
@@ -69,7 +69,7 @@ class TestSweepN(unittest.TestCase):
     def test_sweep_zero_is_noop(self):
         """sweep(0) should do nothing and return 0."""
         cdt, st = _make_cdt()
-        initial_count = st.getTopSimplexCount()
+        initial_count = st.get_top_simplex_count()
         result = cdt.sweep(0)
         self.assertEqual(result, 0)
 
@@ -181,7 +181,7 @@ class TestThreadParallelism(unittest.TestCase):
         def worker(wid):
             cdt, st = _make_cdt(n_simplices=50)
             accepted = cdt.sweep(20)
-            return wid, accepted, st.getTopSimplexCount()
+            return wid, accepted, st.get_top_simplex_count()
 
         with ThreadPoolExecutor(max_workers=4) as pool:
             futures = {pool.submit(worker, i): i for i in range(4)}
@@ -257,10 +257,10 @@ class TestThreadParallelism(unittest.TestCase):
         def worker(wid, n_simplices):
             cdt, st = _make_cdt(n_simplices=n_simplices)
             cdt.sweep(nSweeps)
-            profile = cdt.getVolumeProfile()
-            n41 = st.getN41()
-            n32 = st.getN32()
-            n4 = st.getTopSimplexCount()
+            profile = cdt.get_volume_profile()
+            n41 = st.get_n41()
+            n32 = st.get_n32()
+            n4 = st.get_top_simplex_count()
             return wid, n4, n41, n32, profile
 
         # Give each worker a different size so we can verify independence
@@ -290,7 +290,7 @@ class TestThreadParallelism(unittest.TestCase):
         def worker(wid):
             cdt, st = _make_cdt(n_simplices=20)
             cdt.sweep(10)
-            return st.getTopSimplexCount()
+            return st.get_top_simplex_count()
 
         with ThreadPoolExecutor(max_workers=16) as pool:
             futures = [pool.submit(worker, i) for i in range(16)]

@@ -14,7 +14,7 @@ The per-cell read (`recursion.cell_reads` -> `baryon_poles.scan_point` ->
 `evaluate_content` -> `relax_content`) builds three disjoint copies of the cell
 (`baryon_poles.build_host`) and relaxes them with `SelfConsistentMeanField`
 around `HolomorphicRelaxation`. The certificate
-(`SheetedSupport.certifyIsomorphism`) then compares the sheets' squared lengths
+(`SheetedSupport.certify_isomorphism`) then compares the sheets' squared lengths
 and connection values. The tests below establish, on the run's own host cells
 (`_recursion_run_2026_09_23`):
 
@@ -108,7 +108,7 @@ def _face_holonomies(links):
 
 def _sheet_permutation(spacetime):
     """The permutation of the 36 relaxation coordinates (18 squared lengths,
-    then 18 links, in `getEdgeList()` order) induced by the sheet relabeling
+    then 18 links, in `get_edge_list()` order) induced by the sheet relabeling
     t -> t + 1 mod 3."""
     records = bp.edge_records(spacetime)
     index = {r: i for i, r in enumerate(records)}
@@ -126,13 +126,13 @@ def _gauge_one_sheet(spacetime, vertex, angle):
     """Multiply every link at ``vertex`` by exp(+-i angle): a unit-modulus
     vertex gauge transformation, which leaves every squared length and every
     face holonomy unchanged."""
-    for edge in spacetime.getEdgeList().toVector():
-        a = int(edge.getSource().getId())
-        b = int(edge.getTarget().getId())
+    for edge in spacetime.get_edge_list().to_vector():
+        a = int(edge.get_source().get_id())
+        b = int(edge.get_target().get_id())
         if a == vertex:
-            edge.setPhase(edge.getPhase() + angle)
+            edge.set_phase(edge.get_phase() + angle)
         elif b == vertex:
-            edge.setPhase(edge.getPhase() - angle)
+            edge.set_phase(edge.get_phase() - angle)
 
 
 def _seeded_action(cell, content):
@@ -165,7 +165,7 @@ def test_the_certificate_passes_three_exact_copies_with_zero_residuals():
     tolerance 1e-8 (WP v17 line 355: equal squared lengths and equal
     connection values on corresponding edges)."""
     lengths, links = _three_copies()
-    read = obs.SheetedSupport(3, 6).certifyIsomorphism(lengths, links, 1e-8)
+    read = obs.SheetedSupport(3, 6).certify_isomorphism(lengths, links, 1e-8)
     assert read.isomorphic
     assert read.squared_length_residual == 0.0
     assert read.connection_residual == 0.0
@@ -186,12 +186,12 @@ def test_the_certificate_reports_exactly_an_injected_length_gap(sheet, edge,
     lengths[sheet][edge] += delta
     expected = abs(lengths[sheet][edge] - lengths[(sheet + 1) % 3][edge])
     support = obs.SheetedSupport(3, 6)
-    read = support.certifyIsomorphism(lengths, links, 1e-8)
+    read = support.certify_isomorphism(lengths, links, 1e-8)
     assert read.squared_length_residual == expected
     assert read.squared_length_residual == pytest.approx(abs(delta), rel=1e-6)
     assert read.connection_residual == 0.0
     assert read.isomorphic == (expected <= 1e-8)
-    assert support.certifyIsomorphism(lengths, links,
+    assert support.certify_isomorphism(lengths, links,
                                       2.0 * abs(delta)).isomorphic
 
 
@@ -204,7 +204,7 @@ def test_the_certificate_reports_exactly_an_injected_connection_gap(sheet,
     length residual stays zero."""
     lengths, links = _three_copies()
     links[sheet][edge] *= cmath.exp(1j * angle)
-    read = obs.SheetedSupport(3, 6).certifyIsomorphism(lengths, links, 1e-8)
+    read = obs.SheetedSupport(3, 6).certify_isomorphism(lengths, links, 1e-8)
     assert read.squared_length_residual == 0.0
     assert read.connection_residual == pytest.approx(
         2.0 * abs(math.sin(angle / 2.0)), rel=1e-9)
@@ -218,7 +218,7 @@ def test_the_certificate_takes_the_worst_pair_of_sheets():
     lengths, links = _three_copies()
     lengths[1][3] += 2e-6
     lengths[2][3] -= 1e-6
-    read = obs.SheetedSupport(3, 6).certifyIsomorphism(lengths, links, 1e-8)
+    read = obs.SheetedSupport(3, 6).certify_isomorphism(lengths, links, 1e-8)
     assert read.squared_length_residual == pytest.approx(3e-6, rel=1e-6)
 
 
@@ -227,7 +227,7 @@ def test_the_certificate_without_connections_grades_the_lengths_alone():
     connection values: the connection residual is exactly zero."""
     lengths, _ = _three_copies()
     lengths[0][0] += 1e-3
-    read = obs.SheetedSupport(3, 6).certifyIsomorphism(
+    read = obs.SheetedSupport(3, 6).certify_isomorphism(
         lengths, [np.array([], dtype=complex)] * 3, 1e-8)
     assert read.connection_residual == 0.0
     assert read.squared_length_residual == pytest.approx(1e-3, rel=1e-9)
@@ -252,7 +252,7 @@ def test_the_certificate_compares_connection_values_not_gauge_classes():
             links[1][i] *= cmath.exp(-1j * 0.3)
     assert np.max(np.abs(_face_holonomies(links[1])
                          - _face_holonomies(links[0]))) < 1e-15
-    read = obs.SheetedSupport(3, 6).certifyIsomorphism(lengths, links, 1e-8)
+    read = obs.SheetedSupport(3, 6).certify_isomorphism(lengths, links, 1e-8)
     assert read.squared_length_residual == 0.0
     assert read.connection_residual == pytest.approx(2.0 * math.sin(0.15),
                                                      rel=1e-12)
@@ -264,14 +264,14 @@ def test_the_certificate_refuses_a_non_positive_tolerance(tolerance):
     lengths, links = _three_copies()
     with pytest.raises(ValueError,
                        match="SheetedSupport::certifyIsomorphism tolerance"):
-        obs.SheetedSupport(3, 6).certifyIsomorphism(lengths, links, tolerance)
+        obs.SheetedSupport(3, 6).certify_isomorphism(lengths, links, tolerance)
 
 
 def test_the_certificate_refuses_the_wrong_number_of_sheets():
     lengths, links = _three_copies()
     with pytest.raises(ValueError, match="expected 3 squared-length vectors "
                                          "and 3 connection vectors"):
-        obs.SheetedSupport(3, 6).certifyIsomorphism(lengths[:2], links[:2],
+        obs.SheetedSupport(3, 6).certify_isomorphism(lengths[:2], links[:2],
                                                     1e-8)
 
 
@@ -281,12 +281,12 @@ def test_the_certificate_refuses_a_sheet_of_the_wrong_size():
     with pytest.raises(ValueError, match="the squared-length vector of sheet "
                                          "1 has 5 entries; the base complex "
                                          "has 6 cells"):
-        obs.SheetedSupport(3, 6).certifyIsomorphism(lengths, links, 1e-8)
+        obs.SheetedSupport(3, 6).certify_isomorphism(lengths, links, 1e-8)
     lengths, links = _three_copies()
     links[2] = links[2][:4]
     with pytest.raises(ValueError, match="the connection vector of sheet 2 "
                                          "has 4 entries"):
-        obs.SheetedSupport(3, 6).certifyIsomorphism(lengths, links, 1e-8)
+        obs.SheetedSupport(3, 6).certify_isomorphism(lengths, links, 1e-8)
 
 
 def test_the_certificate_refuses_connections_on_some_sheets_only():
@@ -294,7 +294,7 @@ def test_the_certificate_refuses_connections_on_some_sheets_only():
     links[0] = np.array([], dtype=complex)
     with pytest.raises(ValueError, match="supplied for some sheets but not "
                                          "for all of them"):
-        obs.SheetedSupport(3, 6).certifyIsomorphism(lengths, links, 1e-8)
+        obs.SheetedSupport(3, 6).certify_isomorphism(lengths, links, 1e-8)
 
 
 def test_a_support_with_no_sheets_is_refused():
@@ -324,7 +324,7 @@ def test_the_host_is_built_as_three_exact_copies_of_the_cell(cell):
     assert _largest_gap(links) == 0.0
     for t in range(3):
         support, departure = bp.sheet_support(spacetime, t)
-        assert support.monopoleNumber().monopole_number == 1
+        assert support.monopole_number().monopole_number == 1
         assert departure < 1e-15
 
 
@@ -383,7 +383,7 @@ def test_the_seeded_covariance_fills_rank_three_bands_of_h(content):
     gamma = np.asarray(report.covariance).reshape(18, 18)
     h = bp.matrix(action.carrier_operator())
     assert np.linalg.norm(gamma @ h - h @ gamma) < 1e-12 * np.linalg.norm(h)
-    # the covariance is over the 18 edge cells in `getEdgeList()` order
+    # the covariance is over the 18 edge cells in `get_edge_list()` order
     p = _sheet_permutation(spacetime)[:18, :18]
     assert np.max(np.abs(p @ gamma @ p.T - gamma)) < 1e-14
     assert np.trace(gamma).real == pytest.approx(3.0, abs=1e-12)
@@ -416,7 +416,7 @@ def test_the_relaxed_sheets_are_bit_identical_for_every_content(cell,
     lengths, links = _sheets(spacetime)
     assert _largest_gap(lengths) == 0.0
     assert _largest_gap(links) == 0.0
-    read = obs.SheetedSupport(3, 6).certifyIsomorphism(lengths, links, 1e-8)
+    read = obs.SheetedSupport(3, 6).certify_isomorphism(lengths, links, 1e-8)
     assert read.squared_length_residual == 0.0
     assert read.connection_residual == 0.0
 
@@ -595,9 +595,9 @@ def test_the_fibre_lift_fails_linearly_in_a_sheet_separation():
     for epsilon in (1e-6, 2e-6):
         host = RUN.HOST_CELLS[FIRST_CELL]
         spacetime = bp.build_host(8.0, host)
-        for edge in spacetime.getEdgeList().toVector():
-            if int(edge.getSource().getId()) // 4 == 1:
-                edge.setLength(edge.getLength() * cmath.sqrt(1.0 + epsilon))
+        for edge in spacetime.get_edge_list().to_vector():
+            if int(edge.get_source().get_id()) // 4 == 1:
+                edge.set_length(edge.get_length() * cmath.sqrt(1.0 + epsilon))
         residuals.append(_fibre_lift_residual(spacetime))
     assert residuals[0] > 1e-8
     assert residuals[1] / residuals[0] == pytest.approx(2.0, rel=1e-3)

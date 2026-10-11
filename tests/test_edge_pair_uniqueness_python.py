@@ -2,7 +2,7 @@
 # All rights reserved.
 """The edge list holds exactly one edge per vertex pair.
 
-``Spacetime.swapVertexLabels`` rewrites the ids two vertices hold, which changes
+``Spacetime.swap_vertex_labels`` rewrites the ids two vertices hold, which changes
 the vertex pair of every edge incident to exactly one of them, and so changes
 the key those edges are stored under. The relabeling that ``AddMove`` performs
 after a successful add drives that path on every accepted move.
@@ -21,26 +21,26 @@ import tessera
 
 
 def _pair(edge):
-    a, b = edge.getSource().getId(), edge.getTarget().getId()
+    a, b = edge.get_source().get_id(), edge.get_target().get_id()
     return (min(a, b), max(a, b))
 
 
 def _pair_counts(spacetime):
     return collections.Counter(
-        _pair(edge) for edge in spacetime.getEdgeList().toVector())
+        _pair(edge) for edge in spacetime.get_edge_list().to_vector())
 
 
 def _build(seed, n_simplices=400):
     metric = tessera.Metric(
-        coordinateFree=True,
+        coordinate_free=True,
         signature=tessera.Signature(dimensions=4,
-                                    signatureType=tessera.Lorentzian),
+                                    signature_type=tessera.Lorentzian),
     )
     spacetime = tessera.Spacetime(
-        metric=metric, spacetimeType=tessera.CDT, alpha=1.0, a=1.0,
+        metric=metric, spacetime_type=tessera.CDT, alpha=1.0, a=1.0,
         foliation=tessera.PREFERRED, topology=tessera.Toroid(),
     )
-    spacetime.setSeed(seed)
+    spacetime.set_seed(seed)
     spacetime.build(n_simplices)
     return spacetime
 
@@ -51,35 +51,35 @@ class TestEdgePairUniqueness(unittest.TestCase):
         spacetime = _build(7)
         counts = _pair_counts(spacetime)
         self.assertEqual(sorted(set(counts.values())), [1])
-        self.assertEqual(spacetime.getEdgeList().size(), sum(counts.values()))
+        self.assertEqual(spacetime.get_edge_list().size(), sum(counts.values()))
 
     def test_label_swaps_alone_keep_one_edge_per_pair(self):
         import random
 
         spacetime = _build(7)
-        vertices = spacetime.getVertexList().toVector()
+        vertices = spacetime.get_vertex_list().to_vector()
         rng = random.Random(7)
         for _ in range(200):
             first, second = rng.sample(range(len(vertices)), 2)
-            spacetime.swapVertexLabels(vertices[first], vertices[second])
+            spacetime.swap_vertex_labels(vertices[first], vertices[second])
         counts = _pair_counts(spacetime)
         self.assertEqual(sorted(set(counts.values())), [1])
 
     def test_relabeling_sweeps_keep_one_edge_per_pair(self):
         """The regression: sweeps that relabel used to duplicate pairs.
 
-        Before ``swapVertexLabels`` detached edges by a key derived from their
+        Before ``swap_vertex_labels`` detached edges by a key derived from their
         endpoints, 300 relabeling sweeps left 123 vertex pairs carrying more
         than one edge.
         """
         spacetime = _build(7)
-        target = spacetime.getN41()
+        target = spacetime.get_n41()
         cdt = tessera.CDTSimulation(
             spacetime=spacetime, k0=2.2, k4=0.5, delta=0.6,
-            epsilon=1.0 / target, targetN41=target,
+            epsilon=1.0 / target, target_n41=target,
         )
-        cdt.setSeed(7)
-        cdt.setRelabelVertices(True)
+        cdt.set_seed(7)
+        cdt.set_relabel_vertices(True)
         cdt.tune()
         cdt.sweep(300)
 
@@ -89,37 +89,37 @@ class TestEdgePairUniqueness(unittest.TestCase):
 
     def test_size_agrees_with_the_vector_it_hands_out(self):
         spacetime = _build(7)
-        target = spacetime.getN41()
+        target = spacetime.get_n41()
         cdt = tessera.CDTSimulation(
             spacetime=spacetime, k0=2.2, k4=0.5, delta=0.6,
-            epsilon=1.0 / target, targetN41=target,
+            epsilon=1.0 / target, target_n41=target,
         )
-        cdt.setSeed(7)
-        cdt.setRelabelVertices(True)
+        cdt.set_seed(7)
+        cdt.set_relabel_vertices(True)
         cdt.tune()
         cdt.sweep(300)
 
-        edge_list = spacetime.getEdgeList()
-        self.assertEqual(edge_list.size(), len(edge_list.toVector()))
+        edge_list = spacetime.get_edge_list()
+        self.assertEqual(edge_list.size(), len(edge_list.to_vector()))
 
     def test_every_edge_is_findable_under_its_derived_key(self):
         """An edge that cannot be found again is what creates a duplicate."""
         spacetime = _build(7)
-        target = spacetime.getN41()
+        target = spacetime.get_n41()
         cdt = tessera.CDTSimulation(
             spacetime=spacetime, k0=2.2, k4=0.5, delta=0.6,
-            epsilon=1.0 / target, targetN41=target,
+            epsilon=1.0 / target, target_n41=target,
         )
-        cdt.setSeed(7)
-        cdt.setRelabelVertices(True)
+        cdt.set_seed(7)
+        cdt.set_relabel_vertices(True)
         cdt.tune()
         cdt.sweep(200)
 
-        edge_list = spacetime.getEdgeList()
-        before = len(edge_list.toVector())
-        for edge in list(edge_list.toVector()):
-            spacetime.createEdge(edge.getSource(), edge.getTarget())
-        self.assertEqual(len(edge_list.toVector()), before)
+        edge_list = spacetime.get_edge_list()
+        before = len(edge_list.to_vector())
+        for edge in list(edge_list.to_vector()):
+            spacetime.create_edge(edge.get_source(), edge.get_target())
+        self.assertEqual(len(edge_list.to_vector()), before)
 
 
 if __name__ == "__main__":

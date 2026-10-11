@@ -101,7 +101,7 @@ def _declaration(resolutions=(1.0, 1.4, 1.8), band_rank=2, tolerance=1e-6):
 
 def _recursion(levels=3, **overrides):
     matrix = _fixture_pencil()
-    recursion = cob.LevelRecursion.overPencil(
+    recursion = cob.LevelRecursion.over_pencil(
         [complex(value) for value in matrix.reshape(-1)], [], DIMENSION,
         _declaration(**overrides))
     recursion.advance_to(levels)
@@ -187,13 +187,13 @@ class TheRecursionIsDrivenLevelByLevelTest(unittest.TestCase):
     def test_a_single_resolution_sweep_reproduces_the_single_resolution_call(self):
         matrix = _fixture_pencil()
         flat = [complex(value) for value in matrix.reshape(-1)]
-        swept = cob.RecursiveQuotient.persistentPartitionOverResolutions(
+        swept = cob.RecursiveQuotient.persistent_partition_over_resolutions(
             flat, DIMENSION, [1.0], 4, 17, 0.5)
-        single = cob.RecursiveQuotient.persistentPartition(
+        single = cob.RecursiveQuotient.persistent_partition(
             flat, DIMENSION, 1.0, 4, 17)
         self.assertEqual([list(members) for members in swept.components],
                          [list(members) for members in single])
-        self.assertEqual(swept.selectedResolution, 1.0)
+        self.assertEqual(swept.selected_resolution, 1.0)
 
     def test_the_reduction_map_covers_every_coordinate(self):
         """componentOfCoordinate is the map MappingCylinder builds W^l over."""
@@ -536,7 +536,7 @@ class TheFibersAreRieszProjectorsTest(unittest.TestCase):
         is ordered at all."""
         matrix = _fixture_pencil()
         flat = [complex(value) for value in matrix.reshape(-1)]
-        partition = cob.RecursiveQuotient.persistentPartitionOverResolutions(
+        partition = cob.RecursiveQuotient.persistent_partition_over_resolutions(
             flat, DIMENSION, [1.0, 1.4, 1.8], 4, 17, 0.5)
         declaration = _declaration()
         bands = cob.RecursionBandDeclaration()
@@ -544,7 +544,7 @@ class TheFibersAreRieszProjectorsTest(unittest.TestCase):
         bands.contour_centres = [complex(0.0, 0.0)] * len(partition.components)
         bands.contour_radii = [20.0] * len(partition.components)
         declaration.bands = bands
-        recursion = cob.LevelRecursion.overPencil(flat, [], DIMENSION,
+        recursion = cob.LevelRecursion.over_pencil(flat, [], DIMENSION,
                                                   declaration)
         recursion.advance()
         level = recursion.level(0)
@@ -665,11 +665,11 @@ class TheRemainingReadsTest(unittest.TestCase):
         np.testing.assert_allclose(level.fiber_spectrum, expected, atol=1e-9)
 
     def _regular_tetrahedron(self, band_rank):
-        spacetime = T.Spacetime.fromVertexTuples(3, [[0, 1, 2, 3]], 1.0, 0.0)
-        for edge in spacetime.getEdgeList().toVector():
-            edge.setLength(math.sqrt(8.0))
+        spacetime = T.Spacetime.from_vertex_tuples(3, [[0, 1, 2, 3]], 1.0, 0.0)
+        for edge in spacetime.get_edge_list().to_vector():
+            edge.set_length(math.sqrt(8.0))
         declaration = _declaration(resolutions=(1.0,), band_rank=band_rank)
-        return cob.LevelRecursion.overSpacetime(
+        return cob.LevelRecursion.over_spacetime(
             spacetime, 1, cob.HodgeMetricSource.WhitneyPencil, declaration)
 
     def test_the_recursion_over_a_spacetime_reads_its_edge_operator(self):
@@ -705,17 +705,17 @@ class TheDeclarationIsCheckedTest(unittest.TestCase):
 
     def test_a_pencil_of_the_wrong_size_is_refused(self):
         with self.assertRaises(ValueError):
-            cob.LevelRecursion.overPencil([1.0, 0.0, 0.0], [], 2,
+            cob.LevelRecursion.over_pencil([1.0, 0.0, 0.0], [], 2,
                                           _declaration())
 
     def test_an_empty_resolution_sweep_is_refused(self):
         with self.assertRaises(ValueError):
-            cob.LevelRecursion.overPencil([1.0], [], 1,
+            cob.LevelRecursion.over_pencil([1.0], [], 1,
                                           _declaration(resolutions=()))
 
     def test_a_band_of_rank_zero_is_refused(self):
         with self.assertRaises(ValueError):
-            cob.LevelRecursion.overPencil([1.0], [], 1,
+            cob.LevelRecursion.over_pencil([1.0], [], 1,
                                           _declaration(band_rank=0))
 
     def test_a_dimension_at_the_dense_crossover_is_refused(self):
@@ -723,7 +723,7 @@ class TheDeclarationIsCheckedTest(unittest.TestCase):
         declaration.dense_crossover = 4
         matrix = _fixture_pencil()
         with self.assertRaises(ValueError):
-            cob.LevelRecursion.overPencil(
+            cob.LevelRecursion.over_pencil(
                 [complex(value) for value in matrix.reshape(-1)], [],
                 DIMENSION, declaration)
 

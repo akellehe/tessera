@@ -13,7 +13,7 @@ organised into submodules whose names match their C++ namespaces:
 * ``tessera.chainhodge``   — the chain-level Whitney Hodge pencil
 
 The files directly under ``include/`` and ``src/`` bind into the root
-``tessera`` namespace (``tessera.Poset``, ``tessera.compareOrders``,
+``tessera`` namespace (``tessera.Poset``, ``tessera.compare_orders``,
 ``tessera.ForceLayout``).
 
 For backward compatibility every public class is also re-exported at the

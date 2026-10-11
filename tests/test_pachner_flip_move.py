@@ -24,30 +24,30 @@ def _make_st(d=4, n_simplices=200):
 
 def _top_size(st):
     # CDT top simplices are (d+1)-vertex; d is the spacetime's declared
-    # (signature) dimension. getTopVertexCount() == signature.dimensions + 1,
+    # (signature) dimension. get_top_vertex_count() == signature.dimensions + 1,
     # the engine's single source of truth for top-cell membership -- O(1) and
     # immune to the lazily-materialized lower-dimensional facets that
-    # propose()/getFacets() register into getSimplices() (where the first
+    # propose()/get_facets() register into get_simplices() (where the first
     # scanned simplex may be a lower-dimensional face).
-    return st.getTopVertexCount()
+    return st.get_top_vertex_count()
 
 
 def _full_snapshot(st):
     dPlus1 = _top_size(st)
     return {
-        "n0": st.getVertexCount(),
-        "n41": st.getN41(),
-        "n32": st.getN32(),
-        "n4": st.getTopSimplexCount(),
+        "n0": st.get_vertex_count(),
+        "n41": st.get_n41(),
+        "n32": st.get_n32(),
+        "n4": st.get_top_simplex_count(),
         "top_fps": frozenset(
-            hash(s) for s in st.getSimplices()
-            if len(s.getVertices()) == dPlus1
+            hash(s) for s in st.get_simplices()
+            if len(s.get_vertices()) == dPlus1
         ),
         "edge_fps": frozenset(
-            hash(e) for e in st.getEdgeList().toVector()
+            hash(e) for e in st.get_edge_list().to_vector()
         ),
         "vertex_ids": frozenset(
-            v.getId() for v in st.getVertexList().toVector()
+            v.get_id() for v in st.get_vertex_list().to_vector()
         ),
     }
 
@@ -82,13 +82,13 @@ class TestFlipPropose(unittest.TestCase):
 
     def test_movetype(self):
         m = tessera.FlipMove(_make_st(), 0)
-        self.assertEqual(m.moveType(), "flip")
+        self.assertEqual(m.move_type(), "flip")
 
     def test_dN0_is_zero(self):
         st = _make_st()
         m = _try_propose(st, range(200), tessera.FlipMove)
         self.assertIsNotNone(m)
-        self.assertEqual(m.dN0(), 0)
+        self.assertEqual(m.d_n0(), 0)
 
     def test_dN4_advertised_is_d_minus_2(self):
         """Advertised ΔN4 = d - 2 = +2 in 4D (clean (2,d) replacement)."""
@@ -98,17 +98,17 @@ class TestFlipPropose(unittest.TestCase):
         # dN4 = number of new (d) - number of old (2) = d - 2
         # but advertised is dN41 + dN32, which equals (newN41+newN32) -
         # (oldN41+oldN32) = d - 2 (clean replacement).
-        self.assertEqual(m.dN41() + m.dN32(), 4 - 2)
+        self.assertEqual(m.d_n41() + m.d_n32(), 4 - 2)
 
     def test_log_prefactor_matches_n4_ratio(self):
         st = _make_st()
         m = _try_propose(st, range(200), tessera.FlipMove)
         self.assertIsNotNone(m)
         # log(N4 / (N4 + d - 2)).
-        n4 = st.getTopSimplexCount()
+        n4 = st.get_top_simplex_count()
         d = 4
         self.assertAlmostEqual(
-            m.metropolisLogPrefactor(),
+            m.metropolis_log_prefactor(),
             math.log(n4) - math.log(n4 + d - 2),
             places=8
         )
@@ -117,7 +117,7 @@ class TestFlipPropose(unittest.TestCase):
         st = _make_st(d=4)
         m = _try_propose(st, range(200), tessera.FlipMove)
         self.assertIsNotNone(m)
-        ids = m.touchedVertexIds()
+        ids = m.touched_vertex_ids()
         self.assertEqual(len(ids), 4 + 2)
         self.assertEqual(len(set(ids)), 4 + 2)
 
@@ -138,24 +138,24 @@ class TestFlipApply(unittest.TestCase):
         after = _full_snapshot(st)
         self.assertTrue(ok)
         self.assertNotEqual(before, after)
-        self.assertTrue(m.isApplied())
+        self.assertTrue(m.is_applied())
 
     def test_apply_dN0_matches(self):
         st = _make_st()
         m = _try_propose(st, range(200), tessera.FlipMove)
         self.assertIsNotNone(m)
-        n0 = st.getVertexCount()
+        n0 = st.get_vertex_count()
         m.apply()
-        self.assertEqual(st.getVertexCount(), n0 + m.dN0())
+        self.assertEqual(st.get_vertex_count(), n0 + m.d_n0())
 
     def test_apply_n4_change_in_documented_range(self):
         """Advertised ΔN4 = d-2 = +2 in 4D; dedupe may reduce actual."""
         st = _make_st(d=4)
         m = _try_propose(st, range(200), tessera.FlipMove)
         self.assertIsNotNone(m)
-        n4 = st.getTopSimplexCount()
+        n4 = st.get_top_simplex_count()
         m.apply()
-        actual = st.getTopSimplexCount() - n4
+        actual = st.get_top_simplex_count() - n4
         # Worst case: all d new simplices already exist → 0 created;
         # 2 removed → ΔN4 = -2.  Best case: clean (2,d) → ΔN4 = d-2.
         d = 4
@@ -194,7 +194,7 @@ class TestFlipRollback(unittest.TestCase):
         m.apply()
         m.rollback()
         self.assertEqual(_full_snapshot(st), before)
-        self.assertFalse(m.isApplied())
+        self.assertFalse(m.is_applied())
 
     def test_rollback_without_apply_is_noop(self):
         st = _make_st()

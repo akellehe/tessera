@@ -52,8 +52,8 @@ protocol rotation epsilon (NaN until set).)doc")
       .def_readonly("margin", &InstanceCertificate::margin)
       .def_readonly("margins", &InstanceCertificate::margins)
       .def_readonly("volumes", &InstanceCertificate::volumes)
-      .def_readonly("gramDeterminants", &InstanceCertificate::gramDeterminants)
-      .def_readonly("volumeWindings", &InstanceCertificate::volumeWindings,
+      .def_readonly("gram_determinants", &InstanceCertificate::gramDeterminants)
+      .def_readonly("volume_windings", &InstanceCertificate::volumeWindings,
           "The Riemann-sheet label of each volume root: the signed number of "
           "turns det g_T makes about zero along the continuation that fixed it, "
           "so volumes[t] is (-1)**volumeWindings[t] times the principal root "
@@ -63,29 +63,29 @@ protocol rotation epsilon (NaN until set).)doc")
           "geometry, and only the label says so. Zero throughout on the "
           "Kontsevich-Segal branch, which declares its sheet eigenvalue by "
           "eigenvalue rather than along a path.")
-      .def_readonly("continuationAmbiguous", &InstanceCertificate::continuationAmbiguous)
-      .def_readonly("ambiguousTopSimplices", &InstanceCertificate::ambiguousTopSimplices)
+      .def_readonly("continuation_ambiguous", &InstanceCertificate::continuationAmbiguous)
+      .def_readonly("ambiguous_top_simplices", &InstanceCertificate::ambiguousTopSimplices)
       .def_readwrite("epsilon", &InstanceCertificate::epsilon);
 
   py::class_<TopSimplexBlock>(m, "TopSimplexBlock",
       "One top simplex's local block of M_k over its k-faces, with the canonical "
       "cell and edge indices and (when requested) the derivative per local edge.")
-      .def_readonly("topIndex", &TopSimplexBlock::topIndex)
-      .def_readonly("cellIndices", &TopSimplexBlock::cellIndices)
-      .def_readonly("edgeIndices", &TopSimplexBlock::edgeIndices)
+      .def_readonly("top_index", &TopSimplexBlock::topIndex)
+      .def_readonly("cell_indices", &TopSimplexBlock::cellIndices)
+      .def_readonly("edge_indices", &TopSimplexBlock::edgeIndices)
       .def_readonly("block", &TopSimplexBlock::block)
       .def_readonly("derivative", &TopSimplexBlock::derivative);
 
   py::class_<WhitneyMass>(m, "WhitneyMass",
       R"doc(Sparse complex symmetric inverse chain metrics M_k of the chain-level Whitney
 Hodge pencil, assembled per top simplex from the complex squared edge lengths alone.
-Reference orientation is ascending vertex id (ChainComplex.fromTopCells). Sparse
+Reference orientation is ascending vertex id (ChainComplex.from_top_cells). Sparse
 results are scipy CSC matrices.
 
 Reference: Whitney, "Geometric Integration Theory", 1957.)doc")
-      .def_static("complexOf", &WhitneyMass::complexOf, py::arg("spacetime"),
-           "ChainComplex.fromTopCells over the spacetime's top simplices (sorted vertex ids).")
-      .def_static("squaredLengthsOf", &WhitneyMass::squaredLengthsOf,
+      .def_static("complex_of", &WhitneyMass::complexOf, py::arg("spacetime"),
+           "ChainComplex.from_top_cells over the spacetime's top simplices (sorted vertex ids).")
+      .def_static("squared_lengths_of", &WhitneyMass::squaredLengthsOf,
            py::arg("spacetime"), py::arg("complex"),
            "Complex squared edge lengths l^2 in the complex's canonical edge order.")
       .def_static("assemble",
@@ -94,23 +94,23 @@ Reference: Whitney, "Geometric Integration Theory", 1957.)doc")
            py::arg("complex"), py::arg("squared_lengths"), py::arg("k"),
            py::arg("branch") = Branch::Continuation,
            "The Whitney inverse chain metric M_k (Preset.L2) on the declared branch.")
-      .def_static("assemblePreset",
+      .def_static("assemble_preset",
            py::overload_cast<const ChainComplex &, const SquaredLengths &, int, Preset, Branch>(
                &WhitneyMass::assemble),
            py::arg("complex"), py::arg("squared_lengths"), py::arg("k"), py::arg("preset"),
            py::arg("branch") = Branch::Continuation,
            "Preset dispatch: L2 -> M_k (inverse chain metric); GRASSMANN_ALL -> G_k (chain metric).")
-      .def_static("assembleGrassmann", &WhitneyMass::assembleGrassmann,
+      .def_static("assemble_grassmann", &WhitneyMass::assembleGrassmann,
            py::arg("complex"), py::arg("squared_lengths"), py::arg("k"),
            "The Grassmann projection chain metric G_k = multiplicity o blade pairing.")
-      .def_static("allowabilityMargin", &WhitneyMass::allowabilityMargin,
+      .def_static("allowability_margin", &WhitneyMass::allowabilityMargin,
            py::arg("complex"), py::arg("squared_lengths"),
            "min over top simplices of pi - sum_i |arg lambda_i(g_T)|.")
       .def_static("certificate", &WhitneyMass::certificate,
            py::arg("complex"), py::arg("squared_lengths"),
            py::arg("branch") = Branch::Continuation,
            "The full instance certificate.")
-      .def_static("volumeOnBranch",
+      .def_static("volume_on_branch",
            [](const Eigen::MatrixXcd &gram, Branch branch) {
              bool ambiguous = false;
              const Complex v = WhitneyMass::volumeOnBranch(gram, branch, &ambiguous);
@@ -118,7 +118,7 @@ Reference: Whitney, "Geometric Integration Theory", 1957.)doc")
            },
            py::arg("gram"), py::arg("branch") = Branch::Continuation,
            "(sqrt(det g)/d!, ambiguous) for one Gram matrix on the declared branch.")
-      .def_static("volumeWindingOnBranch",
+      .def_static("volume_winding_on_branch",
            [](const Eigen::MatrixXcd &gram, Branch branch) {
              bool ambiguous = false;
              int winding = 0;
@@ -132,7 +132,7 @@ Reference: Whitney, "Geometric Integration Theory", 1957.)doc")
            "times the principal root over d!. Zero on the Kontsevich-Segal "
            "branch, which declares its sheet eigenvalue by eigenvalue rather "
            "than along a path.")
-      .def_static("volumeContinuedFrom",
+      .def_static("volume_continued_from",
            [](const Eigen::MatrixXcd &gramFrom, int windingFrom,
               const Eigen::MatrixXcd &gramTo) {
              bool ambiguous = false;
@@ -149,41 +149,41 @@ Reference: Whitney, "Geometric Integration Theory", 1957.)doc")
            "than a sequence of independent principal-value choices: the sheet "
            "composes along the path, so a loop of squared lengths about a zero "
            "of det g returns the winding one higher and the volume negated.")
-      .def_static("marginOf", &WhitneyMass::marginOf, py::arg("gram"),
+      .def_static("margin_of", &WhitneyMass::marginOf, py::arg("gram"),
            "pi - sum_i |arg lambda_i(g)| for one Gram matrix.")
-      .def_static("topSimplexBlocks", &WhitneyMass::topSimplexBlocks,
+      .def_static("top_simplex_blocks", &WhitneyMass::topSimplexBlocks,
            py::arg("complex"), py::arg("squared_lengths"), py::arg("k"),
            py::arg("branch") = Branch::Continuation, py::arg("with_derivative") = false,
            "Per-top-simplex local blocks of M_k (and derivatives when requested).")
-      .def_static("assembleDerivative", &WhitneyMass::assembleDerivative,
+      .def_static("assemble_derivative", &WhitneyMass::assembleDerivative,
            py::arg("complex"), py::arg("squared_lengths"), py::arg("k"), py::arg("edge_index"),
            py::arg("branch") = Branch::Continuation,
            "dM_k/ds_e for the edge at the given canonical index, sparse.")
-      .def_static("assembleDirectionalDerivative", &WhitneyMass::assembleDirectionalDerivative,
+      .def_static("assemble_directional_derivative", &WhitneyMass::assembleDirectionalDerivative,
            py::arg("complex"), py::arg("squared_lengths"), py::arg("k"), py::arg("direction"),
            py::arg("branch") = Branch::Continuation,
            "D_v M_k = sum_e v_e dM_k/ds_e along a squared-length direction (one entry per edge, "
            "canonical order), sparse.")
-      .def_static("assembleSecondDerivatives", &WhitneyMass::assembleSecondDerivatives,
+      .def_static("assemble_second_derivatives", &WhitneyMass::assembleSecondDerivatives,
            py::arg("complex"), py::arg("squared_lengths"), py::arg("k"), py::arg("direction"),
            py::arg("branch") = Branch::Continuation,
            "D_v dM_k/ds_e for every edge e along a squared-length direction v, a list indexed by "
            "canonical edge, sparse.")
-      .def_static("derivativeContraction", &WhitneyMass::derivativeContraction,
+      .def_static("derivative_contraction", &WhitneyMass::derivativeContraction,
            py::arg("complex"), py::arg("squared_lengths"), py::arg("k"),
            py::arg("X"), py::arg("Y"), py::arg("branch") = Branch::Continuation,
            "Per-edge tr(X^T (dM_k/ds_e) Y) from the local blocks (transpose pairing).")
-      .def_static("vertexProductIntegral", &WhitneyMass::vertexProductIntegral,
+      .def_static("vertex_product_integral", &WhitneyMass::vertexProductIntegral,
            py::arg("complex"), py::arg("squared_lengths"), py::arg("top_index"),
            py::arg("vertices"), py::arg("branch") = Branch::Continuation,
            "The integral over one top simplex of the product of the barycentric coordinate "
            "functions of the listed vertex ids (with repetition): |T| d! prod_v m_v! / (d + m)!.")
-      .def_static("assembleVertexPotential", &WhitneyMass::assembleVertexPotential,
+      .def_static("assemble_vertex_potential", &WhitneyMass::assembleVertexPotential,
            py::arg("complex"), py::arg("squared_lengths"), py::arg("potential"),
            py::arg("branch") = Branch::Continuation,
            "M_0[V]: the mass matrix weighted by a function given by its vertex values (canonical "
            "C_0 order), sparse on the pattern of M_0. M_0[1] = M_0.")
-      .def_static("vertexDensityContraction", &WhitneyMass::vertexDensityContraction,
+      .def_static("vertex_density_contraction", &WhitneyMass::vertexDensityContraction,
            py::arg("complex"), py::arg("squared_lengths"), py::arg("X"), py::arg("Y"),
            py::arg("branch") = Branch::Continuation,
            "rho_c = d/dV_c tr(X^T M_0[V] Y) per vertex, from the local integrals without forming "
@@ -207,8 +207,8 @@ Reference: Whitney, "Geometric Integration Theory", 1957.)doc")
       .def_readonly("rank", &SingularSplit::rank)
       .def_readonly("tolerance", &SingularSplit::tolerance)
       .def_readonly("largest", &SingularSplit::largest)
-      .def_readonly("sigmaAt", &SingularSplit::sigmaAt)
-      .def_readonly("sigmaNext", &SingularSplit::sigmaNext)
+      .def_readonly("sigma_at", &SingularSplit::sigmaAt)
+      .def_readonly("sigma_next", &SingularSplit::sigmaNext)
       .def_readonly("gap", &SingularSplit::gap)
       .def_readonly("dense", &SingularSplit::dense);
 
@@ -234,7 +234,7 @@ ACM TOMS 40 (2013).)doc")
       .def_static("congruence", &SparseRank::congruence, py::arg("C"), py::arg("X"),
            py::arg("inverse"), py::arg("structural_rank"), py::arg("kappa") = 10.0,
            "The split of P = C^T X C (or C^T X^{-1} C) at the exact rank of C.")
-      .def_static("fromSingularValues", &SparseRank::fromSingularValues, py::arg("singular_values"),
+      .def_static("from_singular_values", &SparseRank::fromSingularValues, py::arg("singular_values"),
            py::arg("rows"), py::arg("cols"), py::arg("kappa") = 10.0, py::arg("at") = -1,
            "A dense SVD's singular values as a split (at the numerical rank when at < 0).");
 
@@ -247,9 +247,9 @@ ACM TOMS 40 (2013).)doc")
       .def_readonly("rank", &HarmonicRead::rank)
       .def_readonly("tolerance", &HarmonicRead::tolerance)
       .def_readonly("gap", &HarmonicRead::gap)
-      .def_readonly("largestSingular", &HarmonicRead::largestSingular)
-      .def_readonly("lastKept", &HarmonicRead::lastKept)
-      .def_readonly("firstDiscarded", &HarmonicRead::firstDiscarded)
+      .def_readonly("largest_singular", &HarmonicRead::largestSingular)
+      .def_readonly("last_kept", &HarmonicRead::lastKept)
+      .def_readonly("first_discarded", &HarmonicRead::firstDiscarded)
       .def_readonly("dense", &HarmonicRead::dense);
 
   py::class_<SparseCostReport>(m, "SparseCostReport",
@@ -261,14 +261,14 @@ ACM TOMS 40 (2013).)doc")
       .def_readonly("operation", &SparseCostReport::operation)
       .def_readonly("degree", &SparseCostReport::degree)
       .def_readonly("dimension", &SparseCostReport::dimension)
-      .def_readonly("systemRows", &SparseCostReport::systemRows)
-      .def_readonly("systemNonZeros", &SparseCostReport::systemNonZeros)
-      .def_readonly("factorNonZeros", &SparseCostReport::factorNonZeros)
-      .def_readonly("fillIn", &SparseCostReport::fillIn)
-      .def_readonly("wallSeconds", &SparseCostReport::wallSeconds)
-      .def_readonly("factorMegabytes", &SparseCostReport::factorMegabytes)
-      .def_readonly("residentMegabytes", &SparseCostReport::residentMegabytes)
-      .def_readonly("rightHandSides", &SparseCostReport::rightHandSides);
+      .def_readonly("system_rows", &SparseCostReport::systemRows)
+      .def_readonly("system_non_zeros", &SparseCostReport::systemNonZeros)
+      .def_readonly("factor_non_zeros", &SparseCostReport::factorNonZeros)
+      .def_readonly("fill_in", &SparseCostReport::fillIn)
+      .def_readonly("wall_seconds", &SparseCostReport::wallSeconds)
+      .def_readonly("factor_megabytes", &SparseCostReport::factorMegabytes)
+      .def_readonly("resident_megabytes", &SparseCostReport::residentMegabytes)
+      .def_readonly("right_hand_sides", &SparseCostReport::rightHandSides);
 
   py::class_<SparseKernelRead>(m, "SparseKernelRead",
       "The null space of a sparse matrix from SparseRank::kernel, with the singular values on "
@@ -294,8 +294,8 @@ ACM TOMS 40 (2013).)doc")
         return std::vector<SingularSplit>(r.splits.begin(), r.splits.end()); },
         "Per condition, the singular values at and beyond its exact rank.")
       .def_readonly("dense", &RankReport::dense)
-      .def_readonly("decompositionHolds", &RankReport::decompositionHolds)
-      .def_readonly("kernelIsHarmonic", &RankReport::kernelIsHarmonic)
+      .def_readonly("decomposition_holds", &RankReport::decompositionHolds)
+      .def_readonly("kernel_is_harmonic", &RankReport::kernelIsHarmonic)
       .def_readonly("kappa", &RankReport::kappa);
 
   py::class_<SpectrumRead>(m, "SpectrumRead", "Dense spectrum of one degree's pencil.")
@@ -319,40 +319,40 @@ Reference: Eckmann, "Harmonische Funktionen und Randwertaufgaben in einem Komple
            py::arg("crossover_dimension") = ChainHodge::kDefaultCrossoverDimension,
            py::arg("epsilon") = std::numeric_limits<double>::quiet_NaN())
       .def("complex", &ChainHodge::complex, py::return_value_policy::reference_internal)
-      .def("squaredLengths", &ChainHodge::squaredLengths)
+      .def("squared_lengths", &ChainHodge::squaredLengths)
       .def("dimension", &ChainHodge::dimension)
       .def("preset", &ChainHodge::preset)
       .def("branch", &ChainHodge::branch)
-      .def("crossoverDimension", &ChainHodge::crossoverDimension)
+      .def("crossover_dimension", &ChainHodge::crossoverDimension)
       .def("certificate", &ChainHodge::certificate)
       .def("size", &ChainHodge::size, py::arg("k"))
-      .def("Minv", [](const ChainHodge &c, int k) { return SparseMatrix(c.Minv(k)); }, py::arg("k"),
+      .def("m_inv", [](const ChainHodge &c, int k) { return SparseMatrix(c.Minv(k)); }, py::arg("k"),
            "The sparse inverse chain metric M_k (Whitney preset).")
-      .def("chainMetricSparse", [](const ChainHodge &c, int k) { return SparseMatrix(c.chainMetricSparse(k)); },
+      .def("chain_metric_sparse", [](const ChainHodge &c, int k) { return SparseMatrix(c.chainMetricSparse(k)); },
            py::arg("k"), "The sparse chain metric G_k (Grassmann preset).")
       .def("boundary", [](const ChainHodge &c, int k) { return SparseMatrix(c.boundary(k)); }, py::arg("k"),
            "The sparse boundary map d_k.")
-      .def("applyG", &ChainHodge::applyG, py::arg("k"), py::arg("c"), "G_k c: the geometric image, by solve.")
-      .def("applyMinv", &ChainHodge::applyMinv, py::arg("k"), py::arg("c"), "M_k c.")
+      .def("apply_g", &ChainHodge::applyG, py::arg("k"), py::arg("c"), "G_k c: the geometric image, by solve.")
+      .def("apply_minv", &ChainHodge::applyMinv, py::arg("k"), py::arg("c"), "M_k c.")
       .def("pencil", &ChainHodge::pencil, py::arg("k"), "The dense pencil at degree k.")
-      .def("pencilAux", &ChainHodge::pencilAux, py::arg("k"), "A~_k = M_k A_k M_k (Whitney), dense.")
-      .def("applyPencilOperator", &ChainHodge::applyPencilOperator, py::arg("k"), py::arg("Z"),
+      .def("pencil_aux", &ChainHodge::pencilAux, py::arg("k"), "A~_k = M_k A_k M_k (Whitney), dense.")
+      .def("apply_pencil_operator", &ChainHodge::applyPencilOperator, py::arg("k"), py::arg("Z"),
            "A~_k Z (Whitney) or A_k Z (Grassmann) by sparse products and sparse solves: the "
            "production path's pencil operator, defined at any size.")
-      .def("stackedMatrix", [](const ChainHodge &c, int k) { return SparseMatrix(c.stackedMatrix(k)); },
+      .def("stacked_matrix", [](const ChainHodge &c, int k) { return SparseMatrix(c.stackedMatrix(k)); },
            py::arg("k"),
            "The sparse stacked cochain matrix S of degree k, whose kernel is the harmonic space.")
-      .def_static("sparseNullSpace",
+      .def_static("sparse_null_space",
            [](const SparseMatrix &S, double kappa) { return ChainHodge::sparseNullSpace(S, kappa); },
            py::arg("S"), py::arg("kappa") = 10.0,
            "ker S by rank-revealing sparse QR of S^H, with the rank, the threshold and the cost; "
            "neither S nor the orthogonal factor is densified.")
-      .def("hodgeOperator", &ChainHodge::hodgeOperator, py::arg("k"), "The dense L_k on chains.")
-      .def("harmonicChains", &ChainHodge::harmonicChains, py::arg("k"), py::arg("kappa") = 10.0,
+      .def("hodge_operator", &ChainHodge::hodgeOperator, py::arg("k"), "The dense L_k on chains.")
+      .def("harmonic_chains", &ChainHodge::harmonicChains, py::arg("k"), py::arg("kappa") = 10.0,
            py::arg("force_sparse") = false, "H_k = M_k ker S with the kernel's rank certificate.")
-      .def("geometricImage", &ChainHodge::geometricImage, py::arg("k"), py::arg("H"), "G_k H.")
-      .def("harmonicGram", &ChainHodge::harmonicGram, py::arg("read"), "Phi^T G_k Phi = Z^T M_k Z.")
-      .def("rankConditions", &ChainHodge::rankConditions, py::arg("k"), py::arg("kappa") = 10.0,
+      .def("geometric_image", &ChainHodge::geometricImage, py::arg("k"), py::arg("H"), "G_k H.")
+      .def("harmonic_gram", &ChainHodge::harmonicGram, py::arg("read"), "Phi^T G_k Phi = Z^T M_k Z.")
+      .def("rank_conditions", &ChainHodge::rankConditions, py::arg("k"), py::arg("kappa") = 10.0,
            py::arg("force_sparse") = false,
            "The rank conditions (R1)-(R4) at degree k, each with the singular values at and "
            "beyond its exact rank; sparse at or above the crossover.")
@@ -408,7 +408,7 @@ field theory", arXiv:2105.10161.)doc")
            "Reads at every epsilon of the family at one degree. Raises ValueError when "
            "no epsilon > 0 is given (a read at epsilon = 0 is never reported alone) or "
            "any epsilon is negative.")
-      .def_static("extrapolateToZero", &LorentzianFamily::extrapolateToZero, py::arg("epsilons"),
+      .def_static("extrapolate_to_zero", &LorentzianFamily::extrapolateToZero, py::arg("epsilons"),
            py::arg("values"), py::arg("order") = 2,
            "Labeled polynomial extrapolation of reads at epsilon > 0 to epsilon -> 0.");
   py::class_<Connection>(m, "Connection",
@@ -417,10 +417,10 @@ U_xx = 1. Gauge: U_xy -> g_x^{-1} U_xy g_y. Links are never
 normalized or conjugated.)doc")
       .def(py::init<const ChainComplex &, std::vector<Complex>>(), py::arg("complex"), py::arg("links"))
       .def_static("trivial", &Connection::trivial, py::arg("complex"))
-      .def_static("fromSpacetime", &Connection::fromSpacetime, py::arg("spacetime"), py::arg("complex"),
+      .def_static("from_spacetime", &Connection::fromSpacetime, py::arg("spacetime"), py::arg("complex"),
            "U_xy = exp(i phase) on the stored source->target orientation, inverted when the source is the larger id.")
       .def("links", &Connection::links)
-      .def("edgeCount", &Connection::edgeCount)
+      .def("edge_count", &Connection::edgeCount)
       .def("link", &Connection::link, py::arg("x"), py::arg("y"))
       .def("inverse", &Connection::inverse)
       .def("gauge", &Connection::gauge, py::arg("g"))
@@ -429,7 +429,7 @@ normalized or conjugated.)doc")
            "The ordered product of the links along a closed walk of directed steps (u, v): "
            "U_{v0 v1} U_{v1 v2} ... U_{v_{n-1} v0}, the Wilson loop in the walk's direction; exactly 1 on "
            "every closed walk iff the connection is a pure gauge.")
-      .def("transportedPeriod", &Connection::transportedPeriod, py::arg("cochain"), py::arg("walk"),
+      .def("transported_period", &Connection::transportedPeriod, py::arg("cochain"), py::arg("walk"),
            "The period of a 1-cochain (indexed like links(), each edge's value in the frame at its base "
            "vertex min(x, y)) over a closed walk of directed steps (u, v), taken with parallel transport to "
            "the walk's first vertex: sum_k s_k (U_{v0 v1} ... U_{v_{k-1} v_k}) U_{v_k, min(v_k, v_{k+1})} "
@@ -437,30 +437,30 @@ normalized or conjugated.)doc")
            "The plain signed sum on the trivial connection; g_{v0}^{-1} times the untwisted period under "
            "a pure gauge U_xy = g_x^{-1} g_y on a twisted-kernel cochain, so ratios of periods over walks "
            "with a common base point are gauge invariant.")
-      .def("isUnitary", &Connection::isUnitary, py::arg("tolerance") = 1e-12);
+      .def("is_unitary", &Connection::isUnitary, py::arg("tolerance") = 1e-12);
 
   py::class_<CovarianceCertificate>(m, "CovarianceCertificate",
       "Residuals of the exact properties (i)-(vi) of CovariantChainHodge on an instance, "
       "measured and asserted on construction at tolerance 10 n eps cond; NaN means unmeasured.")
-      .def_readonly("transposeMetric", &CovarianceCertificate::transposeMetric)
-      .def_readonly("transposePencil", &CovarianceCertificate::transposePencil)
-      .def_readonly("covarianceMetric", &CovarianceCertificate::covarianceMetric)
-      .def_readonly("covariancePencil", &CovarianceCertificate::covariancePencil)
+      .def_readonly("transpose_metric", &CovarianceCertificate::transposeMetric)
+      .def_readonly("transpose_pencil", &CovarianceCertificate::transposePencil)
+      .def_readonly("covariance_metric", &CovarianceCertificate::covarianceMetric)
+      .def_readonly("covariance_pencil", &CovarianceCertificate::covariancePencil)
       .def_readonly("curvature", &CovarianceCertificate::curvature)
-      .def_readonly("pairingInvariance", &CovarianceCertificate::pairingInvariance)
-      .def_readonly("trivialReduction", &CovarianceCertificate::trivialReduction)
-      .def_readonly("pureGaugeIsospectrality", &CovarianceCertificate::pureGaugeIsospectrality)
-      .def_readonly("trivialReductionProbe", &CovarianceCertificate::trivialReductionProbe)
-      .def_readonly("transposePencilProbe", &CovarianceCertificate::transposePencilProbe)
-      .def_readonly("transposeOperatorProbe", &CovarianceCertificate::transposeOperatorProbe)
-      .def_readonly("covariancePencilProbe", &CovarianceCertificate::covariancePencilProbe)
-      .def_readonly("covarianceOperatorProbe", &CovarianceCertificate::covarianceOperatorProbe)
-      .def_readonly("pureGaugeSimilarityProbe", &CovarianceCertificate::pureGaugeSimilarityProbe)
-      .def_readonly("conditionEstimate", &CovarianceCertificate::conditionEstimate)
+      .def_readonly("pairing_invariance", &CovarianceCertificate::pairingInvariance)
+      .def_readonly("trivial_reduction", &CovarianceCertificate::trivialReduction)
+      .def_readonly("pure_gauge_isospectrality", &CovarianceCertificate::pureGaugeIsospectrality)
+      .def_readonly("trivial_reduction_probe", &CovarianceCertificate::trivialReductionProbe)
+      .def_readonly("transpose_pencil_probe", &CovarianceCertificate::transposePencilProbe)
+      .def_readonly("transpose_operator_probe", &CovarianceCertificate::transposeOperatorProbe)
+      .def_readonly("covariance_pencil_probe", &CovarianceCertificate::covariancePencilProbe)
+      .def_readonly("covariance_operator_probe", &CovarianceCertificate::covarianceOperatorProbe)
+      .def_readonly("pure_gauge_similarity_probe", &CovarianceCertificate::pureGaugeSimilarityProbe)
+      .def_readonly("condition_estimate", &CovarianceCertificate::conditionEstimate)
       .def_readonly("tolerance", &CovarianceCertificate::tolerance)
       .def_readonly("holds", &CovarianceCertificate::holds)
-      .def_readonly("gaugeSeed", &CovarianceCertificate::gaugeSeed)
-      .def_readonly("checkedDegree", &CovarianceCertificate::checkedDegree);
+      .def_readonly("gauge_seed", &CovarianceCertificate::gaugeSeed)
+      .def_readonly("checked_degree", &CovarianceCertificate::checkedDegree);
 
   py::class_<Contour>(m, "Contour",
       "A closed positively oriented contour as quadrature nodes and weights with "
@@ -469,26 +469,26 @@ normalized or conjugated.)doc")
       .def_readonly("nodes", &Contour::nodes)
       .def_readonly("weights", &Contour::weights)
       .def_readonly("description", &Contour::description)
-      .def("nodeCount", &Contour::nodeCount);
+      .def("node_count", &Contour::nodeCount);
 
   py::class_<BandCertificate>(m, "BandCertificate",
       "Certificates of one Riesz band; NaN means unmeasured; no sign or "
       "inertia is extracted from B_C.")
       .def_readonly("contour", &BandCertificate::contour)
-      .def_readonly("nodeCount", &BandCertificate::nodeCount)
+      .def_readonly("node_count", &BandCertificate::nodeCount)
       .def_readonly("idempotency", &BandCertificate::idempotency)
       .def_readonly("rank", &BandCertificate::rank)
-      .def_readonly("rankTolerance", &BandCertificate::rankTolerance)
-      .def_readonly("singularGap", &BandCertificate::singularGap)
-      .def_readonly("resolventMax", &BandCertificate::resolventMax)
-      .def_readonly("resolventProbeMax", &BandCertificate::resolventProbeMax)
-      .def_readonly("detB", &BandCertificate::detB)
-      .def_readonly("condB", &BandCertificate::condB)
-      .def_readonly("pairingScale", &BandCertificate::pairingScale)
-      .def_readonly("leftFrameAvailable", &BandCertificate::leftFrameAvailable)
-      .def_readonly("leftFrameRefusal", &BandCertificate::leftFrameRefusal)
-      .def_readonly("rightResidual", &BandCertificate::rightResidual)
-      .def_readonly("leftResidual", &BandCertificate::leftResidual);
+      .def_readonly("rank_tolerance", &BandCertificate::rankTolerance)
+      .def_readonly("singular_gap", &BandCertificate::singularGap)
+      .def_readonly("resolvent_max", &BandCertificate::resolventMax)
+      .def_readonly("resolvent_probe_max", &BandCertificate::resolventProbeMax)
+      .def_readonly("det_b", &BandCertificate::detB)
+      .def_readonly("cond_b", &BandCertificate::condB)
+      .def_readonly("pairing_scale", &BandCertificate::pairingScale)
+      .def_readonly("left_frame_available", &BandCertificate::leftFrameAvailable)
+      .def_readonly("left_frame_refusal", &BandCertificate::leftFrameRefusal)
+      .def_readonly("right_residual", &BandCertificate::rightResidual)
+      .def_readonly("left_residual", &BandCertificate::leftResidual);
 
   py::class_<Band>(m, "Band",
       R"doc(One Riesz band of h_k(s,U): projector P on chains, right frame Phi,
@@ -500,10 +500,10 @@ the certificates.)doc")
       .def_readonly("contour", &Band::contour)
       .def_readonly("projector", &Band::projector)
       .def_readonly("frame", &Band::frame)
-      .def_readonly("dualFrame", &Band::dualFrame)
+      .def_readonly("dual_frame", &Band::dualFrame)
       .def_readonly("images", &Band::images)
       .def_readonly("pairing", &Band::pairing)
-      .def_readonly("leftFrame", &Band::leftFrame)
+      .def_readonly("left_frame", &Band::leftFrame)
       .def_readonly("reduced", &Band::reduced)
       .def_readonly("covariance", &Band::covariance)
       .def_readonly("certificate", &Band::certificate)
@@ -514,9 +514,9 @@ the certificates.)doc")
       "The pencil's measured metric regime: ComplexSymmetricPencil when the transpose identities "
       "(A~^U)^T = A~^{U^-1} and (M^U)^T = M^{U^-1} hold to tolerance, else NonNormal.")
       .def_readonly("regime", &PencilRegimeCertificate::regime)
-      .def_readonly("symmetryDefect", &PencilRegimeCertificate::symmetryDefect)
-      .def_readonly("metricSymmetryDefect", &PencilRegimeCertificate::metricSymmetryDefect)
-      .def_readonly("trivialConnection", &PencilRegimeCertificate::trivialConnection)
+      .def_readonly("symmetry_defect", &PencilRegimeCertificate::symmetryDefect)
+      .def_readonly("metric_symmetry_defect", &PencilRegimeCertificate::metricSymmetryDefect)
+      .def_readonly("trivial_connection", &PencilRegimeCertificate::trivialConnection)
       .def_readonly("tolerance", &PencilRegimeCertificate::tolerance);
 
   py::class_<CovariantChainHodge>(m, "CovariantChainHodge",
@@ -531,63 +531,63 @@ properties (i)-(vi) measured on every instance.)doc")
       .def("dimension", &CovariantChainHodge::dimension)
       .def("preset", &CovariantChainHodge::preset)
       .def("certificate", &CovariantChainHodge::certificate)
-      .def("Minv", [](const CovariantChainHodge &c, int k) { return SparseMatrix(c.Minv(k)); }, py::arg("k"))
+      .def("m_inv", [](const CovariantChainHodge &c, int k) { return SparseMatrix(c.Minv(k)); }, py::arg("k"))
       .def("dressed", [](const CovariantChainHodge &c, int k) { return SparseMatrix(c.dressed(k)); }, py::arg("k"))
-      .def("twistedBoundary", [](const CovariantChainHodge &c, int k) { return SparseMatrix(c.twistedBoundary(k)); }, py::arg("k"))
-      .def("twistedBoundaryDual", [](const CovariantChainHodge &c, int k) { return SparseMatrix(c.twistedBoundaryDual(k)); }, py::arg("k"))
+      .def("twisted_boundary", [](const CovariantChainHodge &c, int k) { return SparseMatrix(c.twistedBoundary(k)); }, py::arg("k"))
+      .def("twisted_boundary_dual", [](const CovariantChainHodge &c, int k) { return SparseMatrix(c.twistedBoundaryDual(k)); }, py::arg("k"))
       .def("rho", &CovariantChainHodge::rho, py::arg("k"), py::arg("g"))
-      .def("applyG", &CovariantChainHodge::applyG, py::arg("k"), py::arg("c"))
-      .def("applyMinv", &CovariantChainHodge::applyMinv, py::arg("k"), py::arg("c"))
-      .def("applyH", &CovariantChainHodge::applyH, py::arg("k"), py::arg("c"))
-      .def("covariantOperator", &CovariantChainHodge::covariantOperator, py::arg("k"))
-      .def("dressedDerivative", [](const CovariantChainHodge &self, int k, std::size_t e) {
+      .def("apply_g", &CovariantChainHodge::applyG, py::arg("k"), py::arg("c"))
+      .def("apply_minv", &CovariantChainHodge::applyMinv, py::arg("k"), py::arg("c"))
+      .def("apply_h", &CovariantChainHodge::applyH, py::arg("k"), py::arg("c"))
+      .def("covariant_operator", &CovariantChainHodge::covariantOperator, py::arg("k"))
+      .def("dressed_derivative", [](const CovariantChainHodge &self, int k, std::size_t e) {
              return Eigen::MatrixXcd(self.dressedDerivative(k, e)); }, py::arg("k"), py::arg("edge_index"),
            "dM_k^U/ds_e, dense.")
-      .def("dressedPhaseDerivative", [](const CovariantChainHodge &self, int k, std::size_t e) {
+      .def("dressed_phase_derivative", [](const CovariantChainHodge &self, int k, std::size_t e) {
              return Eigen::MatrixXcd(self.dressedPhaseDerivative(k, e)); }, py::arg("k"), py::arg("edge_index"))
-      .def("covariantOperatorDerivative", &CovariantChainHodge::covariantOperatorDerivative,
+      .def("covariant_operator_derivative", &CovariantChainHodge::covariantOperatorDerivative,
            py::arg("k"), py::arg("edge_index"), "dh_k/ds_e for the canonical edge index, dense.")
-      .def("covariantOperatorDirectionalDerivative",
+      .def("covariant_operator_directional_derivative",
            [](const CovariantChainHodge &self, int k, const std::vector<std::complex<double>> &direction) {
              return self.lengthDirection(k, direction).operatorDirectional;
            },
            py::arg("k"), py::arg("direction"),
            "D_v h_k along a squared-length direction v (one entry per edge, canonical order), dense.")
-      .def("covariantOperatorSecondDerivative",
+      .def("covariant_operator_second_derivative",
            [](const CovariantChainHodge &self, int k, std::size_t e,
               const std::vector<std::complex<double>> &direction) {
              return self.covariantOperatorSecondDerivative(self.lengthDirection(k, direction), e);
            },
            py::arg("k"), py::arg("edge_index"), py::arg("direction"),
            "D_v dh_k/ds_e for the canonical edge index along a squared-length direction v, dense.")
-      .def("covariantOperatorPhaseDerivative", &CovariantChainHodge::covariantOperatorPhaseDerivative,
+      .def("covariant_operator_phase_derivative", &CovariantChainHodge::covariantOperatorPhaseDerivative,
            py::arg("k"), py::arg("edge_index"),
            "dh_k/dphi_e for the multiplicative link variation U_e = e^{i phi_e}, dense.")
-      .def("covariantOperatorPhaseHessian", &CovariantChainHodge::covariantOperatorPhaseHessian,
+      .def("covariant_operator_phase_hessian", &CovariantChainHodge::covariantOperatorPhaseHessian,
            py::arg("k"), py::arg("edge_a"), py::arg("edge_b"),
            "d^2 h_k / dphi_a dphi_b for the multiplicative link variations U_e = e^{i phi_e} at two "
            "canonical edge indices, dense.")
-      .def("sparsePencil", &CovariantChainHodge::sparsePencil, py::arg("k") = 0,
+      .def("sparse_pencil", &CovariantChainHodge::sparsePencil, py::arg("k") = 0,
            "The sparse degree-zero pencil (d_1^U M_1^U (d_1^{U^-1})^T, M_0^U), available at any size.")
-      .def("dressedVertexPotential", &CovariantChainHodge::dressedVertexPotential,
+      .def("dressed_vertex_potential", &CovariantChainHodge::dressedVertexPotential,
            py::arg("potential"),
            "M_0^U[V]: the potential-weighted mass matrix dressed by the connection like M_0.")
       .def("pencil", &CovariantChainHodge::pencil, py::arg("k"))
-      .def("pencilAux", &CovariantChainHodge::pencilAux, py::arg("k"))
+      .def("pencil_aux", &CovariantChainHodge::pencilAux, py::arg("k"))
       .def("spectrum", &CovariantChainHodge::spectrum, py::arg("k"))
       .def("dual", &CovariantChainHodge::dual)
       .def("gauged", &CovariantChainHodge::gauged, py::arg("g"))
       .def("verify", &CovariantChainHodge::verify, py::arg("k") = 1)
-      .def("regimeCertificate", &CovariantChainHodge::regimeCertificate, py::arg("k"),
+      .def("regime_certificate", &CovariantChainHodge::regimeCertificate, py::arg("k"),
            py::arg("tolerance") = 1e-10, "The measured metric regime of the pencil at degree k.")
       .def("resolvent", &CovariantChainHodge::resolvent, py::arg("k"), py::arg("zeta"), py::arg("c"),
            "(zeta I - h_k)^{-1} c = M^U (zeta M^U - A~^U)^{-1} c by one sparse bordered factorization.")
-      .def("harmonicChains", &CovariantChainHodge::harmonicChains, py::arg("k"),
+      .def("harmonic_chains", &CovariantChainHodge::harmonicChains, py::arg("k"),
            py::arg("kappa") = 10.0, py::arg("force_sparse") = false,
            "H_k = M_k^U ker S^U with S^U = [(d_{k+1}^{U^-1})^T; d_k^U M_k^U]: the "
            "harmonic chains read as a null space, dense SVD below the crossover and sparse "
            "rank-revealing QR at or above it.")
-      .def("harmonicBand", &CovariantChainHodge::harmonicBand, py::arg("k"), py::arg("kappa") = 10.0,
+      .def("harmonic_band", &CovariantChainHodge::harmonicBand, py::arg("k"), py::arg("kappa") = 10.0,
            py::arg("isotropy_tolerance") = 1e-10, py::arg("force_sparse") = false,
            "The lambda = 0 band from harmonicChains, carrying everything band carries. Under the "
            "rank conditions (R1)-(R4) this is the same subspace the contour reading returns; a "
@@ -595,16 +595,16 @@ properties (i)-(vi) measured on every instance.)doc")
       .def("band", &CovariantChainHodge::band, py::arg("k"), py::arg("contour"), py::arg("kappa") = 10.0,
            py::arg("isotropy_tolerance") = 1e-10,
            "The Riesz band of the contour: P, Phi, Phi^vee, Z, B_C, Phi~, J, Gamma, certificates.")
-      .def("applyPencilOperator", &CovariantChainHodge::applyPencilOperator, py::arg("k"), py::arg("Z"),
+      .def("apply_pencil_operator", &CovariantChainHodge::applyPencilOperator, py::arg("k"), py::arg("Z"),
            "A~_k^U Z by sparse products and one sparse factorization of M_{k-1}^U: the production "
            "path's pencil operator, which never forms the dense A~_k^U and is defined at any size.")
-      .def("borderedSystem",
+      .def("bordered_system",
            [](const CovariantChainHodge &self, int k, std::complex<double> zeta) {
              return self.borderedSystem(k, zeta); },
            py::arg("k"), py::arg("zeta"),
            "The sparse bordered system of the shifted pencil, whose Schur complement is "
            "zeta M_k^U - A~_k^U.")
-      .def("shiftedSolve",
+      .def("shifted_solve",
            [](const CovariantChainHodge &self, int k, std::complex<double> zeta,
               const Eigen::MatrixXcd &B) {
              SparseCostReport report;
@@ -613,7 +613,7 @@ properties (i)-(vi) measured on every instance.)doc")
            py::arg("k"), py::arg("zeta"), py::arg("B"),
            "((zeta M_k^U - A~_k^U)^{-1} B, cost): the production path's shifted solve through one "
            "sparse LU of the bordered system, with the factorization's cost report.")
-      .def("sparseBand",
+      .def("sparse_band",
            [](const CovariantChainHodge &self, int k, const Contour &contour, int probeCount,
               double kappa, double isotropyTolerance, std::uint64_t seed) {
              SparseCostReport report;
@@ -624,7 +624,7 @@ properties (i)-(vi) measured on every instance.)doc")
            py::arg("isotropy_tolerance") = 1e-10, py::arg("seed") = std::uint64_t{20260922},
            "(band, cost): the Riesz band of the contour read on the sparse production path, the "
            "quadrature applied to a probe block so that the n x n projector is never formed.")
-      .def_static("leftFrame", &CovariantChainHodge::leftFrame, py::arg("band"), py::arg("dual_instance"),
+      .def_static("left_frame", &CovariantChainHodge::leftFrame, py::arg("band"), py::arg("dual_instance"),
            py::arg("isotropy_tolerance") = 1e-10,
            "G^{U^-1} Phi^vee B_C^{-T} from the band's dual frame and pairing; raises on an isotropic band.");
   py::class_<SparsePencil>(m, "SparsePencil",
@@ -643,12 +643,12 @@ properties (i)-(vi) measured on every instance.)doc")
 
   py::class_<SparsePencilComposition>(m, "SparsePencilComposition",
       R"doc(Block assembly of two sparse pencils, acting on both matrices at once: the sparse
-counterpart of OccupationSpectra.directSum and hoppingBlock. A coupling enters the
+counterpart of OccupationSpectra.direct_sum and hoppingBlock. A coupling enters the
 left-hand matrix only and is written in the pencil's variable, so a constant coupling
 Delta between two identical sheets is C = Delta * M.)doc")
-      .def_static("directSum", &SparsePencilComposition::directSum, py::arg("a"), py::arg("b"),
+      .def_static("direct_sum", &SparsePencilComposition::directSum, py::arg("a"), py::arg("b"),
            "(A_a + A_b, M_a + M_b) as block-diagonal direct sums, sheet a first.")
-      .def_static("hoppingBlock", &SparsePencilComposition::hoppingBlock, py::arg("a"), py::arg("b"),
+      .def_static("hopping_block", &SparsePencilComposition::hoppingBlock, py::arg("a"), py::arg("b"),
            py::arg("coupling"), py::arg("coupling_reverse") = SparseMatrix(),
            "A = [[A_a, C], [C', A_b]] with M block diagonal; an empty reverse block selects "
            "C' = C^dagger.");
@@ -659,12 +659,12 @@ Delta between two identical sheets is C = Delta * M.)doc")
       .def_readonly("eigenvalues", &SparsePencilRead::eigenvalues)
       .def_readonly("vectors", &SparsePencilRead::vectors)
       .def_readonly("residuals", &SparsePencilRead::residuals)
-      .def_readonly("orthonormalityDefect", &SparsePencilRead::orthonormalityDefect)
-      .def_readonly("hermitianDefectA", &SparsePencilRead::hermitianDefectA)
-      .def_readonly("hermitianDefectM", &SparsePencilRead::hermitianDefectM)
-      .def_readonly("shiftBelowSpectrum", &SparsePencilRead::shiftBelowSpectrum)
+      .def_readonly("orthonormality_defect", &SparsePencilRead::orthonormalityDefect)
+      .def_readonly("hermitian_defect_a", &SparsePencilRead::hermitianDefectA)
+      .def_readonly("hermitian_defect_m", &SparsePencilRead::hermitianDefectM)
+      .def_readonly("shift_below_spectrum", &SparsePencilRead::shiftBelowSpectrum)
       .def_readonly("converged", &SparsePencilRead::converged)
-      .def_readonly("blockSize", &SparsePencilRead::blockSize)
+      .def_readonly("block_size", &SparsePencilRead::blockSize)
       .def_readonly("iterations", &SparsePencilRead::iterations)
       .def_readonly("restarts", &SparsePencilRead::restarts)
       .def_readonly("solves", &SparsePencilRead::solves);
@@ -674,8 +674,8 @@ Delta between two identical sheets is C = Delta * M.)doc")
       "window, the eigenvalues that bracket its edge, their gap, and the eigenpairs it was read from.")
       .def_readonly("rank", &EffectiveBettiRead::rank)
       .def_readonly("epsilon", &EffectiveBettiRead::epsilon)
-      .def_readonly("lastInside", &EffectiveBettiRead::lastInside)
-      .def_readonly("firstOutside", &EffectiveBettiRead::firstOutside)
+      .def_readonly("last_inside", &EffectiveBettiRead::lastInside)
+      .def_readonly("first_outside", &EffectiveBettiRead::firstOutside)
       .def_readonly("gap", &EffectiveBettiRead::gap)
       .def_readonly("complete", &EffectiveBettiRead::complete)
       .def_readonly("certified", &EffectiveBettiRead::certified)
@@ -712,7 +712,7 @@ Reference: Ericsson & Ruhe, Mathematics of Computation 35, 1980.)doc")
            "max_i |A z_i - lambda_i M z_i| / |(A - sigma M) z_i| and its conditioning the 1-norm "
            "condition estimate of A - sigma M. Zero block_size / max_basis_size select the "
            "automatic values.")
-      .def_static("lowestWithLowRank",
+      .def_static("lowest_with_low_rank",
            [](const SparseMatrix &A, const SparseMatrix &M, const Eigen::MatrixXcd &left,
               const Eigen::MatrixXcd &core, int count, double sigma, double tolerance, int blockSize,
               int maxBasisSize, int maxIterations, std::uint64_t seed) {
@@ -731,7 +731,7 @@ Reference: Ericsson & Ruhe, Mathematics of Computation 35, 1980.)doc")
            "lowest for the pencil (A + P D P^dagger, M) with the low-rank term in factored form "
            "(left = P, n x r; core = D, r x r Hermitian): Woodbury inside the shift-invert solve, and "
            "the shift certified below the spectrum by inertia.")
-      .def_static("effectiveBetti",
+      .def_static("effective_betti",
            [](const SparseMatrix &A, const SparseMatrix &M, double epsilon, double sigma,
               double tolerance, int initialCount, std::uint64_t seed) {
              SparsePencilOptions options;
@@ -749,8 +749,8 @@ Reference: Ericsson & Ruhe, Mathematics of Computation 35, 1980.)doc")
   py::class_<FaceBlock>(m, "FaceBlock",
       "One triangle's 3x3 face block over its three edges (canonical edge indices in "
       "local order (v0v1),(v0v2),(v1v2)), its numerical rank, and the preset.")
-      .def_readonly("faceIndex", &FaceBlock::faceIndex)
-      .def_readonly("edgeIndices", &FaceBlock::edgeIndices)
+      .def_readonly("face_index", &FaceBlock::faceIndex)
+      .def_readonly("edge_indices", &FaceBlock::edgeIndices)
       .def_readonly("block", &FaceBlock::block)
       .def_readonly("rank", &FaceBlock::rank)
       .def_readonly("preset", &FaceBlock::preset);
@@ -758,8 +758,8 @@ Reference: Ericsson & Ruhe, Mathematics of Computation 35, 1980.)doc")
   py::class_<TetrahedronBlock>(m, "TetrahedronBlock",
       "One tetrahedron's 4x4 degree-0 block over its four vertices (canonical vertex indices in "
       "ascending order), its numerical rank, and the preset.")
-      .def_readonly("tetrahedronIndex", &TetrahedronBlock::tetrahedronIndex)
-      .def_readonly("vertexIndices", &TetrahedronBlock::vertexIndices)
+      .def_readonly("tetrahedron_index", &TetrahedronBlock::tetrahedronIndex)
+      .def_readonly("vertex_indices", &TetrahedronBlock::vertexIndices)
       .def_readonly("block", &TetrahedronBlock::block)
       .def_readonly("rank", &TetrahedronBlock::rank)
       .def_readonly("preset", &TetrahedronBlock::preset);
@@ -770,59 +770,59 @@ Reference: Ericsson & Ruhe, Mathematics of Computation 35, 1980.)doc")
   py::class_<BandDerivative>(m, "BandDerivative",
       "Analytic derivatives of a Riesz band's geometric images: dZ = G^U(-dM^U Z + dP Phi) with "
       "dP Phi = sum_j w_j R(zeta_j) dh R(zeta_j) Phi; and d(A~^U) = dM^U h + M^U dh.")
-      .def_static("resolventFrames", &BandDerivative::resolventFrames, py::arg("covariant"), py::arg("k"),
+      .def_static("resolvent_frames", &BandDerivative::resolventFrames, py::arg("covariant"), py::arg("k"),
            py::arg("contour"), py::arg("frame"))
-      .def_static("imagesLengthDerivative", &BandDerivative::imagesLengthDerivative, py::arg("covariant"),
+      .def_static("images_length_derivative", &BandDerivative::imagesLengthDerivative, py::arg("covariant"),
            py::arg("frames"), py::arg("images"), py::arg("edge_index"))
-      .def_static("imagesPhaseDerivative", &BandDerivative::imagesPhaseDerivative, py::arg("covariant"),
+      .def_static("images_phase_derivative", &BandDerivative::imagesPhaseDerivative, py::arg("covariant"),
            py::arg("frames"), py::arg("images"), py::arg("edge_index"))
-      .def_static("pencilOperatorLengthDerivative", &BandDerivative::pencilOperatorLengthDerivative,
+      .def_static("pencil_operator_length_derivative", &BandDerivative::pencilOperatorLengthDerivative,
            py::arg("covariant"), py::arg("k"), py::arg("edge_index"))
-      .def_static("pencilOperatorPhaseDerivative", &BandDerivative::pencilOperatorPhaseDerivative,
+      .def_static("pencil_operator_phase_derivative", &BandDerivative::pencilOperatorPhaseDerivative,
            py::arg("covariant"), py::arg("k"), py::arg("edge_index"));
   py::class_<WhitneyLengthInversion>(m, "WhitneyLengthInversion",
       "The inversion of one degree-1 Whitney block: C*Gamma, g/C, the scale C, the volume, the "
       "squared lengths in local edge order (0,1),(0,2),...,(d-1,d), and the Whitney-form residual.")
       .def_readonly("dimension", &WhitneyLengthInversion::dimension)
-      .def_readonly("scaledGradientGram", &WhitneyLengthInversion::scaledGradientGram)
-      .def_readonly("scaledMetric", &WhitneyLengthInversion::scaledMetric)
-      .def_readonly("scaleDetermined", &WhitneyLengthInversion::scaleDetermined)
+      .def_readonly("scaled_gradient_gram", &WhitneyLengthInversion::scaledGradientGram)
+      .def_readonly("scaled_metric", &WhitneyLengthInversion::scaledMetric)
+      .def_readonly("scale_determined", &WhitneyLengthInversion::scaleDetermined)
       .def_readonly("scale", &WhitneyLengthInversion::scale)
       .def_readonly("volume", &WhitneyLengthInversion::volume)
-      .def_readonly("squaredLengths", &WhitneyLengthInversion::squaredLengths)
-      .def_readonly("scaledSquaredLengths", &WhitneyLengthInversion::scaledSquaredLengths)
+      .def_readonly("squared_lengths", &WhitneyLengthInversion::squaredLengths)
+      .def_readonly("scaled_squared_lengths", &WhitneyLengthInversion::scaledSquaredLengths)
       .def_readonly("residual", &WhitneyLengthInversion::residual)
-      .def_readonly("relativeResidual", &WhitneyLengthInversion::relativeResidual)
+      .def_readonly("relative_residual", &WhitneyLengthInversion::relativeResidual)
       .def_readonly("asymmetry", &WhitneyLengthInversion::asymmetry);
   py::class_<GrownCellInversion>(m, "GrownCellInversion",
       "The squared lengths of a grown simplex read from the inherited vertex pairing, with the "
       "row-sum defect, the asymmetry and the frame-invariant ratios of the pairing.")
       .def_readonly("dimension", &GrownCellInversion::dimension)
-      .def_readonly("scaledGradientGram", &GrownCellInversion::scaledGradientGram)
-      .def_readonly("scaledMetric", &GrownCellInversion::scaledMetric)
-      .def_readonly("scaleDetermined", &GrownCellInversion::scaleDetermined)
+      .def_readonly("scaled_gradient_gram", &GrownCellInversion::scaledGradientGram)
+      .def_readonly("scaled_metric", &GrownCellInversion::scaledMetric)
+      .def_readonly("scale_determined", &GrownCellInversion::scaleDetermined)
       .def_readonly("scale", &GrownCellInversion::scale)
       .def_readonly("volume", &GrownCellInversion::volume)
-      .def_readonly("squaredLengths", &GrownCellInversion::squaredLengths)
-      .def_readonly("scaledSquaredLengths", &GrownCellInversion::scaledSquaredLengths)
-      .def_readonly("rowSumDefect", &GrownCellInversion::rowSumDefect)
+      .def_readonly("squared_lengths", &GrownCellInversion::squaredLengths)
+      .def_readonly("scaled_squared_lengths", &GrownCellInversion::scaledSquaredLengths)
+      .def_readonly("row_sum_defect", &GrownCellInversion::rowSumDefect)
       .def_readonly("asymmetry", &GrownCellInversion::asymmetry)
-      .def_readonly("frameInvariantRatios", &GrownCellInversion::frameInvariantRatios);
+      .def_readonly("frame_invariant_ratios", &GrownCellInversion::frameInvariantRatios);
   py::class_<GrownCellRule>(m, "GrownCellRule",
       R"doc(The grown-cell rule: squared lengths by inverting the degree-1 Whitney mass
 (C = 14400/det(g/C) in three dimensions, undetermined in two), and the connection
 U_vw = det M_vw of the fiber transport.)doc")
-      .def_static("whitneyBlock", &GrownCellRule::whitneyBlock, py::arg("scaled_gradient_gram"))
-      .def_static("invertWhitneyBlock", &GrownCellRule::invertWhitneyBlock, py::arg("block"))
-      .def_static("invertVertexPairing", &GrownCellRule::invertVertexPairing,
+      .def_static("whitney_block", &GrownCellRule::whitneyBlock, py::arg("scaled_gradient_gram"))
+      .def_static("invert_whitney_block", &GrownCellRule::invertWhitneyBlock, py::arg("block"))
+      .def_static("invert_vertex_pairing", &GrownCellRule::invertVertexPairing,
            py::arg("pairing"))
-      .def_static("determinantPairing", &GrownCellRule::determinantPairing, py::arg("frames"),
+      .def_static("determinant_pairing", &GrownCellRule::determinantPairing, py::arg("frames"),
            py::arg("images"))
-      .def_static("gaugeInvariantPairing", &GrownCellRule::gaugeInvariantPairing,
+      .def_static("gauge_invariant_pairing", &GrownCellRule::gaugeInvariantPairing,
            py::arg("dual_frames"), py::arg("images"), py::arg("connection"))
-      .def_static("normalizeDualFrame", &GrownCellRule::normalizeDualFrame, py::arg("frame"),
+      .def_static("normalize_dual_frame", &GrownCellRule::normalizeDualFrame, py::arg("frame"),
            py::arg("dual_frame"))
-      .def_static("transportConnection", &GrownCellRule::transportConnection,
+      .def_static("transport_connection", &GrownCellRule::transportConnection,
            py::arg("transport"));
   py::class_<FaceAnchor>(m, "FaceAnchor",
       R"doc(The face anchor with the Whitney metric: the per-triangle Whitney block
@@ -831,51 +831,51 @@ the face endomorphism Pi_tau(U) = G_1^U M_1^{(tau)U} G_1^U applied by solves, an
 invariant anchor coordinate alpha_tau = det((Z^vee)^T M_1^{(tau)U} Z) of a fiber paired
 through its geometric images. The Grassmann per-face blade block has rank 2 and makes
 alpha_tau vanish identically. Transpose pairing throughout.)doc")
-      .def_static("whitneyFaceBlock", &FaceAnchor::whitneyFaceBlock, py::arg("complex"),
+      .def_static("whitney_face_block", &FaceAnchor::whitneyFaceBlock, py::arg("complex"),
            py::arg("squared_lengths"), py::arg("face_index"), py::arg("branch") = Branch::Continuation)
-      .def_static("whitneyFaceBlocks", &FaceAnchor::whitneyFaceBlocks, py::arg("complex"),
+      .def_static("whitney_face_blocks", &FaceAnchor::whitneyFaceBlocks, py::arg("complex"),
            py::arg("squared_lengths"), py::arg("branch") = Branch::Continuation)
-      .def_static("grassmannFaceBlock", &FaceAnchor::grassmannFaceBlock, py::arg("complex"),
+      .def_static("grassmann_face_block", &FaceAnchor::grassmannFaceBlock, py::arg("complex"),
            py::arg("squared_lengths"), py::arg("face_index"))
-      .def_static("faceBlock", &FaceAnchor::faceBlock, py::arg("hodge"), py::arg("face_index"),
+      .def_static("face_block", &FaceAnchor::faceBlock, py::arg("hodge"), py::arg("face_index"),
            "The face block of the instance's own preset.")
-      .def_static("dressedFaceBlock", &FaceAnchor::dressedFaceBlock, py::arg("block"), py::arg("complex"),
+      .def_static("dressed_face_block", &FaceAnchor::dressedFaceBlock, py::arg("block"), py::arg("complex"),
            py::arg("connection"), "M_1^{(tau)U}: the block dressed entrywise by U_{b(e)b(e')}.")
-      .def_static("applyFaceEndomorphism", &FaceAnchor::applyFaceEndomorphism, py::arg("covariant"),
+      .def_static("apply_face_endomorphism", &FaceAnchor::applyFaceEndomorphism, py::arg("covariant"),
            py::arg("face_index"), py::arg("c"), "Pi_tau(U) c by solves.")
-      .def_static("anchorCoordinate", &FaceAnchor::anchorCoordinate, py::arg("covariant"),
-           py::arg("face_index"), py::arg("Z_dual"), py::arg("Z"),
+      .def_static("anchor_coordinate", &FaceAnchor::anchorCoordinate, py::arg("covariant"),
+           py::arg("face_index"), py::arg("z_dual"), py::arg("Z"),
            "alpha_tau = det((Z^vee)^T M_1^{(tau)U} Z) from the fiber's images.")
-      .def_static("anchorCoordinateFromChains", &FaceAnchor::anchorCoordinateFromChains,
-           py::arg("covariant"), py::arg("face_index"), py::arg("Phi_dual"), py::arg("Phi"),
+      .def_static("anchor_coordinate_from_chains", &FaceAnchor::anchorCoordinateFromChains,
+           py::arg("covariant"), py::arg("face_index"), py::arg("phi_dual"), py::arg("phi"),
            "alpha_tau = det((Phi^vee)^T Pi_tau(U) Phi) from the chain frames (images by solves).")
-      .def_static("anchorCoordinates", &FaceAnchor::anchorCoordinates, py::arg("covariant"),
-           py::arg("Z_dual"), py::arg("Z"), "alpha_tau for every triangle.")
-      .def_static("numericalRank", &FaceAnchor::numericalRank, py::arg("A"), py::arg("kappa") = 10.0)
+      .def_static("anchor_coordinates", &FaceAnchor::anchorCoordinates, py::arg("covariant"),
+           py::arg("z_dual"), py::arg("Z"), "alpha_tau for every triangle.")
+      .def_static("numerical_rank", &FaceAnchor::numericalRank, py::arg("A"), py::arg("kappa") = 10.0)
       // ---- tetrahedral anchor at degree 0 ----
-      .def_static("whitneyTetrahedronBlock", &FaceAnchor::whitneyTetrahedronBlock, py::arg("complex"),
+      .def_static("whitney_tetrahedron_block", &FaceAnchor::whitneyTetrahedronBlock, py::arg("complex"),
            py::arg("squared_lengths"), py::arg("tetrahedron_index"),
            py::arg("branch") = Branch::Continuation,
            "M_0^{(T)}: the per-tetrahedron Whitney block over its four vertices (rank 4).")
-      .def_static("whitneyTetrahedronBlocks", &FaceAnchor::whitneyTetrahedronBlocks, py::arg("complex"),
+      .def_static("whitney_tetrahedron_blocks", &FaceAnchor::whitneyTetrahedronBlocks, py::arg("complex"),
            py::arg("squared_lengths"), py::arg("branch") = Branch::Continuation)
-      .def_static("tetrahedronBlock", &FaceAnchor::tetrahedronBlock, py::arg("hodge"),
+      .def_static("tetrahedron_block", &FaceAnchor::tetrahedronBlock, py::arg("hodge"),
            py::arg("tetrahedron_index"),
            "The tetrahedron block of the instance's preset; refuses the Grassmann preset by name.")
-      .def_static("dressedTetrahedronBlock", &FaceAnchor::dressedTetrahedronBlock, py::arg("block"),
+      .def_static("dressed_tetrahedron_block", &FaceAnchor::dressedTetrahedronBlock, py::arg("block"),
            py::arg("complex"), py::arg("connection"), "M_0^{(T)U}: the block dressed entrywise by U_{vw}.")
-      .def_static("applyTetrahedronEndomorphism", &FaceAnchor::applyTetrahedronEndomorphism,
+      .def_static("apply_tetrahedron_endomorphism", &FaceAnchor::applyTetrahedronEndomorphism,
            py::arg("covariant"), py::arg("tetrahedron_index"), py::arg("c"),
            "Pi_T(U) c = G_0^U M_0^{(T)U} G_0^U c by solves.")
-      .def_static("tetrahedronAnchorCoordinate", &FaceAnchor::tetrahedronAnchorCoordinate,
-           py::arg("covariant"), py::arg("tetrahedron_index"), py::arg("Z_dual"), py::arg("Z"),
+      .def_static("tetrahedron_anchor_coordinate", &FaceAnchor::tetrahedronAnchorCoordinate,
+           py::arg("covariant"), py::arg("tetrahedron_index"), py::arg("z_dual"), py::arg("Z"),
            "alpha_T = det((Z^vee)^T M_0^{(T)U} Z) from the fiber's degree-0 images.")
-      .def_static("tetrahedronAnchorCoordinateFromChains", &FaceAnchor::tetrahedronAnchorCoordinateFromChains,
-           py::arg("covariant"), py::arg("tetrahedron_index"), py::arg("Phi_dual"), py::arg("Phi"))
-      .def_static("tetrahedronAnchorCoordinates", &FaceAnchor::tetrahedronAnchorCoordinates,
-           py::arg("covariant"), py::arg("Z_dual"), py::arg("Z"), "alpha_T for every tetrahedron.")
-      .def_static("flatZeroModeOverlap", &FaceAnchor::flatZeroModeOverlap, py::arg("covariant"),
-           py::arg("Z_dual"), py::arg("Z"),
+      .def_static("tetrahedron_anchor_coordinate_from_chains", &FaceAnchor::tetrahedronAnchorCoordinateFromChains,
+           py::arg("covariant"), py::arg("tetrahedron_index"), py::arg("phi_dual"), py::arg("phi"))
+      .def_static("tetrahedron_anchor_coordinates", &FaceAnchor::tetrahedronAnchorCoordinates,
+           py::arg("covariant"), py::arg("z_dual"), py::arg("Z"), "alpha_T for every tetrahedron.")
+      .def_static("flat_zero_mode_overlap", &FaceAnchor::flatZeroModeOverlap, py::arg("covariant"),
+           py::arg("z_dual"), py::arg("Z"),
            "Certificate: |(P z_0)^T M_0^U (P z_0)| / |z_0^T M_0^U z_0| for the Riesz projection P of the "
            "constant image z_0 (the vertex-volume chain, the degree-0 flat zero mode) onto the band: 1 on "
            "the trivial-holonomy harmonic band, 0 on a band of other eigenvalues.");
@@ -889,46 +889,46 @@ alpha_tau vanish identically. Transpose pairing throughout.)doc")
       .def_readonly("interface", &FeshbachResult::interface)
       .def_readonly("interior", &FeshbachResult::interior)
       .def_readonly("response", &FeshbachResult::response)
-      .def_readonly("constraintModes", &FeshbachResult::constraintModes)
-      .def_readonly("interiorDeterminant", &FeshbachResult::interiorDeterminant)
-      .def_readonly("responseDeterminant", &FeshbachResult::responseDeterminant)
-      .def_readonly("pencilDeterminant", &FeshbachResult::pencilDeterminant)
-      .def_readonly("determinantResidual", &FeshbachResult::determinantResidual)
-      .def_readonly("pencilLogDeterminant", &FeshbachResult::pencilLogDeterminant)
-      .def_readonly("interiorLogDeterminant", &FeshbachResult::interiorLogDeterminant)
-      .def_readonly("responseLogDeterminant", &FeshbachResult::responseLogDeterminant)
-      .def_readonly("logModulusResidual", &FeshbachResult::logModulusResidual)
-      .def_readonly("logPhaseResidual", &FeshbachResult::logPhaseResidual)
-      .def_readonly("solveResidual", &FeshbachResult::solveResidual)
-      .def_readonly("interiorSingular", &FeshbachResult::interiorSingular)
-      .def_readonly("resonanceRadius", &FeshbachResult::resonanceRadius)
-      .def_readonly("resonanceEnclosure", &FeshbachResult::resonanceEnclosure)
-      .def_readonly("resonanceSeparation", &FeshbachResult::resonanceSeparation)
-      .def_readonly("interiorRank", &FeshbachResult::interiorRank)
-      .def_readonly("interiorInverse", &FeshbachResult::interiorInverse)
-      .def_readonly("resonantSpace", &FeshbachResult::resonantSpace)
-      .def_readonly("resonantLeftSpace", &FeshbachResult::resonantLeftSpace)
-      .def_readonly("resonantModes", &FeshbachResult::resonantModes)
-      .def_readonly("rangeProjector", &FeshbachResult::rangeProjector)
-      .def_readonly("nullProjector", &FeshbachResult::nullProjector)
-      .def_readonly("projectorIdempotency", &FeshbachResult::projectorIdempotency)
-      .def_readonly("projectorTrace", &FeshbachResult::projectorTrace)
-      .def_readonly("compatibilityResidual", &FeshbachResult::compatibilityResidual)
+      .def_readonly("constraint_modes", &FeshbachResult::constraintModes)
+      .def_readonly("interior_determinant", &FeshbachResult::interiorDeterminant)
+      .def_readonly("response_determinant", &FeshbachResult::responseDeterminant)
+      .def_readonly("pencil_determinant", &FeshbachResult::pencilDeterminant)
+      .def_readonly("determinant_residual", &FeshbachResult::determinantResidual)
+      .def_readonly("pencil_log_determinant", &FeshbachResult::pencilLogDeterminant)
+      .def_readonly("interior_log_determinant", &FeshbachResult::interiorLogDeterminant)
+      .def_readonly("response_log_determinant", &FeshbachResult::responseLogDeterminant)
+      .def_readonly("log_modulus_residual", &FeshbachResult::logModulusResidual)
+      .def_readonly("log_phase_residual", &FeshbachResult::logPhaseResidual)
+      .def_readonly("solve_residual", &FeshbachResult::solveResidual)
+      .def_readonly("interior_singular", &FeshbachResult::interiorSingular)
+      .def_readonly("resonance_radius", &FeshbachResult::resonanceRadius)
+      .def_readonly("resonance_enclosure", &FeshbachResult::resonanceEnclosure)
+      .def_readonly("resonance_separation", &FeshbachResult::resonanceSeparation)
+      .def_readonly("interior_rank", &FeshbachResult::interiorRank)
+      .def_readonly("interior_inverse", &FeshbachResult::interiorInverse)
+      .def_readonly("resonant_space", &FeshbachResult::resonantSpace)
+      .def_readonly("resonant_left_space", &FeshbachResult::resonantLeftSpace)
+      .def_readonly("resonant_modes", &FeshbachResult::resonantModes)
+      .def_readonly("range_projector", &FeshbachResult::rangeProjector)
+      .def_readonly("null_projector", &FeshbachResult::nullProjector)
+      .def_readonly("projector_idempotency", &FeshbachResult::projectorIdempotency)
+      .def_readonly("projector_trace", &FeshbachResult::projectorTrace)
+      .def_readonly("compatibility_residual", &FeshbachResult::compatibilityResidual)
       .def_readonly("compatible", &FeshbachResult::compatible)
-      .def_readonly("independenceResidual", &FeshbachResult::independenceResidual)
-      .def_readonly("responseIndependent", &FeshbachResult::responseIndependent)
-      .def_readonly("resonantResponse", &FeshbachResult::resonantResponse)
-      .def_readonly("reductionResidual", &FeshbachResult::reductionResidual)
-      .def_readonly("liftResidual", &FeshbachResult::liftResidual);
+      .def_readonly("independence_residual", &FeshbachResult::independenceResidual)
+      .def_readonly("response_independent", &FeshbachResult::responseIndependent)
+      .def_readonly("resonant_response", &FeshbachResult::resonantResponse)
+      .def_readonly("reduction_residual", &FeshbachResult::reductionResidual)
+      .def_readonly("lift_residual", &FeshbachResult::liftResidual);
 
   py::class_<CongruenceResult>(m, "CongruenceResult",
       "A congruence (T^T A T, T^T M T) with the symmetry defects of the reduced pair and the "
       "inverse condition number of the basis.")
       .def_readonly("A", &CongruenceResult::A)
       .def_readonly("M", &CongruenceResult::M)
-      .def_readonly("symmetryDefect", &CongruenceResult::symmetryDefect)
-      .def_readonly("metricSymmetryDefect", &CongruenceResult::metricSymmetryDefect)
-      .def_readonly("basisConditionInverse", &CongruenceResult::basisConditionInverse);
+      .def_readonly("symmetry_defect", &CongruenceResult::symmetryDefect)
+      .def_readonly("metric_symmetry_defect", &CongruenceResult::metricSymmetryDefect)
+      .def_readonly("basis_condition_inverse", &CongruenceResult::basisConditionInverse);
 
   py::class_<SurrogateResult>(m, "SurrogateResult",
       "A certified Craig-Bampton/AMLS surrogate of a pencil over a window disc in the complex "
@@ -939,22 +939,22 @@ alpha_tau vanish identically. Transpose pairing throughout.)doc")
       .def_readonly("interface", &SurrogateResult::interface)
       .def_readonly("interior", &SurrogateResult::interior)
       .def_readonly("shift", &SurrogateResult::shift)
-      .def_readonly("windowCentre", &SurrogateResult::windowCentre)
-      .def_readonly("windowRadius", &SurrogateResult::windowRadius)
-      .def_readonly("retentionRadius", &SurrogateResult::retentionRadius)
+      .def_readonly("window_centre", &SurrogateResult::windowCentre)
+      .def_readonly("window_radius", &SurrogateResult::windowRadius)
+      .def_readonly("retention_radius", &SurrogateResult::retentionRadius)
       .def_readonly("basis", &SurrogateResult::basis)
       .def_readonly("reduced", &SurrogateResult::reduced)
-      .def_readonly("interiorEigenvalues", &SurrogateResult::interiorEigenvalues)
-      .def_readonly("retainedModes", &SurrogateResult::retainedModes)
-      .def_readonly("discardedModeSeparation", &SurrogateResult::discardedModeSeparation)
+      .def_readonly("interior_eigenvalues", &SurrogateResult::interiorEigenvalues)
+      .def_readonly("retained_modes", &SurrogateResult::retainedModes)
+      .def_readonly("discarded_mode_separation", &SurrogateResult::discardedModeSeparation)
       .def_readonly("eigenvalues", &SurrogateResult::eigenvalues)
       .def_readonly("vectors", &SurrogateResult::vectors)
-      .def_readonly("windowIndices", &SurrogateResult::windowIndices)
+      .def_readonly("window_indices", &SurrogateResult::windowIndices)
       .def_readonly("residuals", &SurrogateResult::residuals)
-      .def_readonly("feshbachDefects", &SurrogateResult::feshbachDefects)
-      .def_readonly("feshbachBounds", &SurrogateResult::feshbachBounds)
-      .def_readonly("feshbachHolds", &SurrogateResult::feshbachHolds)
-      .def_readonly("resonantAtEigenvalue", &SurrogateResult::resonantAtEigenvalue)
+      .def_readonly("feshbach_defects", &SurrogateResult::feshbachDefects)
+      .def_readonly("feshbach_bounds", &SurrogateResult::feshbachBounds)
+      .def_readonly("feshbach_holds", &SurrogateResult::feshbachHolds)
+      .def_readonly("resonant_at_eigenvalue", &SurrogateResult::resonantAtEigenvalue)
       .def_readonly("tolerance", &SurrogateResult::tolerance)
       .def_readonly("certified", &SurrogateResult::certified)
       .def_readonly("refusal", &SurrogateResult::refusal);
@@ -963,19 +963,19 @@ alpha_tau vanish identically. Transpose pairing throughout.)doc")
       "The coarse pencil and chain metric restricted to retained fibers: (Z^T A~ Z, Z^T M Z).")
       .def_readonly("A", &FiberRestriction::A)
       .def_readonly("gram", &FiberRestriction::gram)
-      .def_readonly("blockOffsets", &FiberRestriction::blockOffsets)
-      .def_readonly("blockRanks", &FiberRestriction::blockRanks);
+      .def_readonly("block_offsets", &FiberRestriction::blockOffsets)
+      .def_readonly("block_ranks", &FiberRestriction::blockRanks);
 
   py::class_<TransferResult>(m, "TransferResult",
       "A transfer T_AB(U) = (Z_A^vee)^T (A~^U)_AB Z_B with its reversal certificate "
       "T_BA(U^-1) = T_AB(U)^T and the groupoid hypothesis T_BA = T_AB^-1.")
       .def_readonly("forward", &TransferResult::forward)
       .def_readonly("reverse", &TransferResult::reverse)
-      .def_readonly("reversalResidual", &TransferResult::reversalResidual)
+      .def_readonly("reversal_residual", &TransferResult::reversalResidual)
       .def_readonly("tolerance", &TransferResult::tolerance)
-      .def_readonly("groupoidHolds", &TransferResult::groupoidHolds)
-      .def_readonly("groupoidResidual", &TransferResult::groupoidResidual)
-      .def_readonly("dualTransfer", &TransferResult::dualTransfer);
+      .def_readonly("groupoid_holds", &TransferResult::groupoidHolds)
+      .def_readonly("groupoid_residual", &TransferResult::groupoidResidual)
+      .def_readonly("dual_transfer", &TransferResult::dualTransfer);
 
   py::class_<PencilSchur>(m, "PencilSchur",
       R"doc(The recursion on the symmetric pencil P(lambda) = A~ - lambda M on geometric
@@ -983,7 +983,7 @@ images: the Feshbach complement with its determinant factorization, the Craig-Ba
 congruence, the restriction of pencil and chain metric to retained fibers, and the
 transfer between fibers with the reversal identity asserted at runtime. Every pairing
 is the transpose.)doc")
-      .def_static("logDeterminant", &PencilSchur::logDeterminant, py::arg("A"),
+      .def_static("log_determinant", &PencilSchur::logDeterminant, py::arg("A"),
            "log det A = log|det A| + i arg det A from a partial-pivoting LU, arg in (-pi, pi].")
       .def_static("feshbach", &PencilSchur::feshbach, py::arg("A"), py::arg("M"), py::arg("lambda_"),
            py::arg("interface"), py::arg("rank_tolerance") = 1e-12, py::arg("resonance_radius") = 1e-12,
@@ -994,7 +994,7 @@ is the transpose.)doc")
            "eigenspace), the resonant reduction and the two residuals that certify it. "
            "rank_tolerance governs only the rank of the reduction's null space and the two "
            "verdict thresholds.")
-      .def_static("sparseFeshbach",
+      .def_static("sparse_feshbach",
            [](const SparseMatrix &A, const SparseMatrix &M, std::complex<double> lambda,
               const std::vector<int> &interface, double solveTolerance) {
              SparseCostReport report;
@@ -1006,13 +1006,13 @@ is the transpose.)doc")
            "(result, cost): the same complement on the sparse production path, the interior block "
            "factorized by sparse LU and no n x n matrix formed. An interior resonance is refused "
            "by name; the dense feshbach resolves it.")
-      .def_static("craigBampton",
+      .def_static("craig_bampton",
            py::overload_cast<const Eigen::MatrixXcd &, const Eigen::MatrixXcd &,
                              const Eigen::MatrixXcd &>(&PencilSchur::craigBampton),
            py::arg("A"), py::arg("M"), py::arg("T"),
            "The congruence (T^T A T, T^T M T) of an explicit basis, with the symmetry defects of "
            "the reduced pair and the inverse condition number of the basis.")
-      .def_static("craigBamptonSurrogate",
+      .def_static("craig_bampton_surrogate",
            py::overload_cast<const Eigen::MatrixXcd &, const Eigen::MatrixXcd &,
                              const std::vector<int> &, std::complex<double>, double, double,
                              std::complex<double>, double, double>(&PencilSchur::craigBampton),
@@ -1024,20 +1024,20 @@ is the transpose.)doc")
            "radius: interface constraint modes at the shift plus the fixed-interface modes of "
            "(A_II, M_II) inside the retention radius, with every claimed eigenvalue held to the "
            "exact Feshbach map. It runs in every pencil regime.")
-      .def_static("restrictToFibers",
+      .def_static("restrict_to_fibers",
            py::overload_cast<const Eigen::MatrixXcd &, const Eigen::MatrixXcd &, const Eigen::MatrixXcd &>(
                &PencilSchur::restrictToFibers),
            py::arg("A"), py::arg("M"), py::arg("Z"))
-      .def_static("restrictToFiberBlocks",
+      .def_static("restrict_to_fiber_blocks",
            py::overload_cast<const Eigen::MatrixXcd &, const Eigen::MatrixXcd &,
                              const std::vector<Eigen::MatrixXcd> &>(&PencilSchur::restrictToFibers),
            py::arg("A"), py::arg("M"), py::arg("fibers"))
-      .def_static("gramBlock", &PencilSchur::gramBlock, py::arg("M"), py::arg("ZA"), py::arg("ZB"))
-      .def_static("supportsShareTopSimplex", &PencilSchur::supportsShareTopSimplex,
+      .def_static("gram_block", &PencilSchur::gramBlock, py::arg("M"), py::arg("ZA"), py::arg("ZB"))
+      .def_static("supports_share_top_simplex", &PencilSchur::supportsShareTopSimplex,
            py::arg("complex"), py::arg("k"), py::arg("support_a"), py::arg("support_b"))
       .def_static("support", &PencilSchur::support, py::arg("Z"), py::arg("threshold") = 1e-12)
-      .def_static("transfer", &PencilSchur::transfer, py::arg("AtildeU"), py::arg("AtildeUinv"),
-           py::arg("ZA"), py::arg("ZAdual"), py::arg("ZB"), py::arg("ZBdual"),
+      .def_static("transfer", &PencilSchur::transfer, py::arg("a_tilde_u"), py::arg("a_tilde_u_inv"),
+           py::arg("ZA"), py::arg("z_a_dual"), py::arg("ZB"), py::arg("z_b_dual"),
            py::arg("tolerance") = 1e-8);
 
   // ---- the anchor by the dressed coordinate ----
@@ -1048,21 +1048,21 @@ is the transpose.)doc")
 to p is the ordered product of the links along the walk, which telescopes under a vertex
 gauge to g_p^{-1} T_p(v) g_v. The same base vertex and the same rule are used for every
 face of the atlas.)doc")
-      .def_static("breadthFirst", &DeclaredPaths::breadthFirst, py::arg("complex"),
+      .def_static("breadth_first", &DeclaredPaths::breadthFirst, py::arg("complex"),
            py::arg("base_point"), py::arg("support") = std::vector<std::uint64_t>{},
            "Shortest walks from the base vertex, ties broken by ascending vertex id; an "
            "empty support means the whole complex.")
-      .def_static("fromWalks", &DeclaredPaths::fromWalks, py::arg("complex"),
+      .def_static("from_walks", &DeclaredPaths::fromWalks, py::arg("complex"),
            py::arg("base_point"), py::arg("walks"),
            "A caller-declared rule: one vertex sequence per reached vertex, validated "
            "against the complex's edges.")
-      .def_static("declaredTransports", &DeclaredPaths::declaredTransports, py::arg("base_point"),
+      .def_static("declared_transports", &DeclaredPaths::declaredTransports, py::arg("base_point"),
            py::arg("transports"),
            "A transport table declared as bare numbers with no walk behind it. It does not "
            "transform under a vertex gauge, so the anchor refuses it; it exists so that the "
            "refusal is reachable.")
-      .def("basePoint", &DeclaredPaths::basePoint)
-      .def("derivedFromWalks", &DeclaredPaths::derivedFromWalks)
+      .def("base_point", &DeclaredPaths::basePoint)
+      .def("derived_from_walks", &DeclaredPaths::derivedFromWalks)
       .def("reaches", &DeclaredPaths::reaches, py::arg("v"))
       .def("walks", &DeclaredPaths::walks)
       .def("transport", &DeclaredPaths::transport, py::arg("connection"), py::arg("v"),
@@ -1073,10 +1073,10 @@ face of the atlas.)doc")
       "cyclic order (v0v1), (v1v2), (v0v2), their incidence signs (+1, +1, -1), their base "
       "vertices b(e) = min e, the transports of those base vertices to p, and the three "
       "nonzero entries of res_{tau->p}(U).")
-      .def_readonly("faceIndex", &FaceRestriction::faceIndex)
-      .def_readonly("edgeIndices", &FaceRestriction::edgeIndices)
-      .def_readonly("incidenceSigns", &FaceRestriction::incidenceSigns)
-      .def_readonly("basePoints", &FaceRestriction::basePoints)
+      .def_readonly("face_index", &FaceRestriction::faceIndex)
+      .def_readonly("edge_indices", &FaceRestriction::edgeIndices)
+      .def_readonly("incidence_signs", &FaceRestriction::incidenceSigns)
+      .def_readonly("base_points", &FaceRestriction::basePoints)
       .def_readonly("transports", &FaceRestriction::transports)
       .def_readonly("factors", &FaceRestriction::factors);
 
@@ -1084,18 +1084,18 @@ face of the atlas.)doc")
       "The anchor certificate of one base band on one atlas of faces: the exterior-power "
       "coordinates of every face, the invariant coordinates alpha_tau when attached, the "
       "covariance and transition-cocycle residuals, and the named refusals.")
-      .def_readonly("basePoint", &DressedAnchorRead::basePoint)
-      .def_readonly("bandRank", &DressedAnchorRead::bandRank)
-      .def_readonly("faceIndices", &DressedAnchorRead::faceIndices)
+      .def_readonly("base_point", &DressedAnchorRead::basePoint)
+      .def_readonly("band_rank", &DressedAnchorRead::bandRank)
+      .def_readonly("face_indices", &DressedAnchorRead::faceIndices)
       .def_readonly("coordinates", &DressedAnchorRead::coordinates)
-      .def_readonly("invariantCoordinates", &DressedAnchorRead::invariantCoordinates)
-      .def_readonly("anchoringFaces", &DressedAnchorRead::anchoringFaces)
-      .def_readonly("coordinateScale", &DressedAnchorRead::coordinateScale)
-      .def_readonly("covarianceResidual", &DressedAnchorRead::covarianceResidual)
-      .def_readonly("transitionCocycleResidual", &DressedAnchorRead::transitionCocycleResidual)
+      .def_readonly("invariant_coordinates", &DressedAnchorRead::invariantCoordinates)
+      .def_readonly("anchoring_faces", &DressedAnchorRead::anchoringFaces)
+      .def_readonly("coordinate_scale", &DressedAnchorRead::coordinateScale)
+      .def_readonly("covariance_residual", &DressedAnchorRead::covarianceResidual)
+      .def_readonly("transition_cocycle_residual", &DressedAnchorRead::transitionCocycleResidual)
       .def_readonly("tolerance", &DressedAnchorRead::tolerance)
       .def_readonly("anchored", &DressedAnchorRead::anchored)
-      .def_readonly("failedCertificates", &DressedAnchorRead::failedCertificates);
+      .def_readonly("failed_certificates", &DressedAnchorRead::failedCertificates);
 
   py::class_<DressedAnchor>(m, "DressedAnchor",
       R"doc(The anchor of a base band to oriented two-simplices by the dressed coordinate:
@@ -1106,53 +1106,53 @@ root, free face weight or real-valued score enters the physical definition. The 
 refuses rather than reporting a gauge-dependent raw restriction when the
 connection-dressed covariance cannot be verified, and refuses an identically zero
 profile, which is what an exact band at flat connection produces.)doc")
-      .def_static("faceRestriction", &DressedAnchor::faceRestriction, py::arg("complex"),
+      .def_static("face_restriction", &DressedAnchor::faceRestriction, py::arg("complex"),
            py::arg("connection"), py::arg("paths"), py::arg("face_index"),
            "The triangle's ordered boundary edges, incidence signs, base vertices and transports.")
       .def_static("restriction", &DressedAnchor::restriction, py::arg("complex"),
            py::arg("connection"), py::arg("paths"), py::arg("face_index"),
            "res_{tau->p}(U) as a dense 3 x n_1 matrix, for verifying the covariance law as "
            "written.")
-      .def_static("restrictedFrame", &DressedAnchor::restrictedFrame, py::arg("complex"),
-           py::arg("connection"), py::arg("paths"), py::arg("face_index"), py::arg("Phi"),
+      .def_static("restricted_frame", &DressedAnchor::restrictedFrame, py::arg("complex"),
+           py::arg("connection"), py::arg("paths"), py::arg("face_index"), py::arg("phi"),
            "res_{tau->p}(U) Phi_Q, a 3 x r matrix, without forming any n_1-wide object.")
-      .def_static("twistedCoboundaryBlock", &DressedAnchor::twistedCoboundaryBlock,
+      .def_static("twisted_coboundary_block", &DressedAnchor::twistedCoboundaryBlock,
            py::arg("complex"), py::arg("connection"), py::arg("face_index"),
            "The restriction to tau's three ordered boundary edges of the twisted coboundary "
            "of a vertex potential; its determinant is F_tau - 1.")
-      .def_static("exteriorPower", &DressedAnchor::exteriorPower, py::arg("A"),
+      .def_static("exterior_power", &DressedAnchor::exteriorPower, py::arg("A"),
            "Lambda^r of a 3 x r matrix: its maximal minors in lexicographic order of the row "
            "subset.")
-      .def_static("dressedCoordinates", &DressedAnchor::dressedCoordinates, py::arg("complex"),
-           py::arg("connection"), py::arg("paths"), py::arg("face_index"), py::arg("Phi"),
+      .def_static("dressed_coordinates", &DressedAnchor::dressedCoordinates, py::arg("complex"),
+           py::arg("connection"), py::arg("paths"), py::arg("face_index"), py::arg("phi"),
            "The Lambda^r coordinates of one face.")
-      .def_static("dressedCoordinate", &DressedAnchor::dressedCoordinate, py::arg("complex"),
-           py::arg("connection"), py::arg("paths"), py::arg("face_index"), py::arg("Phi"),
+      .def_static("dressed_coordinate", &DressedAnchor::dressedCoordinate, py::arg("complex"),
+           py::arg("connection"), py::arg("paths"), py::arg("face_index"), py::arg("phi"),
            "Delta_tau for a rank-three band.")
-      .def_static("anchorableFaces", &DressedAnchor::anchorableFaces, py::arg("complex"),
+      .def_static("anchorable_faces", &DressedAnchor::anchorableFaces, py::arg("complex"),
            py::arg("paths"), "The triangles every one of whose edge base vertices the rule reaches.")
       .def_static("profile", &DressedAnchor::profile, py::arg("complex"), py::arg("connection"),
-           py::arg("paths"), py::arg("face_indices"), py::arg("Phi"),
+           py::arg("paths"), py::arg("face_indices"), py::arg("phi"),
            py::arg("tolerance") = 1e-9, py::arg("gauge_seed") = 7,
            "The anchor certificate of the band on the atlas.")
-      .def_static("withInvariantCoordinates", &DressedAnchor::withInvariantCoordinates,
-           py::arg("read"), py::arg("covariant"), py::arg("Z_dual"), py::arg("Z"),
+      .def_static("with_invariant_coordinates", &DressedAnchor::withInvariantCoordinates,
+           py::arg("read"), py::arg("covariant"), py::arg("z_dual"), py::arg("Z"),
            "The same read with the invariant coordinates alpha_tau of its atlas attached.")
-      .def_static("covarianceResidual", &DressedAnchor::covarianceResidual, py::arg("complex"),
+      .def_static("covariance_residual", &DressedAnchor::covarianceResidual, py::arg("complex"),
            py::arg("connection"), py::arg("paths"), py::arg("face_indices"), py::arg("gauge"),
            "The residual of res(U^g) rho_1(g) = g_p^{-1} res(U) over the atlas.")
-      .def_static("verificationGauge", &DressedAnchor::verificationGauge, py::arg("complex"),
+      .def_static("verification_gauge", &DressedAnchor::verificationGauge, py::arg("complex"),
            py::arg("seed"), "The deterministic verification gauge of a seed.")
-      .def_static("faceTransition", &DressedAnchor::faceTransition, py::arg("read"),
+      .def_static("face_transition", &DressedAnchor::faceTransition, py::arg("read"),
            py::arg("face_slot"), py::arg("other_face_slot"), py::arg("coordinate") = 0,
            "The determinant-line transition on the overlap of two face charts.")
-      .def_static("basePointTransition", &DressedAnchor::basePointTransition, py::arg("read"),
+      .def_static("base_point_transition", &DressedAnchor::basePointTransition, py::arg("read"),
            py::arg("other"), py::arg("face_slot"), py::arg("coordinate") = 0,
            "The transition between the charts of two base vertices on one face.")
-      .def_static("transitionCocycleResidual", &DressedAnchor::transitionCocycleResidual,
+      .def_static("transition_cocycle_residual", &DressedAnchor::transitionCocycleResidual,
            py::arg("read"), py::arg("coordinate") = 0,
            "The residual of t_ab t_bc = t_ac over the read's anchoring faces.")
-      .def_static("projectiveDistance", &DressedAnchor::projectiveDistance, py::arg("a"),
+      .def_static("projective_distance", &DressedAnchor::projectiveDistance, py::arg("a"),
            py::arg("b"),
            "The chordal Fubini-Study distance between two profiles, a reported numerical "
            "stability certificate and never part of a physical statement.");

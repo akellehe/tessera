@@ -29,12 +29,12 @@ _BASE = [[0, 1], [1, 2], [0, 2]]
 
 
 def annulus(layers):
-    cells = tessera.Spacetime.prismCells(_BASE, layers, {})
-    st = tessera.Spacetime.fromVertexTuples(2, cells, 1.0, 0.0)
-    for e in st.getEdgeList().toVector():
-        e.setLength(1.0)
-        e.setPhase(0.0)
-    st.materializeFacets()
+    cells = tessera.Spacetime.prism_cells(_BASE, layers, {})
+    st = tessera.Spacetime.from_vertex_tuples(2, cells, 1.0, 0.0)
+    for e in st.get_edge_list().to_vector():
+        e.set_length(1.0)
+        e.set_phase(0.0)
+    st.materialize_facets()
     top = 3 * layers
     a, b = [0, 1, 2], [top, top + 1, top + 2]
     interior = [v for v in range(3 * (layers + 1)) if v not in a and v not in b]
@@ -130,7 +130,7 @@ class TestExactness:
         assert res.growth_steps == 0
         assert math.isfinite(res.residual) and math.isfinite(res.eigenvalue)
         synthesis = cob.EigenstateSynthesis(node.spacetime(), 0)
-        index = {tuple(c): i for i, c in enumerate(synthesis.cellSimplices())}
+        index = {tuple(c): i for i, c in enumerate(synthesis.cell_simplices())}
         for j, x in enumerate(inputs):
             state = np.asarray(res.states[j])
             np.testing.assert_allclose(state[[index[(v,)] for v in a]], np.asarray(res.states_a[j]), atol=0)
@@ -185,7 +185,7 @@ class TestRealizability:
             e = [0j] * n
             e[i] = 1.0 + 0j
             L[:, i] = synthesis.apply(e)
-        index = {tuple(c): i for i, c in enumerate(synthesis.cellSimplices())}
+        index = {tuple(c): i for i, c in enumerate(synthesis.cell_simplices())}
         ia, ib = [index[(v,)] for v in a], [index[(v,)] for v in b]
         boundary = ia + ib
         free = [i for i in range(n) if i not in boundary]

@@ -85,11 +85,11 @@ def read_three(node):
     op = assembled.op
     contour = PencilLayer.harmonic_contour(assembled, 1)
     band = op.band(1, contour)
-    aux = np.asarray(op.pencilAux(1))
+    aux = np.asarray(op.pencil_aux(1))
     # The split form, each block scaled to its own norm so that neither
     # dominates the other's numerical rank.
-    closed = np.asarray((op.twistedBoundary(1) @ op.Minv(1)).todense())
-    coclosed = np.asarray(op.twistedBoundaryDual(2).todense()).T
+    closed = np.asarray((op.twisted_boundary(1) @ op.m_inv(1)).todense())
+    coclosed = np.asarray(op.twisted_boundary_dual(2).todense()).T
     stacked = np.vstack([closed / np.linalg.norm(closed),
                          coclosed / np.linalg.norm(coclosed)])
     return dict(node=node, assembled=assembled, op=op, band=band, aux=aux,
@@ -220,13 +220,13 @@ def test_the_three_still_coincide_off_the_seeded_lengths(seeded, amplitude):
     perturbation does not meet.
     """
     spacetime = seeded.spacetime()
-    edges = list(spacetime.getEdgeList().toVector())
-    original = [edge.getLength() for edge in edges]
+    edges = list(spacetime.get_edge_list().to_vector())
+    original = [edge.get_length() for edge in edges]
     generator = np.random.default_rng(3)
     try:
         for edge, length in zip(edges, original):
             step = generator.standard_normal() + 1j * generator.standard_normal()
-            edge.setLength(length * (1.0 + amplitude * step))
+            edge.set_length(length * (1.0 + amplitude * step))
         jittered = read_three(seeded)
         rank = jittered["band"].rank()
         assert jittered["pencil_null"][0].shape[1] == rank
@@ -239,4 +239,4 @@ def test_the_three_still_coincide_off_the_seeded_lengths(seeded, amplitude):
         assert coincide(jittered["pencil_null"][0], jittered["hodge_null"][0]) < COINCIDENT
     finally:
         for edge, length in zip(edges, original):
-            edge.setLength(length)
+            edge.set_length(length)

@@ -394,13 +394,13 @@ class PlaneWaveCrystal:
 def solve_with_projectors(A, M, P, D, count, sigma, tolerance=1e-10):
     """The lowest `count` eigenpairs of (A + P D P^T, M) with the low-rank term
     in factored form, by the certified block solver
-    (`SparsePencilSolver.lowestWithLowRank`): Woodbury inside the shift-invert
+    (`SparsePencilSolver.lowest_with_low_rank`): Woodbury inside the shift-invert
     solve, every copy of a degenerate level returned, and the shift certified
     below the whole spectrum by inertia. Returns (values, vectors, residual,
     below) with real vectors for a real pencil: the residual of the returned
     pairs and the inertia certificate are reported separately, and a caller
     holds each to its own threshold."""
-    read = ch.SparsePencilSolver.lowestWithLowRank(
+    read = ch.SparsePencilSolver.lowest_with_low_rank(
         sp.csc_matrix(A, dtype=complex), sp.csc_matrix(M, dtype=complex),
         np.asarray(P, dtype=complex), np.asarray(D, dtype=complex), count, sigma, tolerance=tolerance)
     values = np.array(read.eigenvalues.values).real
@@ -408,7 +408,7 @@ def solve_with_projectors(A, M, P, D, count, sigma, tolerance=1e-10):
     if np.isrealobj(A.data if sp.issparse(A) else A) and np.isrealobj(P):
         vectors = _real_span(A, M, P, D, vectors)
     certificate = read.eigenvalues.certificate
-    return values, vectors, certificate.residual, bool(read.shiftBelowSpectrum)
+    return values, vectors, certificate.residual, bool(read.shift_below_spectrum)
 
 
 def _real_span(A, M, P, D, vectors):
@@ -587,7 +587,7 @@ class MeshCrystal:
             values, vectors, residual, below = solve_with_projectors(A, self.mass, self.P, self.D, bands, sigma)
             orbitals = vectors[:, :occupied]
             new_density = 2.0 * (orbitals ** 2).sum(axis=1)
-            load = 2.0 * np.array(ch.WhitneyMass.vertexDensityContraction(
+            load = 2.0 * np.array(ch.WhitneyMass.vertex_density_contraction(
                 cell.complex, cell.squared_lengths, orbitals.astype(complex), orbitals.astype(complex))).real
             change = np.sqrt(weights @ (new_density - density) ** 2 / crystal.volume) * crystal.volume / crystal.electrons
             history.append(change)
@@ -857,7 +857,7 @@ class MeshCrystal:
         defect and the particle number of the state, the largest entry of
         F(Gamma) - diag(levels), which holds the two routes to each other on
         the span of those modes, and the largest change of Gamma under
-        `meanFieldEvolve`, which vanishes at a fixed point."""
+        `mean_field_evolve`, which vanishes at a fixed point."""
         from tessera import quantum
         cell = self.cell
         occupied = int(extended["occupied"])
@@ -872,11 +872,11 @@ class MeshCrystal:
         frame = np.zeros((2 * bands, 2 * occupied), dtype=complex)
         for sheet in range(2):
             frame[sheet * bands + np.arange(occupied), sheet * occupied + np.arange(occupied)] = 1.0
-        state = quantum.CovarianceState.fromSlaterFrame(frame)
+        state = quantum.CovarianceState.from_slater_frame(frame)
         gamma = np.array(state.gamma())
         fock = interaction.fock(gamma)
-        state.meanFieldEvolve(lambda g: interaction.fock(g), step, steps)
-        return {"purity_defect": float(state.purityDefect()), "particles": float(state.particleNumber().real),
+        state.mean_field_evolve(lambda g: interaction.fock(g), step, steps)
+        return {"purity_defect": float(state.purity_defect()), "particles": float(state.particle_number().real),
                 "fock_defect": float(np.abs(fock - np.kron(np.eye(2), np.diag(levels))).max()),
                 "stationarity_defect": float(np.abs(np.array(state.gamma()) - gamma).max()),
                 "energy": float(interaction.energy(gamma).real)}

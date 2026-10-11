@@ -56,25 +56,25 @@ def _surface(faces, edge_sq=None):
     sig = tessera.Signature(2, tessera.Lorentzian)
     st = tessera.Spacetime(tessera.Metric(True, sig), tessera.CDT, 1.0, 1.0,
                            tessera.PREFERRED, None)
-    vmap = {i: st.createVertex(i) for i in sorted({v for f in faces for v in f})}
+    vmap = {i: st.create_vertex(i) for i in sorted({v for f in faces for v in f})}
     for f in faces:
         t = sorted(f)
-        st.createSimplex([vmap[t[0]], vmap[t[1]], vmap[t[2]]])
-    for e in st.getEdgeList().toVector():
-        a, b = e.getSource().getId(), e.getTarget().getId()
-        e.setLength(cmath.sqrt(complex(edge_sq.get((min(a, b), max(a, b)), 1.0))))
-        e.setPhase(0.0)
+        st.create_simplex([vmap[t[0]], vmap[t[1]], vmap[t[2]]])
+    for e in st.get_edge_list().to_vector():
+        a, b = e.get_source().get_id(), e.get_target().get_id()
+        e.set_length(cmath.sqrt(complex(edge_sq.get((min(a, b), max(a, b)), 1.0))))
+        e.set_phase(0.0)
     return st
 
 
 def _regge_magnitude(st):
-    return abs(tessera.ReggeSolver(st, tessera.MatterConfiguration()).dualReggeAction())
+    return abs(tessera.ReggeSolver(st, tessera.MatterConfiguration()).dual_regge_action())
 
 
 def _total_dual_volume(st):
     tessera.ReggeSolver(st, tessera.MatterConfiguration())  # materialize lattice in C++
-    return sum(s.dualVolume() for s in st.getSimplices()
-               if len(s.getVertices()) == 1)
+    return sum(s.dual_volume() for s in st.get_simplices()
+               if len(s.get_vertices()) == 1)
 
 
 def _relabel(faces, perm):
@@ -101,7 +101,7 @@ class RelabelingInvariance(unittest.TestCase):
             st = _surface(_relabel(_TETRA, perm))
             es = cob.EigenstateSynthesis(st, 0)
             inv = {v: k for k, v in perm.items()}
-            order = [int(c[0]) for c in es.cellSimplices()]
+            order = [int(c[0]) for c in es.cell_simplices()]
             psi = [complex(inv[vid] + 1.0) for vid in order]
             return float(es.residual(psi))
         base = residual(self.PERMS[0])

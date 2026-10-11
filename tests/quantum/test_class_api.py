@@ -9,13 +9,13 @@ test_causal_compare_python.py, and test_causet_chain_python.py:
 * :class:`SchwingerModel`  — config introspection, statelessness (same
   config in, same result out), cross-method consistency.
 * :class:`SchwingerQuench` — same, plus the ``predicate`` keyword on
-  :meth:`compareCausalOrders`.
+  :meth:`compare_causal_orders`.
 * :class:`Majorization`    — static-class semantics (no instances),
-  predicate-explicit ``posetOf`` overload, polymorphism across the
+  predicate-explicit ``poset_of`` overload, polymorphism across the
   three variants.
 * :class:`Causet`          — static-class semantics, idempotency.
-* :class:`CausalOrders`    — standalone :meth:`fromSnapshots` factory.
-* :class:`LogConcaveMajorization` — ``isLogConcave`` static utility
+* :class:`CausalOrders`    — standalone :meth:`from_snapshots` factory.
+* :class:`LogConcaveMajorization` — ``is_log_concave`` static utility
   edge cases.
 * :class:`PeakRadialMajorization` — strictly-stronger-than-classical
   property at the canonical witness.
@@ -50,19 +50,19 @@ except ImportError:
 def _basic_quantum_config(N: int = 6, m: float = 0.0) -> "QuantumConfig":
     cfg = QuantumConfig()
     cfg.N = N; cfg.a = 1.0; cfg.g = 1.0; cfg.m = m; cfg.L0 = 0.0
-    cfg.maxBondDim = 32; cfg.nSweeps = 8
+    cfg.max_bond_dim = 32; cfg.n_sweeps = 8
     return cfg
 
 
 def _light_quark_tdvp_config(N: int = 8, T: float = 0.4) -> "TDVPConfig":
     cfg = TDVPConfig()
     cfg.N = N; cfg.a = 1.0; cfg.g = 1.0; cfg.m = 0.5; cfg.L0 = 0.0
-    cfg.dmrgMaxBondDim = 32; cfg.dmrgNSweeps = 10
+    cfg.dmrg_max_bond_dim = 32; cfg.dmrg_n_sweeps = 10
     cfg.i0 = 1; cfg.d = 3
-    cfg.dt = 0.2; cfg.T = T; cfg.snapshotEvery = 1
-    cfg.maxBondDim = 60
-    cfg.cutoff = 1e-10; cfg.krylovDim = 12
-    cfg.quiet = True; cfg.conserveQns = True
+    cfg.dt = 0.2; cfg.T = T; cfg.snapshot_every = 1
+    cfg.max_bond_dim = 60
+    cfg.cutoff = 1e-10; cfg.krylov_dim = 12
+    cfg.quiet = True; cfg.conserve_qns = True
     return cfg
 
 
@@ -81,16 +81,16 @@ class TestSchwingerModelClassSemantics(unittest.TestCase):
         self.assertEqual(model.config.N, 8)
         self.assertEqual(model.config.m, 0.125)
         self.assertEqual(model.config.L0, 0.25)
-        self.assertEqual(model.config.maxBondDim, cfg.maxBondDim)
+        self.assertEqual(model.config.max_bond_dim, cfg.max_bond_dim)
 
     def test_solve_is_idempotent_on_same_instance(self) -> None:
         model = SchwingerModel(_basic_quantum_config(N=6, m=0.25))
         a = model.solve()
         b = model.solve()
         self.assertAlmostEqual(a.energy, b.energy, places=12)
-        self.assertAlmostEqual(a.operatorEnergy, b.operatorEnergy, places=12)
+        self.assertAlmostEqual(a.operator_energy, b.operator_energy, places=12)
         self.assertAlmostEqual(a.constant, b.constant, places=12)
-        self.assertEqual(a.bondDim, b.bondDim)
+        self.assertEqual(a.bond_dim, b.bond_dim)
 
     def test_solve_matches_across_instances_with_same_config(self) -> None:
         """Constructing two SchwingerModel objects from equivalent configs
@@ -99,7 +99,7 @@ class TestSchwingerModelClassSemantics(unittest.TestCase):
         a = SchwingerModel(cfg).solve()
         b = SchwingerModel(cfg).solve()
         self.assertAlmostEqual(a.energy, b.energy, places=12)
-        self.assertEqual(a.bondDim, b.bondDim)
+        self.assertEqual(a.bond_dim, b.bond_dim)
 
     def test_solve_vs_solveWithMajorization_agree(self) -> None:
         """The two methods must produce the same ground-state diagnostics
@@ -107,16 +107,16 @@ class TestSchwingerModelClassSemantics(unittest.TestCase):
         cfg = _basic_quantum_config(N=6, m=0.125)
         model = SchwingerModel(cfg)
         a = model.solve()
-        b = model.solveWithMajorization()
-        self.assertAlmostEqual(a.energy, b.groundState.energy, places=10)
-        self.assertAlmostEqual(a.operatorEnergy,
-                               b.groundState.operatorEnergy, places=10)
-        self.assertEqual(a.bondDim, b.groundState.bondDim)
+        b = model.solve_with_majorization()
+        self.assertAlmostEqual(a.energy, b.ground_state.energy, places=10)
+        self.assertAlmostEqual(a.operator_energy,
+                               b.ground_state.operator_energy, places=10)
+        self.assertEqual(a.bond_dim, b.ground_state.bond_dim)
 
     def test_solveWithMajorization_idempotent(self) -> None:
         model = SchwingerModel(_basic_quantum_config(N=4))
-        a = model.solveWithMajorization()
-        b = model.solveWithMajorization()
+        a = model.solve_with_majorization()
+        b = model.solve_with_majorization()
         self.assertEqual(a.spectra.N, b.spectra.N)
         self.assertEqual(len(a.spectra.intervals), len(b.spectra.intervals))
         self.assertEqual(set(a.poset.covers), set(b.poset.covers))
@@ -147,8 +147,8 @@ class TestSchwingerQuenchClassSemantics(unittest.TestCase):
         for sa, sb in zip(a.snapshots, b.snapshots):
             self.assertAlmostEqual(sa.time, sb.time, places=12)
             self.assertAlmostEqual(sa.energy, sb.energy, places=10)
-            self.assertEqual(sa.bondDim, sb.bondDim)
-            for la, lb in zip(sa.lProfile, sb.lProfile):
+            self.assertEqual(sa.bond_dim, sb.bond_dim)
+            for la, lb in zip(sa.l_profile, sb.l_profile):
                 self.assertAlmostEqual(la, lb, places=10)
 
     def test_default_predicate_matches_explicit_standard(self) -> None:
@@ -157,18 +157,18 @@ class TestSchwingerQuenchClassSemantics(unittest.TestCase):
         same report."""
         cfg = _light_quark_tdvp_config(N=6, T=0.2)
         quench = SchwingerQuench(cfg)
-        r_default = quench.compareCausalOrders(vLr=1.0)
-        r_explicit = quench.compareCausalOrders(
-            vLr=1.0, predicate=StandardMajorization())
-        self.assertEqual(r_default.majKind, "standard")
-        self.assertEqual(r_explicit.majKind, "standard")
-        self.assertEqual(r_default.nLabels, r_explicit.nLabels)
+        r_default = quench.compare_causal_orders(v_lr=1.0)
+        r_explicit = quench.compare_causal_orders(
+            v_lr=1.0, predicate=StandardMajorization())
+        self.assertEqual(r_default.maj_kind, "standard")
+        self.assertEqual(r_explicit.maj_kind, "standard")
+        self.assertEqual(r_default.n_labels, r_explicit.n_labels)
         # The maj poset is the only thing the predicate controls; on
         # identical inputs both Hasse cover lists should match.
-        self.assertEqual(r_default.majVsLr.nConcordant,
-                         r_explicit.majVsLr.nConcordant)
-        self.assertEqual(r_default.majVsLr.nDiscordant,
-                         r_explicit.majVsLr.nDiscordant)
+        self.assertEqual(r_default.maj_vs_lr.n_concordant,
+                         r_explicit.maj_vs_lr.n_concordant)
+        self.assertEqual(r_default.maj_vs_lr.n_discordant,
+                         r_explicit.maj_vs_lr.n_discordant)
 
     def test_majKind_tracks_predicate_name(self) -> None:
         cfg = _light_quark_tdvp_config(N=6, T=0.2)
@@ -178,9 +178,9 @@ class TestSchwingerQuenchClassSemantics(unittest.TestCase):
             (LogConcaveMajorization(), "log-concave"),
             (PeakRadialMajorization(), "peak-radial"),
         ):
-            r = quench.compareCausalOrders(vLr=1.0, predicate=pred)
-            self.assertEqual(r.majKind, expected,
-                             msg=f"predicate {expected} reported as {r.majKind}")
+            r = quench.compare_causal_orders(v_lr=1.0, predicate=pred)
+            self.assertEqual(r.maj_kind, expected,
+                             msg=f"predicate {expected} reported as {r.maj_kind}")
 
 
 # ─── Majorization static utility class ─────────────────────────────────────
@@ -188,7 +188,7 @@ class TestSchwingerQuenchClassSemantics(unittest.TestCase):
 @unittest.skipUnless(HAVE_QUANTUM, "tessera built without TESSERA_QUANTUM=1")
 class TestMajorizationStaticClass(unittest.TestCase):
     """:class:`Majorization` is a static utility: it has no instances. Its
-    two static methods are :meth:`posetOf` (predicate-driven Hasse-cover
+    two static methods are :meth:`poset_of` (predicate-driven Hasse-cover
     construction) and :meth:`agreement` (pairwise order statistics)."""
 
     def test_not_instantiable(self) -> None:
@@ -199,11 +199,11 @@ class TestMajorizationStaticClass(unittest.TestCase):
 
     def test_posetOf_predicate_overload_matches_tol_overload(self) -> None:
         """The convenience tol overload is just a shortcut for
-        ``posetOf(spectra, StandardMajorization(tol))``."""
+        ``poset_of(spectra, StandardMajorization(tol))``."""
         spectra = [[1/3]*3, [0.5, 0.5], [1.0]]
-        a = Majorization.posetOf(spectra)                          # tol=1e-12
-        b = Majorization.posetOf(spectra, StandardMajorization())  # equivalent
-        self.assertEqual(a.getNodeCount, b.getNodeCount)
+        a = Majorization.poset_of(spectra)                          # tol=1e-12
+        b = Majorization.poset_of(spectra, StandardMajorization())  # equivalent
+        self.assertEqual(a.get_node_count, b.get_node_count)
         self.assertEqual(set(a.covers), set(b.covers))
 
     def test_posetOf_with_each_predicate_variant(self) -> None:
@@ -213,8 +213,8 @@ class TestMajorizationStaticClass(unittest.TestCase):
         for pred in (StandardMajorization(),
                      LogConcaveMajorization(),
                      PeakRadialMajorization()):
-            p = Majorization.posetOf(spectra, pred)
-            self.assertEqual(p.getNodeCount, 3)
+            p = Majorization.poset_of(spectra, pred)
+            self.assertEqual(p.get_node_count, 3)
             for a, b in p.covers:
                 self.assertNotEqual(a, b)
                 self.assertGreaterEqual(a, 0)
@@ -224,37 +224,37 @@ class TestMajorizationStaticClass(unittest.TestCase):
 
     def test_agreement_on_identical_poset_is_perfect(self) -> None:
         """A poset compared against itself gives τ = 1 and edit distance 0."""
-        p = Majorization.posetOf([[1.0], [0.5, 0.5], [1/3]*3])
-        agr = Majorization.agreement(p, p, p.getNodeCount)
-        self.assertAlmostEqual(agr.kendallTau, 1.0)
-        self.assertAlmostEqual(agr.hasseEditDistance, 0.0)
+        p = Majorization.poset_of([[1.0], [0.5, 0.5], [1/3]*3])
+        agr = Majorization.agreement(p, p, p.get_node_count)
+        self.assertAlmostEqual(agr.kendall_tau, 1.0)
+        self.assertAlmostEqual(agr.hasse_edit_distance, 0.0)
 
     def test_agreement_is_swap_symmetric_for_total_orders(self) -> None:
         """Kendall-τ is symmetric (τ(a, b) = τ(b, a)) since concordant /
         discordant counts don't depend on which poset is "first"."""
-        p = Majorization.posetOf([[1.0], [0.5, 0.5], [1/3]*3])
-        q = Majorization.posetOf([[1.0], [0.5, 0.5]])  # different label set
+        p = Majorization.poset_of([[1.0], [0.5, 0.5], [1/3]*3])
+        q = Majorization.poset_of([[1.0], [0.5, 0.5]])  # different label set
         # Use the larger label count so both posets fit.
         n = 3
         # Build q as a Poset of size 3 by re-encoding its covers verbatim.
         q3 = Poset()
-        q3.getNodeCount = n
+        q3.get_node_count = n
         q3.covers = q.covers
         ab = Majorization.agreement(p, q3, n)
         ba = Majorization.agreement(q3, p, n)
-        self.assertAlmostEqual(ab.kendallTau, ba.kendallTau)
-        self.assertAlmostEqual(ab.discordantFraction, ba.discordantFraction)
-        self.assertAlmostEqual(ab.hasseEditDistance, ba.hasseEditDistance)
+        self.assertAlmostEqual(ab.kendall_tau, ba.kendall_tau)
+        self.assertAlmostEqual(ab.discordant_fraction, ba.discordant_fraction)
+        self.assertAlmostEqual(ab.hasse_edit_distance, ba.hasse_edit_distance)
         # nOnlyA on (a, b) should equal nOnlyB on (b, a).
-        self.assertEqual(ab.nOnlyA, ba.nOnlyB)
-        self.assertEqual(ab.nOnlyB, ba.nOnlyA)
+        self.assertEqual(ab.n_only_a, ba.n_only_b)
+        self.assertEqual(ab.n_only_b, ba.n_only_a)
 
 
 # ─── Causet static utility class ───────────────────────────────────────────
 
 @unittest.skipUnless(HAVE_QUANTUM, "tessera built without TESSERA_QUANTUM=1")
 class TestCausetStaticClass(unittest.TestCase):
-    """:class:`Causet` is a static utility wrapping :meth:`chainFrom`."""
+    """:class:`Causet` is a static utility wrapping :meth:`chain_from`."""
 
     def test_not_instantiable(self) -> None:
         with self.assertRaises(Exception):
@@ -269,14 +269,14 @@ class TestCausetStaticClass(unittest.TestCase):
         st = tessera.Spacetime(metric, tessera.CDT, 1.0, 1.0,
                                tessera.PREFERRED, tessera.Toroid())
         st.build(20)
-        a = Causet.chainFrom(st)
-        b = Causet.chainFrom(st)
-        self.assertEqual(a.nSites, b.nSites)
+        a = Causet.chain_from(st)
+        b = Causet.chain_from(st)
+        self.assertEqual(a.n_sites, b.n_sites)
         self.assertEqual(list(a.times), list(b.times))
-        self.assertEqual(list(a.vertexIds), list(b.vertexIds))
-        self.assertEqual(sorted(a.hoppingPairs), sorted(b.hoppingPairs))
-        self.assertEqual(set(a.partialOrder.covers),
-                         set(b.partialOrder.covers))
+        self.assertEqual(list(a.vertex_ids), list(b.vertex_ids))
+        self.assertEqual(sorted(a.hopping_pairs), sorted(b.hopping_pairs))
+        self.assertEqual(set(a.partial_order.covers),
+                         set(b.partial_order.covers))
 
 
 # ─── MajorizationPredicate hierarchy ───────────────────────────────────────
@@ -314,7 +314,7 @@ class TestMajorizationPredicateHierarchy(unittest.TestCase):
         """(1, 0) ≻ (½, ½) under classical majorization."""
         std = StandardMajorization()
         self.assertTrue(std.majorizes([1.0, 0.0], [0.5, 0.5]))
-        self.assertTrue(std.strictlyMajorizes([1.0, 0.0], [0.5, 0.5]))
+        self.assertTrue(std.strictly_majorizes([1.0, 0.0], [0.5, 0.5]))
 
     def test_log_concave_filters_non_log_concave_inputs(self) -> None:
         """A spectrum that fails log-concavity is incomparable in the
@@ -345,7 +345,7 @@ class TestPeakRadialMajorization(unittest.TestCase):
         """(1, 0) ≻ (½, ½) under both classical AND peak-radial."""
         pr = PeakRadialMajorization()
         self.assertTrue(pr.majorizes([1.0, 0.0], [0.5, 0.5]))
-        self.assertTrue(pr.strictlyMajorizes([1.0, 0.0], [0.5, 0.5]))
+        self.assertTrue(pr.strictly_majorizes([1.0, 0.0], [0.5, 0.5]))
 
     def test_witness_where_classical_majorizes_but_peak_radial_does_not(self) -> None:
         """μ = (0.5, 0.5, 0) classically majorizes λ = (0.4, 0.3, 0.3):
@@ -371,33 +371,33 @@ class TestPeakRadialMajorization(unittest.TestCase):
         self.assertAlmostEqual(pr.tol, 1e-9)
 
 
-# ─── LogConcaveMajorization.isLogConcave (static method) ───────────────────
+# ─── LogConcaveMajorization.is_log_concave (static method) ───────────────────
 
 @unittest.skipUnless(HAVE_QUANTUM, "tessera built without TESSERA_QUANTUM=1")
 class TestIsLogConcaveStatic(unittest.TestCase):
-    """:meth:`LogConcaveMajorization.isLogConcave` is a static helper. The
+    """:meth:`LogConcaveMajorization.is_log_concave` is a static helper. The
     contract: True iff, after sorting descending and stripping trailing
     near-zero entries, s_i² ≥ s_{i-1} · s_{i+1} for every interior i."""
 
     def test_trivial_short_spectra(self) -> None:
         """Length ≤ 2 spectra are trivially log-concave."""
-        self.assertTrue(LogConcaveMajorization.isLogConcave([]))
-        self.assertTrue(LogConcaveMajorization.isLogConcave([1.0]))
-        self.assertTrue(LogConcaveMajorization.isLogConcave([0.5, 0.5]))
-        self.assertTrue(LogConcaveMajorization.isLogConcave([0.6, 0.4]))
+        self.assertTrue(LogConcaveMajorization.is_log_concave([]))
+        self.assertTrue(LogConcaveMajorization.is_log_concave([1.0]))
+        self.assertTrue(LogConcaveMajorization.is_log_concave([0.5, 0.5]))
+        self.assertTrue(LogConcaveMajorization.is_log_concave([0.6, 0.4]))
 
     def test_uniform_distribution_is_log_concave(self) -> None:
         """(1/3, 1/3, 1/3) hits the equality case: s² = s·s holds
         identically. Treated as log-concave."""
-        self.assertTrue(LogConcaveMajorization.isLogConcave([1/3, 1/3, 1/3]))
+        self.assertTrue(LogConcaveMajorization.is_log_concave([1/3, 1/3, 1/3]))
 
     def test_strictly_log_concave_example(self) -> None:
         """(0.5, 0.4, 0.1): 0.4² = 0.16 ≥ 0.5·0.1 = 0.05 ✓."""
-        self.assertTrue(LogConcaveMajorization.isLogConcave([0.5, 0.4, 0.1]))
+        self.assertTrue(LogConcaveMajorization.is_log_concave([0.5, 0.4, 0.1]))
 
     def test_non_log_concave_example(self) -> None:
         """(0.7, 0.2, 0.1): 0.2² = 0.04 < 0.7·0.1 = 0.07."""
-        self.assertFalse(LogConcaveMajorization.isLogConcave([0.7, 0.2, 0.1]))
+        self.assertFalse(LogConcaveMajorization.is_log_concave([0.7, 0.2, 0.1]))
 
     def test_trailing_zeros_stripped_before_check(self) -> None:
         """Trailing zeros are removed before the inequality is applied
@@ -406,15 +406,15 @@ class TestIsLogConcaveStatic(unittest.TestCase):
         the spectrum to be log-concave anyway). With trailing zeros
         stripped, (0.5, 0.4, 0, 0) reduces to (0.5, 0.4) which is
         trivially log-concave."""
-        self.assertTrue(LogConcaveMajorization.isLogConcave([0.5, 0.4, 0.0, 0.0]))
+        self.assertTrue(LogConcaveMajorization.is_log_concave([0.5, 0.4, 0.0, 0.0]))
 
     def test_permutation_invariance(self) -> None:
         """Input order doesn't matter — the implementation sorts first."""
         sorted_input    = [0.5, 0.4, 0.1]
         permuted_input  = [0.1, 0.5, 0.4]
         self.assertEqual(
-            LogConcaveMajorization.isLogConcave(sorted_input),
-            LogConcaveMajorization.isLogConcave(permuted_input),
+            LogConcaveMajorization.is_log_concave(sorted_input),
+            LogConcaveMajorization.is_log_concave(permuted_input),
         )
 
     def test_tol_makes_borderline_cases_pass(self) -> None:
@@ -424,43 +424,43 @@ class TestIsLogConcaveStatic(unittest.TestCase):
         # Construct s = (1, 0.5, 0.25): s_1² = 0.25, s_0·s_2 = 0.25 — exactly
         # on the boundary.
         on_boundary = [1.0, 0.5, 0.25]
-        self.assertTrue(LogConcaveMajorization.isLogConcave(on_boundary))
+        self.assertTrue(LogConcaveMajorization.is_log_concave(on_boundary))
         # Now nudge s_1 slightly below sqrt(s_0 · s_2). With tol=1e-12 this
         # should register as non-log-concave; with tol=1e-3 it gets absorbed.
         nudged = [1.0, 0.5 - 1e-6, 0.25]
-        self.assertFalse(LogConcaveMajorization.isLogConcave(nudged, tol=1e-12))
-        self.assertTrue(LogConcaveMajorization.isLogConcave(nudged, tol=1e-3))
+        self.assertFalse(LogConcaveMajorization.is_log_concave(nudged, tol=1e-12))
+        self.assertTrue(LogConcaveMajorization.is_log_concave(nudged, tol=1e-3))
 
 
-# ─── CausalOrders.fromSnapshots (standalone factory) ──────────────────────
+# ─── CausalOrders.from_snapshots (standalone factory) ──────────────────────
 
 @unittest.skipUnless(HAVE_QUANTUM, "tessera built without TESSERA_QUANTUM=1")
 class TestCausalOrdersFactory(unittest.TestCase):
-    """:meth:`CausalOrders.fromSnapshots` is the standalone factory that
-    :meth:`SchwingerQuench.compareCausalOrders` calls internally. Callers
+    """:meth:`CausalOrders.from_snapshots` is the standalone factory that
+    :meth:`SchwingerQuench.compare_causal_orders` calls internally. Callers
     holding an existing snapshot list can use it directly without re-
     running the TDVP pipeline."""
 
     @classmethod
     def setUpClass(cls) -> None:  # noqa: D401
         cfg = _light_quark_tdvp_config(N=6, T=0.2)
-        cfg.recordSpectra = True
+        cfg.record_spectra = True
         cls.snapshots = SchwingerQuench(cfg).evolve().snapshots
 
     def test_factory_produces_three_posets_over_shared_label_set(self) -> None:
-        orders = CausalOrders.fromSnapshots(self.snapshots, vLr=1.0)
+        orders = CausalOrders.from_snapshots(self.snapshots, v_lr=1.0)
         n_labels = len(orders.labels)
         self.assertGreater(n_labels, 0)
-        self.assertEqual(orders.maj.getNodeCount, n_labels)
-        self.assertEqual(orders.lr.getNodeCount,  n_labels)
-        self.assertEqual(orders.cs.getNodeCount,  n_labels)
+        self.assertEqual(orders.maj.get_node_count, n_labels)
+        self.assertEqual(orders.lr.get_node_count,  n_labels)
+        self.assertEqual(orders.cs.get_node_count,  n_labels)
 
     def test_default_predicate_matches_explicit_standard(self) -> None:
         """``predicate=None`` should produce identical orders to passing
         ``StandardMajorization()`` explicitly."""
-        a = CausalOrders.fromSnapshots(self.snapshots, vLr=1.0)
-        b = CausalOrders.fromSnapshots(
-            self.snapshots, vLr=1.0, predicate=StandardMajorization())
+        a = CausalOrders.from_snapshots(self.snapshots, v_lr=1.0)
+        b = CausalOrders.from_snapshots(
+            self.snapshots, v_lr=1.0, predicate=StandardMajorization())
         self.assertEqual(set(a.maj.covers), set(b.maj.covers))
         self.assertEqual(set(a.lr.covers),  set(b.lr.covers))
         self.assertEqual(set(a.cs.covers),  set(b.cs.covers))
@@ -469,19 +469,19 @@ class TestCausalOrdersFactory(unittest.TestCase):
         """The structural invariant ≼_LR ⊂ ≼_cs (the strongest sanity
         check on the causal-comparison construction) must also hold when the
         orders are built directly via the factory."""
-        orders = CausalOrders.fromSnapshots(self.snapshots, vLr=1.0)
+        orders = CausalOrders.from_snapshots(self.snapshots, v_lr=1.0)
         agr = Majorization.agreement(orders.lr, orders.cs,
                                        len(orders.labels))
-        self.assertAlmostEqual(agr.kendallTau, 1.0, places=12)
-        self.assertEqual(agr.nDiscordant, 0)
+        self.assertAlmostEqual(agr.kendall_tau, 1.0, places=12)
+        self.assertEqual(agr.n_discordant, 0)
 
     def test_factory_rejects_snapshots_without_recordSpectra(self) -> None:
         """Without recorded spectra there's nothing to build ≼_maj from."""
         cfg = _light_quark_tdvp_config(N=4, T=0.2)
-        cfg.recordSpectra = False
+        cfg.record_spectra = False
         snapshots = SchwingerQuench(cfg).evolve().snapshots
         with self.assertRaises(Exception):
-            CausalOrders.fromSnapshots(snapshots, vLr=1.0)
+            CausalOrders.from_snapshots(snapshots, v_lr=1.0)
 
 
 if __name__ == "__main__":

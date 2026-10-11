@@ -770,17 +770,17 @@ def _dispose_interior(host, tori, ids, disposition, seed):
     boundary = set()
     for index, torus in enumerate(tori):
         mapping = ids[index]
-        for edge in torus.spacetime().getEdgeList().toVector():
-            if edge is None or edge.getSource() is None or edge.getTarget() is None:
+        for edge in torus.spacetime().get_edge_list().to_vector():
+            if edge is None or edge.get_source() is None or edge.get_target() is None:
                 continue
-            u = mapping[int(edge.getSource().getId())]
-            v = mapping[int(edge.getTarget().getId())]
+            u = mapping[int(edge.get_source().get_id())]
+            v = mapping[int(edge.get_target().get_id())]
             boundary.add((min(u, v), max(u, v)))
     interior = []
-    for edge in host.getEdgeList().toVector():
-        if edge is None or edge.getSource() is None or edge.getTarget() is None:
+    for edge in host.get_edge_list().to_vector():
+        if edge is None or edge.get_source() is None or edge.get_target() is None:
             continue
-        u, v = int(edge.getSource().getId()), int(edge.getTarget().getId())
+        u, v = int(edge.get_source().get_id()), int(edge.get_target().get_id())
         if (min(u, v), max(u, v)) not in boundary:
             interior.append(edge)
     ea._seed_lengths(host, disposition, seed, edges=interior)
@@ -872,11 +872,11 @@ def _layer_far_flips(host, far_ids, grid, tau_far, passes, factor):
     import numpy as np
     n = int(grid)
     vid = lambda x, y: (x % n) * n + (y % n)  # noqa: E731
-    cells = [tuple(sorted(int(v.getId()) for v in cell.getVertices())) for cell in host.getTopSimplices()]
+    cells = [tuple(sorted(int(v.get_id()) for v in cell.get_vertices())) for cell in host.get_top_simplices()]
     lengths = {}
-    for edge in host.getEdgeList().toVector():
-        u, v = int(edge.getSource().getId()), int(edge.getTarget().getId())
-        lengths[(min(u, v), max(u, v))] = complex(edge.getLength())
+    for edge in host.get_edge_list().to_vector():
+        u, v = int(edge.get_source().get_id()), int(edge.get_target().get_id())
+        lengths[(min(u, v), max(u, v))] = complex(edge.get_length())
     e1, e2 = 1.0 / n, complex(tau_far) / n
     lattice = np.eye(2, dtype=int)
 
@@ -908,14 +908,14 @@ def _layer_far_flips(host, far_ids, grid, tau_far, passes, factor):
         for edge in flipped:
             lengths[edge] = lengths[edge] * float(factor)
         lattice = lattice @ np.array(spec["lattice"], dtype=int)
-    ok, why = cob.ChainComplex.dualComplexIsValid(cells, 3)
+    ok, why = cob.ChainComplex.dual_complex_is_valid(cells, 3)
     if not ok:
         raise ValueError("the layered flips are not a manifold-with-boundary: %s" % why)
-    rebuilt = T.spacetime.Spacetime.fromVertexTuples(3, cells, 1.0, 0.0)
-    for edge in rebuilt.getEdgeList().toVector():
-        u, v = int(edge.getSource().getId()), int(edge.getTarget().getId())
-        edge.setLength(lengths[key(u, v)])
-        edge.setPhase(0.0)
+    rebuilt = T.spacetime.Spacetime.from_vertex_tuples(3, cells, 1.0, 0.0)
+    for edge in rebuilt.get_edge_list().to_vector():
+        u, v = int(edge.get_source().get_id()), int(edge.get_target().get_id())
+        edge.set_length(lengths[key(u, v)])
+        edge.set_phase(0.0)
     relabelled = {vid(x, y): host_of(x, y) for x in range(n) for y in range(n)}
     return rebuilt, relabelled, lattice
 
@@ -957,7 +957,7 @@ def _host_marking(torus, ids):
             out.append((u, v) if sign > 0 else (v, u))
         return out
 
-    return [cycle(torus.cycle_A()), cycle(torus.cycle_B())]
+    return [cycle(torus.cycle_a()), cycle(torus.cycle_b())]
 
 
 def _quiet(build):
@@ -1381,9 +1381,9 @@ def build_qubit_node(config):
         config["input_weight"], config["regge"], grid, config["layers"],
         node.objective_name, MC.objective_term_names(),
         [torus.warnings() for torus in tori],
-        {"cells": len(host.getTopSimplices()),
-         "vertices": len(host.getVertexList().toVector()),
-         "edges": len(host.getEdgeList().toVector())})
+        {"cells": len(host.get_top_simplices()),
+         "vertices": len(host.get_vertex_list().to_vector()),
+         "edges": len(host.get_edge_list().to_vector())})
     return node, inputs
 
 def _boundary_components(faces, regions):
@@ -1698,11 +1698,11 @@ class QubitFrame(ea.AnimationFrame):
     @staticmethod
     def _read_boundary(spacetime, node):
         """The boundary of W as connected components, each with its Euler
-        characteristic and the input block it lies in (`getBoundary` split
+        characteristic and the input block it lies in (`get_boundary` split
         on shared ridges; 0 for a torus)."""
         try:
             faces = [tuple(int(v) for v in face)
-                     for face in spacetime.getBoundary()]
+                     for face in spacetime.get_boundary()]
         except Exception as error:                        # noqa: BLE001
             return Absent("boundary unavailable: %s" % error)
         if not faces:
@@ -2287,23 +2287,23 @@ def _block_geometry(node, inputs, index):
         # than write a complex that is not the torus.
         block["surface"] = None
         return block
-    cells = [[int(v.getId()) for v in cell.getVertices()]
-             for cell in surface.getTopSimplices()]
+    cells = [[int(v.get_id()) for v in cell.get_vertices()]
+             for cell in surface.get_top_simplices()]
     edges = []
     phases = []
-    for edge in surface.getEdgeList().toVector():
-        source = int(edge.getSource().getId())
-        target = int(edge.getTarget().getId())
-        squared = complex(edge.getLength()) ** 2
+    for edge in surface.get_edge_list().to_vector():
+        source = int(edge.get_source().get_id())
+        target = int(edge.get_target().get_id())
+        squared = complex(edge.get_length()) ** 2
         edges.append([source, target, squared.real, squared.imag])
-        phase = complex(edge.getPhase())
+        phase = complex(edge.get_phase())
         if phase != 0:
             phases.append([source, target, phase.real, phase.imag])
     # The same shape as the whole, times included, so one loader reads either.
     block["surface"] = {"dimensions": len(cells[0]) - 1 if cells else 0,
                         "cells": cells, "edges": edges,
-                        "vertex_times": [[int(v.getId()), float(v.getTime())]
-                                         for v in surface.getVertexList().toVector()]}
+                        "vertex_times": [[int(v.get_id()), float(v.get_time())]
+                                         for v in surface.get_vertex_list().to_vector()]}
     if phases:
         block["surface"]["edge_phases"] = phases
     return block
@@ -3060,14 +3060,14 @@ def _harmonic_certificates(label, read, op, tolerance):
     lengths the operator is not Hermitian, and a contour band can hold
     generalised or near-zero modes that solve neither harmonic equation.
     In the chain formulation (`ChainHodge`, dressed by "the transpose
-    carries U") the equations are, for the cochain image `Z = G_1^U Phi` of
-    the chain frame `Phi`:
+    carries U") the equations are, for the cochain image `Z = G_1^U phi` of
+    the chain frame `phi`:
 
         closed      (d_2^{U^-1})^T Z = 0     -- on the images
         co-closed   d_1^U Phi = 0            -- on the frame
 
     each measured as a relative residual (H1). The kernel is then read
-    independently of the contour (`harmonicChains`): its nullity must equal
+    independently of the contour (`harmonic_chains`): its nullity must equal
     the band's rank and `b_1`, and the two spans must agree (H2). The band's
     own certificate -- projector idempotency, rank tolerance, singular gap,
     resolvent bound -- is surfaced and must be finite (H3). A kernel-dimension
@@ -3079,8 +3079,8 @@ def _harmonic_certificates(label, read, op, tolerance):
     frame = np.asarray(read.frame)
     rows = []
     try:
-        d_dual_2 = _dense(op.twistedBoundaryDual(2))
-        d_1 = _dense(op.twistedBoundary(1))
+        d_dual_2 = _dense(op.twisted_boundary_dual(2))
+        d_1 = _dense(op.twisted_boundary(1))
     except Exception as error:                            # noqa: BLE001
         rows.append(_check("H1:" + label, "closed and co-closed residuals of the band",
                            {"refusal": "boundary operators unavailable: %s" % error},
@@ -3100,7 +3100,7 @@ def _harmonic_certificates(label, read, op, tolerance):
         {"closed_residual": closed, "coclosed_residual": coclosed},
         tolerance, closed <= tolerance and coclosed <= tolerance))
     try:
-        kernel = op.harmonicChains(1)
+        kernel = op.harmonic_chains(1)
         kernel_images = np.asarray(kernel.images)
         nullity = int(kernel.nullity)
         gap = float(kernel.gap)
@@ -3127,9 +3127,9 @@ def _harmonic_certificates(label, read, op, tolerance):
             measured, tolerance,
             nullity == read.harmonic_rank == b1 and forward <= tolerance and backward <= tolerance))
     cert = read.certificate
-    fields = {"node_count": int(cert.nodeCount), "idempotency": float(cert.idempotency),
-              "rank": int(cert.rank), "rank_tolerance": float(cert.rankTolerance),
-              "singular_gap": float(cert.singularGap), "resolvent_max": float(cert.resolventMax)}
+    fields = {"node_count": int(cert.node_count), "idempotency": float(cert.idempotency),
+              "rank": int(cert.rank), "rank_tolerance": float(cert.rank_tolerance),
+              "singular_gap": float(cert.singular_gap), "resolvent_max": float(cert.resolvent_max)}
     finite = all(math.isfinite(v) for v in fields.values() if isinstance(v, float))
     rows.append(_check(
         "H3:" + label,
@@ -3183,17 +3183,17 @@ def _jitter_lengths(spacetime, fraction, seed):
     import numpy as np
     rng = np.random.default_rng(int(seed))
     original = []
-    for edge in spacetime.getEdgeList().toVector():
-        length = complex(edge.getLength())
+    for edge in spacetime.get_edge_list().to_vector():
+        length = complex(edge.get_length())
         original.append((edge, length))
         radius = math.sqrt(rng.random())
         angle = 2.0 * math.pi * rng.random()
         xi = complex(radius * math.cos(angle), radius * math.sin(angle))
-        edge.setLength(length * cmath.sqrt(1.0 + fraction * xi))
+        edge.set_length(length * cmath.sqrt(1.0 + fraction * xi))
 
     def restore():
         for edge, length in original:
-            edge.setLength(length)
+            edge.set_length(length)
     return restore
 
 
@@ -3202,19 +3202,19 @@ def _copy_lengths_to_torus(host, torus_spacetime, ids):
     so the torus's own operator is assembled on the lengths the bulk carries
     at this instant."""
     live = {}
-    for edge in host.getEdgeList().toVector():
-        u = int(edge.getSource().getId())
-        v = int(edge.getTarget().getId())
-        live[(min(u, v), max(u, v))] = complex(edge.getLength())
-    for edge in torus_spacetime.getEdgeList().toVector():
-        a = int(edge.getSource().getId())
-        b = int(edge.getTarget().getId())
+    for edge in host.get_edge_list().to_vector():
+        u = int(edge.get_source().get_id())
+        v = int(edge.get_target().get_id())
+        live[(min(u, v), max(u, v))] = complex(edge.get_length())
+    for edge in torus_spacetime.get_edge_list().to_vector():
+        a = int(edge.get_source().get_id())
+        b = int(edge.get_target().get_id())
         if a not in ids or b not in ids:
             raise RuntimeError("torus vertex %d/%d has no host id" % (a, b))
         key = (min(ids[a], ids[b]), max(ids[a], ids[b]))
         if key not in live:
             raise RuntimeError("torus edge %s is not a host edge" % (key,))
-        edge.setLength(live[key])
+        edge.set_length(live[key])
 
 
 def _covariant_period_gram(op, contour, walks):
@@ -3235,14 +3235,14 @@ def _covariant_period_gram(op, contour, walks):
     import numpy as np
     band = op.band(1, contour)
     images = np.asarray(band.images)
-    left = np.asarray(band.leftFrame)
+    left = np.asarray(band.left_frame)
     if left.size == 0 or left.shape != images.shape:
         raise RuntimeError("the band has no left frame (isotropic pairing): the covariant "
                            "Gram is not defined")
     dual = op.dual()
-    periods = np.array([[op.connection().transportedPeriod(images[:, a], walk)
+    periods = np.array([[op.connection().transported_period(images[:, a], walk)
                          for a in range(images.shape[1])] for walk in walks])
-    dual_periods = np.array([[dual.connection().transportedPeriod(left[:, a], walk)
+    dual_periods = np.array([[dual.connection().transported_period(left[:, a], walk)
                               for a in range(left.shape[1])] for walk in walks])
     if periods.shape[0] != periods.shape[1]:
         raise RuntimeError("the marking has %d cycles against a rank-%d band"
@@ -3329,8 +3329,8 @@ def _far_torus_modulus(host, torus, far_ids):
     faces = []
     from collections import Counter
     count = Counter()
-    for cell in host.getTopSimplices():
-        ids_ = sorted(int(v.getId()) for v in cell.getVertices())
+    for cell in host.get_top_simplices():
+        ids_ = sorted(int(v.get_id()) for v in cell.get_vertices())
         for skip in range(4):
             count[tuple(v for n, v in enumerate(ids_) if n != skip)] += 1
     faces = [face for face, c in count.items() if c == 1 and set(face) <= far]
@@ -3367,9 +3367,9 @@ def _far_torus_modulus(host, torus, far_ids):
                 queue.append(other)
     faces = oriented
     lengths = {}
-    for edge in host.getEdgeList().toVector():
-        u, v = int(edge.getSource().getId()), int(edge.getTarget().getId())
-        lengths[(min(u, v), max(u, v))] = complex(edge.getLength())
+    for edge in host.get_edge_list().to_vector():
+        u, v = int(edge.get_source().get_id()), int(edge.get_target().get_id())
+        lengths[(min(u, v), max(u, v))] = complex(edge.get_length())
     vertices = sorted(far)
     index = {v: n for n, v in enumerate(vertices)}
     edges = sorted({(min(index[u], index[v]), max(index[u], index[v])) for face in faces for u in face for v in face if u != v})
@@ -3385,7 +3385,7 @@ def _far_torus_modulus(host, torus, far_ids):
         return out
     marking = _host_marking(torus, far_ids)
     read = obs.SimplicialQubit(vertices=list(range(len(vertices))), edges=edges, faces=local_faces,
-                               lengths=edge_lengths, cycle_A=cycle(marking[0]), cycle_B=cycle(marking[1]))
+                               lengths=edge_lengths, cycle_a=cycle(marking[0]), cycle_b=cycle(marking[1]))
     return complex(read.tau()), len(faces)
 
 
@@ -3398,7 +3398,7 @@ def _flip_checks(config, tori, host, ids, markings, monodromy, lattice, predicte
     checks = []
     rounded = np.asarray(monodromy["rounded"], dtype=int)
     betti = MC.betti(host)
-    cells = len(host.getTopSimplices())
+    cells = len(host.get_top_simplices())
     expected_cells = 6 * n * n * layers + n * n * len(passes)
     checks.append(_check(
         "F1", "the layered collar: %d tetrahedra per pass on the far torus, a manifold with betti [1, 2, 1, 0]" % (n * n),
@@ -3504,8 +3504,8 @@ def verify(config, jitter=DECLARED_VERIFY_JITTER,
     checks = []
     values = {"tori": len(tori), "layers": layers, "collar_twist": twist,
               "grid": int(config["grid"]), "seed": int(config["seed"]),
-              "cells": len(host.getTopSimplices()),
-              "edges": len(host.getEdgeList().toVector())}
+              "cells": len(host.get_top_simplices()),
+              "edges": len(host.get_edge_list().to_vector())}
 
     # ---- R1: the whole's zero mode is its first cohomology ------------
     betti, rank, images, periods, read = _read_restriction(host, markings)
@@ -3564,7 +3564,7 @@ def verify(config, jitter=DECLARED_VERIFY_JITTER,
             "rounded": whole_rounded.tolist()}
 
     # ---- J1-J3: jitter every length -----------------------------------
-    coboundary = _dense(assembled.op.twistedBoundary(1))
+    coboundary = _dense(assembled.op.twisted_boundary(1))
     if coboundary.shape[0] != images.shape[0]:
         coboundary = coboundary.T
     canonical_before = images @ np.linalg.inv(periods_a)
@@ -4019,8 +4019,8 @@ def _boundary_faces(host):
     sorted vertex triples."""
     from collections import Counter
     count = Counter()
-    for cell in host.getTopSimplices():
-        tuple_ = sorted(int(v.getId()) for v in cell.getVertices())
+    for cell in host.get_top_simplices():
+        tuple_ = sorted(int(v.get_id()) for v in cell.get_vertices())
         for skip in range(len(tuple_)):
             count[tuple(v for n, v in enumerate(tuple_) if n != skip)] += 1
     return [face for face, n in count.items() if n == 1]
@@ -4053,11 +4053,11 @@ def _surface_component(faces, seed_vertex):
 def _host_lengths(host):
     """`{(u, v): length}` over the host's edges, `u < v`."""
     out = {}
-    for edge in host.getEdgeList().toVector():
-        if edge is None or edge.getSource() is None or edge.getTarget() is None:
+    for edge in host.get_edge_list().to_vector():
+        if edge is None or edge.get_source() is None or edge.get_target() is None:
             continue
-        u, v = int(edge.getSource().getId()), int(edge.getTarget().getId())
-        out[(min(u, v), max(u, v))] = complex(edge.getLength())
+        u, v = int(edge.get_source().get_id()), int(edge.get_target().get_id())
+        out[(min(u, v), max(u, v))] = complex(edge.get_length())
     return out
 
 
@@ -4133,7 +4133,7 @@ def _theta_tube(config, register, tolerance, sweep=None):
     tori, host, betti, rank, near, far, surface = read(config)
     values.update({"moduli": [complex(torus.tau()) for torus in tori], "betti": betti,
                    "harmonic_rank": rank, "euler_characteristics": _euler_characteristics(host),
-                   "cells": len(host.getTopSimplices())})
+                   "cells": len(host.get_top_simplices())})
     # ---- G1 -------------------------------------------------------------
     stacked_rank = _numeric_rank(np.vstack([near, far]))
     boundary_b1 = int(near.shape[0] + far.shape[0])
@@ -4320,7 +4320,7 @@ def _theta_genus_two(config, register, tolerance):
                                                              "symmetry_residual", "imaginary_eigenvalues")}
     betti, rank, _, periods, _ = _read_restriction(host, markings)
     near, far = periods[0], periods[1]
-    values.update({"betti": [int(b) for b in betti], "harmonic_rank": rank, "cells": len(host.getTopSimplices())})
+    values.update({"betti": [int(b) for b in betti], "harmonic_rank": rank, "cells": len(host.get_top_simplices())})
     iso = _lagrangian_check("decagon", near, far, "none", tolerance)
     stacked_rank = _numeric_rank(np.vstack([near, far]))
     checks.append(_check(

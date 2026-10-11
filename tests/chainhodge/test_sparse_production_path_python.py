@@ -44,8 +44,8 @@ def _instance(N=4, seed=7, crossover=512, dressed=True):
     general case), with the declared dense crossover."""
     rng = np.random.default_rng(seed)
     cells, _ = torus_cells(N)
-    K = cob.ChainComplex.fromTopCells(cells)
-    n1 = K.numSimplices(1)
+    K = cob.ChainComplex.from_top_cells(cells)
+    n1 = K.num_simplices(1)
     s = [complex(1.0 + 0.2 * rng.normal(), 0.2 * rng.normal()) for _ in range(n1)]
     base = ch.ChainHodge(K, s, ch.Preset.L2, KS, crossover)
     links = ([complex(rng.normal(), rng.normal()) for _ in range(n1)] if dressed
@@ -71,8 +71,8 @@ class TestPencilOperatorWithoutForming:
         rng = np.random.default_rng(3)
         n = base.size(k)
         Z = rng.normal(size=(n, 4)) + 1j * rng.normal(size=(n, 4))
-        dense = np.array(cov.pencilAux(k))
-        assert np.abs(np.array(cov.applyPencilOperator(k, Z)) - dense @ Z).max() \
+        dense = np.array(cov.pencil_aux(k))
+        assert np.abs(np.array(cov.apply_pencil_operator(k, Z)) - dense @ Z).max() \
             <= 1e-9 * np.abs(dense).max() * np.abs(Z).max() * n
 
     @pytest.mark.parametrize("k", [0, 1, 2])
@@ -81,8 +81,8 @@ class TestPencilOperatorWithoutForming:
         rng = np.random.default_rng(5)
         n = base.size(k)
         Z = rng.normal(size=(n, 3)) + 1j * rng.normal(size=(n, 3))
-        dense = np.array(base.pencilAux(k))
-        assert np.abs(np.array(base.applyPencilOperator(k, Z)) - dense @ Z).max() \
+        dense = np.array(base.pencil_aux(k))
+        assert np.abs(np.array(base.apply_pencil_operator(k, Z)) - dense @ Z).max() \
             <= 1e-9 * np.abs(dense).max() * np.abs(Z).max() * n
 
     def test_apply_runs_where_the_dense_pencil_refuses(self):
@@ -94,8 +94,8 @@ class TestPencilOperatorWithoutForming:
         with pytest.raises(Exception):
             base.pencil(1)
         with pytest.raises(Exception):
-            base.pencilAux(1)
-        out = np.array(base.applyPencilOperator(1, Z))
+            base.pencil_aux(1)
+        out = np.array(base.apply_pencil_operator(1, Z))
         assert out.shape == (n, 2) and np.isfinite(out).all()
 
 
@@ -106,10 +106,10 @@ class TestStackedMatrixAndNullSpace:
     @pytest.mark.parametrize("k", [1])
     def test_stacked_matrix_is_sparse_and_matches_the_blocks(self, k):
         K, base, cov = _instance()
-        S = base.stackedMatrix(k)
+        S = base.stacked_matrix(k)
         assert sp.issparse(S)
         d2t = base.boundary(k + 1).T.toarray()
-        d1M = (base.boundary(k) @ base.Minv(k)).toarray()
+        d1M = (base.boundary(k) @ base.m_inv(k)).toarray()
         expected = np.vstack([d2t, d1M])
         assert np.abs(S.toarray() - expected).max() < 1e-12
 
@@ -120,14 +120,14 @@ class TestStackedMatrixAndNullSpace:
         per_column = []
         for N in (4, 8, 12):
             _, base, _ = _instance(N=N, seed=N, crossover=1)
-            S = base.stackedMatrix(1)
+            S = base.stacked_matrix(1)
             per_column.append(S.nnz / S.shape[1])
         assert max(per_column) <= 1.2 * min(per_column)
 
     def test_sparse_null_space_matches_the_dense_singular_value_decomposition(self):
         K, base, cov = _instance()
-        S = base.stackedMatrix(1).toarray()
-        read = ch.ChainHodge.sparseNullSpace(sp.csc_matrix(base.stackedMatrix(1)), 10.0)
+        S = base.stacked_matrix(1).toarray()
+        read = ch.ChainHodge.sparse_null_space(sp.csc_matrix(base.stacked_matrix(1)), 10.0)
         u, sv, vh = np.linalg.svd(S)
         tol = 10.0 * max(S.shape) * np.finfo(float).eps * sv[0]
         rank = int(np.sum(sv > tol))
@@ -143,14 +143,14 @@ class TestStackedMatrixAndNullSpace:
         the process memory it did measure and quiet NaN for the fill-in and
         factor memory it did not."""
         K, base, cov = _instance()
-        read = ch.ChainHodge.sparseNullSpace(sp.csc_matrix(base.stackedMatrix(1)), 10.0)
+        read = ch.ChainHodge.sparse_null_space(sp.csc_matrix(base.stacked_matrix(1)), 10.0)
         cost = read.cost
         assert cost.operation == "stacked-qr"
         assert cost.degree == -1
-        assert cost.systemNonZeros > 0
-        assert cost.wallSeconds >= 0.0
-        assert cost.factorNonZeros == 0
-        assert np.isnan(cost.fillIn) and np.isnan(cost.factorMegabytes)
+        assert cost.system_non_zeros > 0
+        assert cost.wall_seconds >= 0.0
+        assert cost.factor_non_zeros == 0
+        assert np.isnan(cost.fill_in) and np.isnan(cost.factor_megabytes)
         # The rank certificate of the read comes through on the split.
         assert read.split.rank == read.rank
         assert read.split.largest > 0.0
@@ -162,21 +162,21 @@ class TestStackedMatrixAndNullSpace:
         links are random has curvature, and the twisted kernel of a complex
         with curvature is generically empty, which both readings report."""
         K, base, cov = _instance(dressed=dressed)
-        dense = cov.harmonicChains(1, 10.0, False)
-        sparse = cov.harmonicChains(1, 10.0, True)
+        dense = cov.harmonic_chains(1, 10.0, False)
+        sparse = cov.harmonic_chains(1, 10.0, True)
         assert sparse.dense is False
         assert sparse.nullity == dense.nullity
         if dressed:
             assert sparse.nullity == 0
         else:
-            assert sparse.nullity == K.bettiNumbers()[1]
+            assert sparse.nullity == K.betti_numbers()[1]
             assert _principal_angle(np.array(sparse.images), np.array(dense.images)) < 1e-6
 
     def test_sparse_harmonic_chains_run_above_the_crossover(self):
         K, base, cov = _instance(crossover=1, dressed=False)
-        read = cov.harmonicChains(1, 10.0, False)
+        read = cov.harmonic_chains(1, 10.0, False)
         assert read.dense is False
-        assert read.nullity == K.bettiNumbers()[1]
+        assert read.nullity == K.betti_numbers()[1]
 
 
 class TestBorderedShiftedSolve:
@@ -187,10 +187,10 @@ class TestBorderedShiftedSolve:
         K, base, cov = _instance()
         zeta = complex(0.31, -0.17)
         n, m = base.size(1), base.size(0)
-        B = np.array(cov.borderedSystem(1, zeta).toarray())
+        B = np.array(cov.bordered_system(1, zeta).toarray())
         assert B.shape == (n + m, n + m)
         schur = B[:n, :n] - B[:n, n:] @ np.linalg.solve(B[n:, n:], B[n:, :n])
-        expected = zeta * np.array(cov.pencil(1).B) - np.array(cov.pencilAux(1))
+        expected = zeta * np.array(cov.pencil(1).B) - np.array(cov.pencil_aux(1))
         assert np.abs(schur - expected).max() < 1e-8 * np.abs(expected).max()
 
     def test_shifted_solve_matches_the_dense_inverse(self):
@@ -199,21 +199,21 @@ class TestBorderedShiftedSolve:
         zeta = complex(-0.4, 0.23)
         n = base.size(1)
         B = rng.normal(size=(n, 3)) + 1j * rng.normal(size=(n, 3))
-        X, cost = cov.shiftedSolve(1, zeta, B)
-        P = zeta * np.array(cov.pencil(1).B) - np.array(cov.pencilAux(1))
+        X, cost = cov.shifted_solve(1, zeta, B)
+        P = zeta * np.array(cov.pencil(1).B) - np.array(cov.pencil_aux(1))
         assert np.abs(np.array(X) - np.linalg.solve(P, B)).max() < 1e-7 * np.abs(B).max()
         assert cost.operation == "bordered-lu"
         assert cost.dimension == n
-        assert cost.systemRows == n + base.size(0)
-        assert cost.factorNonZeros > 0 and cost.fillIn > 0.0
-        assert cost.rightHandSides == 3
+        assert cost.system_rows == n + base.size(0)
+        assert cost.factor_non_zeros > 0 and cost.fill_in > 0.0
+        assert cost.right_hand_sides == 3
 
     def test_shifted_solve_runs_above_the_crossover(self):
         K, base, cov = _instance(crossover=1)
         n = base.size(1)
-        X, cost = cov.shiftedSolve(1, complex(0.5, 0.1), np.eye(n, 1, dtype=complex))
+        X, cost = cov.shifted_solve(1, complex(0.5, 0.1), np.eye(n, 1, dtype=complex))
         assert X.shape == (n, 1) and np.isfinite(np.array(X)).all()
-        assert cost.factorNonZeros > 0
+        assert cost.factor_non_zeros > 0
 
     def test_the_resolvent_is_the_shifted_solve_carried_to_chains(self):
         K, base, cov = _instance()
@@ -221,9 +221,9 @@ class TestBorderedShiftedSolve:
         zeta = complex(0.9, 0.4)
         n = base.size(1)
         c = rng.normal(size=(n, 2)) + 1j * rng.normal(size=(n, 2))
-        X, _ = cov.shiftedSolve(1, zeta, c)
+        X, _ = cov.shifted_solve(1, zeta, c)
         assert np.abs(np.array(cov.resolvent(1, zeta, c))
-                      - cov.Minv(1) @ np.array(X)).max() < 1e-10 * np.abs(c).max()
+                      - cov.m_inv(1) @ np.array(X)).max() < 1e-10 * np.abs(c).max()
 
 
 class TestSparseBand:
@@ -241,40 +241,40 @@ class TestSparseBand:
         K, base, cov = _instance(dressed=False, seed=17)
         contour = self._contour(cov)
         dense = cov.band(1, contour, 10.0, 1e-10)
-        assert dense.rank() == K.bettiNumbers()[1]
-        sparse, cost = cov.sparseBand(1, contour, dense.rank() + 4, 10.0, 1e-10, 20260922)
+        assert dense.rank() == K.betti_numbers()[1]
+        sparse, cost = cov.sparse_band(1, contour, dense.rank() + 4, 10.0, 1e-10, 20260922)
         assert sparse.rank() == dense.rank()
         assert _principal_angle(np.array(sparse.frame), np.array(dense.frame)) < 1e-6
-        if dense.certificate.leftFrameAvailable and sparse.certificate.leftFrameAvailable:
+        if dense.certificate.left_frame_available and sparse.certificate.left_frame_available:
             # The reduced operators are conjugate, so their spectra agree.
             a = np.sort_complex(np.linalg.eigvals(np.array(sparse.reduced)))
             b = np.sort_complex(np.linalg.eigvals(np.array(dense.reduced)))
             assert np.abs(a - b).max() < 1e-6 * max(1.0, np.abs(b).max())
         assert cost.operation == "contour-band"
-        assert cost.factorNonZeros > 0 and cost.fillIn > 0.0
+        assert cost.factor_non_zeros > 0 and cost.fill_in > 0.0
 
     def test_the_probe_block_certificates_are_measured(self):
         K, base, cov = _instance(dressed=False, seed=17)
         contour = self._contour(cov)
         dense = cov.band(1, contour, 10.0, 1e-10)
-        sparse, _ = cov.sparseBand(1, contour, dense.rank() + 4)
+        sparse, _ = cov.sparse_band(1, contour, dense.rank() + 4)
         certificate = sparse.certificate
         # Idempotency is measured on the probe block by a second quadrature
         # pass rather than asserted; the projector itself is never formed, so
         # its spectral norm is unmeasured and the probe estimate says so.
         assert certificate.idempotency < 1e-6
-        assert np.isnan(certificate.resolventMax)
-        assert certificate.resolventProbeMax > 0.0
+        assert np.isnan(certificate.resolvent_max)
+        assert certificate.resolvent_probe_max > 0.0
         assert "probes=" in certificate.contour
-        if certificate.leftFrameAvailable:
-            assert certificate.rightResidual < 1e-6
+        if certificate.left_frame_available:
+            assert certificate.right_residual < 1e-6
 
     def test_a_probe_block_narrower_than_the_band_is_refused(self):
         K, base, cov = _instance(dressed=False, seed=17)
         contour = self._contour(cov)
         assert cov.band(1, contour, 10.0, 1e-10).rank() >= 2
         with pytest.raises(Exception):
-            cov.sparseBand(1, contour, 1)
+            cov.sparse_band(1, contour, 1)
 
     def test_sparse_band_runs_where_the_dense_band_refuses(self):
         K, base, cov = _instance(dressed=False, seed=17, crossover=512)
@@ -283,7 +283,7 @@ class TestSparseBand:
         K2, base2, cov2 = _instance(dressed=False, seed=17, crossover=1)
         with pytest.raises(Exception):
             cov2.band(1, contour, 10.0, 1e-10)
-        sparse, _ = cov2.sparseBand(1, contour, rank + 4)
+        sparse, _ = cov2.sparse_band(1, contour, rank + 4)
         assert sparse.rank() == rank
 
 
@@ -292,7 +292,7 @@ class TestSparseFeshbach:
 
     @staticmethod
     def _interface(K, N):
-        edges = [tuple(int(v) for v in e) for e in K.kSimplexVertices(1)]
+        edges = [tuple(int(v) for v in e) for e in K.k_simplex_vertices(1)]
         left = {v for v in range(N * N) if v // N < N // 2}
         return [i for i, e in enumerate(edges) if (e[0] in left) != (e[1] in left)]
 
@@ -300,22 +300,22 @@ class TestSparseFeshbach:
         """At degree zero both matrices of the pencil are sparse as they stand,
         so the whole complement runs on the sparse path."""
         K, base, cov = _instance(dressed=False, seed=31)
-        pencil = cov.sparsePencil(0)
+        pencil = cov.sparse_pencil(0)
         A, M = sp.csc_matrix(pencil.A), sp.csc_matrix(pencil.M)
         interface = sorted(range(0, A.shape[0], 3))
         lam = complex(0.23, -0.07)
-        result, cost = PS.sparseFeshbach(A, M, lam, interface)
+        result, cost = PS.sparse_feshbach(A, M, lam, interface)
         dense = PS.feshbach(A.toarray(), M.toarray(), lam, interface, 1e-12)
         scale = np.abs(np.array(dense.response)).max()
         assert np.abs(np.array(result.response) - np.array(dense.response)).max() < 1e-8 * scale
-        assert np.abs(np.array(result.constraintModes)
-                      - np.array(dense.constraintModes)).max() < 1e-8
-        assert result.solveResidual < 1e-10
-        assert cost.factorNonZeros > 0 and cost.fillIn > 0.0
+        assert np.abs(np.array(result.constraint_modes)
+                      - np.array(dense.constraint_modes)).max() < 1e-8
+        assert result.solve_residual < 1e-10
+        assert cost.factor_non_zeros > 0 and cost.fill_in > 0.0
 
     def test_an_interior_resonance_is_refused_by_name(self):
         K, base, cov = _instance(dressed=False, seed=31)
-        pencil = cov.sparsePencil(0)
+        pencil = cov.sparse_pencil(0)
         A, M = sp.csc_matrix(pencil.A), sp.csc_matrix(pencil.M)
         interface = sorted(range(0, A.shape[0], 3))
         interior = [i for i in range(A.shape[0]) if i not in set(interface)]
@@ -323,7 +323,7 @@ class TestSparseFeshbach:
         lam = complex(np.linalg.eigvals(
             np.linalg.solve(M.toarray()[idx], A.toarray()[idx]))[0])
         with pytest.raises(Exception, match="resonance"):
-            PS.sparseFeshbach(A, M, lam, interface, 1e-8)
+            PS.sparse_feshbach(A, M, lam, interface, 1e-8)
 
 
 class TestScalingReports:
@@ -341,9 +341,9 @@ class TestScalingReports:
         K, s, _ = flat_torus(N, jitter=0.25, seed=N)
         base = ch.ChainHodge(K, s, ch.Preset.L2, KS, 1)
         cov = ch.CovariantChainHodge(base, ch.Connection.trivial(K), 7, False)
-        n1 = K.numSimplices(1)
-        _, lu = cov.shiftedSolve(1, complex(0.37, 0.11), np.eye(n1, 1, dtype=complex))
-        qr = ch.ChainHodge.sparseNullSpace(sp.csc_matrix(base.stackedMatrix(1)), 10.0).cost
+        n1 = K.num_simplices(1)
+        _, lu = cov.shifted_solve(1, complex(0.37, 0.11), np.eye(n1, 1, dtype=complex))
+        qr = ch.ChainHodge.sparse_null_space(sp.csc_matrix(base.stacked_matrix(1)), 10.0).cost
         return {"N": N, "n1": n1, "lu": lu, "qr": qr}
 
     def test_time_memory_and_fill_in_against_the_number_of_cells(self):
@@ -356,53 +356,53 @@ class TestScalingReports:
             for name in ("lu", "qr"):
                 cost = row[name]
                 print(f"{row['N']:>3} {row['n1']:>6} {cost.operation:>11}"
-                      f" {cost.systemNonZeros:>9} {cost.factorNonZeros:>9}"
-                      f" {cost.fillIn:>8.3f} {cost.factorMegabytes:>8.3f}"
-                      f" {cost.wallSeconds:>8.4f}")
+                      f" {cost.system_non_zeros:>9} {cost.factor_non_zeros:>9}"
+                      f" {cost.fill_in:>8.3f} {cost.factor_megabytes:>8.3f}"
+                      f" {cost.wall_seconds:>8.4f}")
         # The largest mesh is past the default dense crossover, so the series
         # reaches the sizes the dense reading cannot be taken at.
         K, s, _ = flat_torus(4, jitter=0.0, seed=0)
-        default_crossover = ch.ChainHodge(K, s).crossoverDimension()
+        default_crossover = ch.ChainHodge(K, s).crossover_dimension()
         assert rows[-1]["n1"] > default_crossover
         for row in rows:
             for name in ("lu", "qr"):
                 cost = row[name]
-                assert cost.systemNonZeros > 0
-                assert cost.wallSeconds >= 0.0
+                assert cost.system_non_zeros > 0
+                assert cost.wall_seconds >= 0.0
             # Fill-in and factor memory are the bordered factorization's: it is
             # the one this subsystem owns and the dominant cost of the path.
-            assert row["lu"].factorNonZeros > 0
-            assert np.isfinite(row["lu"].fillIn) and row["lu"].fillIn > 0.0
-            assert row["lu"].factorMegabytes > 0.0
+            assert row["lu"].factor_non_zeros > 0
+            assert np.isfinite(row["lu"].fill_in) and row["lu"].fill_in > 0.0
+            assert row["lu"].factor_megabytes > 0.0
         # The cell counts grow, and so do the systems: the reports are read
         # against n_1, which is the plan's abscissa.
         assert [r["n1"] for r in rows] == sorted(r["n1"] for r in rows)
-        assert [r["lu"].systemNonZeros for r in rows] \
-            == sorted(r["lu"].systemNonZeros for r in rows)
+        assert [r["lu"].system_non_zeros for r in rows] \
+            == sorted(r["lu"].system_non_zeros for r in rows)
         # The factors stay sparse: the fraction of the dense n^2 that one
         # bordered factorization stores falls as the system grows, where a dense
         # factorization would hold it at one, and on the largest mesh it is
         # below a quarter. That is the whole claim of a sparse production path.
-        fraction = [r["lu"].factorNonZeros / r["lu"].systemRows ** 2 for r in rows]
+        fraction = [r["lu"].factor_non_zeros / r["lu"].system_rows ** 2 for r in rows]
         assert fraction[-1] < fraction[0]
         assert fraction[-1] < 0.25
         # Fill-in per unknown does not run away with the mesh. A dense
         # factorization would store one entry per unknown per row, so its
         # per-row count would grow with the system exactly as the system does --
         # a factor of sixteen over this series. The sparse one is held to six.
-        per_row = [r["lu"].factorNonZeros / r["lu"].systemRows for r in rows]
+        per_row = [r["lu"].factor_non_zeros / r["lu"].system_rows for r in rows]
         assert per_row[-1] <= 6.0 * per_row[0]
 
     def test_the_memory_of_the_factors_is_the_entries_they_store(self):
-        """`factorMegabytes` is computed from `factorNonZeros`, so the two agree
+        """`factor_megabytes` is computed from `factor_non_zeros`, so the two agree
         exactly: it is a count, not an estimate."""
         cost = self._row(6)["lu"]
-        bytes_per_entry = cost.factorMegabytes * 1024.0 * 1024.0 / cost.factorNonZeros
+        bytes_per_entry = cost.factor_megabytes * 1024.0 * 1024.0 / cost.factor_non_zeros
         assert 16.0 <= bytes_per_entry <= 32.0
 
     def test_the_resident_memory_of_an_operation_is_reported(self):
         """On a platform that publishes it, the change in the process's resident
         set size is a number; where it does not, it is quiet NaN and says so."""
         row = self._row(8)
-        value = row["lu"].residentMegabytes
+        value = row["lu"].resident_megabytes
         assert np.isnan(value) or np.isfinite(value)

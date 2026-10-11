@@ -90,12 +90,12 @@ class TestDriverPlot(unittest.TestCase):
         st = tessera.Spacetime(metric, tessera.CDT, 1.0, 1.0,
                                tessera.PREFERRED, tessera.Toroid())
         st.build(80)
-        cdt = tessera.CDTSimulation(st, 2.2, 0.5, 0.6, 0.02, st.getN41())
+        cdt = tessera.CDTSimulation(st, 2.2, 0.5, 0.6, 0.02, st.get_n41())
         cfg = tessera.ModularityOptimizerConfig()
-        cfg.targetDq = 0.1
-        cfg.maxIterations = 10
-        cfg.nDiffusionWalks = 8
-        cfg.maxSigma = 20.0
+        cfg.target_dq = 0.1
+        cfg.max_iterations = 10
+        cfg.n_diffusion_walks = 8
+        cfg.max_sigma = 20.0
         opt = tessera.ModularityOptimizer(cfg, seed=0)
         ms = opt.sweep(cdt, "up")
         self.assertGreater(len(ms), 0)

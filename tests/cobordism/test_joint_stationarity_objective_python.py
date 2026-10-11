@@ -19,10 +19,10 @@ def _complex_sphere4():
                      T.CDT, 1.0, 1.0, T.PREFERRED,
                      T.SimplexBoundarySphere(4))
     st.build()
-    for index, edge in enumerate(st.getEdgeList().toVector()):
+    for index, edge in enumerate(st.get_edge_list().to_vector()):
         z = complex(1.0 + 0.019 * (index % 5),
                     0.011 * (1 + index % 4))
-        edge.setLength(cmath.sqrt(z))
+        edge.set_length(cmath.sqrt(z))
     return st
 
 
@@ -63,7 +63,7 @@ class ObjectiveSelectionTest(unittest.TestCase):
         node.set_regge_weight(0.23)
         expected = (node.r_u(st)
                     + 0.23 * abs(T.ReggeSolver(
-                        st, T.MatterConfiguration()).dualReggeAction()))
+                        st, T.MatterConfiguration()).dual_regge_action()))
         self.assertAlmostEqual(node.objective(), expected, places=10)
 
     def test_joint_mode_rejects_degree_zero_gradient(self):
@@ -76,8 +76,8 @@ class ObjectiveSelectionTest(unittest.TestCase):
         node.set_objective(cob.JointStationarityObjective())
         node.set_hodge_entropy_weight(0.0)
         node.set_regge_weight(0.0)
-        original_lengths = [complex(edge.getLength())
-                            for edge in node.st.getEdgeList().toVector()]
+        original_lengths = [complex(edge.get_length())
+                            for edge in node.st.get_edge_list().to_vector()]
 
         self.assertEqual(node.objective(), 0.0)
         trace = node.run_stage2(beta=0.0, max_iters=1, alpha0=0.05,
@@ -86,8 +86,8 @@ class ObjectiveSelectionTest(unittest.TestCase):
         self.assertEqual(trace, [0.0])
         self.assertTrue(node.last_stage2_stationary)
         self.assertEqual(
-            [complex(edge.getLength())
-             for edge in node.st.getEdgeList().toVector()],
+            [complex(edge.get_length())
+             for edge in node.st.get_edge_list().to_vector()],
             original_lengths)
 
     def test_entropy_only_stage_two_is_variational(self):
@@ -108,13 +108,13 @@ class ComplexSquaredCoordinateStepTest(unittest.TestCase):
         st = _complex_sphere4()
         node = _node(st, gamma=0.0)
         node.set_objective(cob.LegacyObjective())
-        edges = st.getEdgeList().toVector()
-        original_lengths = np.asarray([complex(e.getLength()) for e in edges])
+        edges = st.get_edge_list().to_vector()
+        original_lengths = np.asarray([complex(e.get_length()) for e in edges])
         z0 = original_lengths ** 2
 
         solver = T.ReggeSolver(st, T.MatterConfiguration())
-        gradient = np.asarray(solver.actionGradientExact(), complex)
-        hessian = np.asarray(solver.actionHessianExact(), complex)
+        gradient = np.asarray(solver.action_gradient_exact(), complex)
+        hessian = np.asarray(solver.action_hessian_exact(), complex)
         ascent = 2.0 * (np.conj(hessian) @ gradient)
 
         alpha0 = 1e-5
@@ -123,7 +123,7 @@ class ComplexSquaredCoordinateStepTest(unittest.TestCase):
         self.assertEqual(len(trace), 2, "fixture should accept one descent step")
         self.assertLess(trace[-1], trace[0])
         actual_lengths = np.asarray(
-            [complex(e.getLength()) for e in node.st.getEdgeList().toVector()])
+            [complex(e.get_length()) for e in node.st.get_edge_list().to_vector()])
         actual_z = actual_lengths ** 2
 
         errors = []
@@ -150,12 +150,12 @@ class ComplexSquaredCoordinateStepTest(unittest.TestCase):
         node.set_hodge_degrees([3])
         mode = cob.HodgeEntropyPhaseMode.IncludeComplexPhase
         node.set_hodge_entropy_phase_mode(mode)
-        edges = st.getEdgeList().toVector()
-        original_lengths = np.asarray([complex(e.getLength()) for e in edges])
+        edges = st.get_edge_list().to_vector()
+        original_lengths = np.asarray([complex(e.get_length()) for e in edges])
         z0 = original_lengths ** 2
 
         h0 = np.asarray(
-            cob.HodgeLaplacian(st).spectralEntropyGradient(3, mode), complex)
+            cob.HodgeLaplacian(st).spectral_entropy_gradient(3, mode), complex)
         entropy_ascent = np.conj(h0)
         hvp_step = (np.cbrt(np.finfo(float).eps) * max(np.linalg.norm(z0), 1.0)
                     / np.linalg.norm(entropy_ascent))
@@ -166,16 +166,16 @@ class ComplexSquaredCoordinateStepTest(unittest.TestCase):
                 if abs(-root - original_lengths[index]) < abs(
                         root - original_lengths[index]):
                     root = -root
-                edge.setLength(root)
+                edge.set_length(root)
 
         set_z(z0 + hvp_step * entropy_ascent)
         h_plus = np.asarray(
-            cob.HodgeLaplacian(st).spectralEntropyGradient(3, mode), complex)
+            cob.HodgeLaplacian(st).spectral_entropy_gradient(3, mode), complex)
         set_z(z0 - hvp_step * entropy_ascent)
         h_minus = np.asarray(
-            cob.HodgeLaplacian(st).spectralEntropyGradient(3, mode), complex)
+            cob.HodgeLaplacian(st).spectral_entropy_gradient(3, mode), complex)
         for edge, length in zip(edges, original_lengths):
-            edge.setLength(length)
+            edge.set_length(length)
         ascent = 2.0 * np.conj((h_plus - h_minus) / (2.0 * hvp_step))
 
         alpha0 = 1e-5
@@ -183,8 +183,8 @@ class ComplexSquaredCoordinateStepTest(unittest.TestCase):
                                 tolerance=1e-14)
         self.assertEqual(len(trace), 2, "fixture should accept one entropy step")
         actual_z = np.asarray(
-            [complex(e.getLength()) ** 2
-             for e in node.st.getEdgeList().toVector()])
+            [complex(e.get_length()) ** 2
+             for e in node.st.get_edge_list().to_vector()])
         errors = [
             np.max(np.abs(actual_z - (z0 - alpha0 * 0.5 ** backoff * ascent)))
             for backoff in range(24)

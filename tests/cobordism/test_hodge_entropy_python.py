@@ -19,10 +19,10 @@ def _complex_sphere4():
     st = T.Spacetime(metric, T.CDT, 1.0, 1.0, T.PREFERRED,
                      T.SimplexBoundarySphere(4))
     st.build()
-    for index, edge in enumerate(st.getEdgeList().toVector()):
+    for index, edge in enumerate(st.get_edge_list().to_vector()):
         z = complex(1.0 + 0.021 * (index % 5),
                     0.017 * (1 + (index % 3)))
-        edge.setLength(cmath.sqrt(z))
+        edge.set_length(cmath.sqrt(z))
     return st
 
 
@@ -50,7 +50,7 @@ class HodgeEntropyTest(unittest.TestCase):
         )
         for mode, ignore in modes:
             with self.subTest(mode=mode):
-                measured = float(hl.spectralEntropy(3, mode))
+                measured = float(hl.spectral_entropy(3, mode))
                 expected = _entropy_oracle(st, 3, ignore)
                 self.assertAlmostEqual(measured, expected, places=11)
                 self.assertGreaterEqual(measured, 0.0)
@@ -63,27 +63,27 @@ class HodgeEntropyTest(unittest.TestCase):
             cob.HodgeEntropyPhaseMode.IncludeComplexPhase,
             cob.HodgeEntropyPhaseMode.IgnoreComplexPhase,
         )
-        edges = st.getEdgeList().toVector()
+        edges = st.get_edge_list().to_vector()
         step = 2e-6
         for mode in modes:
             gradient = np.asarray(
-                cob.HodgeLaplacian(st).spectralEntropyGradient(3, mode),
+                cob.HodgeLaplacian(st).spectral_entropy_gradient(3, mode),
                 dtype=complex)
             self.assertEqual(gradient.shape, (len(edges),))
             for edge_index in (0, 2):
                 edge = edges[edge_index]
-                original_length = complex(edge.getLength())
+                original_length = complex(edge.get_length())
                 z0 = original_length * original_length
 
                 def value(z):
-                    edge.setLength(cmath.sqrt(z))
-                    return float(cob.HodgeLaplacian(st).spectralEntropy(3, mode))
+                    edge.set_length(cmath.sqrt(z))
+                    return float(cob.HodgeLaplacian(st).spectral_entropy(3, mode))
 
                 f_re_plus = value(z0 + step)
                 f_re_minus = value(z0 - step)
                 f_im_plus = value(z0 + 1j * step)
                 f_im_minus = value(z0 - 1j * step)
-                edge.setLength(original_length)
+                edge.set_length(original_length)
 
                 fd_re = (f_re_plus - f_re_minus) / (2.0 * step)
                 fd_im = (f_im_plus - f_im_minus) / (2.0 * step)
@@ -95,7 +95,7 @@ class HodgeEntropyTest(unittest.TestCase):
 
             expected_norm = float(np.vdot(gradient, gradient).real)
             measured_norm = float(
-                cob.HodgeLaplacian(st).spectralEntropyGradientNorm(3, mode))
+                cob.HodgeLaplacian(st).spectral_entropy_gradient_norm(3, mode))
             self.assertAlmostEqual(measured_norm, expected_norm, places=10)
 
     def test_degree_zero_entropy_and_gradient_are_both_available(self):
@@ -105,35 +105,35 @@ class HodgeEntropyTest(unittest.TestCase):
         # gradient applies -- FD-checked on both axes below.
         st = _complex_sphere4()
         hl = cob.HodgeLaplacian(st)
-        self.assertTrue(math.isfinite(hl.spectralEntropy(0)))
-        gradient = np.asarray(hl.spectralEntropyGradient(0), dtype=complex)
-        self.assertEqual(gradient.shape, (len(st.getEdgeList().toVector()),))
+        self.assertTrue(math.isfinite(hl.spectral_entropy(0)))
+        gradient = np.asarray(hl.spectral_entropy_gradient(0), dtype=complex)
+        self.assertEqual(gradient.shape, (len(st.get_edge_list().to_vector()),))
         self.assertTrue(np.all(np.isfinite(gradient)))
         self.assertGreater(np.max(np.abs(gradient)), 0.0)
 
     def test_degree_zero_gradient_matches_two_axis_finite_difference(self):
         st = _complex_sphere4()
-        edges = st.getEdgeList().toVector()
+        edges = st.get_edge_list().to_vector()
         step = 2e-6
         for mode in (cob.HodgeEntropyPhaseMode.IncludeComplexPhase,
                      cob.HodgeEntropyPhaseMode.IgnoreComplexPhase):
             gradient = np.asarray(
-                cob.HodgeLaplacian(st).spectralEntropyGradient(0, mode),
+                cob.HodgeLaplacian(st).spectral_entropy_gradient(0, mode),
                 dtype=complex)
             for edge_index in (0, 3):
                 edge = edges[edge_index]
-                original_length = complex(edge.getLength())
+                original_length = complex(edge.get_length())
                 z0 = original_length * original_length
 
                 def value(z):
-                    edge.setLength(cmath.sqrt(z))
-                    return float(cob.HodgeLaplacian(st).spectralEntropy(0, mode))
+                    edge.set_length(cmath.sqrt(z))
+                    return float(cob.HodgeLaplacian(st).spectral_entropy(0, mode))
 
                 f_re_plus = value(z0 + step)
                 f_re_minus = value(z0 - step)
                 f_im_plus = value(z0 + 1j * step)
                 f_im_minus = value(z0 - 1j * step)
-                edge.setLength(original_length)
+                edge.set_length(original_length)
 
                 fd_re = (f_re_plus - f_re_minus) / (2.0 * step)
                 fd_im = (f_im_plus - f_im_minus) / (2.0 * step)
@@ -148,27 +148,27 @@ class HodgeEntropyTest(unittest.TestCase):
         # The exact dL_0/dz underneath it: with W_0 = I the only surviving term
         # is -d_1 W_1^-1 (dW_1) W_1^-1 d_1^dagger.
         st = _complex_sphere4()
-        cc = cob.ChainComplex.fromSpacetime(st)
-        n0 = cc.numSimplices(0)
-        one_cells = cc.kSimplexVertices(1)
-        edges = {tuple(sorted((e.getSource().getId(), e.getTarget().getId()))): e
-                 for e in st.getEdgeList().toVector()}
+        cc = cob.ChainComplex.from_spacetime(st)
+        n0 = cc.num_simplices(0)
+        one_cells = cc.k_simplex_vertices(1)
+        edges = {tuple(sorted((e.get_source().get_id(), e.get_target().get_id()))): e
+                 for e in st.get_edge_list().to_vector()}
         step = 1e-6
         for cell in (one_cells[0], one_cells[4]):
             edge = edges[tuple(sorted(cell))]
             analytic = np.asarray(
-                cob.HodgeLaplacian(st).laplacianGradient(0, cell[0], cell[1]),
+                cob.HodgeLaplacian(st).laplacian_gradient(0, cell[0], cell[1]),
                 dtype=complex).reshape(n0, n0)
-            original_length = complex(edge.getLength())
+            original_length = complex(edge.get_length())
             z0 = original_length * original_length
 
             def operator(z):
-                edge.setLength(cmath.sqrt(z))
+                edge.set_length(cmath.sqrt(z))
                 return np.asarray(cob.HodgeLaplacian(st).laplacian(0),
                                   dtype=complex).reshape(n0, n0)
 
             fd = (operator(z0 + step) - operator(z0 - step)) / (2.0 * step)
-            edge.setLength(original_length)
+            edge.set_length(original_length)
             with self.subTest(cell=tuple(cell)):
                 self.assertLess(np.max(np.abs(analytic - fd)), 1e-6)
 

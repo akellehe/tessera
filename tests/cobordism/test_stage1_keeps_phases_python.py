@@ -51,12 +51,12 @@ DUMP = pathlib.Path(__file__).with_name("data") / "stage1_keeps_phases_ordinary_
 
 @pytest.fixture
 def whitney_default():
-    previous = HL.defaultMetricSource()
-    HL.setDefaultMetricSource(cob.HodgeMetricSource.WhitneyPencil)
+    previous = HL.default_metric_source()
+    HL.set_default_metric_source(cob.HodgeMetricSource.WhitneyPencil)
     try:
         yield
     finally:
-        HL.setDefaultMetricSource(previous)
+        HL.set_default_metric_source(previous)
 
 
 # --------------------------------------------------------------------------- #
@@ -82,10 +82,10 @@ def gauged_torus(q, g):
     phi_e = g(target) - g(source) written on every edge's stored orientation
     (the connection U_xy = g_x^{-1} g_y, g_x = exp(i g(x)))."""
     st = q.spacetime()
-    for edge in st.getEdgeList().toVector():
-        u, v = edge.getSource().getId(), edge.getTarget().getId()
-        edge.setPhase(g[v] - g[u])
-    return st, quiet(lambda: obs.SimplicialQubit(st, list(q.cycle_A()), list(q.cycle_B())))
+    for edge in st.get_edge_list().to_vector():
+        u, v = edge.get_source().get_id(), edge.get_target().get_id()
+        edge.set_phase(g[v] - g[u])
+    return st, quiet(lambda: obs.SimplicialQubit(st, list(q.cycle_a()), list(q.cycle_b())))
 
 
 def state_fiber(gauged, gauged_st, ids):
@@ -114,7 +114,7 @@ def host_marking(q, ids):
             out.append((ids[int(i)], ids[int(j)]) if sign > 0 else (ids[int(j)], ids[int(i)]))
         return out
 
-    return [cycle(q.cycle_A()), cycle(q.cycle_B())]
+    return [cycle(q.cycle_a()), cycle(q.cycle_b())]
 
 
 def canonical(source, target, phase):
@@ -127,18 +127,18 @@ def canonical(source, target, phase):
 def edge_geometry(st):
     """{(min, max): (length, canonical phase)} over every edge of ``st``."""
     out = {}
-    for e in st.getEdgeList().toVector():
-        u, v = e.getSource().getId(), e.getTarget().getId()
-        out[(min(u, v), max(u, v))] = (complex(e.getLength()), canonical(u, v, complex(e.getPhase())))
+    for e in st.get_edge_list().to_vector():
+        u, v = e.get_source().get_id(), e.get_target().get_id()
+        out[(min(u, v), max(u, v))] = (complex(e.get_length()), canonical(u, v, complex(e.get_phase())))
     return out
 
 
 def tops(st):
-    return sorted(tuple(sorted(v.getId() for v in s.getVertices())) for s in st.getTopSimplices())
+    return sorted(tuple(sorted(v.get_id() for v in s.get_vertices())) for s in st.get_top_simplices())
 
 
 def vertex_ids(st):
-    return sorted(v.getId() for v in st.getVertexList().toVector())
+    return sorted(v.get_id() for v in st.get_vertex_list().to_vector())
 
 
 def block_split(cell, regions):
@@ -153,8 +153,8 @@ def surface_cycles(marking, surface):
     """A host marking as (edge index, sign) steps in ``surface``'s edge order:
     the ``SimplicialQubit`` Spacetime constructor indexes edges in ascending
     (i, j) order of the vertex ids."""
-    edges = sorted(tuple(sorted((e.getSource().getId(), e.getTarget().getId())))
-                   for e in surface.getEdgeList().toVector())
+    edges = sorted(tuple(sorted((e.get_source().get_id(), e.get_target().get_id())))
+                   for e in surface.get_edge_list().to_vector())
     index = {edge: n for n, edge in enumerate(edges)}
     return [[(index[(min(u, v), max(u, v))], 1 if u < v else -1) for u, v in steps] for steps in marking]
 
@@ -172,8 +172,8 @@ def leak_without_phases(node, index, st):
     the block's fiber (the TWISTED zero mode) read on its own surface with
     every phase zeroed."""
     own = MC.block_surface_subcomplex(node.inputs[index], st)
-    for e in own.getEdgeList().toVector():
-        e.setPhase(0j)
+    for e in own.get_edge_list().to_vector():
+        e.set_phase(0j)
     fiber = node.inputs[index].fiber
     assembled = cob.PencilLayer.assemble([own])
     contour = cob.PencilLayer.harmonic_contour(assembled, 1)
@@ -202,14 +202,14 @@ def collar_with_phases(n, layers=1, seed_value=0, gauge_seeds=(11, 12)):
         reads.append(gauged_torus(q, g))
     # phi_e = g(target) - g(source) on the host's stored orientation, per torus
     bulk_index = 0
-    for edge in st.getEdgeList().toVector():
-        u, v = edge.getSource().getId(), edge.getTarget().getId()
+    for edge in st.get_edge_list().to_vector():
+        u, v = edge.get_source().get_id(), edge.get_target().get_id()
         block = next((k for k, region in enumerate(regions) if u in region and v in region), None)
         if block is not None:
-            edge.setPhase(gauges[block][v] - gauges[block][u])
+            edge.set_phase(gauges[block][v] - gauges[block][u])
         else:
             if bulk_index % 6 == 0:
-                edge.setPhase(BULK_PHASES[(bulk_index // 6) % len(BULK_PHASES)])
+                edge.set_phase(BULK_PHASES[(bulk_index // 6) % len(BULK_PHASES)])
             bulk_index += 1
     node = MC(st, [[1.0 + 0j], [1.0 + 0j]], [], degrees=[1], seed=seed_value, einstein_hilbert=False)
     node.seed_inputs([sorted(ids.values()) for ids in seed.vertex_ids])
@@ -270,13 +270,13 @@ class CellCountObjective(cob.CobordismObjective):
 
     def terms(self, context):
         out = cob.ObjectiveTerms()
-        out.regge_stationarity = self.sign * float(len(context.spacetime.getTopSimplices()))
+        out.regge_stationarity = self.sign * float(len(context.spacetime.get_top_simplices()))
         return out
 
     def direction(self, context):
         out = cob.ObjectiveDirection()
         out.ascent = np.zeros(context.edge_count, dtype=complex)
-        out.baseline = self.sign * float(len(context.spacetime.getTopSimplices()))
+        out.baseline = self.sign * float(len(context.spacetime.get_top_simplices()))
         out.baseline_computed = True
         return out
 
@@ -465,10 +465,10 @@ def ordinary_node_dump():
     psi, phi = (rng.normal(size=4) + 1j * rng.normal(size=4) for _ in range(2))
     node = MC(MC.seed_simplex(3), [[1.0 + 0j, 0j, 0j, 0j], [1.0 + 0j, 0j, 0j, 0j]], [], degrees=[0],
               seed=0, precone=8, einstein_hilbert=True)
-    for e in node.spacetime().getEdgeList().toVector():
+    for e in node.spacetime().get_edge_list().to_vector():
         s = 1.0 + 0.15 * rng.uniform(-1, 1) + 1j * 0.15 * rng.uniform(-1, 1)
-        e.setLength(np.sqrt(complex(s)))
-    tets = [tuple(int(v) for v in t) for t in cob.ChainComplex.fromSpacetime(node.spacetime()).kSimplexVertices(3)]
+        e.set_length(np.sqrt(complex(s)))
+    tets = [tuple(int(v) for v in t) for t in cob.ChainComplex.from_spacetime(node.spacetime()).k_simplex_vertices(3)]
     a, b = next((x, y) for x, y in itertools.combinations(tets, 2) if not set(x) & set(y))
     node.seed_inputs([0, 1])
     node.attach_input_fiber(0, degree0_fiber(psi), [[v] for v in a])
@@ -528,6 +528,6 @@ def test_ordinary_node_is_bit_identical_to_the_saved_dump(whitney_default):
 
 
 if __name__ == "__main__":
-    HL.setDefaultMetricSource(cob.HodgeMetricSource.WhitneyPencil)
+    HL.set_default_metric_source(cob.HodgeMetricSource.WhitneyPencil)
     pathlib.Path(sys.argv[1]).write_text(json.dumps(ordinary_node_dump(), sort_keys=True))
     print("wrote", sys.argv[1])

@@ -3,11 +3,11 @@
 """
 Tests for the transactional CDT proposal factories:
 
-  cdt.proposeAdd()    -> AddMove or None
-  cdt.proposeRemove() -> RemoveMove or None
-  cdt.proposeFlip()   -> FlipMove or None
-  cdt.proposeIflip()  -> IFlipMove or None
-  cdt.proposeShift()  -> ShiftMove or None
+  cdt.propose_add()    -> AddMove or None
+  cdt.propose_remove() -> RemoveMove or None
+  cdt.propose_flip()   -> FlipMove or None
+  cdt.propose_iflip()  -> IFlipMove or None
+  cdt.propose_shift()  -> ShiftMove or None
 
 Each factory binds the move to the simulation's shared RNG (so a
 sequence of proposals draws from the same Markov chain).  Returns
@@ -26,27 +26,27 @@ def _make_cdt(d=4, n_simplices=200, k0=2.2, k4=0.5, delta=0.6,
     st = tessera.Spacetime(metric, tessera.CDT, 1.0, 1.0,
                            tessera.PREFERRED, tessera.Toroid())
     st.build(n_simplices)
-    cdt = tessera.CDTSimulation(st, k0, k4, delta, epsilon, st.getN41())
-    cdt.setRelabelVertices(relabel)
+    cdt = tessera.CDTSimulation(st, k0, k4, delta, epsilon, st.get_n41())
+    cdt.set_relabel_vertices(relabel)
     return cdt, st
 
 
 def _full_snapshot(st):
     dPlus1 = next(iter(
-        len(s.getVertices()) for s in st.getSimplices()
+        len(s.get_vertices()) for s in st.get_simplices()
     ), 0)
     return {
-        "n0": st.getVertexCount(),
-        "n4": st.getTopSimplexCount(),
+        "n0": st.get_vertex_count(),
+        "n4": st.get_top_simplex_count(),
         "top_fps": frozenset(
-            hash(s) for s in st.getSimplices()
-            if len(s.getVertices()) == dPlus1
+            hash(s) for s in st.get_simplices()
+            if len(s.get_vertices()) == dPlus1
         ),
         "edge_fps": frozenset(
-            hash(e) for e in st.getEdgeList().toVector()
+            hash(e) for e in st.get_edge_list().to_vector()
         ),
         "vertex_ids": frozenset(
-            v.getId() for v in st.getVertexList().toVector()
+            v.get_id() for v in st.get_vertex_list().to_vector()
         ),
     }
 
@@ -57,39 +57,39 @@ class TestFactoriesBasic(unittest.TestCase):
         cdt, st = _make_cdt()
         m = None
         for _ in range(50):
-            m = cdt.proposeAdd()
+            m = cdt.propose_add()
             if m is not None:
                 break
         self.assertIsNotNone(m)
-        self.assertEqual(m.moveType(), "add")
+        self.assertEqual(m.move_type(), "add")
 
     def test_propose_shift_returns_movetype_shift(self):
         cdt, st = _make_cdt()
         m = None
         for _ in range(200):
-            m = cdt.proposeShift()
+            m = cdt.propose_shift()
             if m is not None:
                 break
         self.assertIsNotNone(m)
-        self.assertEqual(m.moveType(), "shift")
+        self.assertEqual(m.move_type(), "shift")
 
     def test_propose_flip_returns_movetype_flip(self):
         cdt, st = _make_cdt()
         m = None
         for _ in range(200):
-            m = cdt.proposeFlip()
+            m = cdt.propose_flip()
             if m is not None:
                 break
         self.assertIsNotNone(m)
-        self.assertEqual(m.moveType(), "flip")
+        self.assertEqual(m.move_type(), "flip")
 
     def test_propose_iflip_returns_none_or_iflip(self):
         cdt, st = _make_cdt()
         # Iflip rarely propose-validates on a fresh lattice.
         for _ in range(50):
-            m = cdt.proposeIflip()
+            m = cdt.propose_iflip()
             if m is not None:
-                self.assertEqual(m.moveType(), "iflip")
+                self.assertEqual(m.move_type(), "iflip")
                 return
         # Acceptable: no iflip proposed on this small lattice.
 
@@ -100,12 +100,12 @@ class TestFactoriesBasic(unittest.TestCase):
             cdt.add()
         m = None
         for _ in range(200):
-            m = cdt.proposeRemove()
+            m = cdt.propose_remove()
             if m is not None:
                 break
         if m is None:
             self.skipTest("No remove target found in 200 proposals")
-        self.assertEqual(m.moveType(), "remove")
+        self.assertEqual(m.move_type(), "remove")
 
 
 class TestFactoriesDoNotMutateOnPropose(unittest.TestCase):
@@ -116,7 +116,7 @@ class TestFactoriesDoNotMutateOnPropose(unittest.TestCase):
         cdt, st = _make_cdt()
         before = _full_snapshot(st)
         for _ in range(20):
-            m = cdt.proposeAdd()
+            m = cdt.propose_add()
             del m
         self.assertEqual(_full_snapshot(st), before)
 
@@ -124,7 +124,7 @@ class TestFactoriesDoNotMutateOnPropose(unittest.TestCase):
         cdt, st = _make_cdt()
         before = _full_snapshot(st)
         for _ in range(50):
-            m = cdt.proposeShift()
+            m = cdt.propose_shift()
             del m
         self.assertEqual(_full_snapshot(st), before)
 
@@ -132,7 +132,7 @@ class TestFactoriesDoNotMutateOnPropose(unittest.TestCase):
         cdt, st = _make_cdt()
         before = _full_snapshot(st)
         for _ in range(50):
-            m = cdt.proposeFlip()
+            m = cdt.propose_flip()
             del m
         self.assertEqual(_full_snapshot(st), before)
 
@@ -149,9 +149,9 @@ class TestFactoriesShareRNG(unittest.TestCase):
         # attempt budget is an order of magnitude above the sample.
         proposals = []
         for _ in range(400):
-            m = cdt.proposeAdd()
+            m = cdt.propose_add()
             if m is not None:
-                proposals.append(tuple(sorted(m.touchedVertexIds())))
+                proposals.append(tuple(sorted(m.touched_vertex_ids())))
             if len(proposals) >= 20:
                 break
         if len(proposals) < 2:
@@ -176,7 +176,7 @@ class TestFactoriesApplyRollback(unittest.TestCase):
         before = _full_snapshot(st)
         m = None
         for _ in range(50):
-            m = cdt.proposeAdd()
+            m = cdt.propose_add()
             if m is not None:
                 break
         self.assertIsNotNone(m)
@@ -190,7 +190,7 @@ class TestFactoriesApplyRollback(unittest.TestCase):
         before = _full_snapshot(st)
         m = None
         for _ in range(200):
-            m = cdt.proposeFlip()
+            m = cdt.propose_flip()
             if m is not None:
                 break
         self.assertIsNotNone(m)
@@ -203,7 +203,7 @@ class TestFactoriesApplyRollback(unittest.TestCase):
         before = _full_snapshot(st)
         m = None
         for _ in range(200):
-            m = cdt.proposeShift()
+            m = cdt.propose_shift()
             if m is not None:
                 break
         self.assertIsNotNone(m)
@@ -220,10 +220,10 @@ class TestFactoriesDoNotChangeAcceptanceCounters(unittest.TestCase):
     def test_proposeAdd_apply_does_not_increment_counters(self):
         cdt, st = _make_cdt()
         # Drain initial state by running a few sweeps.
-        rates_before = cdt.getAcceptanceRates()
+        rates_before = cdt.get_acceptance_rates()
         m = None
         for _ in range(50):
-            m = cdt.proposeAdd()
+            m = cdt.propose_add()
             if m is not None:
                 break
         self.assertIsNotNone(m)
@@ -233,7 +233,7 @@ class TestFactoriesDoNotChangeAcceptanceCounters(unittest.TestCase):
         # identical (or both numerator and denominator went up by 1
         # together — but they don't because the factory bypasses the
         # bookkeeping).
-        rates_after = cdt.getAcceptanceRates()
+        rates_after = cdt.get_acceptance_rates()
         # If counters didn't change, rates are identical.  Note rates
         # can be NaN at counters=0; treat NaN==NaN as equal here.
         for k in rates_before:

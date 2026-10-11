@@ -1,9 +1,9 @@
 # Copyright (c) 2026 Twin Vector Labs LLC. All rights reserved.
 
-"""Sparse assembly of the exact analytic Regge Hessian (``actionHessianExactSparse``).
+"""Sparse assembly of the exact analytic Regge Hessian (``action_hessian_exact_sparse``).
 
-``ReggeSolver.actionHessianExactSparse`` returns the same Hessian as the dense
-``actionHessianExact``, but assembled directly as an Eigen ``SparseMatrix``
+``ReggeSolver.action_hessian_exact_sparse`` returns the same Hessian as the dense
+``action_hessian_exact``, but assembled directly as an Eigen ``SparseMatrix``
 (exposed as a COO tuple ``(rows, cols, values, n)``): ∂²S/∂ℓ²_e∂ℓ²_f is nonzero
 only for edge pairs e,f that share a hinge (local coupling), so the matrix is
 sparse and costs O(nnz)=O(|E|·k) memory instead of O(|E|²).
@@ -32,7 +32,7 @@ def _make_cdt(n):
     st = tessera.Spacetime(metric, tessera.CDT, 1.0, 1.0, tessera.PREFERRED,
                            tessera.Toroid())
     st.build(n)
-    st.materializeFacets()
+    st.materialize_facets()
     return st
 
 
@@ -41,12 +41,12 @@ def _solver(st):
 
 
 def _dense(rs):
-    return np.array([[complex(z) for z in row] for row in rs.actionHessianExact()])
+    return np.array([[complex(z) for z in row] for row in rs.action_hessian_exact()])
 
 
 def _sparse(rs):
     """Wrap the COO tuple into a dense ndarray plus (nnz, n)."""
-    rows, cols, vals, n = rs.actionHessianExactSparse()
+    rows, cols, vals, n = rs.action_hessian_exact_sparse()
     dense = coo_matrix(
         (np.array(vals, dtype=complex), (np.array(rows, int), np.array(cols, int))),
         shape=(n, n)).toarray()
@@ -109,8 +109,8 @@ class SymmetryTest(unittest.TestCase):
 class DeterminismTest(unittest.TestCase):
     def test_coo_identical_across_calls(self):
         rs = _solver(_make_cdt(200))
-        self.assertEqual(rs.actionHessianExactSparse(),
-                         rs.actionHessianExactSparse(),
+        self.assertEqual(rs.action_hessian_exact_sparse(),
+                         rs.action_hessian_exact_sparse(),
                          "sparse Hessian COO is not deterministic across calls")
 
 

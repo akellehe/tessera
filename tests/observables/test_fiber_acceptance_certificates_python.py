@@ -47,14 +47,14 @@ NAN = float("nan")
 # --------------------------------------------------------------------------- #
 def _spacetime_from(K, s):
     """A spacetime whose edge lengths square to the supplied squared lengths."""
-    cells = [list(int(v) for v in t) for t in K.orientedTopSimplices()]
-    st = tessera.Spacetime.fromVertexTuples(2, cells, 1.0, 0.0)
+    cells = [list(int(v) for v in t) for t in K.oriented_top_simplices()]
+    st = tessera.Spacetime.from_vertex_tuples(2, cells, 1.0, 0.0)
     table = dict(zip(edges(K), s))
-    for e in st.getEdgeList().toVector():
-        a, b = e.getSource().getId(), e.getTarget().getId()
-        e.setLength(cmath.sqrt(table[(min(a, b), max(a, b))]))
-        e.setPhase(0.0)
-    st.materializeFacets()
+    for e in st.get_edge_list().to_vector():
+        a, b = e.get_source().get_id(), e.get_target().get_id()
+        e.set_length(cmath.sqrt(table[(min(a, b), max(a, b))]))
+        e.set_phase(0.0)
+    st.materialize_facets()
     return st
 
 
@@ -85,15 +85,15 @@ def _config(**overrides):
     # construction: the localization conjunct is opened to "any measured
     # localization" and the contour conjuncts decide (the pencil-regime suite
     # opens it the same way and for the same reason).
-    cfg.maxLocalizationExcess = 1.0
+    cfg.max_localization_excess = 1.0
     for name, value in overrides.items():
         setattr(cfg, name, value)
     return cfg
 
 
 def _bands(st, K, cfg):
-    support = [int(v[0]) for v in K.kSimplexVertices(0)]
-    return obs.SpectralFiberTracker(st, cfg, Whitney).enumerateBands(support, 1)
+    support = [int(v[0]) for v in K.k_simplex_vertices(0)]
+    return obs.SpectralFiberTracker(st, cfg, Whitney).enumerate_bands(support, 1)
 
 
 def _harmonic(read):
@@ -113,15 +113,15 @@ class TestContourCertificate:
         """The band reports the contour it was selected by: description, node
         count, centre and radius."""
         st, K = _euclidean_torus()
-        cfg = _config(contourNodes=48)
+        cfg = _config(contour_nodes=48)
         band = _harmonic(_bands(st, K, cfg))
         cert = band.certificate()
         assert cert.certificate.regime == Pencil
         assert cert.contour.startswith("circle")
-        assert cert.contourNodeCount == 48
-        assert math.isfinite(cert.contourRadius) and cert.contourRadius > 0.0
-        assert math.isfinite(cert.contourCenter.real)
-        assert math.isfinite(cert.contourCenter.imag)
+        assert cert.contour_node_count == 48
+        assert math.isfinite(cert.contour_radius) and cert.contour_radius > 0.0
+        assert math.isfinite(cert.contour_center.real)
+        assert math.isfinite(cert.contour_center.imag)
         assert cert.describe().count("contour") >= 1
 
     def test_the_resolvent_bound_is_the_riesz_estimate(self):
@@ -131,11 +131,11 @@ class TestContourCertificate:
         st, K = _euclidean_torus()
         band = _harmonic(_bands(st, K, _config()))
         cert = band.certificate()
-        assert math.isfinite(cert.resolventMax) and cert.resolventMax > 0.0
-        assert cert.resolventBound == pytest.approx(
-            cert.contourRadius * cert.resolventMax, rel=1e-12)
+        assert math.isfinite(cert.resolvent_max) and cert.resolvent_max > 0.0
+        assert cert.resolvent_bound == pytest.approx(
+            cert.contour_radius * cert.resolvent_max, rel=1e-12)
         projector_norm = np.linalg.norm(np.asarray(band.projector()), 2)
-        assert cert.resolventBound >= projector_norm - 1e-9, (
+        assert cert.resolvent_bound >= projector_norm - 1e-9, (
             "the Riesz estimate must bound the projector norm it certifies")
 
     def test_a_blown_up_resolvent_is_reported_and_refused(self):
@@ -145,10 +145,10 @@ class TestContourCertificate:
         measured = _harmonic(_bands(st, K, _config())).certificate()
         assert measured.accepted, measured.describe()
         tightened = _harmonic(_bands(st, K, _config(
-            resolventBoundCap=0.5 * measured.resolventBound))).certificate()
+            resolvent_bound_cap=0.5 * measured.resolvent_bound))).certificate()
         assert not tightened.accepted
-        assert tightened.resolventBound == pytest.approx(
-            measured.resolventBound, rel=1e-12)
+        assert tightened.resolvent_bound == pytest.approx(
+            measured.resolvent_bound, rel=1e-12)
         assert tightened.contour == measured.contour
         assert not tightened.certificate.holds()
 
@@ -160,30 +160,30 @@ class TestContourCertificate:
         default is the Whitney pencil and this read is about the other path.
         """
         st, K = _euclidean_torus()
-        support = [int(v[0]) for v in K.kSimplexVertices(0)]
+        support = [int(v[0]) for v in K.k_simplex_vertices(0)]
         read = obs.SpectralFiberTracker(
             st, _config(),
-            cob.HodgeMetricSource.DiagonalWeights).enumerateBands(support, 1)
-        assert read.solverPath != "pencil-riesz"
+            cob.HodgeMetricSource.DiagonalWeights).enumerate_bands(support, 1)
+        assert read.solver_path != "pencil-riesz"
         assert read.fibers
         for fiber in read.fibers:
             cert = fiber.certificate()
             assert cert.contour == ""
-            assert cert.contourNodeCount == 0
-            assert math.isnan(cert.resolventBound)
-            assert math.isnan(cert.resolventMax)
-            assert math.isnan(cert.allowabilityMargin)
+            assert cert.contour_node_count == 0
+            assert math.isnan(cert.resolvent_bound)
+            assert math.isnan(cert.resolvent_max)
+            assert math.isnan(cert.allowability_margin)
 
     def test_the_contour_certificate_round_trips(self):
         st, K = _euclidean_torus()
         band = _harmonic(_bands(st, K, _config()))
         cert = band.certificate()
-        back = obs.SpectralFiber.fromRecord(band.toRecord()).certificate()
+        back = obs.SpectralFiber.from_record(band.to_record()).certificate()
         assert back.contour == cert.contour
-        assert back.contourNodeCount == cert.contourNodeCount
-        assert back.resolventMax == pytest.approx(cert.resolventMax)
-        assert back.resolventBound == pytest.approx(cert.resolventBound)
-        assert back.allowabilityMargin == pytest.approx(cert.allowabilityMargin)
+        assert back.contour_node_count == cert.contour_node_count
+        assert back.resolvent_max == pytest.approx(cert.resolvent_max)
+        assert back.resolvent_bound == pytest.approx(cert.resolvent_bound)
+        assert back.allowability_margin == pytest.approx(cert.allowability_margin)
         assert back.allowable == cert.allowable
 
 
@@ -196,7 +196,7 @@ class TestAllowabilityMargin:
         st, K = _euclidean_torus()
         cert = _harmonic(_bands(st, K, _config())).certificate()
         assert cert.allowable
-        assert cert.allowabilityMargin == pytest.approx(math.pi, rel=1e-9)
+        assert cert.allowability_margin == pytest.approx(math.pi, rel=1e-9)
         assert cert.accepted, cert.describe()
 
     def test_a_rotated_lorentzian_instance_is_accepted(self):
@@ -204,7 +204,7 @@ class TestAllowabilityMargin:
         st, K = _lorentzian_torus(0.1)
         cert = _harmonic(_bands(st, K, _config())).certificate()
         assert cert.allowable
-        assert cert.allowabilityMargin > 0.0
+        assert cert.allowability_margin > 0.0
         assert cert.accepted, cert.describe()
 
     def test_a_real_lorentzian_instance_is_reported_but_never_accepted(self):
@@ -215,25 +215,25 @@ class TestAllowabilityMargin:
         band = _harmonic(_bands(st, K, _config()))
         cert = band.certificate()
         assert not cert.allowable
-        assert cert.allowabilityMargin <= 0.0
+        assert cert.allowability_margin <= 0.0
         assert not cert.accepted
         # reported, not discarded: the gap certificate travels with it
         assert cert.contour.startswith("circle")
-        assert math.isfinite(cert.nearestDiscardedSeparation)
+        assert math.isfinite(cert.nearest_discarded_separation)
         assert band.rank() == 2
 
     def test_the_declared_rotation_travels_on_every_band(self):
         st, K = _lorentzian_torus(0.1)
-        read = _bands(st, K, _config(lorentzianEpsilon=0.1))
+        read = _bands(st, K, _config(lorentzian_epsilon=0.1))
         assert read.fibers
         for fiber in read.fibers:
-            assert fiber.certificate().lorentzianEpsilon == pytest.approx(0.1)
+            assert fiber.certificate().lorentzian_epsilon == pytest.approx(0.1)
 
     def test_a_declared_zero_rotation_is_not_accepted(self):
         """A complex DECLARED Lorentzian must be read at eps_L > 0, even when
         its squared lengths happen to be allowable."""
         st, K = _euclidean_torus()
-        cert = _harmonic(_bands(st, K, _config(lorentzianEpsilon=0.0))
+        cert = _harmonic(_bands(st, K, _config(lorentzian_epsilon=0.0))
                          ).certificate()
         assert cert.allowable, "the fixture's instance is allowable"
         assert not cert.accepted, "a declared eps_L = 0 is never accepted"
@@ -241,7 +241,7 @@ class TestAllowabilityMargin:
     def test_an_undeclared_complex_reports_the_rotation_unmeasured(self):
         st, K = _euclidean_torus()
         cert = _harmonic(_bands(st, K, _config())).certificate()
-        assert math.isnan(cert.lorentzianEpsilon)
+        assert math.isnan(cert.lorentzian_epsilon)
 
 
 # --------------------------------------------------------------------------- #
@@ -297,7 +297,7 @@ def _contour_fiber(*, contour="circle c=(1,0), r=0.5, N=32", nodes=32,
     _split("right_frame", right, record)
     _split("left_frame", right, record)
     _split("weights", np.ones(3, dtype=complex), record)
-    return obs.SpectralFiber.fromRecord(record)
+    return obs.SpectralFiber.from_record(record)
 
 
 def _clique_edges(vertices, src, tgt):
@@ -312,22 +312,22 @@ def _track(frames=3):
     cfg = tessera.PersistentModularityConfig()
     cfg.resolutions = [1.0]
     cfg.restarts = 4
-    cfg.baseSeed = 0
-    cfg.overlapThreshold = 0.0
+    cfg.base_seed = 0
+    cfg.overlap_threshold = 0.0
     out = []
     for _ in range(frames):
         src, tgt = [], []
         _clique_edges(list(range(6)), src, tgt)
         _clique_edges(list(range(10, 16)), src, tgt)
-        graph = tessera.PersistentModularity.fromWeightedEdges(
+        graph = tessera.PersistentModularity.from_weighted_edges(
             src, tgt, [1.0] * len(src))
         out.append(graph.discover(1.0, cfg).components)
     src, tgt = [], []
     _clique_edges(list(range(6)), src, tgt)
     _clique_edges(list(range(10, 16)), src, tgt)
-    graph = tessera.PersistentModularity.fromWeightedEdges(
+    graph = tessera.PersistentModularity.from_weighted_edges(
         src, tgt, [1.0] * len(src))
-    tracks = graph.trackAcrossFrames(out, 0.0)
+    tracks = graph.track_across_frames(out, 0.0)
     assert tracks, "fixture produced no frame track"
     return max(tracks, key=lambda t: t.frames)
 
@@ -358,7 +358,7 @@ def _transport(leakage=0.0):
         _split("right_frame", np.eye(2), record)
         _split("left_frame", np.eye(2), record)
         _split("weights", np.ones(2, dtype=complex), record)
-        return obs.SpectralFiber.fromRecord(record)
+        return obs.SpectralFiber.from_record(record)
     return obs.FiberConnection().transport(
         one([[0], [1]]), one([[2], [3]]), np.eye(2) * (1.0 + leakage))
 
@@ -368,12 +368,12 @@ def _triangle():
     metric = tessera.Metric(True, sig)
     st = tessera.Spacetime(metric, tessera.HERMITIAN_WEIGHTED, 1.0, 1.0,
                            tessera.PREFERRED, tessera.Toroid())
-    verts = [st.createVertex(i) for i in range(3)]
+    verts = [st.create_vertex(i) for i in range(3)]
     for simplex in [(0, 1), (1, 2), (2, 0)]:
-        st.createSimplex([verts[i] for i in simplex])
-    for e in st.getEdgeList().toVector():
-        e.setLength(1.0 + 0j)
-        e.setPhase(0.0)
+        st.create_simplex([verts[i] for i in simplex])
+    for e in st.get_edge_list().to_vector():
+        e.set_length(1.0 + 0j)
+        e.set_phase(0.0)
     return st
 
 
@@ -403,16 +403,16 @@ class TestRegisterContourConjunct(RegisterCase):
         read = self.read()
         self.assertTrue(read.accepted, read.describe())
         self.assertTrue(read.contour.startswith("circle"))
-        self.assertEqual(read.contourNodeCount, 32)
-        self.assertAlmostEqual(read.resolventBound, 2.0)
-        self.assertAlmostEqual(read.allowabilityMargin, math.pi)
+        self.assertEqual(read.contour_node_count, 32)
+        self.assertAlmostEqual(read.resolvent_bound, 2.0)
+        self.assertAlmostEqual(read.allowability_margin, math.pi)
         self.assertIn("contour", read.describe())
 
     def test_a_blown_up_resolvent_fails_by_name(self):
-        read = self.read(maxResolventBound=1.0)
+        read = self.read(max_resolvent_bound=1.0)
         self.assertFalse(read.accepted)
         self.assertIn(obs.RegisterConjunct.CONTOUR_RESOLVENT,
-                      list(read.failedConjuncts))
+                      list(read.failed_conjuncts))
 
     def test_an_unmeasured_resolvent_is_unmeasured_not_failed(self):
         read = self.read(band=_contour_fiber(resolvent_bound=NAN))
@@ -420,13 +420,13 @@ class TestRegisterContourConjunct(RegisterCase):
         self.assertIn(obs.RegisterUnmeasured.RESOLVENT_UNMEASURED,
                       list(read.unmeasured))
         self.assertNotIn(obs.RegisterConjunct.CONTOUR_RESOLVENT,
-                         list(read.failedConjuncts))
+                         list(read.failed_conjuncts))
 
     def test_a_band_with_no_contour_passes_until_one_is_required(self):
         band = _contour_fiber(contour="", nodes=0, resolvent_bound=NAN)
         self.assertTrue(self.read(band=band).accepted,
                         "a band selected without a contour is not refused")
-        required = self.read(band=band, requireContour=True)
+        required = self.read(band=band, require_contour=True)
         self.assertFalse(required.accepted)
         self.assertIn(obs.RegisterUnmeasured.NO_CONTOUR,
                       list(required.unmeasured))
@@ -440,19 +440,19 @@ class TestRegisterContourConjunct(RegisterCase):
                             lorentzian=True)
         self.assertFalse(at_zero.accepted)
         self.assertIn(obs.RegisterConjunct.LORENTZIAN_ROTATION,
-                      list(at_zero.failedConjuncts))
+                      list(at_zero.failed_conjuncts))
 
     def test_the_allowability_margin_floor_is_declared(self):
         """A Lorentzian read at a positive rotation is accepted only while its
         Kontsevich-Segal margin clears the declared floor."""
         band = _contour_fiber(epsilon=0.1, margin=0.7)
         self.assertTrue(self.read(band=band, lorentzian=True,
-                                  minAllowabilityMargin=0.5).accepted)
+                                  min_allowability_margin=0.5).accepted)
         raised = self.read(band=band, lorentzian=True,
-                           minAllowabilityMargin=1.0)
+                           min_allowability_margin=1.0)
         self.assertFalse(raised.accepted)
         self.assertIn(obs.RegisterConjunct.LORENTZIAN_ROTATION,
-                      list(raised.failedConjuncts))
+                      list(raised.failed_conjuncts))
 
     def test_an_undeclared_rotation_on_a_lorentzian_complex_is_unmeasured(self):
         read = self.read(band=_contour_fiber(), lorentzian=True)
@@ -464,14 +464,14 @@ class TestRegisterContourConjunct(RegisterCase):
         """Without the declaration the rotation is reported, never gated."""
         read = self.read(band=_contour_fiber(epsilon=NAN))
         self.assertTrue(read.accepted, read.describe())
-        self.assertTrue(math.isnan(read.lorentzianEpsilon))
+        self.assertTrue(math.isnan(read.lorentzian_epsilon))
 
     def test_the_read_round_trips(self):
         read = self.read()
-        again = obs.ClusterRegisterRead.fromRecord(read.toRecord())
+        again = obs.ClusterRegisterRead.from_record(read.to_record())
         self.assertEqual(again.contour, read.contour)
-        self.assertEqual(again.contourNodeCount, read.contourNodeCount)
-        self.assertAlmostEqual(again.resolventBound, read.resolventBound)
-        self.assertAlmostEqual(again.allowabilityMargin,
-                               read.allowabilityMargin)
+        self.assertEqual(again.contour_node_count, read.contour_node_count)
+        self.assertAlmostEqual(again.resolvent_bound, read.resolvent_bound)
+        self.assertAlmostEqual(again.allowability_margin,
+                               read.allowability_margin)
         self.assertEqual(again.accepted, read.accepted)

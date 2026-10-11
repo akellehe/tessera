@@ -86,18 +86,18 @@ def _gauge(spacetime, chi):
     ``chi`` is complex, so this is the full C* gauge group and not only its
     compact U(1) factor.
     """
-    for edge in spacetime.getEdgeList().toVector():
-        source = int(edge.getSource().getId())
-        target = int(edge.getTarget().getId())
-        edge.setPhase(edge.getPhase() + chi[target] - chi[source])
+    for edge in spacetime.get_edge_list().to_vector():
+        source = int(edge.get_source().get_id())
+        target = int(edge.get_target().get_id())
+        edge.set_phase(edge.get_phase() + chi[target] - chi[source])
 
 
 def _chi(spacetime, seed=0):
     """A complex vertex function, the parameter of a C* gauge transformation."""
     values = {}
-    for index, vertex in enumerate(spacetime.getVertexList().toVector()):
+    for index, vertex in enumerate(spacetime.get_vertex_list().to_vector()):
         step = index + seed
-        values[int(vertex.getId())] = complex(0.31 * ((step % 7) - 3),
+        values[int(vertex.get_id())] = complex(0.31 * ((step % 7) - 3),
                                               0.17 * ((step % 4) - 1.5))
     return values
 
@@ -153,20 +153,20 @@ class TheFaceHolonomyIsBranchFreeTest(unittest.TestCase):
 
     def _expected_holonomies(self, spacetime):
         """F_tau from the stored phases, assembled independently here."""
-        complex_ = cob.ChainComplex.fromSpacetime(spacetime)
-        canonical = complex_.kSimplexVertices(1)
+        complex_ = cob.ChainComplex.from_spacetime(spacetime)
+        canonical = complex_.k_simplex_vertices(1)
         links = {}
-        for edge in spacetime.getEdgeList().toVector():
-            source = int(edge.getSource().getId())
-            target = int(edge.getTarget().getId())
-            link = cmath.exp(1j * complex(edge.getPhase()))
+        for edge in spacetime.get_edge_list().to_vector():
+            source = int(edge.get_source().get_id())
+            target = int(edge.get_target().get_id())
+            link = cmath.exp(1j * complex(edge.get_phase()))
             if source > target:
                 link = 1.0 / link
             links[tuple(sorted((source, target)))] = link
-        boundary = np.array(complex_.boundaryMatrix(2), dtype=float).reshape(
-            len(canonical), complex_.numSimplices(2))
+        boundary = np.array(complex_.boundary_matrix(2), dtype=float).reshape(
+            len(canonical), complex_.num_simplices(2))
         holonomies = []
-        for column in range(complex_.numSimplices(2)):
+        for column in range(complex_.num_simplices(2)):
             product = 1.0 + 0j
             for row, cell in enumerate(canonical):
                 exponent = int(round(boundary[row, column]))
@@ -210,7 +210,7 @@ class TheFaceHolonomyIsBranchFreeTest(unittest.TestCase):
         weights = np.exp(-m * m / (2.0 * beta))
         w_at_one = np.sum(weights)
         beta_v = beta / (np.sum(m * m * weights) / w_at_one)
-        faces = cob.ChainComplex.fromSpacetime(spacetime).numSimplices(2)
+        faces = cob.ChainComplex.from_spacetime(spacetime).num_simplices(2)
         self.assertEqual(faces, 10)
         self.assertAlmostEqual(
             abs(action.holonomy_term() + beta_v * faces * np.log(w_at_one)),
@@ -234,12 +234,12 @@ class TheConnectionStiffnessIsTheUpLaplacianTest(unittest.TestCase):
         is against the same matrix in the same basis.
         """
         index_of = {tuple(cell): position for position, cell
-                    in enumerate(complex_.kSimplexVertices(1))}
+                    in enumerate(complex_.k_simplex_vertices(1))}
         indices = []
         signs = []
-        for edge in spacetime.getEdgeList().toVector():
-            source = int(edge.getSource().getId())
-            target = int(edge.getTarget().getId())
+        for edge in spacetime.get_edge_list().to_vector():
+            source = int(edge.get_source().get_id())
+            target = int(edge.get_target().get_id())
             indices.append(index_of[tuple(sorted((source, target)))])
             signs.append(1.0 if source < target else -1.0)
         return indices, signs
@@ -254,9 +254,9 @@ class TheConnectionStiffnessIsTheUpLaplacianTest(unittest.TestCase):
         self.assertEqual(order, 6)
         jacobian = np.array(relaxation.jacobian()).reshape(order, order)
 
-        complex_ = cob.ChainComplex.fromSpacetime(spacetime)
-        boundary = np.array(complex_.boundaryMatrix(2), dtype=float).reshape(
-            complex_.numSimplices(1), complex_.numSimplices(2))
+        complex_ = cob.ChainComplex.from_spacetime(spacetime)
+        boundary = np.array(complex_.boundary_matrix(2), dtype=float).reshape(
+            complex_.num_simplices(1), complex_.num_simplices(2))
         up_laplacian = boundary @ boundary.T
 
         indices, signs = self._canonical_index_and_sign(spacetime, complex_)
@@ -323,12 +323,12 @@ class TheHolomorphicSolveReachesAStationaryPointTest(unittest.TestCase):
             self):
         """The relaxation writes the connection and leaves the lengths alone."""
         spacetime = sphere3(squared=_metric, phase=_flux)
-        before = [complex(edge.getLength())
-                  for edge in spacetime.getEdgeList().toVector()]
+        before = [complex(edge.get_length())
+                  for edge in spacetime.get_edge_list().to_vector()]
         action = cob.JointAction(spacetime, _declaration(holonomy_weight=1.0))
         cob.HolomorphicRelaxation(action, _relaxation(relax_links=True)).solve()
-        after = [complex(edge.getLength())
-                 for edge in spacetime.getEdgeList().toVector()]
+        after = [complex(edge.get_length())
+                 for edge in spacetime.get_edge_list().to_vector()]
         self.assertEqual(before, after)
         moved = cob.JointAction(spacetime, _declaration(holonomy_weight=1.0))
         for holonomy in moved.face_holonomies():
@@ -346,7 +346,7 @@ class TheHolomorphicSolveReachesAStationaryPointTest(unittest.TestCase):
         relaxation = cob.HolomorphicRelaxation(action,
                                                _relaxation(relax_links=True))
         report = relaxation.solve()
-        vertices = len(spacetime.getVertexList().toVector())
+        vertices = len(spacetime.get_vertex_list().to_vector())
         self.assertGreater(len(report.steps), 0)
         self.assertEqual(report.steps[0].jacobian_rank,
                          relaxation.variable_count() - (vertices - 1))
@@ -382,7 +382,7 @@ class TheMultipliersImposeTheMomentEquationTest(unittest.TestCase):
 
     def _constrained(self, spacetime, target):
         declaration = _declaration(matter_weight=1.0)
-        order = cob.ChainComplex.fromSpacetime(spacetime).numSimplices(1)
+        order = cob.ChainComplex.from_spacetime(spacetime).num_simplices(1)
         declaration.covariance = [complex(value) for value
                                   in np.eye(order, dtype=complex).reshape(-1)]
         declaration.moment_constraints = [

@@ -14,9 +14,9 @@ has a zero-over-zero chain rule there.
 The Kuhn triangulation of a cubic lattice puts coincident circumcentres on
 every face diagonal and body diagonal, in Euclidean signature and equally with
 one lattice axis timelike (the metric stays diagonal, so the right angles
-survive). On both, ``Simplex.dualVolumeGradient`` and
-``Simplex.dualVolumeHessian`` must be finite and must match central differences
-of ``Simplex.dualVolume`` and of the gradient itself.
+survive). On both, ``Simplex.dual_volume_gradient`` and
+``Simplex.dual_volume_hessian`` must be finite and must match central differences
+of ``Simplex.dual_volume`` and of the gradient itself.
 """
 
 import cmath
@@ -44,20 +44,20 @@ def kuhn_torus(n, timelike_weight=None):
                 c[axis] += 1
                 path.append(index(c))
             cells.append(path)
-    spacetime = tessera.Spacetime.fromVertexTuples(3, cells, 1.0, 0.0)
+    spacetime = tessera.Spacetime.from_vertex_tuples(3, cells, 1.0, 0.0)
     coordinates = {index(c): np.array(c, dtype=float)
                    for c in itertools.product(range(n), repeat=3)}
     edges = {}
-    for edge in spacetime.getEdgeList().toVector():
-        a = edge.getSource().getId()
-        b = edge.getTarget().getId()
+    for edge in spacetime.get_edge_list().to_vector():
+        a = edge.get_source().get_id()
+        b = edge.get_target().get_id()
         d = coordinates[b] - coordinates[a]
         d -= n * np.rint(d / n)
         squared = d[0] ** 2 + d[1] ** 2
         squared += d[2] ** 2 if timelike_weight is None else -timelike_weight * d[2] ** 2
         edges[(min(a, b), max(a, b))] = [edge, complex(squared)]
-        edge.setLength(cmath.sqrt(squared))
-    spacetime.materializeFacets()
+        edge.set_length(cmath.sqrt(squared))
+    spacetime.materialize_facets()
     return spacetime, edges
 
 
@@ -69,13 +69,13 @@ class _CoincidentCircumcentres:
     @classmethod
     def setUpClass(cls):
         cls.spacetime, cls.edges = kuhn_torus(SIZE, cls.timelike_weight)
-        hinges = [s for s in cls.spacetime.getSimplices()
-                  if len(s.getVertices()) == 2 and s.hasTopCoface()]
-        cls.coincident = [h for h in hinges if h.dualGeometryIsDegenerate()]
+        hinges = [s for s in cls.spacetime.get_simplices()
+                  if len(s.get_vertices()) == 2 and s.has_top_coface()]
+        cls.coincident = [h for h in hinges if h.dual_geometry_is_degenerate()]
         # One hinge of each kind of coincidence: the lattice step of the hinge.
         chosen = {}
         for hinge in cls.coincident:
-            a, b = (v.getId() for v in hinge.getVertices())
+            a, b = (v.get_id() for v in hinge.get_vertices())
             chosen.setdefault(cls._kind(a, b), hinge)
         cls.chosen = list(chosen.values())
 
@@ -86,7 +86,7 @@ class _CoincidentCircumcentres:
 
     def _shift(self, key, t):
         edge, squared = self.edges[key]
-        edge.setLength(cmath.sqrt(squared + t))
+        edge.set_length(cmath.sqrt(squared + t))
 
     def _central(self, read, key, t=STEP):
         """Richardson-combined central difference of read() in l^2 of edge key."""
@@ -105,26 +105,26 @@ class _CoincidentCircumcentres:
 
     def test_the_dual_volume_gradient_is_finite_and_exact(self):
         for hinge in self.chosen:
-            gradient = hinge.dualVolumeGradient()
+            gradient = hinge.dual_volume_gradient()
             self.assertGreater(len(gradient), 0)
             values = np.array(list(gradient.values()), dtype=complex)
             self.assertTrue(np.isfinite(values).all())
             for key, value in gradient.items():
-                difference = self._central(lambda: complex(hinge.dualVolume()), key)
+                difference = self._central(lambda: complex(hinge.dual_volume()), key)
                 self.assertLess(abs(difference - value), 1e-8, msg=f"edge {key}")
 
     def test_the_dual_volume_hessian_is_finite_symmetric_and_exact(self):
         for hinge in self.chosen:
-            hessian = hinge.dualVolumeHessian()
+            hessian = hinge.dual_volume_hessian()
             values = np.array(list(hessian.values()), dtype=complex)
             self.assertTrue(np.isfinite(values).all())
-            keys = sorted(hinge.dualVolumeGradient())
+            keys = sorted(hinge.dual_volume_gradient())
             for e in keys:
                 for f in keys:
                     self.assertAlmostEqual(hessian[(e, f)], hessian[(f, e)], delta=1e-12)
             for f in keys:
                 column = self._central(
-                    lambda: np.array([hinge.dualVolumeGradient()[e] for e in keys],
+                    lambda: np.array([hinge.dual_volume_gradient()[e] for e in keys],
                                      dtype=complex), f)
                 exact = np.array([hessian[(e, f)] for e in keys], dtype=complex)
                 self.assertLess(float(np.max(np.abs(column - exact))), 1e-8,
@@ -141,7 +141,7 @@ class TestLorentzianKuhnTorus(_CoincidentCircumcentres, unittest.TestCase):
     timelike_weight = 0.5
 
     def test_some_heights_are_imaginary(self):
-        dual = np.array([complex(h.dualVolume()) for h in self.chosen])
+        dual = np.array([complex(h.dual_volume()) for h in self.chosen])
         self.assertGreater(float(np.max(np.abs(dual.imag))), 1e-3)
 
 

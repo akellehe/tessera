@@ -39,16 +39,16 @@ def _from_simplices(num_vertices, simplices):
     metric = tessera.Metric(True, sig)
     st = tessera.Spacetime(metric, tessera.HERMITIAN_WEIGHTED, 1.0, 1.0,
                            tessera.PREFERRED, tessera.Toroid())
-    verts = [st.createVertex(i) for i in range(num_vertices)]
+    verts = [st.create_vertex(i) for i in range(num_vertices)]
     for s in simplices:
-        st.createSimplex([verts[i] for i in s])
+        st.create_simplex([verts[i] for i in s])
     return st
 
 
 def _set_uniform(st, sq=1.0, phase=0.0):
-    for e in st.getEdgeList().toVector():
-        e.setLength(cmath.sqrt(complex(sq)))
-        e.setPhase(phase)
+    for e in st.get_edge_list().to_vector():
+        e.set_length(cmath.sqrt(complex(sq)))
+        e.set_phase(phase)
 
 
 def _triangle(phi=0.0):
@@ -56,7 +56,7 @@ def _triangle(phi=0.0):
     st = _build_topology(tessera.SimplexBoundarySphere(1))
     _set_uniform(st, 1.0, 0.0)
     if phi:
-        st.getEdgeList().toVector()[0].setPhase(phi)
+        st.get_edge_list().to_vector()[0].set_phase(phi)
     return st
 
 
@@ -84,7 +84,7 @@ class TestSpectralGap(unittest.TestCase):
                          ("testbed", _testbed())):
             with self.subTest(fixture=name):
                 raw = np.asarray(
-                    cob.HodgeLaplacian(st).connectionEigenvalues(),
+                    cob.HodgeLaplacian(st).connection_eigenvalues(),
                     dtype=complex)
                 # D - A is Hermitian: real spectrum, asserted rather than
                 # projected.
@@ -123,7 +123,7 @@ class TestHarmonicDimension(unittest.TestCase):
         for name, st in (("triangle", _triangle()), ("path", _path()),
                          ("testbed", _testbed())):
             with self.subTest(fixture=name):
-                b0 = cob.ChainComplex.fromSpacetime(st).bettiNumbers()[0]
+                b0 = cob.ChainComplex.from_spacetime(st).betti_numbers()[0]
                 self.assertEqual(obs.HarmonicDimension().compute(st), float(b0))
 
     def test_flux_lifts_the_zero_mode(self):
@@ -132,7 +132,7 @@ class TestHarmonicDimension(unittest.TestCase):
         st0, stpi = _triangle(), _triangle(math.pi)
         self.assertEqual(obs.HarmonicDimension().compute(st0), 1.0)
         self.assertEqual(obs.HarmonicDimension().compute(stpi), 0.0)
-        self.assertEqual(cob.ChainComplex.fromSpacetime(stpi).bettiNumbers()[0], 1)
+        self.assertEqual(cob.ChainComplex.from_spacetime(stpi).betti_numbers()[0], 1)
 
     def test_matches_operator_harmonic_count(self):
         st = _triangle()

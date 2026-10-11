@@ -16,7 +16,7 @@ primitives (#106) against independent numpy / number-theoretic oracles.
   *raise* when a fundamental class is requested.
 
 * **orientedTopSimplices consistency.** The top-simplex list lines up with the
-  d-th column basis kSimplexVertices(d), the boundary-matrix column count, the
+  d-th column basis k_simplex_vertices(d), the boundary-matrix column count, the
   fundamental-class length, and the manifold's actual top simplices.
 
 * **GF(2) primitives.** gf2Rank / gf2Nullspace match a numpy GF(2) oracle on
@@ -53,7 +53,7 @@ def _build(topology):
 
 
 def _chain(topology):
-    return cob.ChainComplex.fromSpacetime(_build(topology))
+    return cob.ChainComplex.from_spacetime(_build(topology))
 
 
 def _torus2():
@@ -166,7 +166,7 @@ class TestHomologySweep(unittest.TestCase):
 
     def _signed_top_chain_boundary(self, chain, d, epsilon):
         """Coefficients of ∂_d(Σ_t ε_t·t) over the (d-1)-simplices."""
-        flat = chain.boundaryMatrix(d)
+        flat = chain.boundary_matrix(d)
         cols = len(epsilon)
         rows = len(flat) // cols if cols else 0
         return [sum(flat[r * cols + c] * epsilon[c] for c in range(cols))
@@ -179,8 +179,8 @@ class TestHomologySweep(unittest.TestCase):
                 dimension = chain.dimension()
 
                 # Betti over ℚ and GF(2).
-                self.assertEqual(chain.bettiNumbers(), fx.betti_q)
-                self.assertEqual(chain.bettiNumbersGF2(), fx.betti_gf2)
+                self.assertEqual(chain.betti_numbers(), fx.betti_q)
+                self.assertEqual(chain.betti_numbers_gf2(), fx.betti_gf2)
 
                 # Torsion at every degree.
                 for k in range(dimension + 1):
@@ -188,29 +188,29 @@ class TestHomologySweep(unittest.TestCase):
                                      f"{fx.name}: torsion({k})")
 
                 # Euler characteristic: face-count and homological agree.
-                self.assertEqual(chain.eulerCharacteristic(), fx.euler)
+                self.assertEqual(chain.euler_characteristic(), fx.euler)
                 self.assertEqual(
-                    sum((-1) ** k * b for k, b in enumerate(chain.bettiNumbers())),
+                    sum((-1) ** k * b for k, b in enumerate(chain.betti_numbers())),
                     fx.euler)
 
                 # Chain-complex axiom.
-                self.assertTrue(chain.boundaryComposesToZero())
+                self.assertTrue(chain.boundary_composes_to_zero())
 
                 # Fundamental class: a ±1 cycle exactly for the closed oriented
                 # fixtures (b_d = 1). The non-closed / non-orientable ones have
                 # trivial top homology (b_d ≠ 1); the contract for *requesting* a
                 # fundamental class there is exercised in TestFundamentalClassContract.
                 if fx.closed_oriented:
-                    self.assertEqual(chain.bettiNumbers()[dimension], 1)
-                    epsilon = list(chain.fundamentalClass())
-                    self.assertEqual(len(epsilon), chain.numSimplices(dimension))
+                    self.assertEqual(chain.betti_numbers()[dimension], 1)
+                    epsilon = list(chain.fundamental_class())
+                    self.assertEqual(len(epsilon), chain.num_simplices(dimension))
                     self.assertTrue(all(e in (-1, 1) for e in epsilon))
                     self.assertEqual(next(e for e in epsilon if e != 0), 1)  # normalized
                     self.assertTrue(
                         all(c == 0 for c in
                             self._signed_top_chain_boundary(chain, dimension, epsilon)))
                 else:
-                    self.assertNotEqual(chain.bettiNumbers()[dimension], 1)
+                    self.assertNotEqual(chain.betti_numbers()[dimension], 1)
 
 
 # --------------------------------------------------------------------------- #
@@ -220,8 +220,8 @@ class TestOrientedTopSimplices(unittest.TestCase):
 
     @staticmethod
     def _actual_top_tuples(spacetime):
-        tuples = [tuple(sorted(v.getId() for v in s.getVertices()))
-                  for s in spacetime.getSimplices()]
+        tuples = [tuple(sorted(v.get_id() for v in s.get_vertices()))
+                  for s in spacetime.get_simplices()]
         top_size = max(len(t) for t in tuples)
         return {t for t in tuples if len(t) == top_size}
 
@@ -231,15 +231,15 @@ class TestOrientedTopSimplices(unittest.TestCase):
                 continue
             with self.subTest(fixture=fx.name):
                 spacetime = _build(fx.make())               # held alive locally
-                chain = cob.ChainComplex.fromSpacetime(spacetime)
+                chain = cob.ChainComplex.from_spacetime(spacetime)
                 dimension = chain.dimension()
-                tops = [tuple(t) for t in chain.orientedTopSimplices()]
-                column_basis = [tuple(t) for t in chain.kSimplexVertices(dimension)]
+                tops = [tuple(t) for t in chain.oriented_top_simplices()]
+                column_basis = [tuple(t) for t in chain.k_simplex_vertices(dimension)]
 
                 # Same length as the d-th cell count, the column basis, and ε.
-                self.assertEqual(len(tops), chain.numSimplices(dimension))
+                self.assertEqual(len(tops), chain.num_simplices(dimension))
                 self.assertEqual(tops, column_basis)
-                self.assertEqual(len(tops), len(chain.fundamentalClass()))
+                self.assertEqual(len(tops), len(chain.fundamental_class()))
 
                 # Each is a sorted, unique vertex-id tuple.
                 for t in tops:
@@ -247,8 +247,8 @@ class TestOrientedTopSimplices(unittest.TestCase):
                 self.assertEqual(len(set(tops)), len(tops))
 
                 # The boundary matrix ∂_d has exactly |tops| columns.
-                flat = chain.boundaryMatrix(dimension)
-                rows = chain.numSimplices(dimension - 1)
+                flat = chain.boundary_matrix(dimension)
+                rows = chain.num_simplices(dimension - 1)
                 self.assertEqual(len(flat), rows * len(tops))
 
                 # They are the manifold's actual top simplices.
@@ -256,10 +256,10 @@ class TestOrientedTopSimplices(unittest.TestCase):
 
 
 # --------------------------------------------------------------------------- #
-# 2b. fundamentalClass() contract — documents a real production bug (#153).
+# 2b. fundamental_class() contract — documents a real production bug (#153).
 # --------------------------------------------------------------------------- #
 class TestFundamentalClassContract(unittest.TestCase):
-    """``ChainComplex.fundamentalClass()`` raises when no fundamental class
+    """``ChainComplex.fundamental_class()`` raises when no fundamental class
     exists — when ``dim ker ∂_d ≠ 1`` (the header's @throws, and
     ChainComplex.cpp's own comment: "anything else has no fundamental class …
     and the call throws"). This holds for every complex whose top boundary
@@ -278,12 +278,12 @@ class TestFundamentalClassContract(unittest.TestCase):
     def test_ball_should_raise_without_fundamental_class(self):
         # Δ³ is contractible (b_3 = 0): no fundamental class ⇒ must raise.
         with self.assertRaises(RuntimeError):
-            _chain(tessera.SolidSimplex(3)).fundamentalClass()
+            _chain(tessera.SolidSimplex(3)).fundamental_class()
 
     def test_non_orientable_should_raise_without_fundamental_class(self):
         # RP² is closed but non-orientable (b_2 = 0): must raise.
         with self.assertRaises(RuntimeError):
-            _chain(tessera.RealProjectivePlane()).fundamentalClass()
+            _chain(tessera.RealProjectivePlane()).fundamental_class()
 
 
 # --------------------------------------------------------------------------- #
@@ -314,7 +314,7 @@ class TestGf2Primitives(unittest.TestCase):
     def test_betti_gf2_from_boundary_ranks(self):
         # b_k(GF2) = |C_k| − rank₂ ∂_k − rank₂ ∂_{k+1}, with the boundary ranks
         # taken from the C++ gf2_rank and cross-checked against the numpy oracle;
-        # the assembled vector must equal bettiNumbersGF2().
+        # the assembled vector must equal betti_numbers_gf2().
         for fx in (Fixture("S^2", lambda: tessera.SimplexBoundarySphere(2),
                            [1, 0, 1], [1, 0, 1], {}, 2, True),
                    FIXTURES[next(i for i, f in enumerate(FIXTURES) if f.name == "RP^2")],
@@ -327,20 +327,20 @@ class TestGf2Primitives(unittest.TestCase):
                 def gf2_boundary_rank(k):
                     if k <= 0 or k > dimension:
                         return 0
-                    rows = chain.numSimplices(k - 1)
-                    cols = chain.numSimplices(k)
+                    rows = chain.num_simplices(k - 1)
+                    cols = chain.num_simplices(k)
                     if rows == 0 or cols == 0:
                         return 0
-                    flat = [int(v) & 1 for v in chain.boundaryMatrix(k)]
+                    flat = [int(v) & 1 for v in chain.boundary_matrix(k)]
                     cpp = cob.gf2_rank(flat, rows, cols)
                     self.assertEqual(cpp, _gf2_rank_np(np.asarray(flat).reshape(rows, cols)))
                     return cpp
 
                 betti = []
                 for k in range(dimension + 1):
-                    ck = chain.numSimplices(k)
+                    ck = chain.num_simplices(k)
                     betti.append(ck - gf2_boundary_rank(k) - gf2_boundary_rank(k + 1))
-                self.assertEqual(betti, chain.bettiNumbersGF2())
+                self.assertEqual(betti, chain.betti_numbers_gf2())
                 self.assertEqual(betti, fx.betti_gf2)
 
 
@@ -396,9 +396,9 @@ class TestSmithNormalForm(unittest.TestCase):
                            ("RP^3", tessera.RealProjectiveSpace)):
             with self.subTest(fixture=name):
                 chain = _chain(make())
-                rows = chain.numSimplices(1)        # |C_1|
-                cols = chain.numSimplices(2)        # |C_2|
-                snf = cob.smith_normal_form(list(chain.boundaryMatrix(2)), rows, cols)
+                rows = chain.num_simplices(1)        # |C_1|
+                cols = chain.num_simplices(2)        # |C_2|
+                snf = cob.smith_normal_form(list(chain.boundary_matrix(2)), rows, cols)
                 nontrivial = [int(f) for f in snf.invariant_factors if f > 1]
                 self.assertEqual(nontrivial, [2])
                 self.assertEqual(list(chain.torsion(1)), [2])

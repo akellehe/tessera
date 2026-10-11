@@ -62,9 +62,9 @@ def collar(twist):
 def monodromy(node, markings):
     assembled = PencilLayer.assemble([node.spacetime()])
     connection = assembled.op.connection()
-    band = assembled.op.harmonicBand(1)
+    band = assembled.op.harmonic_band(1)
     images = np.asarray(band.images)
-    blocks = [np.array([[connection.transportedPeriod(images[:, a], walk)
+    blocks = [np.array([[connection.transported_period(images[:, a], walk)
                          for a in range(band.rank())] for walk in marking])
               for marking in markings]
     return blocks[1] @ np.linalg.inv(blocks[0])
@@ -114,18 +114,18 @@ def test_the_monodromy_is_topological(request, name):
     """
     node, markings, base = request.getfixturevalue(name)
     spacetime = node.spacetime()
-    edges = list(spacetime.getEdgeList().toVector())
-    original = [edge.getLength() for edge in edges]
+    edges = list(spacetime.get_edge_list().to_vector())
+    original = [edge.get_length() for edge in edges]
     try:
         for amplitude in (0.05, 0.25, 0.75):
             generator = np.random.default_rng(7)
             for edge, length in zip(edges, original):
                 step = generator.standard_normal() + 1j * generator.standard_normal()
-                edge.setLength(length * (1.0 + amplitude * step))
+                edge.set_length(length * (1.0 + amplitude * step))
             assert np.linalg.norm(monodromy(node, markings) - base) < 1e-8
     finally:
         for edge, length in zip(edges, original):
-            edge.setLength(length)
+            edge.set_length(length)
 
 
 def test_a_dehn_twist_is_refused_by_name():

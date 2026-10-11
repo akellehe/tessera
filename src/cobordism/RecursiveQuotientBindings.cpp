@@ -63,15 +63,15 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       "caller-selected interior cells to retain.")
       .def(py::init<>())
       .def_readwrite("tolerance", &RecursiveQuotient::Options::tolerance)
-      .def_readwrite("rankTolerance", &RecursiveQuotient::Options::rankTolerance)
-      .def_readwrite("denseCrossover", &RecursiveQuotient::Options::denseCrossover)
-      .def_readwrite("embeddingPolicy",
+      .def_readwrite("rank_tolerance", &RecursiveQuotient::Options::rankTolerance)
+      .def_readwrite("dense_crossover", &RecursiveQuotient::Options::denseCrossover)
+      .def_readwrite("embedding_policy",
                      &RecursiveQuotient::Options::embeddingPolicy)
-      .def_readwrite("nearIsometryEpsilon",
+      .def_readwrite("near_isometry_epsilon",
                      &RecursiveQuotient::Options::nearIsometryEpsilon)
-      .def_readwrite("selectedInteriorIndices",
+      .def_readwrite("selected_interior_indices",
                      &RecursiveQuotient::Options::selectedInteriorIndices)
-      .def_readwrite("selectedInteriorCells",
+      .def_readwrite("selected_interior_cells",
                      &RecursiveQuotient::Options::selectedInteriorCells);
 
   py::class_<RecursiveQuotient::RetainedCoordinate>(recursiveQuotient,
@@ -81,7 +81,7 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def_readonly("kind", &RecursiveQuotient::RetainedCoordinate::kind)
       .def_readonly("component",
                     &RecursiveQuotient::RetainedCoordinate::component)
-      .def_readonly("fineIndex",
+      .def_readonly("fine_index",
                     &RecursiveQuotient::RetainedCoordinate::fineIndex)
       .def_readonly("embedding",
                     &RecursiveQuotient::RetainedCoordinate::embedding)
@@ -95,27 +95,27 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def_readonly("component",
                     &RecursiveQuotient::InteriorNullspaceRead::component)
       .def_readonly("nullity", &RecursiveQuotient::InteriorNullspaceRead::nullity)
-      .def_readonly("integerNullity",
+      .def_readonly("integer_nullity",
                     &RecursiveQuotient::InteriorNullspaceRead::integerNullity)
       .def_readonly(
-          "integerNullityMeasured",
+          "integer_nullity_measured",
           &RecursiveQuotient::InteriorNullspaceRead::integerNullityMeasured,
           "Whether the exact integer nullity was computed at all (False on the "
           "matrix path and on integer-kernel overflow, where integerNullity == "
           "0 means 'not measured').")
       .def_readonly(
-          "nullityDiscrepancy",
+          "nullity_discrepancy",
           &RecursiveQuotient::InteriorNullspaceRead::nullityDiscrepancy,
           "nullity - integerNullity: the recorded disagreement between the "
           "numerical kernel of the weighted interior block and the exact "
           "integer topological nullity. 0 means they agree; NaN means no "
           "integer nullity was measured (never 0, which would claim an "
           "agreement that was never made).")
-      .def_readonly("integerBasis",
+      .def_readonly("integer_basis",
                     &RecursiveQuotient::InteriorNullspaceRead::integerBasis)
-      .def_readonly("kernelBasis",
+      .def_readonly("kernel_basis",
                     &RecursiveQuotient::InteriorNullspaceRead::kernelBasis)
-      .def_readonly("leftKernelBasis",
+      .def_readonly("left_kernel_basis",
                     &RecursiveQuotient::InteriorNullspaceRead::leftKernelBasis)
       .def_readonly("certificate",
                     &RecursiveQuotient::InteriorNullspaceRead::certificate);
@@ -125,16 +125,16 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       "The exact supported static reduction: kept-cell indices, all reduced "
       "coordinates with provenance, the effective operator (leading kept "
       "block = L_BB - L_BI L_II^+ L_IB), residuals, certificate.")
-      .def_readonly("interfaceIndices",
+      .def_readonly("interface_indices",
                     &RecursiveQuotient::StaticReductionRead::interfaceIndices)
       .def_readonly("coordinates",
                     &RecursiveQuotient::StaticReductionRead::coordinates)
-      .def_readonly("effectiveOperator",
+      .def_readonly("effective_operator",
                     &RecursiveQuotient::StaticReductionRead::effectiveOperator)
-      .def_readonly("solveResidual",
+      .def_readonly("solve_residual",
                     &RecursiveQuotient::StaticReductionRead::solveResidual)
       .def_readonly(
-          "compatibilityResidual",
+          "compatibility_residual",
           &RecursiveQuotient::StaticReductionRead::compatibilityResidual)
       .def_readonly("certificate",
                     &RecursiveQuotient::StaticReductionRead::certificate);
@@ -144,16 +144,16 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       "with resonance retention, compatibility check, and the measured "
       "determinant-factorization residual (below the dense crossover).")
       .def_readonly("lam", &RecursiveQuotient::FeshbachRead::lambda)
-      .def_readonly("windowLower", &RecursiveQuotient::FeshbachRead::windowLower)
-      .def_readonly("windowUpper", &RecursiveQuotient::FeshbachRead::windowUpper)
+      .def_readonly("window_lower", &RecursiveQuotient::FeshbachRead::windowLower)
+      .def_readonly("window_upper", &RecursiveQuotient::FeshbachRead::windowUpper)
       .def_readonly("response", &RecursiveQuotient::FeshbachRead::response)
       .def_readonly("coordinates", &RecursiveQuotient::FeshbachRead::coordinates)
       .def_readonly("resonant", &RecursiveQuotient::FeshbachRead::resonant)
-      .def_readonly("solveResidual",
+      .def_readonly("solve_residual",
                     &RecursiveQuotient::FeshbachRead::solveResidual)
-      .def_readonly("compatibilityResidual",
+      .def_readonly("compatibility_residual",
                     &RecursiveQuotient::FeshbachRead::compatibilityResidual)
-      .def_readonly("determinantResidual",
+      .def_readonly("determinant_residual",
                     &RecursiveQuotient::FeshbachRead::determinantResidual)
       .def_readonly("certificate",
                     &RecursiveQuotient::FeshbachRead::certificate);
@@ -168,22 +168,22 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       "det F_B about the circle; geometric = dim ker F_B(lambda). Algebraic "
       "and geometric agree only in the self-adjoint/semisimple setting.")
       .def_readonly("lam", &RecursiveQuotient::MultiplicityRead::lambda)
-      .def_readonly("contourRadius",
+      .def_readonly("contour_radius",
                     &RecursiveQuotient::MultiplicityRead::contourRadius,
                     "The radius of the counting disc, the declared selection.")
-      .def_readonly("responseWinding",
+      .def_readonly("response_winding",
                     &RecursiveQuotient::MultiplicityRead::responseWinding)
-      .def_readonly("interiorWinding",
+      .def_readonly("interior_winding",
                     &RecursiveQuotient::MultiplicityRead::interiorWinding)
       .def_readonly("algebraic", &RecursiveQuotient::MultiplicityRead::algebraic)
       .def_readonly("geometric", &RecursiveQuotient::MultiplicityRead::geometric)
       .def_readonly("semisimple",
                     &RecursiveQuotient::MultiplicityRead::semisimple)
-      .def_readonly("isolationGap",
+      .def_readonly("isolation_gap",
                     &RecursiveQuotient::MultiplicityRead::isolationGap,
                     "The distance from the circle to the nearest eigenvalue of "
                     "L or of L_II, inside or outside.")
-      .def_readonly("decompositionResidual",
+      .def_readonly("decomposition_residual",
                     &RecursiveQuotient::MultiplicityRead::decompositionResidual,
                     "The largest relative backward error of the Schur "
                     "decompositions the counts were read from.")
@@ -197,32 +197,32 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       "fixed-interface modes per component, basis, reduced (stiffness, mass) "
       "pencil, discarded-mode gap, the claimed spectrum inside the disc, and "
       "fine-space eigenresiduals.")
-      .def_readonly("windowCentre",
+      .def_readonly("window_centre",
                     &RecursiveQuotient::CraigBamptonRead::windowCentre)
-      .def_readonly("windowRadius",
+      .def_readonly("window_radius",
                     &RecursiveQuotient::CraigBamptonRead::windowRadius)
-      .def_readonly("retentionRadius",
+      .def_readonly("retention_radius",
                     &RecursiveQuotient::CraigBamptonRead::retentionRadius)
-      .def_readonly("windowLower",
+      .def_readonly("window_lower",
                     &RecursiveQuotient::CraigBamptonRead::windowLower)
-      .def_readonly("windowUpper",
+      .def_readonly("window_upper",
                     &RecursiveQuotient::CraigBamptonRead::windowUpper)
-      .def_readonly("modeCutoff",
+      .def_readonly("mode_cutoff",
                     &RecursiveQuotient::CraigBamptonRead::modeCutoff)
-      .def_readonly("retainedModes",
+      .def_readonly("retained_modes",
                     &RecursiveQuotient::CraigBamptonRead::retainedModes)
       .def_readonly("basis", &RecursiveQuotient::CraigBamptonRead::basis)
-      .def_readonly("reducedStiffness",
+      .def_readonly("reduced_stiffness",
                     &RecursiveQuotient::CraigBamptonRead::reducedStiffness)
-      .def_readonly("reducedMass",
+      .def_readonly("reduced_mass",
                     &RecursiveQuotient::CraigBamptonRead::reducedMass)
-      .def_readonly("discardedModeGap",
+      .def_readonly("discarded_mode_gap",
                     &RecursiveQuotient::CraigBamptonRead::discardedModeGap)
-      .def_readonly("windowSpectrum",
+      .def_readonly("window_spectrum",
                     &RecursiveQuotient::CraigBamptonRead::windowSpectrum)
-      .def_readonly("windowEigenvalues",
+      .def_readonly("window_eigenvalues",
                     &RecursiveQuotient::CraigBamptonRead::windowEigenvalues)
-      .def_readonly("eigenResiduals",
+      .def_readonly("eigen_residuals",
                     &RecursiveQuotient::CraigBamptonRead::eigenResiduals)
       .def_readonly("certificate",
                     &RecursiveQuotient::CraigBamptonRead::certificate);
@@ -236,43 +236,43 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       "pencil level), the declared policy, gram defect, kernel nullity, and "
       "nominal vs effective ranks. Adjacent fibers may overlap on shared "
       "interface cells; a direct sum is never asserted.")
-      .def_readonly("summandComponents",
+      .def_readonly("summand_components",
                     &RecursiveQuotient::LabeledFiberSumRead::summandComponents)
-      .def_readonly("summandRanks",
+      .def_readonly("summand_ranks",
                     &RecursiveQuotient::LabeledFiberSumRead::summandRanks)
       .def_readonly("embedding",
                     &RecursiveQuotient::LabeledFiberSumRead::embedding)
-      .def_readonly("leftEmbedding",
+      .def_readonly("left_embedding",
                     &RecursiveQuotient::LabeledFiberSumRead::leftEmbedding,
                     "The explicit left embedding Y~ (flat, fineDim x "
                     "totalRank), fixed before the overlap test; empty when "
                     "the level's metric dual is the left embedding.")
       .def_readonly("gram", &RecursiveQuotient::LabeledFiberSumRead::gram)
       .def_readonly("policy", &RecursiveQuotient::LabeledFiberSumRead::policy)
-      .def_readonly("gramDefect",
+      .def_readonly("gram_defect",
                     &RecursiveQuotient::LabeledFiberSumRead::gramDefect)
-      .def_readonly("quotientNullity",
+      .def_readonly("quotient_nullity",
                     &RecursiveQuotient::LabeledFiberSumRead::quotientNullity)
-      .def_readonly("nominalRank",
+      .def_readonly("nominal_rank",
                     &RecursiveQuotient::LabeledFiberSumRead::nominalRank)
-      .def_readonly("effectiveRank",
+      .def_readonly("effective_rank",
                     &RecursiveQuotient::LabeledFiberSumRead::effectiveRank)
-      .def_readonly("quotientBasis",
+      .def_readonly("quotient_basis",
                     &RecursiveQuotient::LabeledFiberSumRead::quotientBasis)
-      .def_readonly("leftQuotientBasis",
+      .def_readonly("left_quotient_basis",
                     &RecursiveQuotient::LabeledFiberSumRead::leftQuotientBasis,
                     "The left partner L_q of quotientBasis R_q: the quotient "
                     "of a one-particle matrix is L_q^T X R_q.")
       .def_readonly(
-          "fromCertifiedBands",
+          "from_certified_bands",
           &RecursiveQuotient::LabeledFiberSumRead::fromCertifiedBands)
       .def_readonly(
-          "summandCertificates",
+          "summand_certificates",
           &RecursiveQuotient::LabeledFiberSumRead::summandCertificates)
       .def_readonly(
-          "worstIsolationGap",
+          "worst_isolation_gap",
           &RecursiveQuotient::LabeledFiberSumRead::worstIsolationGap)
-      .def_readonly("allBandsAccepted",
+      .def_readonly("all_bands_accepted",
                     &RecursiveQuotient::LabeledFiberSumRead::allBandsAccepted)
       .def_readonly("certificate",
                     &RecursiveQuotient::LabeledFiberSumRead::certificate);
@@ -288,22 +288,22 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def(py::init<>())
       .def_readwrite("component", &RecursiveQuotient::CertifiedBand::component)
       .def_readwrite("frame", &RecursiveQuotient::CertifiedBand::frame)
-      .def_readwrite("leftFrame", &RecursiveQuotient::CertifiedBand::leftFrame,
+      .def_readwrite("left_frame", &RecursiveQuotient::CertifiedBand::leftFrame,
                      "The band's local left Riesz frame Phi~ (flat, "
                      "dimension x rank), paired with frame by the plain "
                      "transpose; empty: the level's metric dual stands in.")
       .def_readwrite("rank", &RecursiveQuotient::CertifiedBand::rank)
-      .def_readwrite("lowerGap", &RecursiveQuotient::CertifiedBand::lowerGap)
-      .def_readwrite("upperGap", &RecursiveQuotient::CertifiedBand::upperGap)
-      .def_readwrite("frequencyLower",
+      .def_readwrite("lower_gap", &RecursiveQuotient::CertifiedBand::lowerGap)
+      .def_readwrite("upper_gap", &RecursiveQuotient::CertifiedBand::upperGap)
+      .def_readwrite("frequency_lower",
                      &RecursiveQuotient::CertifiedBand::frequencyLower)
-      .def_readwrite("frequencyUpper",
+      .def_readwrite("frequency_upper",
                      &RecursiveQuotient::CertifiedBand::frequencyUpper)
-      .def_readwrite("windowCentre",
+      .def_readwrite("window_centre",
                      &RecursiveQuotient::CertifiedBand::windowCentre,
                      "Centre of the band's window disc in the complex plane (NaN when the "
                      "band was declared by its real extent alone).")
-      .def_readwrite("windowRadius",
+      .def_readwrite("window_radius",
                      &RecursiveQuotient::CertifiedBand::windowRadius,
                      "Radius of the band's window disc (NaN when declared by real extent alone).")
       .def_readwrite("accepted", &RecursiveQuotient::CertifiedBand::accepted)
@@ -317,17 +317,17 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def_readonly("component",
                     &RecursiveQuotient::CertifiedFiberSummand::component)
       .def_readonly("rank", &RecursiveQuotient::CertifiedFiberSummand::rank)
-      .def_readonly("lowerGap",
+      .def_readonly("lower_gap",
                     &RecursiveQuotient::CertifiedFiberSummand::lowerGap)
-      .def_readonly("upperGap",
+      .def_readonly("upper_gap",
                     &RecursiveQuotient::CertifiedFiberSummand::upperGap)
-      .def_readonly("frequencyLower",
+      .def_readonly("frequency_lower",
                     &RecursiveQuotient::CertifiedFiberSummand::frequencyLower)
-      .def_readonly("frequencyUpper",
+      .def_readonly("frequency_upper",
                     &RecursiveQuotient::CertifiedFiberSummand::frequencyUpper)
-      .def_readonly("windowCentre",
+      .def_readonly("window_centre",
                     &RecursiveQuotient::CertifiedFiberSummand::windowCentre)
-      .def_readonly("windowRadius",
+      .def_readonly("window_radius",
                     &RecursiveQuotient::CertifiedFiberSummand::windowRadius)
       .def_readonly("accepted",
                     &RecursiveQuotient::CertifiedFiberSummand::accepted)
@@ -343,18 +343,18 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       "never zero.")
       .def_readonly("origin", &RecursiveQuotient::LevelProvenanceRead::origin)
       .def_readonly("lambda_", &RecursiveQuotient::LevelProvenanceRead::lambda)
-      .def_readonly("windowLower",
+      .def_readonly("window_lower",
                     &RecursiveQuotient::LevelProvenanceRead::windowLower)
-      .def_readonly("windowUpper",
+      .def_readonly("window_upper",
                     &RecursiveQuotient::LevelProvenanceRead::windowUpper)
-      .def_readonly("solveResidual",
+      .def_readonly("solve_residual",
                     &RecursiveQuotient::LevelProvenanceRead::solveResidual)
       .def_readonly(
-          "compatibilityResidual",
+          "compatibility_residual",
           &RecursiveQuotient::LevelProvenanceRead::compatibilityResidual)
-      .def_readonly("surrogateResidual",
+      .def_readonly("surrogate_residual",
                     &RecursiveQuotient::LevelProvenanceRead::surrogateResidual)
-      .def_readonly("discardedModeGap",
+      .def_readonly("discarded_mode_gap",
                     &RecursiveQuotient::LevelProvenanceRead::discardedModeGap)
       .def_readonly("resonant",
                     &RecursiveQuotient::LevelProvenanceRead::resonant)
@@ -372,22 +372,22 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       "spectrum refuses past the declared term budget.")
       .def_readonly("modes", &RecursiveQuotient::FockStageRead::modes)
       .def_readonly("policy", &RecursiveQuotient::FockStageRead::policy)
-      .def_readonly("gramDefect",
+      .def_readonly("gram_defect",
                     &RecursiveQuotient::FockStageRead::gramDefect)
-      .def_readonly("oneParticle",
+      .def_readonly("one_particle",
                     &RecursiveQuotient::FockStageRead::oneParticle)
       .def_readonly("gram", &RecursiveQuotient::FockStageRead::gram)
       .def_readonly("pairing", &RecursiveQuotient::FockStageRead::pairing,
                     "The one pairing h and G were compressed in: "
                     "'metric-hermitian', 'metric-transpose' or "
                     "'left-embedding'.")
-      .def_readonly("oneParticleSpectrum",
+      .def_readonly("one_particle_spectrum",
                     &RecursiveQuotient::FockStageRead::oneParticleSpectrum)
-      .def_readonly("fockDimension",
+      .def_readonly("fock_dimension",
                     &RecursiveQuotient::FockStageRead::fockDimension)
-      .def_readonly("spectrumMaterialized",
+      .def_readonly("spectrum_materialized",
                     &RecursiveQuotient::FockStageRead::spectrumMaterialized)
-      .def_readonly("fockSpectrum",
+      .def_readonly("fock_spectrum",
                     &RecursiveQuotient::FockStageRead::fockSpectrum)
       .def_readonly("certificate",
                     &RecursiveQuotient::FockStageRead::certificate);
@@ -403,14 +403,14 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       "The next-level operator-valued response network: per-component stalks "
       "(shared interface cells appear in every claiming stalk), vertex and "
       "edge blocks of the reduced operator, and the coverage residual.")
-      .def_readonly("stalkDimensions",
+      .def_readonly("stalk_dimensions",
                     &RecursiveQuotient::ResponseNetworkRead::stalkDimensions)
-      .def_readonly("stalkCoordinates",
+      .def_readonly("stalk_coordinates",
                     &RecursiveQuotient::ResponseNetworkRead::stalkCoordinates)
-      .def_readonly("vertexBlocks",
+      .def_readonly("vertex_blocks",
                     &RecursiveQuotient::ResponseNetworkRead::vertexBlocks)
       .def_readonly("edges", &RecursiveQuotient::ResponseNetworkRead::edges)
-      .def_readonly("coverageResidual",
+      .def_readonly("coverage_residual",
                     &RecursiveQuotient::ResponseNetworkRead::coverageResidual)
       .def_readonly("certificate",
                     &RecursiveQuotient::ResponseNetworkRead::certificate);
@@ -425,12 +425,12 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                     &RecursiveQuotient::ResolvedPartitionRead::components)
       .def_readonly("resolutions",
                     &RecursiveQuotient::ResolvedPartitionRead::resolutions)
-      .def_readonly("selectedResolution",
+      .def_readonly("selected_resolution",
                     &RecursiveQuotient::ResolvedPartitionRead::selectedResolution)
       .def_readonly(
-          "componentPersistence",
+          "component_persistence",
           &RecursiveQuotient::ResolvedPartitionRead::componentPersistence)
-      .def_readonly("worstOverlap",
+      .def_readonly("worst_overlap",
                     &RecursiveQuotient::ResolvedPartitionRead::worstOverlap);
 
   py::class_<RecursiveQuotient::SheafRealizationRead>(recursiveQuotient,
@@ -443,36 +443,36 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def_readonly("simplicial",
                     &RecursiveQuotient::SheafRealizationRead::simplicial)
       .def_readonly(
-          "edgeStalkDimensions",
+          "edge_stalk_dimensions",
           &RecursiveQuotient::SheafRealizationRead::edgeStalkDimensions)
-      .def_readonly("restrictionMaps",
+      .def_readonly("restriction_maps",
                     &RecursiveQuotient::SheafRealizationRead::restrictionMaps)
       .def_readonly(
-          "reconstructionResidual",
+          "reconstruction_residual",
           &RecursiveQuotient::SheafRealizationRead::reconstructionResidual)
       .def_readonly("certificate",
                     &RecursiveQuotient::SheafRealizationRead::certificate);
 
   recursiveQuotient
-      .def_static("overMatrix", &RecursiveQuotient::overMatrix, py::arg("op"),
+      .def_static("over_matrix", &RecursiveQuotient::overMatrix, py::arg("op"),
                   py::arg("dim"), py::arg("weights"), py::arg("components"),
                   py::arg("options") = RecursiveQuotient::Options(),
                   "Build over an explicit operator (flat row-major) with a "
                   "diagonal chain metric (empty = identity) and 0-based, "
                   "possibly overlapping component index sets covering every "
                   "index. Fixtures and next-level recursion.")
-      .def_static("overPencil", &RecursiveQuotient::overPencil, py::arg("A"),
+      .def_static("over_pencil", &RecursiveQuotient::overPencil, py::arg("A"),
                   py::arg("M"), py::arg("dim"), py::arg("components"),
                   py::arg("options") = RecursiveQuotient::Options(),
                   "Build over a symmetric PENCIL (A~, M) on geometric images (flat "
                   "row-major both): every shifted elimination is taken on "
                   "P(lambda) = A~ - lambda M, and a child level carries the Gram "
                   "T^T M T of its constraint modes.")
-      .def("isPencil", &RecursiveQuotient::isPencil, "Whether this level is a pencil level.")
-      .def("pencilMetric", &RecursiveQuotient::pencilMetric,
+      .def("is_pencil", &RecursiveQuotient::isPencil, "Whether this level is a pencil level.")
+      .def("pencil_metric", &RecursiveQuotient::pencilMetric,
            "The pencil's metric M (base) or carried Gram (child), flat row-major; empty otherwise.")
       .def_static(
-          "overCells",
+          "over_cells",
           [](std::shared_ptr<Spacetime> st, int degree,
              const std::vector<std::vector<std::vector<std::uint64_t>>> &cells,
              const RecursiveQuotient::Options &options, AnalyticCache *cache,
@@ -493,11 +493,11 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
           "vertex SET). An AnalyticCache bound to the same spacetime enables "
           "per-component reuse across accepted moves. The operator and its "
           "metric come from one metric_source (None: the process-wide "
-          "HodgeLaplacian.defaultMetricSource() at call time): WhitneyPencil "
+          "HodgeLaplacian.default_metric_source() at call time): WhitneyPencil "
           "builds a pencil level over (A~_k^U, M_k^U) of HodgeLaplacian.pencil; "
           "DiagonalWeights an operator level over laplacian(k) with weights(k).")
       .def_static(
-          "overVertexSupports",
+          "over_vertex_supports",
           [](std::shared_ptr<Spacetime> st, int degree,
              const std::vector<std::vector<std::uint64_t>> &supports,
              const RecursiveQuotient::Options &options, AnalyticCache *cache,
@@ -516,36 +516,36 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
           "convention): a k-cell belongs to a component when ALL its vertices "
           "lie in the support; unclaimed cells form one residual component. "
           "metric_source as in overCells.")
-      .def("metricSource", &RecursiveQuotient::metricSource,
+      .def("metric_source", &RecursiveQuotient::metricSource,
           "The metric source a spacetime-backed level was built on; None on the "
           "matrix and pencil paths and on child levels.")
       .def_property_readonly("dimension", &RecursiveQuotient::dimension)
-      .def_property_readonly("componentCount",
+      .def_property_readonly("component_count",
                              &RecursiveQuotient::componentCount)
       .def_property_readonly("degree", &RecursiveQuotient::degree)
       .def_property_readonly("level", &RecursiveQuotient::level)
       .def_property_readonly("regime", &RecursiveQuotient::regime)
-      .def_property_readonly("interfaceIndices",
+      .def_property_readonly("interface_indices",
                              &RecursiveQuotient::interfaceIndices)
-      .def("interiorIndices", &RecursiveQuotient::interiorIndices,
+      .def("interior_indices", &RecursiveQuotient::interiorIndices,
            py::arg("component"))
-      .def_property_readonly("coordinateProvenance",
+      .def_property_readonly("coordinate_provenance",
                              &RecursiveQuotient::coordinateProvenance)
-      .def("interiorNullspace", &RecursiveQuotient::interiorNullspace,
+      .def("interior_nullspace", &RecursiveQuotient::interiorNullspace,
            py::arg("component"),
            "Exact integer topological zero modes (spacetime path) + the "
            "numerical right/left kernels of the interior block.")
-      .def("staticReduction", &RecursiveQuotient::staticReduction,
+      .def("static_reduction", &RecursiveQuotient::staticReduction,
            py::return_value_policy::reference_internal,
            "The exact supported static reduction (memoized; per-component "
            "contributions served from the bound AnalyticCache when fresh).")
-      .def("staticProbeCertificate", &RecursiveQuotient::staticProbeCertificate,
+      .def("static_probe_certificate", &RecursiveQuotient::staticProbeCertificate,
            py::arg("probe"),
            "Regime-appropriate static certificate on one kept-cell probe: "
            "minimum (positive), stationarity (Hermitian-indefinite), or "
            "certified block elimination + left-kernel compatibility "
            "(non-normal).")
-      .def("verifyStatic", &RecursiveQuotient::verifyStatic,
+      .def("verify_static", &RecursiveQuotient::verifyStatic,
            "Worst static probe certificate over every kept basis vector and "
            "the all-ones probe.")
       .def("feshbach", &RecursiveQuotient::feshbach, py::arg("lam"),
@@ -562,7 +562,7 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
            "dim ker F_B(lam). Whether an eigenvalue is inside is decided at the "
            "rank tolerance, and a circle through an eigenvalue is refused by "
            "name.")
-      .def("craigBampton",
+      .def("craig_bampton",
            py::overload_cast<double, double, double, double>(
                &RecursiveQuotient::craigBampton, py::const_),
            py::arg("window_lower"), py::arg("window_upper"),
@@ -577,7 +577,7 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
            "the transpose pairing against the level's own metric in the non-normal and "
            "complex-symmetric-pencil ones. An indefinite chain metric is refused in a "
            "Hermitian regime, a singular interior or reduced metric in a bilinear one.")
-      .def("craigBampton",
+      .def("craig_bampton",
            py::overload_cast<std::complex<double>, double, double, double>(
                &RecursiveQuotient::craigBampton, py::const_),
            py::arg("window_centre"), py::arg("window_radius"),
@@ -587,44 +587,44 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
            "eigenvalue is within retention_radius of the centre and a reduced "
            "eigenvalue is claimed when it lies in the disc, by complex distance in "
            "every regime. retention_radius must cover window_radius.")
-      .def("labeledFiberSum", &RecursiveQuotient::labeledFiberSum,
+      .def("labeled_fiber_sum", &RecursiveQuotient::labeledFiberSum,
            "The abstract labeled sum of retained fibers with embedding J and "
            "Gram G = J^dag W J under the run's declared policy.")
-      .def_static("composeNearIsometryBudget",
+      .def_static("compose_near_isometry_budget",
                   &RecursiveQuotient::composeNearIsometryBudget,
                   py::arg("epsilon_a"), py::arg("epsilon_b"),
                   "Composable amplitude budget of the CertifiedNearIsometry "
                   "policy: eps_AB <= eps_A + eps_B + eps_A * eps_B.")
-      .def("responseNetwork", &RecursiveQuotient::responseNetwork,
+      .def("response_network", &RecursiveQuotient::responseNetwork,
            "The next-level operator-valued response network (stalks + "
            "effective blocks).")
-      .def("sheafRealization", &RecursiveQuotient::sheafRealization,
+      .def("sheaf_realization", &RecursiveQuotient::sheafRealization,
            "Cellular-sheaf/simplicial realization, emitted only when "
            "certified; otherwise the general network is retained.")
-      .def("nextLevel",
+      .def("next_level",
            py::overload_cast<const std::vector<std::vector<int>> &,
                              const RecursiveQuotient::Options &>(
                &RecursiveQuotient::nextLevel, py::const_),
            py::arg("components"), py::arg("options"),
            "Reduce again over this level's reduced operator; the child "
            "carries provenance-prefixed lineage and level + 1.")
-      .def("nextLevel",
+      .def("next_level",
            py::overload_cast<const std::vector<std::vector<int>> &>(
                &RecursiveQuotient::nextLevel, py::const_),
            py::arg("components"))
-      .def("certifiedFiberSum", &RecursiveQuotient::certifiedFiberSum,
+      .def("certified_fiber_sum", &RecursiveQuotient::certifiedFiberSum,
            py::arg("bands"),
            "The labeled sum over CERTIFIED ISOLATED BANDS (the master "
            "recursion's E_v), carrying each band's isolation gap and "
            "certificate onto its summand. An uncertified band is summed and "
            "reported, never dropped, and makes the sum's certificate fail to "
            "hold.")
-      .def("fockStage", &RecursiveQuotient::fockStage, py::arg("sum"),
+      .def("fock_stage", &RecursiveQuotient::fockStage, py::arg("sum"),
            py::arg("max_terms") = std::size_t{1} << 22,
            "The Fock stage over a labeled sum: the one-particle compression, "
            "the pencil spectrum, and the exact free many-body spectrum as "
            "occupation subset sums (refusing past max_terms).")
-      .def_static("persistentPartition",
+      .def_static("persistent_partition",
                   py::overload_cast<const std::vector<std::complex<double>> &,
                                     int, double, int, std::uint64_t>(
                       &RecursiveQuotient::persistentPartition),
@@ -636,7 +636,7 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                   "symmetrized off-diagonal magnitude graph. Covers every "
                   "index exactly once; isolated coordinates come back as "
                   "singletons.")
-      .def_static("persistentPartition",
+      .def_static("persistent_partition",
                   py::overload_cast<const std::vector<std::complex<double>> &,
                                     int, const std::vector<double> &, int,
                                     std::uint64_t>(
@@ -650,7 +650,7 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                   "its support at the first resolution of the window. Every "
                   "coordinate no such component claimed comes back as a "
                   "singleton.")
-      .def_static("persistentPartitionOverResolutions",
+      .def_static("persistent_partition_over_resolutions",
                   &RecursiveQuotient::persistentPartitionOverResolutions,
                   py::arg("op"), py::arg("dim"), py::arg("gammas"),
                   py::arg("restarts") = 4, py::arg("base_seed") = 0,
@@ -660,14 +660,14 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                   "partition: the same scan, the same rule and the same "
                   "result. A recursion that records why a level was "
                   "partitioned as it was reads this form instead.")
-      .def("childPersistentPartition",
+      .def("child_persistent_partition",
            py::overload_cast<double, int, std::uint64_t>(
                &RecursiveQuotient::childPersistentPartition, py::const_),
            py::arg("gamma") = 1.0, py::arg("restarts") = 4,
            py::arg("base_seed") = 0,
            "persistentPartition of this level's reduced operator — the "
            "partition P_l to hand straight to nextLevel.")
-      .def("childPersistentPartition",
+      .def("child_persistent_partition",
            py::overload_cast<const std::vector<double> &, int, std::uint64_t>(
                &RecursiveQuotient::childPersistentPartition, py::const_),
            py::arg("gammas"), py::arg("restarts") = 4,
@@ -675,7 +675,7 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
            "childPersistentPartition over a declared window of resolutions: "
            "the components of this level's reduced operator that persist "
            "across the whole window.")
-      .def("nextLevelAtLambda",
+      .def("next_level_at_lambda",
            py::overload_cast<const std::vector<std::vector<int>> &,
                              std::complex<double>, double, double,
                              const RecursiveQuotient::Options &>(
@@ -685,13 +685,13 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
            "Reduce again ON THE PENCIL: the child's operator is the exact "
            "energy-dependent response F_B(lambda), and it carries the window, "
            "residuals, resonance flag and producing certificate.")
-      .def("nextLevelAtLambda",
+      .def("next_level_at_lambda",
            py::overload_cast<const std::vector<std::vector<int>> &,
                              std::complex<double>, double, double>(
                &RecursiveQuotient::nextLevelAtLambda, py::const_),
            py::arg("components"), py::arg("lambda_"), py::arg("window_lower"),
            py::arg("window_upper"))
-      .def("nextLevelFromSurrogate",
+      .def("next_level_from_surrogate",
            py::overload_cast<const std::vector<std::vector<int>> &, double,
                              double, double, double,
                              const RecursiveQuotient::Options &>(
@@ -703,17 +703,17 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
            "M-orthonormalized basis (a spectrum-preserving congruence). The "
            "child carries the surrogate's certified-approximation "
            "certificate.")
-      .def("nextLevelFromSurrogate",
+      .def("next_level_from_surrogate",
            py::overload_cast<const std::vector<std::vector<int>> &, double,
                              double, double, double>(
                &RecursiveQuotient::nextLevelFromSurrogate, py::const_),
            py::arg("components"), py::arg("window_lower"),
            py::arg("window_upper"), py::arg("mode_cutoff"),
            py::arg("residual_tolerance") = -1.0)
-      .def_property_readonly("levelProvenance",
+      .def_property_readonly("level_provenance",
                              &RecursiveQuotient::levelProvenance,
                              "How this level was produced from its parent.")
-      .def_property_readonly("cellVertices", &RecursiveQuotient::cellVertices,
+      .def_property_readonly("cell_vertices", &RecursiveQuotient::cellVertices,
                              "The k-cell vertex tuples of this level's fine "
                              "coordinates, in coordinate order (spacetime "
                              "paths only; empty on the matrix path and on "

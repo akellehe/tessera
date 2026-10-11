@@ -38,10 +38,10 @@ def monopole_base():
     spinor doublets), the projective rotation action on its six edges, and
     whether the action's class is nontrivial."""
     support = obs.MonopoleSupport.tetrahedron(1)
-    group = obs.MonopoleSupport.tetrahedralRotations()
-    averaged = np.asarray(support.rotationAveragedEdgeOperator(
-        support.edgeLaplacian(), group))
-    actions = [np.asarray(support.edgeRepresentation(g)) for g in group]
+    group = obs.MonopoleSupport.tetrahedral_rotations()
+    averaged = np.asarray(support.rotation_averaged_edge_operator(
+        support.edge_laplacian(), group))
+    actions = [np.asarray(support.edge_representation(g)) for g in group]
     spinorial = bool(support.cocycle(group).nontrivial)
     return averaged, actions, spinorial
 
@@ -76,8 +76,8 @@ def lineage_read(reverse=False):
     identity = [0, 1, 2, 3]
     W = obs.ClusterLineage.history(
         [obs.LevelComplex([[0, 1, 2, 3]], 4) for _ in range(2)], [identity])
-    cut = obs.ClusterLineage.levelCut(W, 0)
-    lineage = obs.ClusterLineage.fromFiberPath(W, 0, 1, "Q")
+    cut = obs.ClusterLineage.level_cut(W, 0)
+    lineage = obs.ClusterLineage.from_fiber_path(W, 0, 1, "Q")
     if reverse:
         lineage = obs.ClusterLineage.reversed(lineage)
     return obs.ClusterLineage.read(W, cut, lineage)

@@ -32,16 +32,16 @@ from tessera.utils.progress import SingleTaskProgress
 
 def _skey(s):
     """Vertex-ID frozenset as a stable key for a simplex."""
-    return frozenset(v.getId() for v in s.getVertices())
+    return frozenset(v.get_id() for v in s.get_vertices())
 
 
 def _build_dual_complex(st):
     """Build the full dual complex: nodes = top-simplices, edges = shared facets.
 
-    Topology comes straight from ``Spacetime.getDualAdjacency()`` (computed in
+    Topology comes straight from ``Spacetime.get_dual_adjacency()`` (computed in
     C++ — far faster than walking simplices/facets/cofaces from Python, and it
-    sidesteps the ``getCofaces`` detached-copy hazard).  Node ``i`` is the
-    ``i``-th entry of ``getTopSimplices()``, matching the COO indexing.
+    sidesteps the ``get_cofaces`` detached-copy hazard).  Node ``i`` is the
+    ``i``-th entry of ``get_top_simplices()``, matching the COO indexing.
 
     The per-edge timelike flag is the only thing not in the COO: two adjacent
     top simplices share exactly their common ``(d-1)``-facet, i.e. the
@@ -50,19 +50,19 @@ def _build_dual_complex(st):
 
     Returns (key_to_idx, top_simplices, dual_edges, edge_types).
     """
-    top_simplices = st.getTopSimplices()
+    top_simplices = st.get_top_simplices()
     key_to_idx = {}
     vid_sets = []
     vid_time = {}
     for i, s in enumerate(top_simplices):
-        verts = s.getVertices()
-        ids = frozenset(v.getId() for v in verts)
+        verts = s.get_vertices()
+        ids = frozenset(v.get_id() for v in verts)
         key_to_idx[ids] = i
         vid_sets.append(ids)
         for v in verts:
-            vid_time[v.getId()] = round(v.getTime())
+            vid_time[v.get_id()] = round(v.get_time())
 
-    rows, cols, _n = st.getDualAdjacency()
+    rows, cols, _n = st.get_dual_adjacency()
     edge_list = []
     edge_types = []
     seen = set()
@@ -214,14 +214,14 @@ def main():
     st = tessera.Spacetime(metric, tessera.CDT, 1.0, 1.0, tessera.PREFERRED,
                          tessera.Toroid())
     st.build(args.n_simplices)
-    target = st.getN41()
+    target = st.get_n41()
     cdt = tessera.CDTSimulation(st, 2.2, 0.5, 0.6, 1.0 / target, target)
     prog.phase("tuning", total=20)
     cdt.tune(progress=prog.on_tick)
     prog.phase("thermalizing", total=10)
     cdt.sweep(10, progress=prog.on_tick)
-    print(f"  Vertices: {st.getVertexCount()}, "
-          f"Top simplices: {st.getTopSimplexCount()}")
+    print(f"  Vertices: {st.get_vertex_count()}, "
+          f"Top simplices: {st.get_top_simplex_count()}")
 
     # Create WilsonLoop
     wl = tessera.WilsonLoop(st)
@@ -229,10 +229,10 @@ def main():
     # Find the hinge with the largest fan (most top-simplices around it)
     hinge = None
     best_fan = 0
-    for s in st.getSimplices():
-        if len(s.getVertices()) != 3:
+    for s in st.get_simplices():
+        if len(s.get_vertices()) != 3:
             continue
-        loop_candidate = wl.hingeLoop(s)
+        loop_candidate = wl.hinge_loop(s)
         fan = len(loop_candidate)
         if fan > best_fan:
             best_fan = fan
@@ -240,22 +240,22 @@ def main():
 
     # Find a top-simplex for geodesic/dual-lattice
     start_simplex = None
-    for s in st.getSimplices():
-        if len(s.getVertices()) == 5:
+    for s in st.get_simplices():
+        if len(s.get_vertices()) == 5:
             start_simplex = s
             break
 
     # Generate loops
     loops = {}
     if hinge is not None:
-        loop = wl.hingeLoop(hinge)
+        loop = wl.hinge_loop(hinge)
         if len(loop) >= 2:
             loops["Hinge"] = loop
     if start_simplex is not None:
-        loop = wl.geodesicLoop(start_simplex)
+        loop = wl.geodesic_loop(start_simplex)
         if len(loop) >= 2:
             loops["Geodesic"] = loop
-        loop = wl.dualLatticeLoop(start_simplex, 8)
+        loop = wl.dual_lattice_loop(start_simplex, 8)
         if len(loop) >= 2:
             loops["Dual-lattice"] = loop
 
@@ -277,13 +277,13 @@ def main():
         for mode_name, mode in modes:
             r = wl.evaluate(loop, mode)
             print(f"{loop_name:<15} {mode_name:<16} {r.value:>8.4f} "
-                  f"{r.loopSize:>5} {r.enclosedHinges:>7} "
-                  f"{r.causalWindingNumber:>8}")
+                  f"{r.loop_size:>5} {r.enclosed_hinges:>7} "
+                  f"{r.causal_winding_number:>8}")
 
     # Measure all hinge loops for area-law plot
-    wl.measureAllHinges(tessera.WilsonMode.DEFICIT_ANGLE)
-    measurements = wl.getMeasurements()
-    avg = wl.getAverageBySize()
+    wl.measure_all_hinges(tessera.WilsonMode.DEFICIT_ANGLE)
+    measurements = wl.get_measurements()
+    avg = wl.get_average_by_size()
     if avg:
         print(f"\nHinge loop averages by size:")
         for size, val in sorted(avg.items()):
@@ -303,7 +303,7 @@ def main():
 
     for loop_name, loop in loops.items():
         r = wl.evaluate(loop, tessera.WilsonMode.DEFICIT_ANGLE)
-        title = (f"{loop_name} loop (size={r.loopSize}, "
+        title = (f"{loop_name} loop (size={r.loop_size}, "
                  f"W={r.value:.3f})")
         lidx = _loop_indices(loop, key_to_idx)
         dotted = (loop_name == "Dual-lattice")

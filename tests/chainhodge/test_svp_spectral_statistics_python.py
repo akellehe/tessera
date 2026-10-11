@@ -123,9 +123,9 @@ class TestS2Signature:
             K, s, _ = flat_torus(case, 0.25, True, seed=1)
             params = {"N": case, "jitter": 0.25, "seed": 1, "signature": "lorentzian"}
         hodge = ch.ChainHodge(K, s, PRESETS[preset], KS)
-        read = hodge.harmonicChains(1)
+        read = hodge.harmonic_chains(1)
         phase = 1j if preset == "L2" else 1.0
-        metric = (hodge.Minv(1) if preset == "L2" else hodge.chainMetricSparse(1)).toarray()
+        metric = (hodge.m_inv(1) if preset == "L2" else hodge.chain_metric_sparse(1)).toarray()
         # Under L2, M_1 = i R and G_1 = M_1^{-1} = -i R^{-1}; R and R^{-1} have
         # the same inertia, so the signature read from M_1/i is the signature
         # of G_1/(-i), which is what the plan calls the signature of G_1.
@@ -149,9 +149,9 @@ class TestS2Signature:
         the same reading gives a definite Gram, signature (2, 0)."""
         K, s, _ = flat_torus(6, 0.25, False, seed=1)
         hodge = ch.ChainHodge(K, s, L2, KS)
-        read = hodge.harmonicChains(1)
+        read = hodge.harmonic_chains(1)
         images = svp.real_basis(read.images)
-        gram = images.T @ hodge.Minv(1).toarray() @ images
+        gram = images.T @ hodge.m_inv(1).toarray() @ images
         record = svp_records.instance(
             "S2", "F1", {"N": 6, "jitter": 0.25, "seed": 1, "signature": "euclidean"},
             hodge, read, signature_harmonic_gram=list(svp.signature(gram, 1.0)),
@@ -172,7 +172,7 @@ class TestS3ExceptionalPointIndicator:
         started = time.time()
         K, s, _ = flat_torus(N, 0.25, lorentz, seed=1)
         hodge = ch.ChainHodge(K, s, L2, KS)
-        read = hodge.harmonicChains(1)
+        read = hodge.harmonic_chains(1)
         spectrum = hodge.spectrum(1)
         pencil = hodge.pencil(1)
         indicators = svp.ep_indicators(spectrum, pencil.B)
@@ -228,7 +228,7 @@ class TestS4FirstNonzeroEigenvalue:
             started = time.time()
             K, s, _ = flat_torus(N, 0.25, lorentz, seed=1)
             hodge = ch.ChainHodge(K, s, L2, KS)
-            read = hodge.harmonicChains(1)
+            read = hodge.harmonic_chains(1)
             spectrum = hodge.spectrum(1)
             ev = np.array(spectrum.eigenvalues, dtype=complex)
             summary = svp.spectrum_summary(ev)

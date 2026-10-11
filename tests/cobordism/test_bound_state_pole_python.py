@@ -111,17 +111,17 @@ class TheDeterminantFactorizationTest(unittest.TestCase):
         point = complex(0.2, 0.7)
         response = BSP.response(self.operator, self.metric, self.interface,
                                 point)
-        self.assertFalse(response.interiorSingular)
+        self.assertFalse(response.interior_singular)
         self.assertAlmostEqual(
             abs(BSP.determinant(self.operator, self.metric, self.interface,
-                                point) - response.responseDeterminant),
+                                point) - response.response_determinant),
             0.0, places=12)
 
     def test_the_factorization_reproduces_the_pencil_determinant(self):
         point = complex(-0.4, 0.3)
         response = BSP.response(self.operator, self.metric, self.interface,
                                 point)
-        product = response.responseDeterminant * response.interiorDeterminant
+        product = response.response_determinant * response.interior_determinant
         expected = np.linalg.det(self.operator - point * self.metric)
         self.assertAlmostEqual(abs(product - expected) / abs(expected), 0.0,
                                places=10)
@@ -390,18 +390,18 @@ class TheFrameworkPencilPathTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.previous = cob.HodgeLaplacian.defaultMetricSource()
-        cob.HodgeLaplacian.setDefaultMetricSource(
+        cls.previous = cob.HodgeLaplacian.default_metric_source()
+        cob.HodgeLaplacian.set_default_metric_source(
             cob.HodgeMetricSource.WhitneyPencil)
-        spacetime = T.Spacetime.fromVertexTuples(3, [[0, 1, 2, 3]], 1.0, 0.0)
+        spacetime = T.Spacetime.from_vertex_tuples(3, [[0, 1, 2, 3]], 1.0, 0.0)
         # A deliberately asymmetric metric: the regular tetrahedron's spectrum
         # carries the threefold degeneracies of its symmetry group, and the
         # test below compares the read with the spectrum eigenvalue by
         # eigenvalue.
-        for index, edge in enumerate(spacetime.getEdgeList().toVector()):
-            edge.setLength(math.sqrt(1.0 + 0.07 * index))
-            edge.setPhase(0.0)
-        spacetime.materializeFacets()
+        for index, edge in enumerate(spacetime.get_edge_list().to_vector()):
+            edge.set_length(math.sqrt(1.0 + 0.07 * index))
+            edge.set_phase(0.0)
+        spacetime.materialize_facets()
         cls.assembled = cob.PencilLayer.assemble([spacetime])
         pencil = cob.PencilLayer.pencil(cls.assembled, 1)
         cls.operator = np.array(pencil.A)
@@ -409,7 +409,7 @@ class TheFrameworkPencilPathTest(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        cob.HodgeLaplacian.setDefaultMetricSource(cls.previous)
+        cob.HodgeLaplacian.set_default_metric_source(cls.previous)
 
     def test_the_cluster_poles_are_the_eigenvalues_the_interior_does_not_carry(
             self):
@@ -452,7 +452,7 @@ class TheFrameworkPencilPathTest(unittest.TestCase):
         through_matrices = BSP.determinant(self.operator, self.metric,
                                            interface, point)
         through_pencil = cob.PencilLayer.boundary_response(
-            self.assembled, 1, interface, point).responseDeterminant
+            self.assembled, 1, interface, point).response_determinant
         self.assertLess(abs(through_matrices - through_pencil),
                         1e-9 * (1.0 + abs(through_pencil)))
 

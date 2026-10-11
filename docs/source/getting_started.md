@@ -26,11 +26,11 @@ import tessera
 
 # Set up a 4D Lorentzian metric on a toroidal topology
 metric = tessera.Metric(
-    coordinateFree=True,
-    signature=tessera.Signature(dimensions=4, signatureType=tessera.Lorentzian),
+    coordinate_free=True,
+    signature=tessera.Signature(dimensions=4, signature_type=tessera.Lorentzian),
 )
 st = tessera.Spacetime(
-    metric=metric, spacetimeType=tessera.CDT,
+    metric=metric, spacetime_type=tessera.CDT,
     alpha=1.0, a=1.0,
     foliation=tessera.PREFERRED, topology=tessera.Toroid(),
 )
@@ -39,7 +39,7 @@ st.build(2000)
 # Run CDT Monte Carlo: tune coupling, then sweep
 cdt = tessera.CDTSimulation(
     spacetime=st, k0=2.2, k4=0.5, delta=0.6,
-    epsilon=0.02, targetN41=st.getN41(),
+    epsilon=0.02, target_n41=st.get_n41(),
 )
 cdt.tune()
 cdt.sweep(50)

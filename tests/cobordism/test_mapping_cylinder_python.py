@@ -111,11 +111,11 @@ class TheCylinderIsTheStaircaseTriangulationTest(unittest.TestCase):
             _declaration(SPHERE3, _shift(range(5)),
                          [[vertex + 100 for vertex in cell] for cell in SPHERE3]))
         read = cylinder.read()
-        complex_ = cob.ChainComplex.fromTopCells(
+        complex_ = cob.ChainComplex.from_top_cells(
             [list(cell) for cell in read.cylinder_top_cells])
-        self.assertTrue(complex_.boundaryComposesToZero())
+        self.assertTrue(complex_.boundary_composes_to_zero())
         self.assertEqual(complex_.dimension(), 4)
-        self.assertEqual(list(complex_.bettiNumbers()), [1, 0, 0, 1, 0])
+        self.assertEqual(list(complex_.betti_numbers()), [1, 0, 0, 1, 0])
 
 
 class TheBoundaryIsTheDisjointUnionOfTheTwoEndsTest(unittest.TestCase):

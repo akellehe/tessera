@@ -16,7 +16,7 @@ import tessera
 
 class TestBindingNamespaces(unittest.TestCase):
     def test_the_poset_family_is_in_the_root_namespace(self):
-        for name in ("Poset", "OrderAgreement", "compareOrders"):
+        for name in ("Poset", "OrderAgreement", "compare_orders"):
             with self.subTest(name=name):
                 self.assertTrue(hasattr(tessera._tessera, name))
                 self.assertFalse(hasattr(tessera._tessera.quantum, name))

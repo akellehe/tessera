@@ -12,9 +12,9 @@ coincides with that of its faces through the body diagonal.
 The circumcentric dual writes the height between two successive circumcentres as
 ``+-sqrt(R^2_coface - R^2_face)``. Differentiated through that root, the chain
 rule divides zero by zero wherever the circumcentres coincide, so
-``actionGradientExact`` and ``actionHessianExact`` were NaN or inf on this
-torus, while ``dualReggeAction`` is smooth there. The heights are now
-differentiated in their equal product form (``Simplex.dualVolumeGradient``), and
+``action_gradient_exact`` and ``action_hessian_exact`` were NaN or inf on this
+torus, while ``dual_regge_action`` is smooth there. The heights are now
+differentiated in their equal product form (``Simplex.dual_volume_gradient``), and
 these tests hold the exact derivatives to finite differences of the action on
 the torus of 4^3 vertices, the one the gravity study used
 (``tessera-notes/experiments/gravity/spectral_stiffness.py``).
@@ -39,7 +39,7 @@ def kuhn_torus(n):
     """The flat periodic Kuhn triangulation of the unit cubic lattice of n^3 vertices.
 
     Returns the spacetime with every edge at its Euclidean length, the lattice
-    step of each edge (in ``getEdgeList`` order), the edge midpoints, and the
+    step of each edge (in ``get_edge_list`` order), the edge midpoints, and the
     coordinates of every vertex.
     """
     index = lambda c: ((c[0] % n) * n + (c[1] % n)) * n + (c[2] % n)
@@ -52,19 +52,19 @@ def kuhn_torus(n):
                 c[axis] += 1
                 path.append(index(c))
             cells.append(path)
-    spacetime = tessera.Spacetime.fromVertexTuples(3, cells, 1.0, 0.0)
+    spacetime = tessera.Spacetime.from_vertex_tuples(3, cells, 1.0, 0.0)
     coordinates = {index(c): np.array(c, dtype=float)
                    for c in itertools.product(range(n), repeat=3)}
     steps, midpoints = [], []
-    for edge in spacetime.getEdgeList().toVector():
-        a = coordinates[edge.getSource().getId()]
-        b = coordinates[edge.getTarget().getId()]
+    for edge in spacetime.get_edge_list().to_vector():
+        a = coordinates[edge.get_source().get_id()]
+        b = coordinates[edge.get_target().get_id()]
         d = b - a
         d -= n * np.rint(d / n)
-        edge.setLength(math.sqrt(float(d @ d)))
+        edge.set_length(math.sqrt(float(d @ d)))
         steps.append(d)
         midpoints.append(a + 0.5 * d)
-    spacetime.materializeFacets()
+    spacetime.materialize_facets()
     return spacetime, np.array(steps), np.array(midpoints), coordinates
 
 
@@ -84,9 +84,9 @@ def unit_directions(n, spacetime, steps, midpoints, coordinates):
     displacement = {vid: np.array([0.0, np.sin(q * c[0]), 0.0])
                     for vid, c in coordinates.items()}
     gauge = []
-    for edge, d in zip(spacetime.getEdgeList().toVector(), steps):
-        gauge.append(2.0 * d @ (displacement[edge.getTarget().getId()]
-                                - displacement[edge.getSource().getId()]))
+    for edge, d in zip(spacetime.get_edge_list().to_vector(), steps):
+        gauge.append(2.0 * d @ (displacement[edge.get_target().get_id()]
+                                - displacement[edge.get_source().get_id()]))
     out["vertex displacement"] = np.array(gauge)
     return {name: v / np.linalg.norm(v) for name, v in out.items()}
 
@@ -97,38 +97,38 @@ class TestExactReggeDerivativesOnTheKuhnTorus(unittest.TestCase):
     def setUpClass(cls):
         (cls.spacetime, cls.steps, cls.midpoints,
          cls.coordinates) = kuhn_torus(SIZE)
-        cls.edges = cls.spacetime.getEdgeList().toVector()
+        cls.edges = cls.spacetime.get_edge_list().to_vector()
         cls.squared = np.sum(cls.steps ** 2, axis=1)
         cls.solver = tessera.ReggeSolver(cls.spacetime, tessera.MatterConfiguration())
-        cls.gradient = np.asarray(cls.solver.actionGradientExact(), dtype=complex)
+        cls.gradient = np.asarray(cls.solver.action_gradient_exact(), dtype=complex)
         cls.hessian = np.array([[complex(z) for z in row]
-                                for row in cls.solver.actionHessianExact()])
+                                for row in cls.solver.action_hessian_exact()])
         cls.directions = unit_directions(SIZE, cls.spacetime, cls.steps,
                                          cls.midpoints, cls.coordinates)
 
     def _set(self, squared):
         for edge, value in zip(self.edges, squared):
-            edge.setLength(math.sqrt(value))
+            edge.set_length(math.sqrt(value))
 
     def _action(self, t, v):
         """The dual Regge action at squared lengths s + t v (then back to s)."""
         self._set(self.squared + t * v)
-        value = complex(self.solver.dualReggeAction())
+        value = complex(self.solver.dual_regge_action())
         self._set(self.squared)
         return value
 
     def _gradient_at(self, t, v):
         self._set(self.squared + t * v)
-        value = np.asarray(self.solver.actionGradientExact(), dtype=complex)
+        value = np.asarray(self.solver.action_gradient_exact(), dtype=complex)
         self._set(self.squared)
         return value
 
     def test_the_torus_has_coincident_circumcentres(self):
         """Guards the rest of the file from passing on a torus without the defect."""
-        hinges = [s for s in self.spacetime.getSimplices()
-                  if len(s.getVertices()) == 2 and s.hasTopCoface()]
+        hinges = [s for s in self.spacetime.get_simplices()
+                  if len(s.get_vertices()) == 2 and s.has_top_coface()]
         self.assertEqual(len(hinges), len(self.edges))
-        coincident = [h for h in hinges if h.dualGeometryIsDegenerate()]
+        coincident = [h for h in hinges if h.dual_geometry_is_degenerate()]
         # Every face diagonal and every body diagonal is a hypotenuse.
         self.assertGreater(len(coincident), len(hinges) // 2)
 
@@ -143,7 +143,7 @@ class TestExactReggeDerivativesOnTheKuhnTorus(unittest.TestCase):
                         1e-12 * scale)
 
     def test_the_sparse_hessian_equals_the_dense_one(self):
-        rows, cols, values, n = self.solver.actionHessianExactSparse()
+        rows, cols, values, n = self.solver.action_hessian_exact_sparse()
         sparse = np.zeros((n, n), dtype=complex)
         np.add.at(sparse, (np.array(rows), np.array(cols)),
                   np.array(values, dtype=complex))

@@ -37,24 +37,24 @@ class TestSparseGraphConstruction(unittest.TestCase):
 
     def test_path_graph_3_nodes(self):
         # 0 - 1 - 2
-        g = tessera.SparseGraph.fromCOO([0, 1], [1, 2], 3)
-        self.assertEqual(g.nNodes(), 3)
-        self.assertEqual(g.nEdges(), 2)
+        g = tessera.SparseGraph.from_coo([0, 1], [1, 2], 3)
+        self.assertEqual(g.n_nodes(), 3)
+        self.assertEqual(g.n_edges(), 2)
 
     def test_duplicate_edges_collapsed(self):
-        g = tessera.SparseGraph.fromCOO([0, 0, 1, 0],
+        g = tessera.SparseGraph.from_coo([0, 0, 1, 0],
                                         [1, 1, 0, 1], 2)
-        self.assertEqual(g.nEdges(), 1)
+        self.assertEqual(g.n_edges(), 1)
 
     def test_self_loops_ignored(self):
-        g = tessera.SparseGraph.fromCOO([0, 1, 0],
+        g = tessera.SparseGraph.from_coo([0, 1, 0],
                                         [0, 1, 1], 2)
-        self.assertEqual(g.nEdges(), 1)
+        self.assertEqual(g.n_edges(), 1)
 
     def test_isolated_node(self):
-        g = tessera.SparseGraph.fromCOO([0], [1], 5)
-        self.assertEqual(g.nNodes(), 5)
-        self.assertEqual(g.nEdges(), 1)
+        g = tessera.SparseGraph.from_coo([0], [1], 5)
+        self.assertEqual(g.n_nodes(), 5)
+        self.assertEqual(g.n_edges(), 1)
 
 
 # ---------------------------------------------------------------------------
@@ -65,25 +65,25 @@ class TestSparseGraphConstruction(unittest.TestCase):
 class TestSparseGraphBipartite(unittest.TestCase):
 
     def test_empty_is_bipartite(self):
-        g = tessera.SparseGraph.fromCOO([], [], 0)
-        self.assertTrue(g.isBipartite())
+        g = tessera.SparseGraph.from_coo([], [], 0)
+        self.assertTrue(g.is_bipartite())
 
     def test_no_edges_is_bipartite(self):
-        g = tessera.SparseGraph.fromCOO([], [], 5)
-        self.assertTrue(g.isBipartite())
+        g = tessera.SparseGraph.from_coo([], [], 5)
+        self.assertTrue(g.is_bipartite())
 
     def test_path_is_bipartite(self):
-        g = tessera.SparseGraph.fromCOO([0, 1, 2, 3], [1, 2, 3, 4], 5)
-        self.assertTrue(g.isBipartite())
+        g = tessera.SparseGraph.from_coo([0, 1, 2, 3], [1, 2, 3, 4], 5)
+        self.assertTrue(g.is_bipartite())
 
     def test_triangle_is_not_bipartite(self):
         # K_3: 3-cycle — not bipartite.
-        g = tessera.SparseGraph.fromCOO([0, 1, 2], [1, 2, 0], 3)
-        self.assertFalse(g.isBipartite())
+        g = tessera.SparseGraph.from_coo([0, 1, 2], [1, 2, 0], 3)
+        self.assertFalse(g.is_bipartite())
 
     def test_4cycle_is_bipartite(self):
-        g = tessera.SparseGraph.fromCOO([0, 1, 2, 3], [1, 2, 3, 0], 4)
-        self.assertTrue(g.isBipartite())
+        g = tessera.SparseGraph.from_coo([0, 1, 2, 3], [1, 2, 3, 0], 4)
+        self.assertTrue(g.is_bipartite())
 
 
 # ---------------------------------------------------------------------------
@@ -100,7 +100,7 @@ class TestSparseGraphModularity(unittest.TestCase):
         # Disjoint triangles {0,1,2} and {3,4,5}: m=6, each node deg 2.
         rows = [0, 1, 2, 3, 4, 5]
         cols = [1, 2, 0, 4, 5, 3]
-        return tessera.SparseGraph.fromCOO(rows, cols, 6)
+        return tessera.SparseGraph.from_coo(rows, cols, 6)
 
     def test_perfect_split_matches_closed_form(self):
         # Each triangle one community: Q = 2·[3/6 - (6/12)²] = 0.5.
@@ -123,7 +123,7 @@ class TestSparseGraphModularity(unittest.TestCase):
         self.assertLess(g.modularity([0, 1, 0, 1, 0, 1]), 0.0)
 
     def test_edgeless_graph_is_zero(self):
-        g = tessera.SparseGraph.fromCOO([], [], 5)
+        g = tessera.SparseGraph.from_coo([], [], 5)
         self.assertEqual(g.modularity([0, 1, 2, 3, 4]), 0.0)
 
     def test_label_length_mismatch_raises(self):
@@ -138,7 +138,7 @@ class TestSparseGraphModularity(unittest.TestCase):
 
 
 class TestHeatKernelAnalytic(unittest.TestCase):
-    """Compare ``diagonalHeatKernel`` against closed-form values on
+    """Compare ``diagonal_heat_kernel`` against closed-form values on
     tiny graphs.  These tests would catch any sign / coefficient /
     Padé error in the Krylov-Lanczos heat-kernel implementation."""
 
@@ -146,9 +146,9 @@ class TestHeatKernelAnalytic(unittest.TestCase):
         """Path 0-1-2.  Symmetric normalized Laplacian eigenvalues 0,
         1, 2.  Eigenvectors squared at vertex 0: (1/4, 1/2, 1/4).
         K(t)[0,0] = 1/4 + (1/2) e^{-t} + (1/4) e^{-2t}."""
-        g = tessera.SparseGraph.fromCOO([0, 1], [1, 2], 3)
+        g = tessera.SparseGraph.from_coo([0, 1], [1, 2], 3)
         ts = [0.5, 1.0, 2.0, 5.0, 10.0]
-        K = g.diagonalHeatKernel([0], ts, krylovDim=3)
+        K = g.diagonal_heat_kernel([0], ts, krylov_dim=3)
         for j, t in enumerate(ts):
             expected = 0.25 + 0.5 * math.exp(-t) + 0.25 * math.exp(-2 * t)
             self.assertAlmostEqual(K[0][j], expected, places=4,
@@ -158,9 +158,9 @@ class TestHeatKernelAnalytic(unittest.TestCase):
     def test_path_3_at_middle(self):
         """Path 0-1-2 at vertex 1 (degree 2).  Eigenvectors squared at
         vertex 1: (1/2, 0, 1/2).  K(t)[1,1] = 1/2 + (1/2) e^{-2t}."""
-        g = tessera.SparseGraph.fromCOO([0, 1], [1, 2], 3)
+        g = tessera.SparseGraph.from_coo([0, 1], [1, 2], 3)
         ts = [0.5, 1.0, 2.0, 5.0, 10.0, 50.0]
-        K = g.diagonalHeatKernel([1], ts, krylovDim=3)
+        K = g.diagonal_heat_kernel([1], ts, krylov_dim=3)
         for j, t in enumerate(ts):
             expected = 0.5 + 0.5 * math.exp(-2 * t)
             self.assertAlmostEqual(K[0][j], expected, places=4)
@@ -169,9 +169,9 @@ class TestHeatKernelAnalytic(unittest.TestCase):
         """K_3 (triangle).  All degrees = 2.  Symmetric normalized
         Laplacian L = I - (1/2) A; eigenvalues 0, 3/2, 3/2.  By
         symmetry, K(t)[i,i] = 1/3 + (2/3) e^{-3t/2}."""
-        g = tessera.SparseGraph.fromCOO([0, 1, 2], [1, 2, 0], 3)
+        g = tessera.SparseGraph.from_coo([0, 1, 2], [1, 2, 0], 3)
         ts = [0.5, 1.0, 2.0, 5.0, 10.0]
-        K = g.diagonalHeatKernel([0, 1, 2], ts, krylovDim=3)
+        K = g.diagonal_heat_kernel([0, 1, 2], ts, krylov_dim=3)
         for s in range(3):
             for j, t in enumerate(ts):
                 expected = 1/3 + (2/3) * math.exp(-1.5 * t)
@@ -183,8 +183,8 @@ class TestHeatKernelAnalytic(unittest.TestCase):
     def test_K_at_t_zero_limit(self):
         """At small t, K(t) → 1 (the heat kernel diagonal at t=0 is
         identity)."""
-        g = tessera.SparseGraph.fromCOO([0, 1, 2], [1, 2, 0], 3)
-        K = g.diagonalHeatKernel([0], [0.001], krylovDim=3)
+        g = tessera.SparseGraph.from_coo([0, 1, 2], [1, 2, 0], 3)
+        K = g.diagonal_heat_kernel([0], [0.001], krylov_dim=3)
         self.assertGreater(K[0][0], 0.99)
         self.assertLessEqual(K[0][0], 1.0001)
 
@@ -192,9 +192,9 @@ class TestHeatKernelAnalytic(unittest.TestCase):
         """For any connected graph, K(t)[i,i] is monotonically
         non-increasing in t (the diagonal of e^{-tL} decreases as the
         walker spreads)."""
-        g = tessera.SparseGraph.fromCOO([0, 1, 2, 3], [1, 2, 3, 0], 4)
+        g = tessera.SparseGraph.from_coo([0, 1, 2, 3], [1, 2, 3, 0], 4)
         ts = [0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 50.0]
-        K = g.diagonalHeatKernel([0], ts, krylovDim=4)
+        K = g.diagonal_heat_kernel([0], ts, krylov_dim=4)
         for j in range(1, len(ts)):
             self.assertLessEqual(K[0][j], K[0][j-1] + 1e-9,
                                  f"K not monotonic: t={ts[j-1]}→{ts[j]}, "
@@ -204,9 +204,9 @@ class TestHeatKernelAnalytic(unittest.TestCase):
 class TestSpectralDimension(unittest.TestCase):
 
     def test_isolated_node_returns_finite(self):
-        g = tessera.SparseGraph.fromCOO([], [], 1)
-        ds_small, ds_large = g.spectralDimension(
-            nWalks=1, maxSigma=10.0, seed=0)
+        g = tessera.SparseGraph.from_coo([], [], 1)
+        ds_small, ds_large = g.spectral_dimension(
+            n_walks=1, max_sigma=10.0, seed=0)
         # Isolated node — heat kernel diagonal stays at 1; finite-difference
         # slope is zero → D_S = 0.
         self.assertEqual(ds_small, 0.0)
@@ -217,9 +217,9 @@ class TestSpectralDimension(unittest.TestCase):
         n = 60
         rows = list(range(n))
         cols = [(i + 1) % n for i in range(n)]
-        g = tessera.SparseGraph.fromCOO(rows, cols, n)
-        _, ds_large = g.spectralDimension(
-            nWalks=20, maxSigma=200.0, seed=0)
+        g = tessera.SparseGraph.from_coo(rows, cols, n)
+        _, ds_large = g.spectral_dimension(
+            n_walks=20, max_sigma=200.0, seed=0)
         self.assertGreater(ds_large, 0.5)
         self.assertLess(ds_large, 1.5)
 
@@ -227,9 +227,9 @@ class TestSpectralDimension(unittest.TestCase):
         """D_S on the dual of a built CDT lattice should be in a sane
         range (not NaN, not crazy)."""
         st = _make_st()
-        g = st.getDualGraph()
-        ds_small, ds_large = g.spectralDimension(
-            nWalks=20, maxSigma=100.0, seed=0)
+        g = st.get_dual_graph()
+        ds_small, ds_large = g.spectral_dimension(
+            n_walks=20, max_sigma=100.0, seed=0)
         self.assertTrue(math.isfinite(ds_small))
         self.assertTrue(math.isfinite(ds_large))
         # Generous bounds — our small lattice doesn't recover the
@@ -255,22 +255,22 @@ def _python_reference_modularity(st, M):
     block entries) so we replicate that — equivalent to using
     L_c = 2 * (within-edge count) and m2 = 2m.
     """
-    edges = list(st.getEdgeList().toVector())
+    edges = list(st.get_edge_list().to_vector())
     if not edges:
         return 0.0
     deg = {}
-    for v in st.getVertexList().toVector():
-        deg[v.getId()] = 0
+    for v in st.get_vertex_list().to_vector():
+        deg[v.get_id()] = 0
     for e in edges:
-        deg[e.getSource().getId()] += 1
-        deg[e.getTarget().getId()] += 1
+        deg[e.get_source().get_id()] += 1
+        deg[e.get_target().get_id()] += 1
     label = {vid: vid % M for vid in deg}
     # Per-community L_c (double-counted) and D_c.
     L_c = {}
     D_c = {}
     for e in edges:
-        s = e.getSource().getId()
-        t = e.getTarget().getId()
+        s = e.get_source().get_id()
+        t = e.get_target().get_id()
         if label[s] == label[t]:
             L_c[label[s]] = L_c.get(label[s], 0.0) + 2.0
     for vid, d in deg.items():
@@ -291,24 +291,24 @@ class TestModularityOnSkeleton(unittest.TestCase):
         st = _make_st()
         # M=1 → label(v) = v % 1 = 0 always → single community →
         # L_c/m = 1, (D_c/2m)^2 = 1 → Q = 0.
-        self.assertAlmostEqual(st.modularityOnSkeleton(1), 0.0,
+        self.assertAlmostEqual(st.modularity_on_skeleton(1), 0.0,
                                places=10)
 
     def test_matches_python_reference_M2(self):
         st = _make_st()
-        cpp = st.modularityOnSkeleton(2)
+        cpp = st.modularity_on_skeleton(2)
         ref = _python_reference_modularity(st, 2)
         self.assertAlmostEqual(cpp, ref, places=10)
 
     def test_matches_python_reference_M4(self):
         st = _make_st()
-        cpp = st.modularityOnSkeleton(4)
+        cpp = st.modularity_on_skeleton(4)
         ref = _python_reference_modularity(st, 4)
         self.assertAlmostEqual(cpp, ref, places=10)
 
     def test_matches_python_reference_M8(self):
         st = _make_st()
-        cpp = st.modularityOnSkeleton(8)
+        cpp = st.modularity_on_skeleton(8)
         ref = _python_reference_modularity(st, 8)
         self.assertAlmostEqual(cpp, ref, places=10)
 
@@ -316,34 +316,34 @@ class TestModularityOnSkeleton(unittest.TestCase):
         """Q ∈ [-0.5, 1)."""
         st = _make_st()
         for M in (2, 3, 4, 8):
-            q = st.modularityOnSkeleton(M)
+            q = st.modularity_on_skeleton(M)
             self.assertGreaterEqual(q, -0.5)
             self.assertLess(q, 1.0)
 
     def test_M_zero_or_negative_returns_zero(self):
         st = _make_st()
-        self.assertEqual(st.modularityOnSkeleton(0), 0.0)
-        self.assertEqual(st.modularityOnSkeleton(-3), 0.0)
+        self.assertEqual(st.modularity_on_skeleton(0), 0.0)
+        self.assertEqual(st.modularity_on_skeleton(-3), 0.0)
 
 
 class TestGetDualGraph(unittest.TestCase):
-    """``Spacetime.getDualGraph`` must return a SparseGraph whose
+    """``Spacetime.get_dual_graph`` must return a SparseGraph whose
     node and edge counts match getDualAdjacency's output."""
 
     def test_node_count_matches_top_simplex_count(self):
         st = _make_st()
-        g = st.getDualGraph()
-        self.assertEqual(g.nNodes(), st.getTopSimplexCount())
+        g = st.get_dual_graph()
+        self.assertEqual(g.n_nodes(), st.get_top_simplex_count())
 
     def test_edges_match_dual_adjacency(self):
         st = _make_st()
-        rows, cols, n = st.getDualAdjacency()
+        rows, cols, n = st.get_dual_adjacency()
         # COO has both (i,j) and (j,i) plus possible duplicates;
         # SparseGraph deduplicates and counts unique undirected edges.
         unique_edges = {tuple(sorted((r, c)))
                         for r, c in zip(rows, cols) if r != c}
-        g = st.getDualGraph()
-        self.assertEqual(g.nEdges(), len(unique_edges))
+        g = st.get_dual_graph()
+        self.assertEqual(g.n_edges(), len(unique_edges))
 
 
 class TestModularitySweepIntegration(unittest.TestCase):
@@ -359,13 +359,13 @@ class TestModularitySweepIntegration(unittest.TestCase):
         st = tessera.Spacetime(metric, tessera.CDT, 1.0, 1.0,
                                tessera.PREFERRED, tessera.Toroid())
         st.build(200)
-        cdt = tessera.CDTSimulation(st, 2.2, 0.5, 0.6, 0.02, st.getN41())
+        cdt = tessera.CDTSimulation(st, 2.2, 0.5, 0.6, 0.02, st.get_n41())
 
         for _ in range(5):
-            q = st.modularityOnSkeleton(4)
-            g = st.getDualGraph()
-            ds_small, ds_large = g.spectralDimension(
-                nWalks=20, maxSigma=50.0, seed=42)
+            q = st.modularity_on_skeleton(4)
+            g = st.get_dual_graph()
+            ds_small, ds_large = g.spectral_dimension(
+                n_walks=20, max_sigma=50.0, seed=42)
             self.assertTrue(math.isfinite(q))
             self.assertTrue(math.isfinite(ds_small))
             self.assertTrue(math.isfinite(ds_large))
@@ -380,13 +380,13 @@ class TestModularitySweepIntegration(unittest.TestCase):
         st = tessera.Spacetime(metric, tessera.CDT, 1.0, 1.0,
                                tessera.PREFERRED, tessera.Toroid())
         st.build(200)
-        cdt = tessera.CDTSimulation(st, 2.2, 0.5, 0.6, 0.02, st.getN41())
-        q0 = st.modularityOnSkeleton(4)
+        cdt = tessera.CDTSimulation(st, 2.2, 0.5, 0.6, 0.02, st.get_n41())
+        q0 = st.modularity_on_skeleton(4)
         # Many tries — at least one accepted move should change Q by
         # at least some tiny amount.
         for _ in range(200):
             if cdt.add():
-                q1 = st.modularityOnSkeleton(4)
+                q1 = st.modularity_on_skeleton(4)
                 if abs(q1 - q0) > 1e-6:
                     return
                 q0 = q1

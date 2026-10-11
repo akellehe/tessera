@@ -12,7 +12,7 @@ modes is a 0-chain, the load vector
     rho^{mn}_v = sum_ij conj(z_im) z_jn int phi_i phi_j phi_v ,
 
 the integral of conj(psi_m) psi_n against the vertex function phi_v
-(`WhitneyMass.vertexDensityContraction`). The Coulomb potential of a density
+(`WhitneyMass.vertex_density_contraction`). The Coulomb potential of a density
 `rho` is the piecewise-linear solution of Poisson's equation,
 `A0 v = 4 pi e^2 rho`, with `A0` the stiffness matrix, and the interaction
 energy of two densities is `rho_a^dagger K rho_b` with the kernel
@@ -22,7 +22,7 @@ background, and returns the potential of zero mean.
 
 The many-body Hamiltonian in the mode basis is
 
-    H = dGamma(h) + 1/2 sum_vw K_vw : rho_v rho_w : ,   rho_v = dGamma(T_v),
+    H = d_gamma(h) + 1/2 sum_vw K_vw : rho_v rho_w : ,   rho_v = d_gamma(T_v),
 
 with `T_v` the matrix of pair densities at vertex `v`, and its mean-field
 energy in a quasi-free state of covariance `Gamma_ij = <a_j^dagger a_i>` is
@@ -112,7 +112,7 @@ class GridCoulombKernel:
         self._reciprocal, self._volume, self._lattice = cell.reciprocal, cell.volume, cell.lattice
         symbol = np.fft.fftn(stencil.reshape(self.shape)).real
         # Translation invariance, checked on a second row rather than assumed.
-        probe = cell.grid.vertexId(1, 2, 3)
+        probe = cell.grid.vertex_id(1, 2, 3)
         other = stiffness.getrow(probe)
         moved = np.zeros(self.size)
         moved[other.indices] = other.data
@@ -323,7 +323,7 @@ class TripleIntegrals:
 
     `loads(x, Y)` returns, for every column y of Y, the load vector
     int phi_c x y of the product: the vectorized form of
-    `WhitneyMass.vertexDensityContraction`, and equally of `M_0[x] y`. With a
+    `WhitneyMass.vertex_density_contraction`, and equally of `M_0[x] y`. With a
     `twist` (`bloch_twist`) the columns of Y are the cell-periodic parts of
     sections of crystal momentum kappa and the result is `M_0^U[x] y`, the
     weighted mass matrix dressed by the link phases of that momentum: the load
@@ -334,9 +334,9 @@ class TripleIntegrals:
     """
 
     def __init__(self, complex_, squared_lengths):
-        vertex_index = {int(cell[0]): i for i, cell in enumerate(complex_.kSimplexVertices(0))}
+        vertex_index = {int(cell[0]): i for i, cell in enumerate(complex_.k_simplex_vertices(0))}
         self.size = len(vertex_index)
-        self.tops = np.array([[vertex_index[int(v)] for v in cell] for cell in complex_.orientedTopSimplices()])
+        self.tops = np.array([[vertex_index[int(v)] for v in cell] for cell in complex_.oriented_top_simplices()])
         d = self.tops.shape[1] - 1
         volumes = np.array(ch.WhitneyMass.certificate(complex_, list(squared_lengths)).volumes)
         if np.abs(volumes.imag).max() == 0.0:
@@ -475,11 +475,11 @@ class ModeInteraction:
     # -- the explicit Fock-space Hamiltonian (small mode counts only)
 
     def fock_hamiltonian(self, algebra):
-        """H = dGamma(h) + 1/2 sum_vw K_vw (rho_v rho_w - dGamma(T_v T_w)) as a
+        """H = d_gamma(h) + 1/2 sum_vw K_vw (rho_v rho_w - d_gamma(T_v T_w)) as a
         sparse matrix on the exterior algebra `algebra` (an `ExteriorAlgebra`
         over `size` modes). The subtraction is the normal ordering."""
         def lifted(one_particle):
-            rows, cols, values, n = algebra.dGammaCOO(np.asarray(one_particle, dtype=complex))
+            rows, cols, values, n = algebra.d_gamma_coo(np.asarray(one_particle, dtype=complex))
             return sp.csr_matrix((values, (rows, cols)), shape=(n, n))
 
         vertices = self.T.shape[0]

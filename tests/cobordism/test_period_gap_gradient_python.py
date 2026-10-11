@@ -3,10 +3,10 @@
 
 """The degree-generic period-gap gradient (#630).
 
-`periodGapForPeriodsGradient` used to route unconditionally through the
+`period_gap_for_periods_gradient` used to route unconditionally through the
 edge-loop core, which is degree-1 machinery and throws for `k >= 2` — so at the
 proton's register degree the gradient of `r_U`'s whole-complex term did not
-exist. It now routes by degree, exactly as `residualForPeriodsGradient` does.
+exist. It now routes by degree, exactly as `residual_for_periods_gradient` does.
 
 The gap `r_psi = ||A c - t||^2` (with `A = Q U_n` and `c` the least-squares fit)
 is homogeneous of degree ZERO: `L_k` is degree -1 in `l^2`, so a uniform rescale
@@ -49,21 +49,21 @@ _hspec.loader.exec_module(_hs)
 
 def _edgeSquaredLengths(spacetime):
     """Edge `l^2` in ChainComplex 1-cell order — the gradient's own layout."""
-    chain = cobordism.ChainComplex.fromSpacetime(spacetime)
+    chain = cobordism.ChainComplex.from_spacetime(spacetime)
     byPair = {}
-    for edge in spacetime.getEdgeList().toVector():
-        a, b = edge.getSource().getId(), edge.getTarget().getId()
+    for edge in spacetime.get_edge_list().to_vector():
+        a, b = edge.get_source().get_id(), edge.get_target().get_id()
         byPair[(min(a, b), max(a, b))] = edge
-    pairs = [tuple(sorted(v)) for v in chain.kSimplexVertices(1)]
+    pairs = [tuple(sorted(v)) for v in chain.k_simplex_vertices(1)]
     return pairs, byPair, np.array(
-        [(byPair[p].getLength() ** 2).real for p in pairs])
+        [(byPair[p].get_length() ** 2).real for p in pairs])
 
 
 def _gapValue(spacetime, degree, holes, target):
     """The gap, computed OUTSIDE the gradient code: periods, least-squares fit,
     squared residual."""
     synthesis = cobordism.EigenstateSynthesis(spacetime, degree, DIAGONAL)
-    flat = np.array(synthesis.cyclePeriods(holes), complex)
+    flat = np.array(synthesis.cycle_periods(holes), complex)
     periodMatrix = flat.reshape(-1, len(holes)).T
     targetVector = np.array(target, complex)
     coefficients, *_ = np.linalg.lstsq(periodMatrix, targetVector, rcond=None)
@@ -75,7 +75,7 @@ class PeriodGapGradientDegreeTwoTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cobordism.HodgeLaplacian.setDefaultWeightConvention(
+        cobordism.HodgeLaplacian.set_default_weight_convention(
             cobordism.HodgeWeightConvention.SquaredContent)
         cls.spacetime, cls.holes = B2Register.build()
         cls.degree = 2
@@ -84,7 +84,7 @@ class PeriodGapGradientDegreeTwoTest(unittest.TestCase):
         # COMPLEX now (#746): Re is the real-locus derivative these tests
         # certified before, so they keep asserting exactly what they did.
         cls.gradientComplex = np.array(
-            cls.synthesis.periodGapForPeriodsGradient(cls.holes, cls.target),
+            cls.synthesis.period_gap_for_periods_gradient(cls.holes, cls.target),
             complex)
         cls.gradient = cls.gradientComplex.real
 
@@ -93,7 +93,7 @@ class PeriodGapGradientDegreeTwoTest(unittest.TestCase):
         # of ~1e-16, and a gradient checked against them proves nothing.
         self.assertEqual(list(cobordism.MultiCobordism.betti(self.spacetime))[2], 1)
         self.assertEqual(len(self.holes), 2)
-        flat = np.array(self.synthesis.cyclePeriods(self.holes), complex)
+        flat = np.array(self.synthesis.cycle_periods(self.holes), complex)
         self.assertGreater(np.abs(flat).max(), 1e-3)
         self.assertGreater(
             _gapValue(self.spacetime, self.degree, self.holes, self.target), 1e-3)
@@ -112,17 +112,17 @@ class PeriodGapGradientDegreeTwoTest(unittest.TestCase):
         self.assertTrue(moving, "no edge moves the gap; fixture is degenerate")
         for index in moving:
             edge = byPair[pairs[index]]
-            length = edge.getLength()
+            length = edge.get_length()
             squaredLength = length * length
             step = 1e-6
-            edge.setLength(cmath.sqrt(squaredLength + step))
-            self.spacetime.materializeFacets()
+            edge.set_length(cmath.sqrt(squaredLength + step))
+            self.spacetime.materialize_facets()
             up = _gapValue(self.spacetime, self.degree, self.holes, self.target)
-            edge.setLength(cmath.sqrt(squaredLength - step))
-            self.spacetime.materializeFacets()
+            edge.set_length(cmath.sqrt(squaredLength - step))
+            self.spacetime.materialize_facets()
             down = _gapValue(self.spacetime, self.degree, self.holes, self.target)
-            edge.setLength(length)
-            self.spacetime.materializeFacets()
+            edge.set_length(length)
+            self.spacetime.materialize_facets()
             finiteDifference = (up - down) / (2 * step)
             self.assertAlmostEqual(
                 finiteDifference, self.gradient[index],
@@ -143,7 +143,7 @@ class ComplexGradientOffTheRealLocusTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cobordism.HodgeLaplacian.setDefaultWeightConvention(
+        cobordism.HodgeLaplacian.set_default_weight_convention(
             cobordism.HodgeWeightConvention.SquaredContent)
         cls.spacetime, cls.holes = B2Register.build()
         cls.degree = 2
@@ -151,17 +151,17 @@ class ComplexGradientOffTheRealLocusTest(unittest.TestCase):
         pairs, byPair, _squared = _edgeSquaredLengths(cls.spacetime)
         for index, pair in enumerate(pairs):          # push l^2 off the locus
             edge = byPair[pair]
-            squared = edge.getLength() ** 2
-            edge.setLength(cmath.sqrt(
+            squared = edge.get_length() ** 2
+            edge.set_length(cmath.sqrt(
                 squared * complex(1.0, 0.35 * (1 + index % 3) / 3)))
-        cls.spacetime.materializeFacets()
+        cls.spacetime.materialize_facets()
         cls.pairs, cls.byPair = pairs, byPair
         cls.gradient = np.array(
             cobordism.EigenstateSynthesis(cls.spacetime, cls.degree, DIAGONAL)
-            .periodGapForPeriodsGradient(cls.holes, cls.target), complex)
+            .period_gap_for_periods_gradient(cls.holes, cls.target), complex)
 
     def test_the_state_is_actually_off_the_locus(self):
-        imaginary = max(abs((self.byPair[p].getLength() ** 2).imag)
+        imaginary = max(abs((self.byPair[p].get_length() ** 2).imag)
                         for p in self.pairs)
         self.assertGreater(imaginary, 1e-2)
 
@@ -169,7 +169,7 @@ class ComplexGradientOffTheRealLocusTest(unittest.TestCase):
         self.assertGreater(np.abs(self.gradient.imag).max(), 1e-6)
 
     def test_euler_identity_holds_in_both_parts(self):
-        squared = np.array([self.byPair[p].getLength() ** 2
+        squared = np.array([self.byPair[p].get_length() ** 2
                             for p in self.pairs], complex)
         euler = complex(np.dot(squared, self.gradient))
         self.assertLess(abs(euler.real), 1e-9)
@@ -182,18 +182,18 @@ class ComplexGradientOffTheRealLocusTest(unittest.TestCase):
         self.assertTrue(moving)
         for index in moving:
             edge = self.byPair[self.pairs[index]]
-            base = edge.getLength() ** 2
+            base = edge.get_length() ** 2
             step = 1e-6
             for shift, expected in ((step, self.gradient[index].real),
                                     (1j * step, -self.gradient[index].imag)):
-                edge.setLength(cmath.sqrt(base + shift))
-                self.spacetime.materializeFacets()
+                edge.set_length(cmath.sqrt(base + shift))
+                self.spacetime.materialize_facets()
                 up = _gapValue(self.spacetime, self.degree, self.holes, self.target)
-                edge.setLength(cmath.sqrt(base - shift))
-                self.spacetime.materializeFacets()
+                edge.set_length(cmath.sqrt(base - shift))
+                self.spacetime.materialize_facets()
                 down = _gapValue(self.spacetime, self.degree, self.holes, self.target)
-                edge.setLength(cmath.sqrt(base))
-                self.spacetime.materializeFacets()
+                edge.set_length(cmath.sqrt(base))
+                self.spacetime.materialize_facets()
                 finiteDifference = (up - down) / (2 * step)
                 self.assertAlmostEqual(
                     finiteDifference, expected,
@@ -205,12 +205,12 @@ class PeriodGapGradientRoutingTest(unittest.TestCase):
     """Degree routing, including the contract at k = 0."""
 
     def test_degree_one_still_uses_the_loop_core_and_satisfies_euler(self):
-        cobordism.HodgeLaplacian.setDefaultWeightConvention(
+        cobordism.HodgeLaplacian.set_default_weight_convention(
             cobordism.HodgeWeightConvention.SquaredContent)
         spacetime, synthesis, holes, _periods = _hs.holed_surface(degree=1)
         target = [complex(1.0, 0.0)] * len(holes)
         gradient = np.array(
-            synthesis.periodGapForPeriodsGradient(holes, target), complex).real
+            synthesis.period_gap_for_periods_gradient(holes, target), complex).real
         _pairs, _byPair, squared = _edgeSquaredLengths(spacetime)
         self.assertLess(abs(float(np.dot(squared, gradient))), 1e-9)
 
@@ -219,7 +219,7 @@ class PeriodGapGradientRoutingTest(unittest.TestCase):
         atDegreeZero = cobordism.EigenstateSynthesis(spacetime, 0, DIAGONAL)
         target = [complex(z) for z in periods[0]]
         with self.assertRaises(RuntimeError) as raised:
-            atDegreeZero.periodGapForPeriodsGradient(holes, target)
+            atDegreeZero.period_gap_for_periods_gradient(holes, target)
         self.assertIn("degree", str(raised.exception))
 
 

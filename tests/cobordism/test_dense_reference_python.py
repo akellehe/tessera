@@ -25,9 +25,9 @@ def _flat(matrix):
 class TestCrossover(unittest.TestCase):
     def test_refusal_at_and_above_crossover(self):
         dense = cob.DenseReference(4)
-        self.assertEqual(dense.crossoverDimension, 4)
-        self.assertTrue(dense.belowCrossover(3))
-        self.assertFalse(dense.belowCrossover(4))
+        self.assertEqual(dense.crossover_dimension, 4)
+        self.assertTrue(dense.below_crossover(3))
+        self.assertFalse(dense.below_crossover(4))
         matrix = _flat(np.eye(4, dtype=complex))
         with self.assertRaises(ValueError):
             dense.solve(matrix, 4, [1 + 0j] * 4)
@@ -36,7 +36,7 @@ class TestCrossover(unittest.TestCase):
 
     def test_crossover_is_configurable(self):
         dense = cob.DenseReference(4)
-        dense.setCrossoverDimension(8)
+        dense.set_crossover_dimension(8)
         matrix = _flat(np.eye(4, dtype=complex))
         result = dense.solve(matrix, 4, [1 + 0j] * 4)
         np.testing.assert_allclose(result.values, np.ones(4), rtol=0,
@@ -115,7 +115,7 @@ class TestDenseFockOracle(unittest.TestCase):
         eigenvalues = np.linalg.eigvalsh(h)
         import itertools
         for particles in range(dim + 1):
-            oracle = dense.fockSpectrum(_flat(h), dim, particles, True)
+            oracle = dense.fock_spectrum(_flat(h), dim, particles, True)
             expected = sorted(
                 sum(c) if c else 0.0
                 for c in itertools.combinations(eigenvalues, particles))

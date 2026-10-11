@@ -231,7 +231,7 @@ def poset(evts):
     P, covers = causal_order(evts)
     ps = Poset(len(evts))
     for i, j in covers:
-        ps.addCover(i, j)
+        ps.add_cover(i, j)
     return ps, P, covers
 
 

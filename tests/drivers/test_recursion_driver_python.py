@@ -189,8 +189,8 @@ def test_the_grown_cell_rule_returns_level_zero():
     pairs = list(itertools.combinations(range(4), 2))
     s = [complex(np.sum((points[j] - points[i]) ** 2)) for i, j in pairs]
     from tessera import cobordism as cob
-    K = cob.ChainComplex.fromTopCells([[0, 1, 2, 3]])
-    block = np.asarray(ch.WhitneyMass.topSimplexBlocks(K, s, 1)[0].block)
+    K = cob.ChainComplex.from_top_cells([[0, 1, 2, 3]])
+    block = np.asarray(ch.WhitneyMass.top_simplex_blocks(K, s, 1)[0].block)
     Z = np.zeros((6, 4))
     for a, (x, y) in enumerate(pairs):
         Z[a, x], Z[a, y] = -1.0, 1.0
@@ -198,7 +198,7 @@ def test_the_grown_cell_rule_returns_level_zero():
     frames = [Y[:, [v]] for v in range(4)]
     images = [np.linalg.solve(block, f) for f in frames]
     links = np.ones(6, dtype=complex)
-    pairing = np.asarray(ch.GrownCellRule.determinantPairing(frames, images))
+    pairing = np.asarray(ch.GrownCellRule.determinant_pairing(frames, images))
     links = np.exp(1j * rng.normal(size=6))
     transports = {}
     for m, (v, w) in enumerate(pairs):
@@ -300,14 +300,14 @@ def test_the_manifold_gate_rejects_a_cell_that_makes_a_non_manifold():
         s_local = [complex(np.sum((points[a] - points[b]) ** 2))
                    for a, b in itertools.combinations(cell, 2)]
         from tessera import cobordism as cob
-        K = cob.ChainComplex.fromTopCells([[0, 1, 2, 3]])
-        block = np.asarray(ch.WhitneyMass.topSimplexBlocks(K, s_local, 1)[0]
+        K = cob.ChainComplex.from_top_cells([[0, 1, 2, 3]])
+        block = np.asarray(ch.WhitneyMass.top_simplex_blocks(K, s_local, 1)[0]
                            .block)
         Z = np.zeros((6, 4))
         for a, (x, y) in enumerate(itertools.combinations(range(4), 2)):
             Z[a, x], Z[a, y] = -1.0, 1.0
         Y = block @ Z
-        local = np.asarray(ch.GrownCellRule.determinantPairing(
+        local = np.asarray(ch.GrownCellRule.determinant_pairing(
             [Y[:, [v]] for v in range(4)],
             [np.linalg.solve(block, Y[:, [v]]) for v in range(4)]))
         for i, v in enumerate(cell):
@@ -370,8 +370,8 @@ def test_the_image_pairing_normalization_returns_level_zero():
     rng = np.random.default_rng(12)
     pairs = list(itertools.combinations(range(4), 2))
     s = [8.0, 6.5, 9.0, 7.2, 8.8, 5.9]
-    K = cob.ChainComplex.fromTopCells([[0, 1, 2, 3]])
-    block = np.asarray(ch.WhitneyMass.topSimplexBlocks(K, s, 1)[0].block)
+    K = cob.ChainComplex.from_top_cells([[0, 1, 2, 3]])
+    block = np.asarray(ch.WhitneyMass.top_simplex_blocks(K, s, 1)[0].block)
 
     def grown(U, scales):
         full = dict(U)
@@ -400,11 +400,11 @@ def test_the_image_pairing_normalization_returns_level_zero():
         # rescaled frames
         connection = np.array([[full[(v, w)] * scales[0][w] / scales[0][v]
                                 for w in range(4)] for v in range(4)])
-        pairing = np.asarray(ch.GrownCellRule.gaugeInvariantPairing(
+        pairing = np.asarray(ch.GrownCellRule.gauge_invariant_pairing(
             [duals[:, [v]] for v in range(4)],
             [images[:, [v]] for v in range(4)], connection))
-        return np.array(ch.GrownCellRule.invertVertexPairing(pairing)
-                        .squaredLengths)
+        return np.array(ch.GrownCellRule.invert_vertex_pairing(pairing)
+                        .squared_lengths)
 
     scales = (np.exp(rng.normal(size=4) + 1j * rng.normal(size=4)),
               np.exp(rng.normal(size=4) + 1j * rng.normal(size=4)))

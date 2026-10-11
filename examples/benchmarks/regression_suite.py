@@ -176,8 +176,8 @@ def _make_build_cdt(dim: int, target: int):
             metric, tessera.CDT, 1.0, 1.0,
             tessera.PREFERRED, tessera.Toroid())
         st.build(target)
-        return {"simplices": st.getTopSimplexCount(),
-                "vertices":  st.getVertexCount()}
+        return {"simplices": st.get_top_simplex_count(),
+                "vertices":  st.get_vertex_count()}
 
     return run
 
@@ -193,7 +193,7 @@ def _make_dual_adjacency(dim: int, target: int):
     st.build(target)
 
     def run():
-        rows, cols, n = st.getDualAdjacency()
+        rows, cols, n = st.get_dual_adjacency()
         return {"n_edges_directed": len(rows), "n_nodes": int(n)}
 
     return run
@@ -210,9 +210,9 @@ def _make_poset_from_spacetime(dim: int, target: int):
     Poset = tessera.Poset
 
     def run():
-        p = Poset.fromSpacetime(st)
-        return {"n_nodes":  p.getNodeCount,
-                "n_covers": p.getCoverCount()}
+        p = Poset.from_spacetime(st)
+        return {"n_nodes":  p.get_node_count,
+                "n_covers": p.get_cover_count()}
 
     return run
 
@@ -226,9 +226,9 @@ def _make_causet_chain(dim: int, target: int):
     st.build(target)
 
     def run():
-        chain = tessera.quantum.Causet.chainFrom(st)
-        return {"n_sites": chain.nSites,
-                "n_hopping_pairs": len(chain.hoppingPairs)}
+        chain = tessera.quantum.Causet.chain_from(st)
+        return {"n_sites": chain.n_sites,
+                "n_hopping_pairs": len(chain.hopping_pairs)}
 
     return run
 
@@ -242,17 +242,17 @@ def _make_sparse_spectral_dim(dim: int, target: int,
         metric, tessera.CDT, 1.0, 1.0,
         tessera.PREFERRED, tessera.Toroid())
     st.build(target)
-    g = st.getDualGraph()
+    g = st.get_dual_graph()
 
     import numpy as np
 
     def run():
         # Exercise the Krylov-Lanczos + Padé-13 path directly with a
         # deterministic start set so timings are stable.
-        starts = list(range(min(n_walks, g.nNodes())))
+        starts = list(range(min(n_walks, g.n_nodes())))
         times = np.logspace(-1, 1, n_times).tolist()
-        K = g.diagonalHeatKernel(starts, times, krylovDim=krylov)
-        return {"n_nodes": g.nNodes(),
+        K = g.diagonal_heat_kernel(starts, times, krylov_dim=krylov)
+        return {"n_nodes": g.n_nodes(),
                 "n_diag_entries": sum(len(row) for row in K)}
 
     return run
@@ -261,7 +261,7 @@ def _make_sparse_spectral_dim(dim: int, target: int,
 def _make_emergent_return_prob(n_nodes: int, n_sigmas: int,
                                   krylov: int = 12):
     """Synthetic toroidal 2D lattice → EmergentGraph; measure
-    ``returnProbability`` (the SpectralGraph base path on weighted L)."""
+    ``return_probability`` (the SpectralGraph base path on weighted L)."""
     from tessera.quantum.holography import EmergentGraph
     import numpy as np
 
@@ -277,13 +277,13 @@ def _make_emergent_return_prob(n_nodes: int, n_sigmas: int,
             w2 = ((i + 1) % side) * side + j
             edges.append((v, w1, 1.0))
             edges.append((v, w2, 1.0))
-    g = EmergentGraph.fromWeightedEdges(n, edges)
+    g = EmergentGraph.from_weighted_edges(n, edges)
     sigmas = np.logspace(-1, 1, n_sigmas).tolist()
 
     def run():
-        P = g.returnProbability(sigmas, krylov)
-        return {"n_nodes": g.nVertices,
-                "n_edges": g.nEdges,
+        P = g.return_probability(sigmas, krylov)
+        return {"n_nodes": g.n_vertices,
+                "n_edges": g.n_edges,
                 "P_min": min(P),
                 "P_max": max(P)}
 
@@ -303,8 +303,8 @@ def _make_wilson_loop_hinges(dim: int, target: int):
         # Reset between runs so we measure measurement throughput,
         # not append-to-vector overhead.
         wl.reset()
-        wl.measureAllHinges(tessera.WilsonMode.COMBINATORIAL)
-        return {"n_measurements": len(wl.getMeasurements())}
+        wl.measure_all_hinges(tessera.WilsonMode.COMBINATORIAL)
+        return {"n_measurements": len(wl.get_measurements())}
 
     return run
 
@@ -320,7 +320,7 @@ def _make_pachner_sweep(dim: int, target: int, sweeps: int):
 
     def run():
         sim.sweep(sweeps)
-        return {"simplices": st.getTopSimplexCount(),
+        return {"simplices": st.get_top_simplex_count(),
                 "sweeps":    sweeps}
 
     return run

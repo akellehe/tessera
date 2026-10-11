@@ -24,12 +24,12 @@ class TestDihedralAngles(unittest.TestCase):
         solver = tessera.ReggeSolver(st, matter)
 
         # Find a top-simplex and one of its hinges (triangles, 3 verts)
-        for s in st.getSimplices():
-            if len(s.getVertices()) == 5:  # top-simplex in 4D
-                for facet in s.getFacets():
-                    for hinge in facet.getFacets():
-                        if len(hinge.getVertices()) == 3:
-                            angle = solver.dihedralAngle(s, hinge)
+        for s in st.get_simplices():
+            if len(s.get_vertices()) == 5:  # top-simplex in 4D
+                for facet in s.get_facets():
+                    for hinge in facet.get_facets():
+                        if len(hinge.get_vertices()) == 3:
+                            angle = solver.dihedral_angle(s, hinge)
                             # The Lorentzian dihedral angle is complex: the real
                             # part is the rotation content (continuous in (0, π)
                             # for a spacelike-normal wedge, quantized to
@@ -48,9 +48,9 @@ class TestDihedralAngles(unittest.TestCase):
         solver = tessera.ReggeSolver(st, matter)
 
         # Find a hinge and compute its deficit angle
-        for s in st.getSimplices():
-            if len(s.getVertices()) == 3 and len(s.getCofaces()) > 0:
-                eps = solver.deficitAngle(s)
+        for s in st.get_simplices():
+            if len(s.get_vertices()) == 3 and len(s.get_cofaces()) > 0:
+                eps = solver.deficit_angle(s)
                 # The Lorentzian deficit is complex: Re is the angle defect,
                 # Im the boost (rapidity) content around the hinge.
                 self.assertIsInstance(eps, complex)
@@ -66,7 +66,7 @@ class TestReggeAction(unittest.TestCase):
         st = _make_spacetime(20)
         matter = tessera.MatterConfiguration()
         solver = tessera.ReggeSolver(st, matter)
-        S = solver.reggeAction()
+        S = solver.regge_action()
         # Complex Lorentzian action: Re from the angle defects, Im from the
         # boost content of spacelike hinges.
         self.assertTrue(cmath.isfinite(S), f"Regge action should be finite, got {S}")
@@ -79,7 +79,7 @@ class TestActionGradientNorm(unittest.TestCase):
         st = _make_spacetime(20)
         matter = tessera.MatterConfiguration()  # no matter = vacuum
         solver = tessera.ReggeSolver(st, matter)
-        F = solver.actionGradientNorm()
+        F = solver.action_gradient_norm()
         self.assertGreaterEqual(F, 0.0)
 
 
@@ -89,46 +89,46 @@ class TestMatterConfiguration(unittest.TestCase):
     def test_worldline_mass_creates_nonzero_gradient(self):
         st = _make_spacetime(20)
         matter = tessera.MatterConfiguration()
-        v = st.getVertexList().toVector()[0]
-        matter.setWorldlineMass(v, 1.0, st)
+        v = st.get_vertex_list().to_vector()[0]
+        matter.set_worldline_mass(v, 1.0, st)
         solver = tessera.ReggeSolver(st, matter)
         # With matter, gradient norm should be nonzero (not at solution yet)
-        F = solver.actionGradientNorm()
+        F = solver.action_gradient_norm()
         self.assertGreater(F, 0.0)
 
     def test_matter_action_is_negative(self):
         """S_matter = -M Σ √(-ℓ²) should be negative for positive mass."""
         st = _make_spacetime(20)
         matter = tessera.MatterConfiguration()
-        v = st.getVertexList().toVector()[0]
-        matter.setWorldlineMass(v, 1.0, st)
+        v = st.get_vertex_list().to_vector()[0]
+        matter.set_worldline_mass(v, 1.0, st)
         solver = tessera.ReggeSolver(st, matter)
-        S_matter = solver.matterAction()
+        S_matter = solver.matter_action()
         self.assertLess(S_matter, 0.0,
             "Proper-time matter action should be negative for positive mass")
 
     def test_radial_profile(self):
         st = _make_spacetime(20)
         matter = tessera.MatterConfiguration()
-        v = st.getVertexList().toVector()[0]
+        v = st.get_vertex_list().to_vector()[0]
         # Exponential profile: ρ(r) = exp(-r)
-        matter.setRadialProfile(v, lambda r: math.exp(-r))
+        matter.set_radial_profile(v, lambda r: math.exp(-r))
         # Radial profiles don't contribute to proper-time action,
         # so just check that it doesn't crash
         solver = tessera.ReggeSolver(st, matter)
-        S = solver.totalAction()
+        S = solver.total_action()
         self.assertTrue(cmath.isfinite(S))
 
 
 class TestHingeContent(unittest.TestCase):
     def test_hinge_content_is_real_or_imaginary(self):
         st = _make_spacetime(20)
-        # Creating a ReggeSolver registers hinges (triangles) via getFacets()
+        # Creating a ReggeSolver registers hinges (triangles) via get_facets()
         matter = tessera.MatterConfiguration()
         tessera.ReggeSolver(st, matter)
-        for s in st.getSimplices():
-            if len(s.getVertices()) == 3 and len(s.getEdges()) >= 3:
-                content = tessera.ReggeSolver.hingeContent(s)
+        for s in st.get_simplices():
+            if len(s.get_vertices()) == 3 and len(s.get_edges()) >= 3:
+                content = tessera.ReggeSolver.hinge_content(s)
                 # The content of a triangular hinge is its complex area. On
                 # real signed l^2 the Gram determinant is real, so the content
                 # is either real (spacelike triangle) or purely imaginary

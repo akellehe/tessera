@@ -24,8 +24,8 @@ so the spectral dimension is extracted via
 
 The dual-graph construction, the Krylov-Lanczos heat-kernel diffusion,
 and the finite-difference D_S extraction all run in C++:
-``st.getDualGraph()`` returns a :class:`tessera.SparseGraph`, whose
-``returnProbability`` / ``spectralDimensionCurve`` methods are the same
+``st.get_dual_graph()`` returns a :class:`tessera.SparseGraph`, whose
+``return_probability`` / ``spectral_dimension_curve`` methods are the same
 machinery the modularity sweep and the emergent-geometry pipeline use.
 
 Key results from the paper (k0=2.2, Delta=0.6, t=80):
@@ -111,7 +111,7 @@ def _worker(cfg_id, n_simplices, n_therm, sweeps_between,
     # the volume sideways to target via (2,8)/(8,2) moves.
     max_build = 80 * 20  # 80 time slabs x 20 simplices/slab in d=4
     st.build(min(n_simplices, max_build))
-    target = st.getN41() if n_simplices <= max_build else n_simplices // 2
+    target = st.get_n41() if n_simplices <= max_build else n_simplices // 2
     cdt = tessera.CDTSimulation(st, 2.2, 0.5, 0.6, 1.0 / target, target)
 
     _ph("tuning")
@@ -131,17 +131,17 @@ def _worker(cfg_id, n_simplices, n_therm, sweeps_between,
 
     _ph("diffusing")
     t0 = time.time()
-    sg = st.getDualGraph()
-    N = sg.nNodes()
-    if N == 0 or sg.nEdges() == 0:
+    sg = st.get_dual_graph()
+    N = sg.n_nodes()
+    if N == 0 or sg.n_edges() == 0:
         return cfg_id, None, 0, 0.0, 0.0
 
     # Heat-kernel return probability on the dual graph, averaged over
     # min(n_walks, N) random start vertices.  The Krylov-Lanczos diffusion
     # and Hutchinson trace estimate run inside SparseGraph; seeding with
     # cfg_id keeps each configuration's start-vertex subsample reproducible.
-    P = sg.returnProbability(list(sigmas), m=n_walks, seed=cfg_id)
-    avg_nbr = 2.0 * sg.nEdges() / N
+    P = sg.return_probability(list(sigmas), m=n_walks, seed=cfg_id)
+    avg_nbr = 2.0 * sg.n_edges() / N
     elapsed = time.time() - t0
     return cfg_id, P, N, avg_nbr, elapsed
 
@@ -152,14 +152,14 @@ def _worker(cfg_id, n_simplices, n_therm, sweeps_between,
 
 def compute_spectral_dimension(sigmas, P):
     """D_S(sigma) = -2 d(log P) / d(log sigma) via the C++ centered
-    finite-difference (``SparseGraph.spectralDimensionCurve``).
+    finite-difference (``SparseGraph.spectral_dimension_curve``).
 
     Returns ``(sigma_values, D_S_values)`` over the finite entries of the
     curve (NaNs, where P <= 0, are dropped).
     """
     sigmas = np.asarray(sigmas, dtype=float)
     ds = np.asarray(
-        tessera.SparseGraph.spectralDimensionCurve(list(sigmas), list(P)))
+        tessera.SparseGraph.spectral_dimension_curve(list(sigmas), list(P)))
     finite = np.isfinite(ds)
     return sigmas[finite], ds[finite]
 

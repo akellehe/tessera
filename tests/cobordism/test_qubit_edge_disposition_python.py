@@ -47,14 +47,14 @@ def seeded(disposition):
     # those vertex sets.
     blocks = [set(int(v) for v in node.inputs[i].vertices)
               for i in range(len(node.inputs))]
-    for edge in spacetime.getEdgeList().toVector():
-        if edge is None or edge.getSource() is None or edge.getTarget() is None:
+    for edge in spacetime.get_edge_list().to_vector():
+        if edge is None or edge.get_source() is None or edge.get_target() is None:
             continue
-        u, v = int(edge.getSource().getId()), int(edge.getTarget().getId())
+        u, v = int(edge.get_source().get_id()), int(edge.get_target().get_id())
         if any(u in block and v in block for block in blocks):
-            boundary.append(complex(edge.getLength()))
+            boundary.append(complex(edge.get_length()))
         else:
-            interior.append(complex(edge.getLength()))
+            interior.append(complex(edge.get_length()))
     return boundary, interior
 
 

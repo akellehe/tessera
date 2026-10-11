@@ -18,27 +18,27 @@ gate fires before polar / pseudo-unitary reduction; a failed gate yields a
 rejected read that still reports its raw map and diagnostics, so polar
 normalization never conceals a bad assignment.)doc")
       .def(py::init<>())
-      .def_readwrite("rankTolerance", &FiberConnectionConfig::rankTolerance,
+      .def_readwrite("rank_tolerance", &FiberConnectionConfig::rankTolerance,
                      "Relative singular-value cut for the numerical rank.")
-      .def_readwrite("leakageTolerance",
+      .def_readwrite("leakage_tolerance",
                      &FiberConnectionConfig::leakageTolerance,
                      "Cap on the isometry leakage before a unitary factor "
                      "may be emitted.")
-      .def_readwrite("conditionNumberCap",
+      .def_readwrite("condition_number_cap",
                      &FiberConnectionConfig::conditionNumberCap,
                      "Cap on endpoint frame and overlap conditioning.")
-      .def_readwrite("minEndpointGap", &FiberConnectionConfig::minEndpointGap,
+      .def_readwrite("min_endpoint_gap", &FiberConnectionConfig::minEndpointGap,
                      "Absolute floor on each endpoint band's isolation "
                      "min(lowerGap, upperGap); 0 = rely on band "
                      "certification.")
-      .def_readwrite("requireCertifiedFibers",
+      .def_readwrite("require_certified_fibers",
                      &FiberConnectionConfig::requireCertifiedFibers,
                      "Require both endpoint bands accepted (a closing gap "
                      "rejects the transport).")
-      .def_readwrite("certificateTolerance",
+      .def_readwrite("certificate_tolerance",
                      &FiberConnectionConfig::certificateTolerance,
                      "Tolerance the emitted certificates hold against.")
-      .def_readwrite("closureTolerance",
+      .def_readwrite("closure_tolerance",
                      &FiberConnectionConfig::closureTolerance,
                      "Relative endpoint-mismatch cap for certified winding "
                      "closures.");
@@ -54,62 +54,62 @@ diagnostics.  Per-transport winding and center fields live on the dedicated
 family reads (DeterminantWindingRead / FundamentalLiftRead): an integer
 winding exists only for a declared family and closure, a center sector only
 for a declared lift path.)doc")
-      .def_readonly("toKey", &FiberTransportRead::toKey,
+      .def_readonly("to_key", &FiberTransportRead::toKey,
                     "Order-independent key of the destination fiber A.")
-      .def_readonly("fromKey", &FiberTransportRead::fromKey,
+      .def_readonly("from_key", &FiberTransportRead::fromKey,
                     "Order-independent key of the source fiber B.")
       .def_readonly("degree", &FiberTransportRead::degree)
       .def_readonly("rank", &FiberTransportRead::rank)
-      .def_readonly("rawMap", &FiberTransportRead::rawMap,
+      .def_readonly("raw_map", &FiberTransportRead::rawMap,
                     "M_AB before any normalization.")
-      .def_readonly("singularValues", &FiberTransportRead::singularValues,
+      .def_readonly("singular_values", &FiberTransportRead::singularValues,
                     "Singular values of rawMap, descending.")
-      .def_readonly("numericalRank", &FiberTransportRead::numericalRank)
+      .def_readonly("numerical_rank", &FiberTransportRead::numericalRank)
       .def_readonly("leakage", &FiberTransportRead::leakage,
                     "Regime-appropriate isometry defect.")
-      .def_readonly("overlapConditionNumber",
+      .def_readonly("overlap_condition_number",
                     &FiberTransportRead::overlapConditionNumber)
-      .def_readonly("toGap", &FiberTransportRead::toGap)
-      .def_readonly("fromGap", &FiberTransportRead::fromGap)
-      .def_readonly("toPositiveSignature",
+      .def_readonly("to_gap", &FiberTransportRead::toGap)
+      .def_readonly("from_gap", &FiberTransportRead::fromGap)
+      .def_readonly("to_positive_signature",
                     &FiberTransportRead::toPositiveSignature)
-      .def_readonly("toNegativeSignature",
+      .def_readonly("to_negative_signature",
                     &FiberTransportRead::toNegativeSignature)
-      .def_readonly("fromPositiveSignature",
+      .def_readonly("from_positive_signature",
                     &FiberTransportRead::fromPositiveSignature)
-      .def_readonly("fromNegativeSignature",
+      .def_readonly("from_negative_signature",
                     &FiberTransportRead::fromNegativeSignature)
-      .def_readonly("toProjectorNorm", &FiberTransportRead::toProjectorNorm)
-      .def_readonly("fromProjectorNorm",
+      .def_readonly("to_projector_norm", &FiberTransportRead::toProjectorNorm)
+      .def_readonly("from_projector_norm",
                     &FiberTransportRead::fromProjectorNorm)
-      .def_readonly("frameConditionNumber",
+      .def_readonly("frame_condition_number",
                     &FiberTransportRead::frameConditionNumber,
                     "max of the endpoints' frame condition numbers, "
                     "distinct from the projector norms.")
       .def_readonly("regime", &FiberTransportRead::regime)
-      .def_readonly("unitaryMap", &FiberTransportRead::unitaryMap,
+      .def_readonly("unitary_map", &FiberTransportRead::unitaryMap,
                     "The emitted U(r)/pseudo-unitary factor; empty when "
                     "rejected or on the certified GL(r,C) non-normal path.")
-      .def_readonly("determinantPhase", &FiberTransportRead::determinantPhase,
+      .def_readonly("determinant_phase", &FiberTransportRead::determinantPhase,
                     "det of the emitted factor (U(1)); the raw determinant "
                     "phase on the GL path -- never discarded.")
-      .def_readonly("polarResidual", &FiberTransportRead::polarResidual)
-      .def_readonly("determinantResidual",
+      .def_readonly("polar_residual", &FiberTransportRead::polarResidual)
+      .def_readonly("determinant_residual",
                     &FiberTransportRead::determinantResidual)
-      .def_readonly("projectiveOnly", &FiberTransportRead::projectiveOnly)
+      .def_readonly("projective_only", &FiberTransportRead::projectiveOnly)
       .def_readonly("accepted", &FiberTransportRead::accepted)
-      .def_readonly("rejectionReason", &FiberTransportRead::rejectionReason)
+      .def_readonly("rejection_reason", &FiberTransportRead::rejectionReason)
       .def_readonly("certificate", &FiberTransportRead::certificate)
       .def("describe", &FiberTransportRead::describe)
       .def("__repr__", &FiberTransportRead::describe)
-      .def("toRecord",
+      .def("to_record",
            [](const FiberTransportRead &self) {
              return recordToPython(self.toRecord());
            },
            "Checkpoint serialization (`transports`): "
            "at rank three the full U(3) factor, det V, and thereby the "
            "PU(3) class travel.")
-      .def_static("fromRecord",
+      .def_static("from_record",
                   [](const py::handle &record) {
                     return FiberTransportRead::fromRecord(
                         pythonToRecord(record));
@@ -124,31 +124,31 @@ normalized trace Tr H / r, determinant line det H, and the center-blind
 adjoint reads.  Under independent local frame changes a closed holonomy is
 conjugated at its base component, so the normalized trace is invariant.)doc")
       .def_readonly("rank", &WilsonHolonomyRead::rank)
-      .def_readonly("loopLength", &WilsonHolonomyRead::loopLength)
+      .def_readonly("loop_length", &WilsonHolonomyRead::loopLength)
       .def_readonly("closed", &WilsonHolonomyRead::closed)
-      .def_readonly("baseKey", &WilsonHolonomyRead::baseKey)
+      .def_readonly("base_key", &WilsonHolonomyRead::baseKey)
       .def_readonly("holonomy", &WilsonHolonomyRead::holonomy)
-      .def_readonly("normalizedTrace", &WilsonHolonomyRead::normalizedTrace)
+      .def_readonly("normalized_trace", &WilsonHolonomyRead::normalizedTrace)
       .def_readonly("determinant", &WilsonHolonomyRead::determinant)
-      .def_readonly("adjointTrace", &WilsonHolonomyRead::adjointTrace,
+      .def_readonly("adjoint_trace", &WilsonHolonomyRead::adjointTrace,
                     "|Tr H|^2 - 1 -- center-blind.")
-      .def_readonly("adjointMatrix", &WilsonHolonomyRead::adjointMatrix,
+      .def_readonly("adjoint_matrix", &WilsonHolonomyRead::adjointMatrix,
                     "Rank 3 only: the faithful PU(3) image on the traceless "
                     "octet (ColorFiber::adjointOctetProjector conventions).")
-      .def_readonly("unitarityResidual",
+      .def_readonly("unitarity_residual",
                     &WilsonHolonomyRead::unitarityResidual)
       .def_readonly("unitary", &WilsonHolonomyRead::unitary)
-      .def_readonly("maxLeakage", &WilsonHolonomyRead::maxLeakage,
+      .def_readonly("max_leakage", &WilsonHolonomyRead::maxLeakage,
                     "Worst pre-normalization isometry defect over the links.")
-      .def_readonly("minEndpointGap", &WilsonHolonomyRead::minEndpointGap,
+      .def_readonly("min_endpoint_gap", &WilsonHolonomyRead::minEndpointGap,
                     "Worst endpoint band isolation over the links.")
-      .def_readonly("maxFrameConditionNumber",
+      .def_readonly("max_frame_condition_number",
                     &WilsonHolonomyRead::maxFrameConditionNumber,
                     "Worst endpoint frame conditioning over the links.")
-      .def_readonly("minSingularValue",
+      .def_readonly("min_singular_value",
                     &WilsonHolonomyRead::minSingularValue,
                     "Smallest singular value over the links' raw overlaps.")
-      .def_readonly("minNumericalRank",
+      .def_readonly("min_numerical_rank",
                     &WilsonHolonomyRead::minNumericalRank,
                     "Smallest numerical rank over the links.")
       .def_readonly("certificate", &WilsonHolonomyRead::certificate);
@@ -162,25 +162,25 @@ recorded (branch-independent; the lift shifts by omega^{-s0} across
 branches while every projective/adjoint read of it is branch-independent).
 Rank three only -- SU(3) is never hard-coded at generic rank.)doc")
       .def_readonly("rank", &FundamentalLiftRead::rank)
-      .def_readonly("baseBranch", &FundamentalLiftRead::baseBranch)
+      .def_readonly("base_branch", &FundamentalLiftRead::baseBranch)
       .def_readonly("lift", &FundamentalLiftRead::lift)
-      .def_readonly("liftTrace", &FundamentalLiftRead::liftTrace)
-      .def_readonly("centerSector", &FundamentalLiftRead::centerSector)
-      .def_readonly("accumulatedDeterminantPhase",
+      .def_readonly("lift_trace", &FundamentalLiftRead::liftTrace)
+      .def_readonly("center_sector", &FundamentalLiftRead::centerSector)
+      .def_readonly("accumulated_determinant_phase",
                     &FundamentalLiftRead::accumulatedDeterminantPhase)
-      .def_readonly("maxDeterminantPhaseStep",
+      .def_readonly("max_determinant_phase_step",
                     &FundamentalLiftRead::maxDeterminantPhaseStep)
-      .def_readonly("detResidual", &FundamentalLiftRead::detResidual)
+      .def_readonly("det_residual", &FundamentalLiftRead::detResidual)
       .def_readonly("valid", &FundamentalLiftRead::valid)
-      .def_readonly("invalidReason", &FundamentalLiftRead::invalidReason)
+      .def_readonly("invalid_reason", &FundamentalLiftRead::invalidReason)
       .def_readonly("certificate", &FundamentalLiftRead::certificate)
-      .def("toRecord",
+      .def("to_record",
            [](const FundamentalLiftRead &self) {
              return recordToPython(self.toRecord());
            },
            "Checkpoint serialization: the lift and its accumulated center "
            "sector travel together.")
-      .def_static("fromRecord",
+      .def_static("from_record",
                   [](const py::handle &record) {
                     return FundamentalLiftRead::fromRecord(
                         pythonToRecord(record));
@@ -200,17 +200,17 @@ an integer.)doc");
              WindingClosureSpec::Mode::EndpointTrivialization);
   windingClosure.def(py::init<>())
       .def_readwrite("mode", &WindingClosureSpec::mode)
-      .def_readwrite("referenceId", &WindingClosureSpec::referenceId,
+      .def_readwrite("reference_id", &WindingClosureSpec::referenceId,
                      "Caller-supplied reference specification id, recorded "
                      "verbatim on the read.")
-      .def_readwrite("referenceTransports",
+      .def_readwrite("reference_transports",
                      &WindingClosureSpec::referenceTransports,
                      "MATCHED_REFERENCE: one reference transport per "
                      "segment sample (same orientation; traversed "
                      "backwards by the closure).")
-      .def_readwrite("startTrivialization",
+      .def_readwrite("start_trivialization",
                      &WindingClosureSpec::startTrivialization)
-      .def_readwrite("endTrivialization",
+      .def_readwrite("end_trivialization",
                      &WindingClosureSpec::endTrivialization);
 
   py::class_<DeterminantWindingRead>(m, "DeterminantWindingRead",
@@ -220,26 +220,26 @@ closure.  `winding` is None when
 invalidated (closed gap / lost rank / aliasing step) or when no closure
 was declared -- never a silently wrong integer.)doc")
       .def_readonly("winding", &DeterminantWindingRead::winding)
-      .def_readonly("windingClosure", &DeterminantWindingRead::windingClosure)
-      .def_readonly("windingReferenceId",
+      .def_readonly("winding_closure", &DeterminantWindingRead::windingClosure)
+      .def_readonly("winding_reference_id",
                     &DeterminantWindingRead::windingReferenceId)
-      .def_readonly("accumulatedPhase",
+      .def_readonly("accumulated_phase",
                     &DeterminantWindingRead::accumulatedPhase)
-      .def_readonly("maxPhaseStep", &DeterminantWindingRead::maxPhaseStep)
-      .def_readonly("phaseStepMargin",
+      .def_readonly("max_phase_step", &DeterminantWindingRead::maxPhaseStep)
+      .def_readonly("phase_step_margin",
                     &DeterminantWindingRead::phaseStepMargin)
-      .def_readonly("closureDefect", &DeterminantWindingRead::closureDefect)
-      .def_readonly("invalidationReason",
+      .def_readonly("closure_defect", &DeterminantWindingRead::closureDefect)
+      .def_readonly("invalidation_reason",
                     &DeterminantWindingRead::invalidationReason)
       .def_readonly("certificate", &DeterminantWindingRead::certificate)
-      .def("toRecord",
+      .def("to_record",
            [](const DeterminantWindingRead &self) {
              return recordToPython(self.toRecord());
            },
            "Checkpoint serialization: the closure specification travels "
            "with the integer; an unknown winding serializes as unknown, "
            "never as zero.")
-      .def_static("fromRecord",
+      .def_static("from_record",
                   [](const py::handle &record) {
                     return DeterminantWindingRead::fromRecord(
                         pythonToRecord(record));
@@ -266,7 +266,7 @@ certificate, never sampled independently.)doc")
            py::arg("config") = FiberConnectionConfig{})
       .def("config", &FiberConnection::config,
            py::return_value_policy::reference_internal)
-      .def_static("chainTransfer",
+      .def_static("chain_transfer",
                   [](const std::shared_ptr<Spacetime> &st, int degree,
                      const std::vector<std::vector<std::uint64_t>> &toCells,
                      const std::vector<std::vector<std::uint64_t>> &fromVertexTuples,
@@ -290,7 +290,7 @@ certificate, never sampled independently.)doc")
                   "reference orientation, the basis of the tracker's Whitney "
                   "bands.  weights = None and metric_source = None follow the "
                   "process-wide defaults at call time.")
-      .def_static("responseTransfer", &FiberConnection::responseTransfer,
+      .def_static("response_transfer", &FiberConnection::responseTransfer,
                   py::arg("network"), py::arg("to_component"),
                   py::arg("from_component"),
                   "The effective response block of a supplied "
@@ -302,13 +302,13 @@ certificate, never sampled independently.)doc")
            "Derive the transport A <- B from an explicit transfer block "
            "(rows = A's cells, cols = B's cells): overlap, full "
            "diagnostics, gates, then reduction, in that order.")
-      .def("transportReverse", &FiberConnection::transportReverse,
+      .def("transport_reverse", &FiberConnection::transportReverse,
            py::arg("to_fiber"), py::arg("from_fiber"), py::arg("transfer"),
            "The reverse-direction transport B <- A through the W-adjoint "
            "reverse block T_BA = W_B^{-1} T_AB^dagger W_A (exact in the "
            "W-self-adjoint regimes, where it returns the adjoint/inverse "
            "factor).")
-      .def("transportOnSpacetime",
+      .def("transport_on_spacetime",
            [](const FiberConnection &self, const std::shared_ptr<Spacetime> &st,
               const SpectralFiber &to, const SpectralFiber &from,
               std::optional<cobordism::HodgeLaplacian::WeightConvention> w,
@@ -323,7 +323,7 @@ certificate, never sampled independently.)doc")
            py::arg("weights") = py::none(), py::arg("metric_source") = py::none(),
            "Derive the transport on a spacetime: assembles the chain "
            "transfer from the Hodge operator, then transport().")
-      .def("transportOnSpacetimeCached",
+      .def("transport_on_spacetime_cached",
            [](const FiberConnection &self, cobordism::AnalyticCache &cache,
               const std::shared_ptr<Spacetime> &st, const SpectralFiber &to,
               const SpectralFiber &from,
@@ -345,7 +345,7 @@ certificate, never sampled independently.)doc")
            "Multiply accepted transports along a chain; reports the full "
            "holonomy, normalized trace, determinant line, and adjoint "
            "reads (closed = the keys chain into a loop).")
-      .def("holonomyOnSpacetime",
+      .def("holonomy_on_spacetime",
            [](const FiberConnection &self, const std::shared_ptr<Spacetime> &st,
               const std::vector<SpectralFiber> &fibers,
               std::optional<cobordism::HodgeLaplacian::WeightConvention> w,
@@ -360,7 +360,7 @@ certificate, never sampled independently.)doc")
            py::arg("metric_source") = py::none(),
            "Wilson loop over an ordered cycle of fibers: links "
            "fibers[i] <- fibers[i+1] (wrapping), then the product.")
-      .def("holonomyOnSpacetimeCached",
+      .def("holonomy_on_spacetime_cached",
            [](const FiberConnection &self, cobordism::AnalyticCache &cache,
               const std::shared_ptr<Spacetime> &st,
               const std::vector<SpectralFiber> &fibers,
@@ -378,7 +378,7 @@ certificate, never sampled independently.)doc")
            "plus the loop product keyed by all participating fibers, so a "
            "published TouchedStar invalidates only the loops touching the "
            "changed star.")
-      .def_static("projectiveRepresentative",
+      .def_static("projective_representative",
                   &FiberConnection::projectiveRepresentative,
                   py::arg("unitary"), py::arg("gate"),
                   "A canonical PU(3) class representative: V / (det "
@@ -387,28 +387,28 @@ certificate, never sampled independently.)doc")
                   "triangle-anchor certificate: a closed AnchorGate raises, "
                   "because rank three plus an accepted transport is not a "
                   "licence to emit a colour datum.")
-      .def_static("adjointRepresentation",
+      .def_static("adjoint_representation",
                   &FiberConnection::adjointRepresentation, py::arg("unitary"),
                   "The faithful PU(3) image of a 3x3 unitary on the "
                   "traceless octet (ColorFiber conventions; center-blind).")
-      .def("fundamentalLift", &FiberConnection::fundamentalLift,
+      .def("fundamental_lift", &FiberConnection::fundamentalLift,
            py::arg("links"), py::arg("gate"), py::arg("base_branch") = 0,
            "Continue a cube-root branch along the links from the declared "
            "base branch and record the accumulated Z3 center sector. Gated "
            "on the triangle-anchor certificate: a closed AnchorGate reports "
            "valid=False carrying the gate's own refusal reason.")
-      .def("closedFamilyWinding", &FiberConnection::closedFamilyWinding,
+      .def("closed_family_winding", &FiberConnection::closedFamilyWinding,
            py::arg("family"),
            "Integer determinant winding of a closed transport family "
            "(cyclic samples); invalidated when a gap/rank closes or a "
            "phase step reaches pi.")
-      .def("openSegmentWinding", &FiberConnection::openSegmentWinding,
+      .def("open_segment_winding", &FiberConnection::openSegmentWinding,
            py::arg("segment"), py::arg("closure"),
            "Relative determinant winding of an open cobordism segment "
            "under the declared closure (matched-reference or endpoint "
            "trivializations), with the specification recorded; unknown "
            "when no closure is declared.")
-      .def_static("fiberKey", &FiberConnection::fiberKey, py::arg("fiber"),
+      .def_static("fiber_key", &FiberConnection::fiberKey, py::arg("fiber"),
                   "Order-independent key of a fiber (Fingerprint over its "
                   "deduplicated cell-vertex-id set).");
 }

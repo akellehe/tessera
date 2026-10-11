@@ -67,16 +67,16 @@ def whole_built():
 
 
 def lengths(node):
-    return [complex(e.getLength())
-            for e in node.spacetime().getEdgeList().toVector()]
+    return [complex(e.get_length())
+            for e in node.spacetime().get_edge_list().to_vector()]
 
 
 def first_input_edge(node):
     vertices = {int(v) for v in node.inputs[0].vertices}
     return next(
-        edge for edge in node.spacetime().getEdgeList().toVector()
-        if int(edge.getSource().getId()) in vertices
-        and int(edge.getTarget().getId()) in vertices)
+        edge for edge in node.spacetime().get_edge_list().to_vector()
+        if int(edge.get_source().get_id()) in vertices
+        and int(edge.get_target().get_id()) in vertices)
 
 
 def test_no_cases_is_the_single_target_unchanged():
@@ -138,7 +138,7 @@ def test_case_reads_restore_the_exact_square_root_branch():
     """Restoring l^2 through sqrt must not replace a live length by -l."""
     node = built(EXTRA[:1])
     edge = first_input_edge(node)
-    edge.setLength(-complex(edge.getLength()))
+    edge.set_length(-complex(edge.get_length()))
     before = lengths(node)
     node.two_body_residual_over_cases()
     assert lengths(node) == before
@@ -147,9 +147,9 @@ def test_case_reads_restore_the_exact_square_root_branch():
 def test_duplicate_case_edges_are_refused_before_they_can_restore_wrong():
     node = built()
     edge = first_input_edge(node)
-    source = int(edge.getSource().getId())
-    target = int(edge.getTarget().getId())
-    squared = complex(edge.getLength()) ** 2
+    source = int(edge.get_source().get_id())
+    target = int(edge.get_target().get_id())
+    squared = complex(edge.get_length()) ** 2
     chi = np.asarray(node.two_body_target().chi)
     with pytest.raises(ValueError, match="repeats boundary edge"):
         node.set_two_body_cases([(

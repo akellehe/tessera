@@ -204,13 +204,13 @@ void register_cobordism_level_recursion(py::module_ &m) {
                   "certificates. Rank decisions are made at the tolerance, and "
                   "a selection that names no invariant subspace is refused by "
                   "name.")
-      .def_static("overPencil", &LevelRecursion::overPencil, py::arg("pencil"),
+      .def_static("over_pencil", &LevelRecursion::overPencil, py::arg("pencil"),
                   py::arg("metric"), py::arg("dimension"),
                   py::arg("declaration"),
                   "Build over an explicit pencil (A, M), flat row-major. An "
                   "empty metric is the identity, so the microscopic pencil is "
                   "A - lambda I.")
-      .def_static("overSpacetime", &LevelRecursion::overSpacetime,
+      .def_static("over_spacetime", &LevelRecursion::overSpacetime,
                   py::arg("spacetime"), py::arg("degree"),
                   py::arg("metric_source"), py::arg("declaration"),
                   "Build over a triangulation's Hodge operator at a degree, "

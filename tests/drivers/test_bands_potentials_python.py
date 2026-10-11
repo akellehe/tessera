@@ -87,8 +87,8 @@ class TestNonlocalProjector:
         base, explicit = A - sigma * M, A - sigma * M + beta @ D @ beta.T
         n = cell.size
         update = cob.LowRankUpdate(list(base.ravel()), n)
-        update.setUpdate(list((beta @ D).ravel()), list(beta.T.conj().ravel()), 2)
-        assert update.updateRank == 2 and update.spansAffectedChange(list(explicit.ravel()))
+        update.set_update(list((beta @ D).ravel()), list(beta.T.conj().ravel()), 2)
+        assert update.update_rank == 2 and update.spans_affected_change(list(explicit.ravel()))
 
         vector = M @ rng.normal(size=n)
         for _ in range(80):

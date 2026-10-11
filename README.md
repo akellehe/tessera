@@ -175,11 +175,11 @@ Build a 4D Lorentzian spacetime, thermalize it with CDT, and export a rotating G
 import tessera
 
 metric = tessera.Metric(
-    coordinateFree=True,
-    signature=tessera.Signature(dimensions=4, signatureType=tessera.Lorentzian),
+    coordinate_free=True,
+    signature=tessera.Signature(dimensions=4, signature_type=tessera.Lorentzian),
 )
 st = tessera.Spacetime(
-    metric=metric, spacetimeType=tessera.CDT,
+    metric=metric, spacetime_type=tessera.CDT,
     alpha=1.0, a=1.0,
     foliation=tessera.PREFERRED, topology=tessera.Toroid(),
 )
@@ -187,7 +187,7 @@ st.build(500)
 
 cdt = tessera.CDTSimulation(
     spacetime=st, k0=2.2, k4=0.5, delta=0.6,
-    epsilon=0.02, targetN41=st.getN41(),
+    epsilon=0.02, target_n41=st.get_n41(),
 )
 cdt.tune()
 cdt.sweep(100)
@@ -227,18 +227,18 @@ sources curvature around itself.
 
 ```python
 matter = tessera.MatterConfiguration()
-matter.setWorldlineMass(center_vertex, mass=1.0, spacetime=st)
+matter.set_worldline_mass(center_vertex, mass=1.0, spacetime=st)
 
 solver = tessera.ReggeSolver(st, matter)
 
-S = solver.totalAction()            # S_grav + S_matter
-F = solver.actionGradientNorm()     # sum_e |dS/d(l^2_e)|^2, zero on a solution
+S = solver.total_action()            # S_grav + S_matter
+F = solver.action_gradient_norm()     # sum_e |dS/d(l^2_e)|^2, zero on a solution
 ```
 
 `F` is the stationarity residual, and it rather than the action is what a
 relaxation drives to zero: the action is unbounded below and diverges if
-descended. `actionGradientExact` returns the same gradient per edge,
-analytically and in one pass, for the gravitational term alone; `matterAction`
+descended. `action_gradient_exact` returns the same gradient per edge,
+analytically and in one pass, for the gravitational term alone; `matter_action`
 carries the proper-time term. `examples/curvature_slice_gif.py` assembles both
 into the residual and minimizes it as a least-squares problem, bounding each
 edge so its `l^2` keeps its sign and no relaxation step alters the causal
@@ -273,22 +273,22 @@ Three spatial topologies for the foliated slices. Swap the last argument to the 
 
 ```python
 metric = tessera.Metric(
-    coordinateFree=True,
-    signature=tessera.Signature(dimensions=4, signatureType=tessera.Lorentzian),
+    coordinate_free=True,
+    signature=tessera.Signature(dimensions=4, signature_type=tessera.Lorentzian),
 )
 
 # Toroid (T^3 x S^1) -- periodic in space and time, default
-st = tessera.Spacetime(metric=metric, spacetimeType=tessera.CDT,
+st = tessera.Spacetime(metric=metric, spacetime_type=tessera.CDT,
                      alpha=1.0, a=1.0, foliation=tessera.PREFERRED,
                      topology=tessera.Toroid())
 
 # Sphere (S^3 x S^1) -- natural for de Sitter cosmology
-st = tessera.Spacetime(metric=metric, spacetimeType=tessera.CDT,
+st = tessera.Spacetime(metric=metric, spacetime_type=tessera.CDT,
                      alpha=1.0, a=1.0, foliation=tessera.PREFERRED,
                      topology=tessera.Sphere())
 
 # Cylinder (Sigma x [0,T]) -- open time boundaries for transition amplitudes
-st = tessera.Spacetime(metric=metric, spacetimeType=tessera.CDT,
+st = tessera.Spacetime(metric=metric, spacetime_type=tessera.CDT,
                      alpha=1.0, a=1.0, foliation=tessera.PREFERRED,
                      topology=tessera.Cylinder())
 ```

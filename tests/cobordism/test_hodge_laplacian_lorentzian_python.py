@@ -57,7 +57,7 @@ DIAGONAL = cob.HodgeMetricSource.DiagonalWeights
 def _hodge(spacetime, weights=None, source=DIAGONAL):
     """The diagonal-weight Hodge operator this module's anchors are taken of."""
     if weights is None:
-        weights = cob.HodgeLaplacian.defaultWeightConvention()
+        weights = cob.HodgeLaplacian.default_weight_convention()
     return cob.HodgeLaplacian(spacetime, weights, source)
 
 TOL = 1e-7  # near-kernel threshold (|lambda| < TOL counts as harmonic)
@@ -73,23 +73,23 @@ def _from_simplices(num_vertices, simplices):
     metric = tessera.Metric(True, sig)
     st = tessera.Spacetime(metric, tessera.HERMITIAN_WEIGHTED, 1.0, 1.0,
                            tessera.PREFERRED, tessera.Toroid())
-    verts = [st.createVertex(i) for i in range(num_vertices)]
+    verts = [st.create_vertex(i) for i in range(num_vertices)]
     for simplex in simplices:
-        st.createSimplex([verts[i] for i in simplex])
+        st.create_simplex([verts[i] for i in simplex])
     return st
 
 
 def _edge(st, a, b):
-    for e in st.getEdgeList().toVector():
-        if {e.getSource().getId(), e.getTarget().getId()} == {a, b}:
+    for e in st.get_edge_list().to_vector():
+        if {e.get_source().get_id(), e.get_target().get_id()} == {a, b}:
             return e
     raise KeyError((a, b))
 
 
 def _set_all_spacelike(st, l2=1.0):
-    for e in st.getEdgeList().toVector():
-        e.setLength(cmath.sqrt(complex(l2)))
-        e.setPhase(0.0)
+    for e in st.get_edge_list().to_vector():
+        e.set_length(cmath.sqrt(complex(l2)))
+        e.set_phase(0.0)
     return st
 
 
@@ -102,7 +102,7 @@ def _triangle_one_timelike(alpha):
     """The 3-cycle with edge (1,2) timelike: l^2 = -alpha^2 (signed volume
     -alpha); edges (0,1),(0,2) spacelike (l^2 = 1)."""
     st = _triangle_cycle()
-    _edge(st, 1, 2).setLength(cmath.sqrt(complex(-(alpha ** 2))))
+    _edge(st, 1, 2).set_length(cmath.sqrt(complex(-(alpha ** 2))))
     return st
 
 
@@ -129,7 +129,7 @@ def _filled_square_timelike(alpha):
     """The filled square with its shared diagonal (0,2) timelike — exercises the
     indefinite d'Alembertian on a both-terms (d_1 and d_2) k=1 operator."""
     st = _filled_square()
-    _edge(st, 0, 2).setLength(cmath.sqrt(complex(-(alpha ** 2))))
+    _edge(st, 0, 2).set_length(cmath.sqrt(complex(-(alpha ** 2))))
     return st
 
 
@@ -158,17 +158,17 @@ def _torus_lorentzian(alpha):
     ticket's "set some edges' squaredLength < 0 via setSquaredLength" on a real
     (CDT-built), both-d_1-and-d_2-terms complex. Returns (spacetime, num_timelike)."""
     st = _torus_raw()
-    edges = sorted(st.getEdgeList().toVector(),
-                   key=lambda e: tuple(sorted((e.getSource().getId(),
-                                               e.getTarget().getId()))))
+    edges = sorted(st.get_edge_list().to_vector(),
+                   key=lambda e: tuple(sorted((e.get_source().get_id(),
+                                               e.get_target().get_id()))))
     n_time = 0
     for i, e in enumerate(edges):
-        e.setPhase(0.0)
+        e.set_phase(0.0)
         if i % 3 == 0:  # every third edge is timelike
-            e.setLength(cmath.sqrt(complex(-(alpha ** 2))))
+            e.set_length(cmath.sqrt(complex(-(alpha ** 2))))
             n_time += 1
         else:
-            e.setLength(cmath.sqrt(complex(1.0)))
+            e.set_length(cmath.sqrt(complex(1.0)))
     return st, n_time
 
 
@@ -176,11 +176,11 @@ def _torus_lorentzian(alpha):
 # helpers
 # --------------------------------------------------------------------------- #
 def _betti(st, k):
-    return cob.ChainComplex.fromSpacetime(st).bettiNumbers()[k]
+    return cob.ChainComplex.from_spacetime(st).betti_numbers()[k]
 
 
 def _nk(st, k):
-    return cob.ChainComplex.fromSpacetime(st).numSimplices(k)
+    return cob.ChainComplex.from_spacetime(st).num_simplices(k)
 
 
 def _lor_matrix(st, k, metric=True):
@@ -201,7 +201,7 @@ def _near_kernel_count(st, k, metric=True, tol=TOL):
 def _null_norms(st, k, metric=True, tol=1e-9):
     # Complex-typed; with the V^2 weights on real signed l^2 the indefinite norm
     # is REAL. Assert that (stronger than assuming) and hand back the real part.
-    norms = np.array(_hodge(st).nullNorms(k, tol, metric),
+    norms = np.array(_hodge(st).null_norms(k, tol, metric),
                      dtype=complex)
     np.testing.assert_allclose(norms.imag, 0.0, atol=1e-9)
     return norms.real
@@ -437,7 +437,7 @@ class TestLorentzianDegreeParameterization(unittest.TestCase):
         for call in (lambda: hl.eigenvalues(-1),
                      lambda: hl.eigenvectors(-1),
                      lambda: hl.harmonics(-1),
-                     lambda: hl.nullNorms(-1),
+                     lambda: hl.null_norms(-1),
                      lambda: hl.laplacian(-1, True)):
             with self.subTest(call=call):
                 with self.assertRaises(RuntimeError):
@@ -450,7 +450,7 @@ class TestLorentzianDegreeParameterization(unittest.TestCase):
                 self.assertEqual(hl.eigenvalues(k), [])
                 self.assertEqual(hl.eigenvectors(k), [])
                 self.assertEqual(hl.harmonics(k), [])
-                self.assertEqual(hl.nullNorms(k), [])
+                self.assertEqual(hl.null_norms(k), [])
                 self.assertEqual(hl.laplacian(k, True), [])
 
     def test_metric_false_is_positive_combinatorial(self):
@@ -478,9 +478,9 @@ class TestDegreeZeroLorentzian(unittest.TestCase):
         return _lor_matrix(st, 0, metric)
 
     def _oracle(self, st, metric=True):
-        cc = cob.ChainComplex.fromSpacetime(st)
-        n0, n1 = cc.numSimplices(0), cc.numSimplices(1)
-        d1 = np.array(cc.boundaryMatrix(1),
+        cc = cob.ChainComplex.from_spacetime(st)
+        n0, n1 = cc.num_simplices(0), cc.num_simplices(1)
+        d1 = np.array(cc.boundary_matrix(1),
                       dtype=float).reshape(n0, n1).astype(complex)
         w1 = (np.array(_hodge(st).weights(1), dtype=complex)
               if metric else np.ones(n1, dtype=complex))
@@ -533,7 +533,7 @@ class TestDegreeZeroLorentzian(unittest.TestCase):
         # z = rho e^{i theta} on one edge: L_0 goes genuinely complex (and
         # complex-symmetric rather than Hermitian) but still annihilates 1.
         st = _triangle_cycle()
-        _edge(st, 1, 2).setLength(cmath.sqrt(2.4 * cmath.exp(1.1j)))
+        _edge(st, 1, 2).set_length(cmath.sqrt(2.4 * cmath.exp(1.1j)))
         L = self._l0(st)
         self.assertGreater(np.max(np.abs(L.imag)), 1e-2)
         np.testing.assert_allclose(L, L.T, atol=1e-14)

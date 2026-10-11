@@ -47,7 +47,7 @@ class TestVolumeStability(unittest.TestCase):
         complex is small.
         """
         st = make_spacetime(n_simplices=50)
-        target = st.getTopSimplexCount()
+        target = st.get_top_simplex_count()
         cdt = tessera.CDTSimulation(st, 2.0, 0.5, 0.6, 0.05, target)
 
         # Run tuning sweeps
@@ -57,7 +57,7 @@ class TestVolumeStability(unittest.TestCase):
         volumes = []
         for _ in range(20):
             cdt.sweep()
-            volumes.append(st.getTopSimplexCount())
+            volumes.append(st.get_top_simplex_count())
 
         avg_volume = np.mean(volumes)
         # Volume should stay in the same order of magnitude as target
@@ -90,7 +90,7 @@ class TestVolumeProfileShape(unittest.TestCase):
         a quantitative cos^4 fit, but the qualitative features should be present.
         """
         st = make_spacetime(n_simplices=500)
-        target = st.getTopSimplexCount()
+        target = st.get_top_simplex_count()
         cdt = tessera.CDTSimulation(st, 2.0, 0.5, 0.6, 1.0 / max(target, 1), target)
 
         # Thermalize
@@ -102,7 +102,7 @@ class TestVolumeProfileShape(unittest.TestCase):
         for _ in range(20):
             for _ in range(5):
                 cdt.sweep()
-            profiles.append(cdt.getVolumeProfile())
+            profiles.append(cdt.get_volume_profile())
 
         # Average profiles
         max_len = max(len(p) for p in profiles)
@@ -157,7 +157,7 @@ class TestPhaseStructure(unittest.TestCase):
         for _ in range(50):
             cdt.sweep()
 
-        profile = cdt.getVolumeProfile()
+        profile = cdt.get_volume_profile()
         if len(profile) == 0:
             self.skipTest("Empty profile")
 
@@ -190,7 +190,7 @@ class TestPhaseStructure(unittest.TestCase):
             for _ in range(30):
                 cdt.sweep()
 
-            profile = cdt.getVolumeProfile()
+            profile = cdt.get_volume_profile()
             profiles[name] = profile
             print(f"Phase {name}: {len(profile)} slices, "
                   f"max={max(profile) if profile else 0}, "
@@ -212,12 +212,12 @@ class TestEachTopologySimulates(unittest.TestCase):
         st = make_spacetime(topology=topology, n_simplices=20)
         cdt = tessera.CDTSimulation(st, 2.0, 0.5, 0.6, 1.0 / max(50, 1), 50)
 
-        initial_count = st.getTopSimplexCount()
+        initial_count = st.get_top_simplex_count()
         total_accepted = 0
         for _ in range(3):
             total_accepted += cdt.sweep()
 
-        profile = cdt.getVolumeProfile()
+        profile = cdt.get_volume_profile()
         self.assertGreater(len(profile), 0,
                            f"{name}: Volume profile should be non-empty")
         self.assertGreater(sum(profile), 0,

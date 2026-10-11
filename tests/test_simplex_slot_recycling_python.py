@@ -23,15 +23,15 @@ def _spacetime(seed=20260909, n_simplices=1600):
     sig = tessera.Signature(4, tessera.Lorentzian)
     spacetime = tessera.Spacetime(tessera.Metric(True, sig), tessera.CDT,
                                   1.0, 1.0, tessera.PREFERRED, tessera.Toroid())
-    spacetime.setSeed(seed)
+    spacetime.set_seed(seed)
     spacetime.build(n_simplices)
     return spacetime
 
 
 def _chain(spacetime, target=None, seed=20260909):
-    target = target or spacetime.getN41()
+    target = target or spacetime.get_n41()
     cdt = tessera.CDTSimulation(spacetime, 2.2, 0.5, 0.6, 1.0 / target, target)
-    cdt.setSeed(seed)
+    cdt.set_seed(seed)
     return cdt
 
 
@@ -47,14 +47,14 @@ class TestSimplexSlotRecycling(unittest.TestCase):
         cdt.tune()
         cdt.sweep(2000)
 
-        live = len(spacetime.getSimplices())
-        storage = spacetime.simplexStorageSize()
-        free = spacetime.freeSimplexSlotCount()
+        live = len(spacetime.get_simplices())
+        storage = spacetime.simplex_storage_size()
+        free = spacetime.free_simplex_slot_count()
 
         # Every slot is either holding a live simplex or waiting on the free
         # list; the two together account for the whole deque.
         self.assertGreaterEqual(storage, live)
-        self.assertLessEqual(storage - live, free + spacetime.pendingSimplexSlotCount())
+        self.assertLessEqual(storage - live, free + spacetime.pending_simplex_slot_count())
         # Without reuse a 2000-sweep chain allocates many times its live count.
         self.assertLess(storage, live * 2)
 
@@ -66,10 +66,10 @@ class TestSimplexSlotRecycling(unittest.TestCase):
         cdt = _chain(spacetime)
         cdt.tune()
         cdt.sweep(2000)
-        first_excess = spacetime.simplexStorageSize() - len(spacetime.getSimplices())
+        first_excess = spacetime.simplex_storage_size() - len(spacetime.get_simplices())
 
         cdt.sweep(4000)
-        later_excess = spacetime.simplexStorageSize() - len(spacetime.getSimplices())
+        later_excess = spacetime.simplex_storage_size() - len(spacetime.get_simplices())
 
         # The excess is one sweep of churn plus the free list, not a running
         # total of everything the chain has ever created.
@@ -81,7 +81,7 @@ class TestSimplexSlotRecycling(unittest.TestCase):
         cdt = _chain(spacetime)
         cdt.tune()
         cdt.sweep(200)
-        self.assertEqual(spacetime.pendingSimplexSlotCount(), 0)
+        self.assertEqual(spacetime.pending_simplex_slot_count(), 0)
 
     def test_reclaim_is_idempotent_and_reports_what_it_released(self):
         spacetime = _spacetime()
@@ -89,8 +89,8 @@ class TestSimplexSlotRecycling(unittest.TestCase):
         cdt.tune()
         cdt.sweep(200)
         # sweep() already reclaimed, so there is nothing left to release.
-        self.assertEqual(spacetime.reclaimSimplexSlots(), 0)
-        self.assertEqual(spacetime.reclaimSimplexSlots(), 0)
+        self.assertEqual(spacetime.reclaim_simplex_slots(), 0)
+        self.assertEqual(spacetime.reclaim_simplex_slots(), 0)
 
     # Marked slow: builds a 1600-simplex chain and sweeps it twice; about one
     # minute.
@@ -107,20 +107,20 @@ class TestSimplexSlotRecycling(unittest.TestCase):
         cdt2.tune()
         cdt2.sweep(1500)
 
-        self.assertEqual(first.getN41(), second.getN41())
-        self.assertEqual(first.getN32(), second.getN32())
+        self.assertEqual(first.get_n41(), second.get_n41())
+        self.assertEqual(first.get_n32(), second.get_n32())
 
     def test_free_slots_are_actually_handed_back_out(self):
         spacetime = _spacetime()
         cdt = _chain(spacetime)
         cdt.tune()
         cdt.sweep(500)
-        free_before = spacetime.freeSimplexSlotCount()
-        storage_before = spacetime.simplexStorageSize()
+        free_before = spacetime.free_simplex_slot_count()
+        storage_before = spacetime.simplex_storage_size()
         cdt.sweep(500)
         # If the free list were never drawn from, the deque would have to grow
         # by every simplex the second batch created.
-        growth = spacetime.simplexStorageSize() - storage_before
+        growth = spacetime.simplex_storage_size() - storage_before
         self.assertLess(growth, storage_before)
         self.assertGreaterEqual(free_before, 0)
 

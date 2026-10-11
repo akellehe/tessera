@@ -8,8 +8,8 @@ the cell count. Six draws -- the driver's default -- is about 2% coverage, after
 which a run reports itself combinatorially stationary (#987, #1010).
 
 Worse, only ``AddMove`` uses the payload seed to choose its site.
-``RemoveMove`` calls ``getRandomVertex()`` and ``FlipMove``/``IFlipMove`` call
-``getRandomTopSimplex()``; those no-argument overloads read ``Spacetime::rng``,
+``RemoveMove`` calls ``get_random_vertex()`` and ``FlipMove``/``IFlipMove`` call
+``get_random_top_simplex()``; those no-argument overloads read ``Spacetime::rng``,
 seeded from ``std::random_device``, and every candidate is scored on a freshly
 built complex. So three of the four draw sites that NO seed controls -- very
 likely a direct cause of #579, "identical fresh processes diverge on same seed".
@@ -66,13 +66,13 @@ def expected_counts(spacetime):
     of that cell). inverse flip: one per (cell, edge of that cell). cone-out:
     one per top cell. cone-in: one per boundary facet.
     """
-    cells = [c for c in spacetime.getTopSimplices() if c is not None]
-    big = [c for c in cells if len(c.getVertices()) >= 3]
+    cells = [c for c in spacetime.get_top_simplices() if c is not None]
+    big = [c for c in cells if len(c.get_vertices()) >= 3]
     return {
         "add_at": len(big),
-        "remove_at": len(spacetime.getVertexList().toVector()),
-        "flip_at": sum(len(c.getVertices()) for c in big),
-        "iflip_at": sum(len(c.getEdges()) for c in big),
+        "remove_at": len(spacetime.get_vertex_list().to_vector()),
+        "flip_at": sum(len(c.get_vertices()) for c in big),
+        "iflip_at": sum(len(c.get_edges()) for c in big),
         "cone_out": len(cells),
         "cone_in": len(MC.boundary_facets(spacetime)),
     }
@@ -108,7 +108,7 @@ def test_dispositions_join_the_walk_only_when_asked():
     # One timelike cone per boundary facet, one disposition flip per edge.
     counts = by_kind(with_them)
     assert counts["cone_in_timelike"] == counts["cone_in"]
-    assert counts["flip_disposition"] == len(spacetime.getEdgeList().toVector())
+    assert counts["flip_disposition"] == len(spacetime.get_edge_list().to_vector())
 
 
 def test_no_candidate_is_offered_twice():
@@ -139,7 +139,7 @@ def test_every_site_names_cells_and_vertices_that_exist():
     """A site that does not resolve would be scored as a refusal forever."""
     node = host()
     spacetime = node.spacetime()
-    live = {int(v.getId()) for v in spacetime.getVertexList().toVector()}
+    live = {int(v.get_id()) for v in spacetime.get_vertex_list().to_vector()}
     for kind, site in MC.enumerate_move_specifications(spacetime, True):
         assert site, kind
         assert all(int(v) in live for v in site), (kind, site)
@@ -153,12 +153,12 @@ def test_stage_one_walks_the_space_when_asked_for_zero():
     accepted-move count is the observable difference.
     """
     walked = host()
-    before = len(walked.spacetime().getTopSimplices())
+    before = len(walked.spacetime().get_top_simplices())
     list(walked.run_stage1(max_steps=1, n_candidate_moves=0, max_lookahead=1))
     # The claim is that it RAN the walk, not that any move was improving: a
     # host may genuinely have no improving move, and that is not a failure.
     assert walked.accepted_move_count >= 0
-    assert len(walked.spacetime().getTopSimplices()) >= before - 1
+    assert len(walked.spacetime().get_top_simplices()) >= before - 1
 
 
 def test_an_exhaustive_pass_leaves_a_complex_that_still_enumerates():
@@ -174,7 +174,7 @@ def test_an_exhaustive_pass_leaves_a_complex_that_still_enumerates():
     after = node.spacetime()
     specifications = MC.enumerate_move_specifications(after)
     assert by_kind(specifications) == expected_counts(after)
-    live = {int(v.getId()) for v in after.getVertexList().toVector()}
+    live = {int(v.get_id()) for v in after.get_vertex_list().to_vector()}
     for _kind, site in specifications:
         assert all(int(v) in live for v in site)
 

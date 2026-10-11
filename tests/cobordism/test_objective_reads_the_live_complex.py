@@ -35,10 +35,10 @@ def _sphere4(jitter=True):
                      T.CDT, 1.0, 1.0, T.PREFERRED,
                      T.SimplexBoundarySphere(4))
     st.build()
-    for index, edge in enumerate(st.getEdgeList().toVector()):
+    for index, edge in enumerate(st.get_edge_list().to_vector()):
         z = (complex(1.0 + 0.017 * (index % 5), 0.013 * (1 + index % 4))
              if jitter else complex(1.0))
-        edge.setLength(cmath.sqrt(z))
+        edge.set_length(cmath.sqrt(z))
     return st
 
 
@@ -53,8 +53,8 @@ def _refined_ball4(n_refine=4, seed=3):
     st = T.Spacetime(T.Metric(True, T.Signature(4, T.Lorentzian)), T.CDT,
                      1.0, 1.0, T.PREFERRED, T.SolidSimplex(4))
     st.build()
-    for edge in st.getEdgeList().toVector():
-        edge.setLength(complex(1.0, 0.0))
+    for edge in st.get_edge_list().to_vector():
+        edge.set_length(complex(1.0, 0.0))
     applied = 0
     for step in range(seed, seed + n_refine * 4):
         move = T.AddMove(st, step, False, T.PachnerMode.PreGeometric, False)
@@ -62,9 +62,9 @@ def _refined_ball4(n_refine=4, seed=3):
             applied += 1
         if applied >= n_refine:
             break
-    for index, edge in enumerate(st.getEdgeList().toVector()):
+    for index, edge in enumerate(st.get_edge_list().to_vector()):
         z = complex(1.0 + 0.017 * (index % 5), 0.013 * (1 + index % 4))
-        edge.setLength(cmath.sqrt(z))
+        edge.set_length(cmath.sqrt(z))
     return st
 
 
@@ -82,7 +82,7 @@ def _fingerprint(st):
     The cell tuples keep their INTRINSIC stored order rather than being sorted,
     so an orientation flip shows up here rather than being normalized away.
 
-    The lattice is materialized to a fixpoint FIRST. `getFacets()` creates
+    The lattice is materialized to a fixpoint FIRST. `get_facets()` creates
     facets and wires coface links as a side effect, so a complex that has been
     scored has more simplices listed than one that has not -- through pure
     bookkeeping, with no geometry or topology added. Without this call a
@@ -90,12 +90,12 @@ def _fingerprint(st):
     reason alone, and the difference would look like a move that never
     happened.
     """
-    st.materializeFacets()
-    cells = [tuple(int(v.getId()) for v in s.getVertices())
-             for s in st.getSimplices()]
-    edges = [(int(e.getSource().getId()), int(e.getTarget().getId()),
-              complex(e.getLength()), complex(e.getPhase()))
-             for e in st.getEdgeList().toVector()]
+    st.materialize_facets()
+    cells = [tuple(int(v.get_id()) for v in s.get_vertices())
+             for s in st.get_simplices()]
+    edges = [(int(e.get_source().get_id()), int(e.get_target().get_id()),
+              complex(e.get_length()), complex(e.get_phase()))
+             for e in st.get_edge_list().to_vector()]
     return sorted(cells), sorted(edges, key=lambda row: row[:2])
 
 
@@ -107,14 +107,14 @@ def _top_cells(st):
 
       * stage 2 relaxes edge lengths IN PLACE, so lengths move while the node
         is still driving the very object handed to the constructor;
-      * `getFacets()` materializes lower faces as a side effect of being read,
+      * `get_facets()` materializes lower faces as a side effect of being read,
         so the simplex count grows through bookkeeping alone.
 
     Neither touches the top cells. Only surgery does.
     """
-    st.materializeFacets()
-    cells = [tuple(int(v.getId()) for v in s.getVertices())
-             for s in st.getSimplices()]
+    st.materialize_facets()
+    cells = [tuple(int(v.get_id()) for v in s.get_vertices())
+             for s in st.get_simplices()]
     if not cells:
         return []
     top = max(len(cell) for cell in cells)
@@ -158,7 +158,7 @@ class ObjectiveIsPureInTheComplexTest(unittest.TestCase):
     def test_materializing_the_skeleton_does_not_move_the_objective(self):
         """The #850 invariant.
 
-        `getFacets()` creates facets and wires coface links as a side effect,
+        `get_facets()` creates facets and wires coface links as a side effect,
         and `Simplex::dualVolume` walks those links, so an objective read
         before the lattice is complete could differ from one read after. It
         must not: materialization adds no geometry, so it may not change a
@@ -167,7 +167,7 @@ class ObjectiveIsPureInTheComplexTest(unittest.TestCase):
         st = _sphere4()
         node = _node(st)
         before = node.objective()
-        st.materializeFacets()
+        st.materialize_facets()
         self.assertEqual(node.objective(), before)
 
 

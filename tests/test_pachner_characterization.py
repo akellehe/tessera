@@ -18,15 +18,15 @@ but fill specific gaps that the refactor needs as a safety net:
   way that today's "Metropolis rejected" path does.
 
 * :class:`TestEdgeListMonotonic` — Pachner moves never delete edges
-  from the EdgeList.  ``createSimplex`` may add new edges (deduped),
-  ``removeSimplex`` does not cascade-delete.  The edge fingerprint set
+  from the EdgeList.  ``create_simplex`` may add new edges (deduped),
+  ``remove_simplex`` does not cascade-delete.  The edge fingerprint set
   before any accepted move must be a subset of the set after.
 
 * :class:`TestCofaceIntegrityAfterMove` — after every accepted move,
   every facet of every top simplex has the parent simplex in its
   coface list.  Today's tests don't systematically check this.
 
-* :class:`TestActionDeltaPerMove` — ``computeAction()`` before/after an
+* :class:`TestActionDeltaPerMove` — ``compute_action()`` before/after an
   accepted move equals the analytic prediction from
   ``(k0, k4, delta, epsilon)`` and the observed
   ``(dN0, dN41, dN32)``.  Already partially covered by
@@ -42,7 +42,7 @@ import tessera
 
 # Canonical move-type names, taken from the move classes rather than re-spelled,
 # so a rename cannot leave these loops silently driving nothing. Assertions on
-# moveType() deliberately keep their string literals: compared against these they
+# move_type() deliberately keep their string literals: compared against these they
 # could never fail.
 _ALL_MOVE_NAMES = (tessera.AddMove.MOVE_TYPE, tessera.RemoveMove.MOVE_TYPE,
                    tessera.FlipMove.MOVE_TYPE, tessera.IFlipMove.MOVE_TYPE,
@@ -65,27 +65,27 @@ def _make_cdt(d=4, n_simplices=200, k0=2.2, k4=0.5, delta=0.6,
     st = tessera.Spacetime(metric, tessera.CDT, 1.0, 1.0,
                            tessera.PREFERRED, tessera.Toroid())
     st.build(n_simplices)
-    tgt = target if target is not None else st.getN41()
+    tgt = target if target is not None else st.get_n41()
     cdt = tessera.CDTSimulation(st, k0, k4, delta, epsilon, tgt)
-    cdt.setRelabelVertices(relabel)
+    cdt.set_relabel_vertices(relabel)
     return cdt, st
 
 
 def _top_simplex_size(st):
     """Return d+1 (the vertex count of a top simplex) for this spacetime.
 
-    ``getTopVertexCount()`` returns ``signature.dimensions + 1`` directly --
+    ``get_top_vertex_count()`` returns ``signature.dimensions + 1`` directly --
     the engine's single source of truth for top-cell membership -- so it is
     O(1) and immune to the lazily-materialized lower-dimensional faces that
-    ``getSimplices()`` accumulates. A move's ``propose()`` inspects a simplex's
-    facets via ``getFacets()``, which creates and registers those
-    lower-dimensional facet simplices on demand; scanning ``getSimplices()``
+    ``get_simplices()`` accumulates. A move's ``propose()`` inspects a simplex's
+    facets via ``get_facets()``, which creates and registers those
+    lower-dimensional facet simplices on demand; scanning ``get_simplices()``
     for the top dimension is therefore order-dependent. (Using the *first*
     simplex's size here was the cause of an intermittent failure in
     TestStateUnchangedOnRejection: when a tetrahedron sorted first the snapshot
     began counting tetrahedra, which then grew as more facets materialized.)
     """
-    return st.getTopVertexCount()
+    return st.get_top_vertex_count()
 
 
 def _state_snapshot(st):
@@ -97,18 +97,18 @@ def _state_snapshot(st):
     """
     dPlus1 = _top_simplex_size(st)
     top_fps = frozenset(
-        hash(s) for s in st.getSimplices()
-        if len(s.getVertices()) == dPlus1
+        hash(s) for s in st.get_simplices()
+        if len(s.get_vertices()) == dPlus1
     )
-    edge_fps = frozenset(hash(e) for e in st.getEdgeList().toVector())
+    edge_fps = frozenset(hash(e) for e in st.get_edge_list().to_vector())
     vertex_ids = frozenset(
-        v.getId() for v in st.getVertexList().toVector()
+        v.get_id() for v in st.get_vertex_list().to_vector()
     )
     return {
-        "n0": st.getVertexCount(),
-        "n41": st.getN41(),
-        "n32": st.getN32(),
-        "n4": st.getTopSimplexCount(),
+        "n0": st.get_vertex_count(),
+        "n41": st.get_n41(),
+        "n32": st.get_n32(),
+        "n4": st.get_top_simplex_count(),
         "top_fps": top_fps,
         "edge_fps": edge_fps,
         "vertex_ids": vertex_ids,
@@ -194,14 +194,14 @@ class TestStateUnchangedOnRejection(unittest.TestCase):
 
 class TestEdgeInventoryDeltas(unittest.TestCase):
     """Edge-inventory characterization per move type.  Vertex relabeling
-    is disabled because ``swapVertexLabels`` rewrites edge fingerprints
+    is disabled because ``swap_vertex_labels`` rewrites edge fingerprints
     in place, which would corrupt fingerprint-based comparison.
 
     Locked-in behavior:
 
     * ``add``, ``flip``, ``iflip``, ``shift`` — edge fingerprint set
       monotonically grows.  ``Spacetime::removeSimplex`` does not
-      cascade-delete edges, and ``createSimplex`` deduplicates against
+      cascade-delete edges, and ``create_simplex`` deduplicates against
       ``EdgeList`` by fingerprint, so these moves only ever insert.
 
     * ``remove`` — deletes exactly the edges incident to the dropped
@@ -216,7 +216,7 @@ class TestEdgeInventoryDeltas(unittest.TestCase):
     """
 
     def _edge_fps(self, st):
-        return frozenset(hash(e) for e in st.getEdgeList().toVector())
+        return frozenset(hash(e) for e in st.get_edge_list().to_vector())
 
     def _check_monotonic_for(self, cdt, st, move_names, n_calls=80):
         """For the given move types only, assert edge fingerprint set
@@ -271,13 +271,13 @@ class TestEdgeInventoryDeltas(unittest.TestCase):
             # from the diff.
             edges_before = self._edge_fps(st)
             ids_before = frozenset(
-                v.getId() for v in st.getVertexList().toVector()
+                v.get_id() for v in st.get_vertex_list().to_vector()
             )
             if not cdt.remove():
                 continue
             edges_after = self._edge_fps(st)
             ids_after = frozenset(
-                v.getId() for v in st.getVertexList().toVector()
+                v.get_id() for v in st.get_vertex_list().to_vector()
             )
 
             # Exactly one vertex removed.
@@ -321,7 +321,7 @@ class TestCofaceIntegrityEventuallyConsistent(unittest.TestCase):
     simplex's facets have been queried does it appear in their coface
     lists.  After a Pachner move that creates new top simplices, those
     facets are not registered until something walks them — typically
-    the next ``getDualAdjacency`` call (which iterates every top
+    the next ``get_dual_adjacency`` call (which iterates every top
     simplex's facets).
 
     These tests check the post-walk invariant.  The refactor must
@@ -332,17 +332,17 @@ class TestCofaceIntegrityEventuallyConsistent(unittest.TestCase):
 
     def _walk_to_register_cofaces(self, st):
         """Trigger lazy facet/coface registration on every top simplex
-        by calling ``getDualAdjacency``."""
-        st.getDualAdjacency()
+        by calling ``get_dual_adjacency``."""
+        st.get_dual_adjacency()
 
     def _verify_coface_integrity(self, st):
         dPlus1 = _top_simplex_size(st)
-        for sigma in st.getSimplices():
-            if len(sigma.getVertices()) != dPlus1:
+        for sigma in st.get_simplices():
+            if len(sigma.get_vertices()) != dPlus1:
                 continue
-            for f in sigma.getFacets():
+            for f in sigma.get_facets():
                 self.assertIn(
-                    sigma, f.getCofaces(),
+                    sigma, f.get_cofaces(),
                     f"Facet missing parent in coface list: "
                     f"sigma={sigma}, facet={f}"
                 )
@@ -379,7 +379,7 @@ class TestCofaceIntegrityEventuallyConsistent(unittest.TestCase):
 
 
 class TestActionDeltaPerMove(unittest.TestCase):
-    """``computeAction()`` after an accepted move minus before equals
+    """``compute_action()`` after an accepted move minus before equals
     the analytic prediction:
 
         ΔS_Regge = -(k0 + 6*delta) * dN0
@@ -411,15 +411,15 @@ class TestActionDeltaPerMove(unittest.TestCase):
                         max_attempts=2000):
         method = getattr(cdt, move_name)
         for _ in range(max_attempts):
-            n0_b = st.getVertexCount()
-            n41_b = st.getN41()
-            n32_b = st.getN32()
-            S_b = cdt.computeAction()
+            n0_b = st.get_vertex_count()
+            n41_b = st.get_n41()
+            n32_b = st.get_n32()
+            S_b = cdt.compute_action()
             if method():
-                n0_a = st.getVertexCount()
-                n41_a = st.getN41()
-                n32_a = st.getN32()
-                S_a = cdt.computeAction()
+                n0_a = st.get_vertex_count()
+                n41_a = st.get_n41()
+                n32_a = st.get_n32()
+                S_a = cdt.compute_action()
                 dS_observed = S_a - S_b
                 dS_predicted = self._predict_delta_action(
                     n41_b, n0_a - n0_b, n41_a - n41_b, n32_a - n32_b,
@@ -439,7 +439,7 @@ class TestActionDeltaPerMove(unittest.TestCase):
         st = tessera.Spacetime(metric, tessera.CDT, 1.0, 1.0,
                                tessera.PREFERRED, tessera.Toroid())
         st.build(n_simplices)
-        target = st.getN41()
+        target = st.get_n41()
         cdt = tessera.CDTSimulation(
             st, self.K0, self.K4, self.DELTA, self.EPSILON, target, True
         )
@@ -480,25 +480,25 @@ class TestActionDeltaPerMove(unittest.TestCase):
 
 def _top_fingerprints(st):
     """Fingerprints of the top-dimensional simplices (robust to lazily
-    materialized lower-dimensional faces in getSimplices())."""
+    materialized lower-dimensional faces in get_simplices())."""
     top_size = _top_simplex_size(st)
-    return frozenset(hash(s) for s in st.getSimplices()
-                     if len(s.getVertices()) == top_size)
+    return frozenset(hash(s) for s in st.get_simplices()
+                     if len(s.get_vertices()) == top_size)
 
 
 def _bookkeeping(st):
     """The CDT bookkeeping that a rejected move must leave untouched: the
     vertex / N41 / N32 / N4 counts and the set of top-dimensional simplices.
-    Deliberately excludes the raw getSimplices() membership, which can grow
+    Deliberately excludes the raw get_simplices() membership, which can grow
     with benign lazily-materialized facets."""
-    return (st.getVertexCount(), st.getN41(), st.getN32(),
-            st.getTopSimplexCount(), _top_fingerprints(st))
+    return (st.get_vertex_count(), st.get_n41(), st.get_n32(),
+            st.get_top_simplex_count(), _top_fingerprints(st))
 
 
 class TestLazyFacetMaterializationIsBenign(unittest.TestCase):
-    """Inspecting a simplex's facets (via getFacets(), as every move's
+    """Inspecting a simplex's facets (via get_facets(), as every move's
     propose() does) materializes those facet simplices and registers them in
-    the spacetime, so getSimplices() can grow. That is a benign caching of real
+    the spacetime, so get_simplices() can grow. That is a benign caching of real
     faces: it must NOT change the CDT bookkeeping (vertex/N41/N32/N4 counts or
     the set of top-dimensional simplices). This is *why* a rejected move — which
     runs propose() but not apply() — leaves the bookkeeping intact even though
@@ -509,16 +509,16 @@ class TestLazyFacetMaterializationIsBenign(unittest.TestCase):
         cdt, st = _make_cdt()
         _grow(cdt, n=100)
         before = _bookkeeping(st)
-        simplices_before = len(st.getSimplices())
+        simplices_before = len(st.get_simplices())
 
-        # materializeFacets() forces facet materialization to a fixpoint — the
-        # same lazy getFacets() machinery a move's propose() triggers.
-        st.materializeFacets()
+        # materialize_facets() forces facet materialization to a fixpoint — the
+        # same lazy get_facets() machinery a move's propose() triggers.
+        st.materialize_facets()
 
         self.assertEqual(_bookkeeping(st), before,
                          "facet materialization changed the CDT bookkeeping")
         self.assertGreaterEqual(
-            len(st.getSimplices()), simplices_before,
+            len(st.get_simplices()), simplices_before,
             "materialization should only ever add face simplices")
 
     def test_top_simplex_size_is_robust_to_materialized_facets(self):
@@ -526,8 +526,8 @@ class TestLazyFacetMaterializationIsBenign(unittest.TestCase):
         # dimensions; _top_simplex_size must still report the true top (d+1=5).
         cdt, st = _make_cdt(d=4)
         _grow(cdt, n=100)
-        st.materializeFacets()
-        sizes = {len(s.getVertices()) for s in st.getSimplices()}
+        st.materialize_facets()
+        sizes = {len(s.get_vertices()) for s in st.get_simplices()}
         self.assertIn(5, sizes)            # top simplices present
         self.assertTrue(sizes - {5})       # and lower-dim faces too
         self.assertEqual(_top_simplex_size(st), 5)

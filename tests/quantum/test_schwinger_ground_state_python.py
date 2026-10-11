@@ -53,24 +53,24 @@ class TestSchwingerModelSolve(unittest.TestCase):
             cfg.g = 1.0
             cfg.m = m_over_g          # since g=1, m_over_g IS m
             cfg.L0 = L0
-            cfg.maxBondDim = 64
-            cfg.nSweeps = 8
+            cfg.max_bond_dim = 64
+            cfg.n_sweeps = 8
 
             result = SchwingerModel(cfg).solve()
             self.assertAlmostEqual(
-                result.operatorEnergy,
+                result.operator_energy,
                 e_ref,
                 places=8,
-                msg=f"N={N} m/g={m_over_g} L0={L0}: got {result.operatorEnergy} expected {e_ref}",
+                msg=f"N={N} m/g={m_over_g} L0={L0}: got {result.operator_energy} expected {e_ref}",
             )
             # Sanity: energy = operatorEnergy + constant by construction.
             self.assertAlmostEqual(
                 result.energy,
-                result.operatorEnergy + result.constant,
+                result.operator_energy + result.constant,
                 places=12,
             )
             # bondDim should never exceed what we asked for.
-            self.assertLessEqual(result.bondDim, cfg.maxBondDim)
+            self.assertLessEqual(result.bond_dim, cfg.max_bond_dim)
 
     def test_n20_runs_and_returns_diagnostics(self) -> None:
         """N=20 from the PLAN.md §5 spec — verify the run completes,
@@ -82,15 +82,15 @@ class TestSchwingerModelSolve(unittest.TestCase):
         cfg.g = 1.0
         cfg.m = 0.0
         cfg.L0 = 0.0
-        cfg.maxBondDim = 100
-        cfg.nSweeps = 12
+        cfg.max_bond_dim = 100
+        cfg.n_sweeps = 12
 
         r = SchwingerModel(cfg).solve()
         # Sign and order of magnitude: at this scale the GS is well below 0.
-        self.assertLess(r.operatorEnergy, -10.0)
-        self.assertGreater(r.bondDim, 0)
-        self.assertLessEqual(r.bondDim, cfg.maxBondDim)
-        self.assertAlmostEqual(r.energy, r.operatorEnergy + r.constant, places=12)
+        self.assertLess(r.operator_energy, -10.0)
+        self.assertGreater(r.bond_dim, 0)
+        self.assertLessEqual(r.bond_dim, cfg.max_bond_dim)
+        self.assertAlmostEqual(r.energy, r.operator_energy + r.constant, places=12)
 
     def test_default_config_rejected(self) -> None:
         """SchwingerModel.solve must reject a default-constructed config

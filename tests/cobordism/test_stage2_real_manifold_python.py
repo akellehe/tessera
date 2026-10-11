@@ -46,15 +46,15 @@ def _sphere4():
     st = T.Spacetime(T.Metric(True, sig), T.CDT, 1.0, 1.0, T.PREFERRED,
                      T.SimplexBoundarySphere(4))
     st.build()
-    for i, e in enumerate(st.getEdgeList().toVector()):
-        e.setLength(cmath.sqrt(complex(1.0 + 0.013 * (i % 5))))
+    for i, e in enumerate(st.get_edge_list().to_vector()):
+        e.set_length(cmath.sqrt(complex(1.0 + 0.013 * (i % 5))))
     return st
 
 
 def _hinges(st):
-    sims = list(st.getSimplices())
-    hinge_nverts = max(len(s.getVertices()) for s in sims) - 2
-    return [s for s in sims if len(s.getVertices()) == hinge_nverts]
+    sims = list(st.get_simplices())
+    hinge_nverts = max(len(s.get_vertices()) for s in sims) - 2
+    return [s for s in sims if len(s.get_vertices()) == hinge_nverts]
 
 
 def _assert_mixed_hinge_regime(test, st):
@@ -63,13 +63,13 @@ def _assert_mixed_hinge_regime(test, st):
     direction is complex and the real-axis restriction is load-bearing."""
     T.ReggeSolver(st, T.MatterConfiguration())  # materialize the hinges
     n_complex = sum(1 for h in _hinges(st)
-                    if abs(complex(h.deficitAngle()).imag) > 1e-9)
+                    if abs(complex(h.deficit_angle()).imag) > 1e-9)
     test.assertGreater(n_complex, 0, "fixture lost its mixed-hinge regime")
 
 
 def _max_abs_im(st):
-    return max(abs(complex(e.getLength()**2).imag)
-               for e in st.getEdgeList().toVector())
+    return max(abs(complex(e.get_length()**2).imag)
+               for e in st.get_edge_list().to_vector())
 
 
 class ComplexSquaredDirectionTest(unittest.TestCase):
@@ -82,44 +82,44 @@ class ComplexSquaredDirectionTest(unittest.TestCase):
         # derivative. A centered imaginary difference taken exactly on the real
         # Lorentzian sheet measures the discontinuity between continuations,
         # not the local derivative returned by the analytic formulas.
-        for index, edge in enumerate(st.getEdgeList().toVector()):
-            z = complex(edge.getLength() ** 2) + 1j * (0.03 + 0.002 * index)
-            edge.setLength(cmath.sqrt(z))
+        for index, edge in enumerate(st.get_edge_list().to_vector()):
+            z = complex(edge.get_length() ** 2) + 1j * (0.03 + 0.002 * index)
+            edge.set_length(cmath.sqrt(z))
         # Hand-set one edge timelike: every base triangle wedge against it has
         # a cofactor pair straddling zero — the m=1 crossing branch (#582) —
         # so the action gradient/Hessian are genuinely complex here.
-        st.getEdgeList().toVector()[3].setLength(cmath.sqrt(complex(-0.8, 0.07)))
+        st.get_edge_list().to_vector()[3].set_length(cmath.sqrt(complex(-0.8, 0.07)))
         rs = T.ReggeSolver(st, T.MatterConfiguration())
         _assert_mixed_hinge_regime(self, st)
 
-        g = np.asarray(rs.actionGradientExact(), dtype=complex)
-        H = np.asarray(rs.actionHessianExact(), dtype=complex)
+        g = np.asarray(rs.action_gradient_exact(), dtype=complex)
+        H = np.asarray(rs.action_hessian_exact(), dtype=complex)
         self.assertGreater(np.max(np.abs(g.imag)), 1e-9,
                            "gradient must be genuinely complex here")
         # The engine subtracts this full complex ascent displacement from z.
         direction = 2.0 * beta * (np.conj(H) @ g)
 
-        edges = st.getEdgeList().toVector()
+        edges = st.get_edge_list().to_vector()
 
         def objective():
             solver = T.ReggeSolver(st, T.MatterConfiguration())
             return beta * sum(abs(c) ** 2
-                              for c in solver.actionGradientExact())
+                              for c in solver.action_gradient_exact())
 
         h = 1e-6
         fd = np.zeros(len(edges), dtype=complex)
         for i, e in enumerate(edges):
-            original = complex(e.getLength())
+            original = complex(e.get_length())
             z0 = original * original
-            e.setLength(cmath.sqrt(z0 + h))
+            e.set_length(cmath.sqrt(z0 + h))
             fp = objective()
-            e.setLength(cmath.sqrt(z0 - h))
+            e.set_length(cmath.sqrt(z0 - h))
             fm = objective()
-            e.setLength(cmath.sqrt(z0 + 1j * h))
+            e.set_length(cmath.sqrt(z0 + 1j * h))
             fip = objective()
-            e.setLength(cmath.sqrt(z0 - 1j * h))
+            e.set_length(cmath.sqrt(z0 - 1j * h))
             fim = objective()
-            e.setLength(original)
+            e.set_length(original)
             fd[i] = ((fp - fm) / (2 * h)
                      + 1j * (fip - fim) / (2 * h))
 
@@ -137,15 +137,15 @@ class ComplexStageTwoContractTest(unittest.TestCase):
         opt = cob.MultiCobordism(host, [[1, w, w * w], [1, w * w, w]],
                                  [[1, w, w * w]], degrees=[3], gamma=1.0,
                                  seed=seed)
-        opt.seed_inputs([v.getId()
-                         for v in host.getVertexList().toVector()][:2])
+        opt.seed_inputs([v.get_id()
+                         for v in host.get_vertex_list().to_vector()][:2])
         return opt
 
     def test_stage1_stage2_on_cone_crossing_host(self):
         host = _closed_s4(n_refine=8, seed=3)
-        edges = host.getEdgeList().toVector()
-        edges[5].setLength(cmath.sqrt(complex(complex(-0.8, 0.0))))   # timelike
-        edges[9].setLength(cmath.sqrt(complex(complex(0.01, 0.0))))   # inside the null band
+        edges = host.get_edge_list().to_vector()
+        edges[5].set_length(cmath.sqrt(complex(complex(-0.8, 0.0))))   # timelike
+        edges[9].set_length(cmath.sqrt(complex(complex(0.01, 0.0))))   # inside the null band
         opt = self._node(host)
         _assert_mixed_hinge_regime(self, host)
         # No exception may surface from any trial either stage constructs.
@@ -160,8 +160,8 @@ class ComplexStageTwoContractTest(unittest.TestCase):
             self.assertTrue(opt.last_stage2_stationary)
         # The complex-step stage 2 may leave the real-l^2 axis by design; what
         # must hold is that every edge stays finite and classifiable.
-        for e in opt.st.getEdgeList().toVector():
-            l = complex(e.getLength())
+        for e in opt.st.get_edge_list().to_vector():
+            l = complex(e.get_length())
             self.assertTrue(cmath.isfinite(l))
             # Classifiable means EXACTLY ONE of the five cases holds. Since
             # #870 the definite three are not exhaustive: an edge off the
@@ -169,15 +169,15 @@ class ComplexStageTwoContractTest(unittest.TestCase):
             # degenerate. Stage 2 may legitimately leave an edge mixed -- the
             # invariant is that it is never in none of the cases nor in two at
             # once, which the old three-way `or` could not express.
-            cases = (e.isSpacelike(), e.isTimelike(), e.isNull(),
-                     e.isMixed(), e.isDegenerate())
+            cases = (e.is_spacelike(), e.is_timelike(), e.is_null(),
+                     e.is_mixed(), e.is_degenerate())
             self.assertEqual(sum(bool(c) for c in cases), 1, cases)
 
     def test_descent_descends_through_the_crossing_regime(self):
         # The objective genuinely decreases while hinges cross the cone — the
         # regime the interim guard could only veto.
         host = _closed_s4(n_refine=8, seed=3)
-        host.getEdgeList().toVector()[5].setLength(cmath.sqrt(complex(complex(-0.8, 0.0))))
+        host.get_edge_list().to_vector()[5].set_length(cmath.sqrt(complex(complex(-0.8, 0.0))))
         opt = self._node(host)
         trace = opt.run_stage2(beta=1.0, max_iters=6, alpha0=0.05,
                                tolerance=1e-9)
@@ -201,8 +201,8 @@ class CausalSpecimenContinuationTest(unittest.TestCase):
         node = rebuild_joint_node(dump, seed=11001000)
         st = node.st
         # The specimen is causal: its recorded re_min < 0 must survive rebuild.
-        re_min = min(complex(e.getLength()**2).real
-                     for e in st.getEdgeList().toVector())
+        re_min = min(complex(e.get_length()**2).real
+                     for e in st.get_edge_list().to_vector())
         self.assertLess(re_min, 0.0)
         self.assertEqual(_max_abs_im(st), 0.0)  # dumps carry Im == 0
         trace = node.run_stage2(beta=1.0, max_iters=3, alpha0=0.05,
@@ -212,8 +212,8 @@ class CausalSpecimenContinuationTest(unittest.TestCase):
         # specimen must stay finite (classifiability asserted below).
         # Timelike content is dynamics, not policy — but the reader must agree
         # the geometry stayed finite and classifiable.
-        for e in node.st.getEdgeList().toVector():
-            self.assertTrue(cmath.isfinite(complex(e.getLength()**2)))
+        for e in node.st.get_edge_list().to_vector():
+            self.assertTrue(cmath.isfinite(complex(e.get_length()**2)))
 
 
 if __name__ == "__main__":

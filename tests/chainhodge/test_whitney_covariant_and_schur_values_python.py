@@ -5,10 +5,10 @@ formulas of the Whitney integration specification and to exact linear
 algebra.
 
 `recursion.base_operator` builds `ChainHodge` and `CovariantChainHodge` over
-the level's `ChainComplex` and reads h_1(z, U) (`covariantOperator(1)`) and
-its pencil; `recursion.grow` reads `WhitneyMass.topSimplexBlocks`,
-`GrownCellRule.invertVertexPairing`, `gaugeInvariantPairing` and
-`transportConnection`; `baryon_poles` reads the same operator through
+the level's `ChainComplex` and reads h_1(z, U) (`covariant_operator(1)`) and
+its pencil; `recursion.grow` reads `WhitneyMass.top_simplex_blocks`,
+`GrownCellRule.invert_vertex_pairing`, `gauge_invariant_pairing` and
+`transport_connection`; `baryon_poles` reads the same operator through
 `JointAction.carrier_operator` and eliminates with
 `PencilSchur.feshbach`'s Drazin inverse. Expected values:
 
@@ -20,7 +20,7 @@ its pencil; `recursion.grow` reads `WhitneyMass.topSimplexBlocks`,
   computed here independently from the edge Gram matrix; M_2 = 1/|t| in two
   dimensions;
 * the two operator paths of the program are one operator: the carrier of
-  `JointAction` is h_1 in chain variables and `covariantOperator` its
+  `JointAction` is h_1 in chain variables and `covariant_operator` its
   similarity transform in geometric-image variables, with the same spectrum,
   and at trivial connection both are the Hodge operator;
 * exact spectral invariance of h_1(z, U) under a pure gauge;
@@ -43,8 +43,8 @@ from tessera import cobordism as cob
 from tessera.drivers import baryon_poles as bp
 from tessera.drivers import recursion as R
 
-TETRAHEDRON = cob.ChainComplex.fromTopCells([[0, 1, 2, 3]])
-TRIANGLE = cob.ChainComplex.fromTopCells([[0, 1, 2]])
+TETRAHEDRON = cob.ChainComplex.from_top_cells([[0, 1, 2, 3]])
+TRIANGLE = cob.ChainComplex.from_top_cells([[0, 1, 2]])
 
 
 def _squared(points):
@@ -89,7 +89,7 @@ def _tetrahedra():
 def test_the_vertex_block_is_the_barycentric_integral(name, s):
     """(M_0)_ab = |T| (1 + delta_ab) / 20 on a tetrahedron, with |T| =
     sqrt(det g) / 3!."""
-    blocks = ch.WhitneyMass.topSimplexBlocks(TETRAHEDRON, s, 0)
+    blocks = ch.WhitneyMass.top_simplex_blocks(TETRAHEDRON, s, 0)
     volume, _, _ = _gradient_gram(s, 3)
     expected = volume * (np.eye(4) + np.ones((4, 4))) / 20.0
     assert len(blocks) == 1
@@ -101,7 +101,7 @@ def test_the_vertex_block_is_the_barycentric_integral(name, s):
 def test_the_edge_block_is_the_gradient_gram_formula(name, s):
     """The degree-1 block of the specification's M_1 formula, entry by
     entry, with Gamma computed independently from the edge Gram matrix."""
-    blocks = ch.WhitneyMass.topSimplexBlocks(TETRAHEDRON, s, 1)
+    blocks = ch.WhitneyMass.top_simplex_blocks(TETRAHEDRON, s, 1)
     volume, gamma, pairs = _gradient_gram(s, 3)
     c = volume / 20.0
 
@@ -116,16 +116,16 @@ def test_the_edge_block_is_the_gradient_gram_formula(name, s):
                                   - (1 + delta(j, k)) * gamma[i, l]
                                   + (1 + delta(j, l)) * gamma[i, k])
     block = np.asarray(blocks[0].block)
-    assert list(blocks[0].edgeIndices) == list(range(6))
+    assert list(blocks[0].edge_indices) == list(range(6))
     np.testing.assert_allclose(block, expected, rtol=1e-11, atol=1e-14)
-    forward = np.asarray(ch.GrownCellRule.whitneyBlock(c * gamma))
+    forward = np.asarray(ch.GrownCellRule.whitney_block(c * gamma))
     np.testing.assert_allclose(forward, block, rtol=1e-11, atol=1e-14)
 
 
 def test_the_top_block_of_a_triangle_is_its_inverse_area():
     """M_2 = 1/|t| for d = 2: the 3-4-5 right triangle has area 6."""
     s = [9.0 + 0j, 16.0 + 0j, 25.0 + 0j]
-    blocks = ch.WhitneyMass.topSimplexBlocks(TRIANGLE, s, 2)
+    blocks = ch.WhitneyMass.top_simplex_blocks(TRIANGLE, s, 2)
     assert complex(np.asarray(blocks[0].block).reshape(-1)[0]) == \
         pytest.approx(1.0 / 6.0, rel=1e-14)
 
@@ -136,7 +136,7 @@ def test_the_cdt_torus_top_block_is_minus_two_root_two_i():
     M_2 = -2 sqrt 2 i I_18 exactly."""
     from tests.chainhodge._fixtures import torus33
     complex_, s = torus33()
-    blocks = ch.WhitneyMass.topSimplexBlocks(complex_, s, 2)
+    blocks = ch.WhitneyMass.top_simplex_blocks(complex_, s, 2)
     assert len(blocks) == 18
     for block in blocks:
         assert complex(np.asarray(block.block).reshape(-1)[0]) == \
@@ -148,7 +148,7 @@ def test_the_cdt_torus_top_block_is_minus_two_root_two_i():
 
 def _monopole_tetrahedron(links=None, squared=8.0):
     support = bp.monopole_support()
-    edges = [tuple(e) for e in TETRAHEDRON.kSimplexVertices(1)]
+    edges = [tuple(e) for e in TETRAHEDRON.k_simplex_vertices(1)]
     values = links or [support.transport(x, y) for x, y in edges]
     hodge = ch.ChainHodge(TETRAHEDRON, [complex(squared)] * 6)
     return hodge, ch.CovariantChainHodge(hodge, ch.Connection(TETRAHEDRON,
@@ -158,7 +158,7 @@ def _monopole_tetrahedron(links=None, squared=8.0):
 def test_the_two_operator_paths_are_one_operator():
     """On the unit-monopole tetrahedron of squared length 8 (the run's host
     cell), the carrier of `JointAction` (h_1 in chain variables, the
-    per-cell read's operator) and `CovariantChainHodge.covariantOperator(1)`
+    per-cell read's operator) and `CovariantChainHodge.covariant_operator(1)`
     (the level operator of `recursion.base_operator`) have the same six
     eigenvalues to 1e-12, and h_1 = Minv^-1 op Minv exactly, which is the
     pencil's B^-1 A; the sheets of the host carry no coupling."""
@@ -168,11 +168,11 @@ def test_the_two_operator_paths_are_one_operator():
     assert np.max(np.abs(carrier[:6, 6:])) == 0.0
     h = carrier[:6, :6]
     _, covariant = _monopole_tetrahedron()
-    op = np.asarray(covariant.covariantOperator(1))
+    op = np.asarray(covariant.covariant_operator(1))
     np.testing.assert_allclose(np.sort_complex(np.linalg.eigvals(op)),
                                np.sort_complex(np.linalg.eigvals(h)),
                                atol=1e-12)
-    minv = covariant.Minv(1)
+    minv = covariant.m_inv(1)
     minv = np.asarray(minv.toarray() if hasattr(minv, "toarray") else minv)
     assert np.max(np.abs(np.linalg.solve(minv, op @ minv) - h)) < 1e-13
     pencil = covariant.pencil(1)
@@ -189,8 +189,8 @@ def test_at_trivial_connection_both_paths_are_the_hodge_operator():
                                "links": [1.0] * 6})
     carrier = bp.matrix(cob.JointAction(
         host, bp.action_declaration(host, 1.0, 1.0)).carrier_operator())[:6, :6]
-    op = np.asarray(covariant.covariantOperator(1))
-    hodge_op = hodge.hodgeOperator(1)
+    op = np.asarray(covariant.covariant_operator(1))
+    hodge_op = hodge.hodge_operator(1)
     hodge_op = np.asarray(hodge_op.toarray() if hasattr(hodge_op, "toarray")
                           else hodge_op)
     assert np.max(np.abs(op - carrier)) < 1e-13
@@ -206,7 +206,7 @@ def test_the_operator_is_exactly_isospectral_under_pure_gauge(unitary):
     g_x U_xy / g_y; h_1(z, U) moves by a similarity and its spectrum does
     not move, to 1e-12 relative."""
     support = bp.monopole_support()
-    edges = [tuple(e) for e in TETRAHEDRON.kSimplexVertices(1)]
+    edges = [tuple(e) for e in TETRAHEDRON.k_simplex_vertices(1)]
     links = [support.transport(x, y) for x, y in edges]
     phases = [0.0, 0.7, -1.3, 2.1]
     moduli = [1.0, 1.0, 1.0, 1.0] if unitary else [1.0, 1.4, 0.6, 2.2]
@@ -215,20 +215,20 @@ def test_the_operator_is_exactly_isospectral_under_pure_gauge(unitary):
     _, before = _monopole_tetrahedron(links)
     _, after = _monopole_tetrahedron(gauged)
     a = np.sort_complex(np.linalg.eigvals(np.asarray(
-        before.covariantOperator(1))))
+        before.covariant_operator(1))))
     b = np.sort_complex(np.linalg.eigvals(np.asarray(
-        after.covariantOperator(1))))
+        after.covariant_operator(1))))
     assert np.max(np.abs(a - b)) < 1e-12 * np.max(np.abs(a))
 
 
 def test_a_riesz_band_is_the_eigenprojector():
     """On the unit-monopole tetrahedron (six simple eigenvalues), the Riesz
-    band of `covariantOperator(1)` on the circle about its lowest eigenvalue
+    band of `covariant_operator(1)` on the circle about its lowest eigenvalue
     with radius half the gap to the next (64 nodes) is idempotent to 1e-15,
     of rank one, and equal to the eigenprojector v w^T built from the matched
     right and left eigenvectors (w^T v = 1) to 1e-14."""
     _, covariant = _monopole_tetrahedron()
-    op = np.asarray(covariant.covariantOperator(1))
+    op = np.asarray(covariant.covariant_operator(1))
     values, right = np.linalg.eig(op)
     order = np.argsort(values.real)
     lowest, second = values[order[0]], values[order[1]]
@@ -252,8 +252,8 @@ JORDAN = np.array([[0, 1, 0], [0, 0, 0], [0, 0, 2]], dtype=complex)
 def _drazin(a, radius=1e-10):
     read = ch.PencilSchur.feshbach(a, np.zeros_like(a), 0j, [], 1e-12,
                                    radius)
-    return read, np.asarray(read.interiorInverse), np.asarray(
-        read.nullProjector)
+    return read, np.asarray(read.interior_inverse), np.asarray(
+        read.null_projector)
 
 
 def test_the_drazin_inverse_of_an_index_two_jordan_block():
@@ -262,7 +262,7 @@ def test_the_drazin_inverse_of_an_index_two_jordan_block():
     null space is I_2 (+) 0; the Moore-Penrose inverse [[0, 0, 0], [1, 0, 0],
     [0, 0, 1/2]] differs from it, and no group inverse exists at index 2."""
     read, drazin, null = _drazin(JORDAN)
-    assert read.interiorSingular and read.interiorRank == 1
+    assert read.interior_singular and read.interior_rank == 1
     np.testing.assert_allclose(drazin, np.diag([0, 0, 0.5]), atol=1e-14)
     np.testing.assert_allclose(null, np.diag([1, 1, 0]), atol=1e-14)
     assert np.max(np.abs(np.linalg.pinv(JORDAN) - drazin)) == \
@@ -291,7 +291,7 @@ def test_the_drazin_inverse_is_similarity_covariant():
                  dtype=complex)
     _, drazin, _ = _drazin(JORDAN)
     read, similar, _ = _drazin(s @ JORDAN @ np.linalg.inv(s), 1e-6)
-    assert read.interiorSingular and read.interiorRank == 1
+    assert read.interior_singular and read.interior_rank == 1
     np.testing.assert_allclose(similar, s @ drazin @ np.linalg.inv(s),
                                atol=1e-7)
 
@@ -308,7 +308,7 @@ def test_the_feshbach_determinant_factorization():
     pencil = a - lam * m
     interior = [1, 3]
     direct = np.linalg.det(pencil)
-    assert complex(read.pencilDeterminant) == pytest.approx(direct,
+    assert complex(read.pencil_determinant) == pytest.approx(direct,
                                                             rel=1e-12)
     ii = pencil[np.ix_(interior, interior)]
     bb = pencil[np.ix_([0, 2], [0, 2])]
@@ -317,7 +317,7 @@ def test_the_feshbach_determinant_factorization():
     schur = bb - bi @ np.linalg.solve(ii, ib)
     assert np.linalg.det(ii) * np.linalg.det(schur) == pytest.approx(
         direct, rel=1e-12)
-    assert read.determinantResidual < 1e-12
+    assert read.determinant_residual < 1e-12
 
 
 # ------------------------------------------------------ grown-cell rule
@@ -343,13 +343,13 @@ def test_the_phase_rule_is_the_transport_determinant():
     """U_vw = det M_vw: a rank-one transport [[U_e]] returns U_e; a 2 x 2
     transport returns its determinant; a non-square block is refused."""
     u = cmath.exp(0.4j) * 1.3
-    assert complex(ch.GrownCellRule.transportConnection(
+    assert complex(ch.GrownCellRule.transport_connection(
         np.array([[u]]))) == u
     block = np.array([[1.0, 2.0j], [0.5, 3.0]])
-    assert complex(ch.GrownCellRule.transportConnection(block)) == \
+    assert complex(ch.GrownCellRule.transport_connection(block)) == \
         pytest.approx(3.0 - 1.0j, abs=1e-15)
     with pytest.raises(ValueError):
-        ch.GrownCellRule.transportConnection(np.ones((2, 3)))
+        ch.GrownCellRule.transport_connection(np.ones((2, 3)))
 
 
 def test_the_three_dimensional_scale_and_the_two_dimensional_caveat():
@@ -359,18 +359,18 @@ def test_the_three_dimensional_scale_and_the_two_dimensional_caveat():
     two dimensions the scale is undetermined (C and the lengths unread)."""
     s = [8.0 + 0j] * 6
     volume, gamma, _ = _gradient_gram(s, 3)
-    inversion = ch.GrownCellRule.invertVertexPairing(volume * gamma)
-    assert inversion.scaleDetermined
-    np.testing.assert_allclose(np.asarray(inversion.squaredLengths), s,
+    inversion = ch.GrownCellRule.invert_vertex_pairing(volume * gamma)
+    assert inversion.scale_determined
+    np.testing.assert_allclose(np.asarray(inversion.squared_lengths), s,
                                rtol=1e-12)
     assert complex(inversion.volume) == pytest.approx(8.0 / 3.0, rel=1e-12)
     assert complex(inversion.scale) == pytest.approx(
-        14400.0 / np.linalg.det(np.asarray(inversion.scaledMetric)),
+        14400.0 / np.linalg.det(np.asarray(inversion.scaled_metric)),
         rel=1e-12)
-    assert inversion.rowSumDefect < 1e-14
+    assert inversion.row_sum_defect < 1e-14
     t = [1.0 + 0j, 1.0 + 0j, 1.0 + 0j]
     area, gamma2, _ = _gradient_gram(t, 2)
-    flat = ch.GrownCellRule.invertVertexPairing(area * gamma2)
-    assert not flat.scaleDetermined
+    flat = ch.GrownCellRule.invert_vertex_pairing(area * gamma2)
+    assert not flat.scale_determined
     assert math.isnan(complex(flat.scale).real)
-    assert list(flat.squaredLengths) == []
+    assert list(flat.squared_lengths) == []

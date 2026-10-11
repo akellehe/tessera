@@ -90,9 +90,9 @@ def test_declared_root_starts_principal():
         root = tessera.SheetedSqrt(z)
         assert root.sheet() == 0
         assert root.winding() == 0
-        assert root.isPrincipal()
+        assert root.is_principal()
         assert abs(root.value() - cmath.sqrt(z)) <= _TOLERANCE
-        assert abs(root.declaredArgument() - cmath.phase(z)) <= _TOLERANCE
+        assert abs(root.declared_argument() - cmath.phase(z)) <= _TOLERANCE
 
 
 def test_one_turn_about_the_branch_point_returns_the_other_sheet():
@@ -101,11 +101,11 @@ def test_one_turn_about_the_branch_point_returns_the_other_sheet():
     _walk(root, _circle(0.0 + 0.0j, 1.0))
     assert root.winding() == 1
     assert root.sheet() == 1
-    assert not root.isPrincipal()
+    assert not root.is_principal()
     # The radicand is exactly where it started and the root is not.
     assert abs(root.radicand() - 1.0) <= 1e-12
     assert abs(root.value() - (-1.0)) <= _TOLERANCE
-    assert abs(root.declaredArgument() - 2.0 * math.pi) <= 1e-12
+    assert abs(root.declared_argument() - 2.0 * math.pi) <= 1e-12
 
 
 def test_two_turns_return_the_principal_sheet():
@@ -162,7 +162,7 @@ def test_the_step_size_is_reported():
     root = tessera.SheetedSqrt(1.0 + 0.0j)
     for z in _circle(0.0 + 0.0j, 1.0):
         root.advance(z)
-        assert abs(root.lastStep() - 2.0 * math.pi / _STEPS) < 1e-9
+        assert abs(root.last_step() - 2.0 * math.pi / _STEPS) < 1e-9
 
 
 def test_the_branch_point_itself_is_reported_not_invented():
@@ -170,9 +170,9 @@ def test_the_branch_point_itself_is_reported_not_invented():
     The label is held and the fact is recorded, rather than a sheet being made
     up for it."""
     root = tessera.SheetedSqrt(1.0 + 0.0j)
-    assert not root.touchedBranchPoint()
+    assert not root.touched_branch_point()
     root.advance(0.0 + 0.0j)
-    assert root.touchedBranchPoint()
+    assert root.touched_branch_point()
     assert root.value() == 0.0
     assert root.winding() == 0
 
@@ -192,9 +192,9 @@ def test_a_declared_winding_needs_no_path():
 def test_declared_angle_starts_principal():
     for r in (0.25 + 0.0j, -0.5 + 0.0j, 2.0 + 0.0j, 0.3 - 1.5j):
         angle = tessera.SheetedAcos(r)
-        assert angle.branchIndex() == 0
+        assert angle.branch_index() == 0
         assert angle.orientation() == 1
-        assert angle.isPrincipal()
+        assert angle.is_principal()
         assert abs(angle.value() - cmath.acos(r)) <= _TOLERANCE
 
 
@@ -206,7 +206,7 @@ def test_a_loop_about_plus_one_reflects_the_angle():
     for r in _circle(1.0 + 0.0j, 0.5, phase=_TOP):
         angle.advance(r)
     assert angle.orientation() == -1
-    assert angle.branchIndex() == 0
+    assert angle.branch_index() == 0
     assert abs(angle.value() + cmath.acos(start)) <= 1e-10
 
 
@@ -219,7 +219,7 @@ def test_a_loop_about_minus_one_reflects_the_angle_about_pi():
     for r in _circle(-1.0 + 0.0j, 0.5, phase=_TOP):
         angle.advance(r)
     assert angle.orientation() == -1
-    assert angle.branchIndex() == 1
+    assert angle.branch_index() == 1
     assert abs(angle.value() - (2.0 * math.pi - cmath.acos(start))) <= 1e-10
 
 
@@ -230,7 +230,7 @@ def test_each_finite_branch_point_has_an_involutive_monodromy():
         angle = tessera.SheetedAcos(start)
         for r in _circle(centre, 0.5, turns=2, phase=_TOP):
             angle.advance(r)
-        assert angle.isPrincipal(), f"loop about {centre} is not involutive"
+        assert angle.is_principal(), f"loop about {centre} is not involutive"
         assert abs(angle.value() - cmath.acos(start)) <= 1e-10
 
 

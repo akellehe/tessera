@@ -108,7 +108,7 @@ void register_cobordism_holomorphic_relaxation(py::module_ &m) {
       .def_readwrite("edge_classes",
                      &HolomorphicRelaxationDeclaration::edgeClasses,
                      "Coordinates shared by several edges, one class index per "
-                     "edge in getEdgeList() order (0 to K - 1, every index "
+                     "edge in get_edge_list() order (0 to K - 1, every index "
                      "used); empty makes every edge its own coordinate. The "
                      "edges of a class carry one squared length and one link, "
                      "and the equation of a class is the sum of its edges' "

@@ -33,8 +33,8 @@ def _incidence_torus(N):
     from tessera import cobordism as cob
     from tests.chainhodge._fixtures import torus_cells
     cells, _ = torus_cells(N)
-    K = cob.ChainComplex.fromTopCells(cells)
-    hodge = ch.ChainHodge(K, [1.0 + 0j] * K.numSimplices(1))
+    K = cob.ChainComplex.from_top_cells(cells)
+    hodge = ch.ChainHodge(K, [1.0 + 0j] * K.num_simplices(1))
     return K, hodge.boundary(1).toarray().real, hodge.boundary(2).toarray().real
 
 
@@ -62,8 +62,8 @@ class TestKernel:
         assert not split.dense
         assert split.rank == 50 == split.at
         assert split.largest == pytest.approx(1.0, rel=1e-10)
-        assert split.sigmaAt == pytest.approx(1e-6, rel=1e-6)
-        assert split.sigmaNext == pytest.approx(5e-14, rel=0.1)
+        assert split.sigma_at == pytest.approx(1e-6, rel=1e-6)
+        assert split.sigma_next == pytest.approx(5e-14, rel=0.1)
         assert split.gap == pytest.approx(2e7, rel=0.1)
         assert read.basis.shape == (55, 5)
         np.testing.assert_allclose(read.basis.conj().T @ read.basis, np.eye(5), atol=1e-13)
@@ -75,11 +75,11 @@ class TestKernel:
     def test_agrees_with_dense_split(self):
         A, _ = _planted(40, 48, list(np.geomspace(3.0, 0.01, 30)), seed=5)
         sparse = ch.SparseRank.kernel(A).split
-        dense = ch.SparseRank.fromSingularValues(np.linalg.svd(A.toarray(), compute_uv=False), 40, 48)
+        dense = ch.SparseRank.from_singular_values(np.linalg.svd(A.toarray(), compute_uv=False), 40, 48)
         assert dense.dense and dense.rank == sparse.rank == 30
         assert sparse.tolerance == pytest.approx(dense.tolerance, rel=1e-10)
-        assert sparse.sigmaAt == pytest.approx(dense.sigmaAt, rel=1e-9)
-        assert sparse.sigmaNext < 1e-13 and dense.sigmaNext < 1e-13
+        assert sparse.sigma_at == pytest.approx(dense.sigma_at, rel=1e-9)
+        assert sparse.sigma_next < 1e-13 and dense.sigma_next < 1e-13
 
     def test_full_column_rank_and_empty_rows(self):
         """Nothing discarded: sigma_{r+1} = 0 and the gap is infinite. An empty
@@ -88,21 +88,21 @@ class TestKernel:
         A = sp.vstack([A, sp.csc_matrix((3, 20))]).tocsc()
         read = ch.SparseRank.kernel(A)
         assert read.split.rank == 20 and read.basis.shape == (20, 0)
-        assert read.split.sigmaNext == 0.0 and math.isinf(read.split.gap)
-        assert read.split.sigmaAt == pytest.approx(0.5, rel=1e-9)
+        assert read.split.sigma_next == 0.0 and math.isinf(read.split.gap)
+        assert read.split.sigma_at == pytest.approx(0.5, rel=1e-9)
 
     def test_torus_stacked_matrix(self):
         """The Whitney stacked matrix of a Euclidean torus: nullity b_1 = 2."""
         from tests.chainhodge._fixtures import flat_torus
         K, s, _ = flat_torus(8, 0.25, False, seed=2)
         hodge = ch.ChainHodge(K, s)
-        S = sp.vstack([hodge.boundary(2).T, hodge.boundary(1) @ hodge.Minv(1)]).tocsc()
+        S = sp.vstack([hodge.boundary(2).T, hodge.boundary(1) @ hodge.m_inv(1)]).tocsc()
         read = ch.SparseRank.kernel(S)
         sv = np.linalg.svd(S.toarray(), compute_uv=False)
         assert read.basis.shape[1] == 2
-        assert read.split.sigmaAt == pytest.approx(sv[-3], rel=1e-9)
+        assert read.split.sigma_at == pytest.approx(sv[-3], rel=1e-9)
         assert read.split.largest == pytest.approx(sv[0], rel=1e-10)
-        assert read.split.sigmaNext < 1e-13 * sv[0]
+        assert read.split.sigma_next < 1e-13 * sv[0]
 
 
 class TestCongruence:
@@ -123,12 +123,12 @@ class TestCongruence:
         assert not split.dense and split.at == rho
         assert split.rank == rho == int(np.sum(sv > split.tolerance))
         assert split.largest == pytest.approx(sv[0], rel=1e-9)
-        assert split.sigmaAt == pytest.approx(sv[rho - 1], rel=1e-8)
+        assert split.sigma_at == pytest.approx(sv[rho - 1], rel=1e-8)
         if rho < C.shape[1]:
-            assert 0.0 <= split.sigmaNext < 1e-12 * sv[0]
+            assert 0.0 <= split.sigma_next < 1e-12 * sv[0]
             assert split.gap > 1e8
         else:
-            assert split.sigmaNext == 0.0 and math.isinf(split.gap)
+            assert split.sigma_next == 0.0 and math.isinf(split.gap)
 
     def test_near_failure_is_resolved(self):
         """X tuned so that one direction of range(C) is nearly X-null: the
@@ -149,7 +149,7 @@ class TestCongruence:
         split = ch.SparseRank.congruence(sp.csc_matrix(C.astype(complex)), sp.csc_matrix(Xd), False, rho)
         sv = np.linalg.svd(C.T @ Xd @ C, compute_uv=False)
         assert sv[rho - 1] < 1e-5 * sv[0]
-        assert split.sigmaAt == pytest.approx(sv[rho - 1], rel=1e-6)
+        assert split.sigma_at == pytest.approx(sv[rho - 1], rel=1e-6)
         assert split.rank == rho
 
     def test_rank_mismatch_refused(self):
@@ -162,11 +162,11 @@ class TestCongruence:
 class TestFromSingularValues:
     def test_conventions(self):
         sv = np.array([4.0, 2.0, 1e-3, 1e-17])
-        split = ch.SparseRank.fromSingularValues(sv, 4, 6)
+        split = ch.SparseRank.from_singular_values(sv, 4, 6)
         assert split.rank == 3 == split.at
-        assert split.sigmaAt == 1e-3 and split.sigmaNext == 1e-17
+        assert split.sigma_at == 1e-3 and split.sigma_next == 1e-17
         assert split.gap == pytest.approx(1e14)
-        at0 = ch.SparseRank.fromSingularValues(sv, 4, 6, 10.0, 0)
-        assert math.isinf(at0.sigmaAt) and at0.sigmaNext == 4.0
-        past = ch.SparseRank.fromSingularValues(sv, 4, 6, 10.0, 4)
-        assert past.sigmaNext == 0.0 and math.isinf(past.gap)
+        at0 = ch.SparseRank.from_singular_values(sv, 4, 6, 10.0, 0)
+        assert math.isinf(at0.sigma_at) and at0.sigma_next == 4.0
+        past = ch.SparseRank.from_singular_values(sv, 4, 6, 10.0, 4)
+        assert past.sigma_next == 0.0 and math.isinf(past.gap)

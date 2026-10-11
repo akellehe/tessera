@@ -65,7 +65,7 @@ def _volume_worker(vol_id, target_n41, n_therm, n_meas, meas_interval,
     st = tessera.Spacetime(metric, tessera.CDT, 1.0, 1.0, tessera.PREFERRED,
                          tessera.Toroid())
     st.build(min(n_build, max_build))
-    target = st.getN41() if n_build <= max_build else target_n41
+    target = st.get_n41() if n_build <= max_build else target_n41
     cdt = tessera.CDTSimulation(st, 2.2, 0.5, 0.6, 1.0 / target, target)
 
     _ph("tuning")
@@ -81,8 +81,8 @@ def _volume_worker(vol_id, target_n41, n_therm, n_meas, meas_interval,
     n41_samples = []
     for i in range(n_meas):
         cdt.sweep(meas_interval, progress=sweep_cb)
-        n32_samples.append(st.getN32())
-        n41_samples.append(st.getN41())
+        n32_samples.append(st.get_n32())
+        n41_samples.append(st.get_n41())
         _ph("measuring", i + 1, n_meas)
 
     return (target_n41,

@@ -16,8 +16,8 @@ KAPPA = (0.3, -0.2, 0.1)
 
 
 def _read(cov, epsilon, **kwargs):
-    pencil = cov.sparsePencil()
-    return ch.SparsePencilSolver.effectiveBetti(pencil.A, pencil.M, epsilon, -1.0, **kwargs)
+    pencil = cov.sparse_pencil()
+    return ch.SparsePencilSolver.effective_betti(pencil.A, pencil.M, epsilon, -1.0, **kwargs)
 
 
 class TestBottleneck:
@@ -25,14 +25,14 @@ class TestBottleneck:
         """One connected component by incidence; two at any scale between the
         bridge level and the first level of a ring."""
         ring = lambda first: [[first + i, first + (i + 1) % 6] for i in range(6)]
-        K = cob.ChainComplex.fromTopCells(ring(0) + ring(6) + [[0, 6]])
-        s = [1.0e6 if tuple(e) == (0, 6) else 1.0 for e in K.kSimplexVertices(1)]
+        K = cob.ChainComplex.from_top_cells(ring(0) + ring(6) + [[0, 6]])
+        s = [1.0e6 if tuple(e) == (0, 6) else 1.0 for e in K.k_simplex_vertices(1)]
         cov = ch.CovariantChainHodge(ch.ChainHodge(K, s), ch.Connection.trivial(K))
-        assert list(K.bettiNumbers()) == [1, 2]
+        assert list(K.betti_numbers()) == [1, 2]
 
         read = _read(cov, 0.01)
         assert read.rank == 2 and read.complete and read.certified
-        assert read.lastInside < 1e-4 and read.firstOutside > 0.2 and read.gap > 1e4
+        assert read.last_inside < 1e-4 and read.first_outside > 0.2 and read.gap > 1e4
         dense = np.sort(np.array(cov.spectrum(0).eigenvalues).real)
         assert np.count_nonzero(dense <= 0.01) == 2
         # Below the bridge level only the constant is left; the incidence count is the limit.
@@ -42,10 +42,10 @@ class TestBottleneck:
 class TestCovariantTorus:
     def test_trivial_connection_counts_the_constant_then_the_first_shell(self):
         K, _, cov = covariant_torus(cubic_grid(4))
-        assert list(K.bettiNumbers()) == [1, 3, 3, 1]
+        assert list(K.betti_numbers()) == [1, 3, 3, 1]
         kernel = _read(cov, 1.0)
         assert kernel.rank == 1 and kernel.certified and kernel.gap == np.inf
-        assert abs(kernel.lastInside) < 1e-10
+        assert abs(kernel.last_inside) < 1e-10
         shell = _read(cov, 60.0)
         assert shell.rank == 7 and shell.certified
         assert shell.gap == pytest.approx(2.0, rel=1e-9)  # 96 / 48: the next shell over this one
@@ -55,21 +55,21 @@ class TestCovariantTorus:
         """The incidence of the complex is unchanged, but the covariant
         operator has no zero mode: its lowest level is |k|^2 on the mesh."""
         K, _, cov = covariant_torus(cubic_grid(4), KAPPA)
-        assert list(K.bettiNumbers()) == [1, 3, 3, 1]
+        assert list(K.betti_numbers()) == [1, 3, 3, 1]
         empty = _read(cov, 1.0)
         assert empty.rank == 0 and empty.complete and empty.certified
-        assert np.isnan(empty.lastInside) and empty.firstOutside > 5.0
+        assert np.isnan(empty.last_inside) and empty.first_outside > 5.0
         lowest = np.sort(np.array(cov.spectrum(0).eigenvalues).real)
-        assert empty.firstOutside == pytest.approx(lowest[0], rel=1e-10)
+        assert empty.first_outside == pytest.approx(lowest[0], rel=1e-10)
         for epsilon in (20.0, 40.0):
             assert _read(cov, epsilon).rank == np.count_nonzero(lowest <= epsilon)
 
     def test_the_harmonic_spaces_follow_the_connection_not_the_incidence(self):
         K, _, trivial = covariant_torus(cubic_grid(3))
         _, _, twisted = covariant_torus(cubic_grid(3), KAPPA)
-        assert list(K.bettiNumbers()) == [1, 3, 3, 1]
-        assert [trivial.harmonicChains(k).nullity for k in (0, 1)] == [1, 3]
-        assert [twisted.harmonicChains(k).nullity for k in (0, 1)] == [0, 0]
+        assert list(K.betti_numbers()) == [1, 3, 3, 1]
+        assert [trivial.harmonic_chains(k).nullity for k in (0, 1)] == [1, 3]
+        assert [twisted.harmonic_chains(k).nullity for k in (0, 1)] == [0, 0]
 
     def test_the_count_grows_until_it_leaves_the_window(self):
         _, _, cov = covariant_torus(cubic_grid(4))
@@ -80,6 +80,6 @@ class TestCovariantTorus:
 
 def test_the_window_must_lie_above_the_shift():
     _, _, cov = covariant_torus(cubic_grid(3))
-    pencil = cov.sparsePencil()
+    pencil = cov.sparse_pencil()
     with pytest.raises(ValueError, match="above the shift"):
-        ch.SparsePencilSolver.effectiveBetti(pencil.A, pencil.M, -2.0, -1.0)
+        ch.SparsePencilSolver.effective_betti(pencil.A, pencil.M, -2.0, -1.0)

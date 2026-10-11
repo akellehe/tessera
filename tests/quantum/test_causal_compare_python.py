@@ -1,5 +1,5 @@
 """Python tests — end-to-end causal-comparison pipeline through
-:meth:`SchwingerQuench.compareCausalOrders`, plus low-level
+:meth:`SchwingerQuench.compare_causal_orders`, plus low-level
 :meth:`Majorization.agreement` unit tests on hand-built posets.
 
 Skips cleanly when tessera was built without TESSERA_QUANTUM=1.
@@ -25,12 +25,12 @@ except ImportError:
 def _light_quark_config(N: int = 10, T: float = 0.4) -> "TDVPConfig":
     cfg = TDVPConfig()
     cfg.N = N; cfg.a = 1.0; cfg.g = 1.0; cfg.m = 0.5; cfg.L0 = 0.0
-    cfg.dmrgMaxBondDim = 32; cfg.dmrgNSweeps = 10
+    cfg.dmrg_max_bond_dim = 32; cfg.dmrg_n_sweeps = 10
     cfg.i0 = 1; cfg.d = 3
-    cfg.dt = 0.2; cfg.T = T; cfg.snapshotEvery = 1
-    cfg.maxBondDim = 60
-    cfg.cutoff = 1e-10; cfg.krylovDim = 12
-    cfg.quiet = True; cfg.conserveQns = True
+    cfg.dt = 0.2; cfg.T = T; cfg.snapshot_every = 1
+    cfg.max_bond_dim = 60
+    cfg.cutoff = 1e-10; cfg.krylov_dim = 12
+    cfg.quiet = True; cfg.conserve_qns = True
     return cfg
 
 
@@ -40,81 +40,81 @@ class TestAgreementPure(unittest.TestCase):
 
     def _poset(self, getNodeCount: int, covers: list[tuple[int, int]]) -> "Poset":
         p = Poset()
-        p.getNodeCount = getNodeCount
+        p.get_node_count = getNodeCount
         p.covers = covers
         return p
 
     def test_identical_posets(self) -> None:
         p = self._poset(4, [(0, 1), (1, 2), (2, 3)])
         agr = Majorization.agreement(p, p, 4)
-        self.assertAlmostEqual(agr.kendallTau, 1.0)
-        self.assertAlmostEqual(agr.discordantFraction, 0.0)
-        self.assertAlmostEqual(agr.hasseEditDistance, 0.0)
-        self.assertEqual(agr.nDiscordant, 0)
+        self.assertAlmostEqual(agr.kendall_tau, 1.0)
+        self.assertAlmostEqual(agr.discordant_fraction, 0.0)
+        self.assertAlmostEqual(agr.hasse_edit_distance, 0.0)
+        self.assertEqual(agr.n_discordant, 0)
 
     def test_reversed_posets(self) -> None:
         p = self._poset(3, [(0, 1), (1, 2)])
         q = self._poset(3, [(2, 1), (1, 0)])
         agr = Majorization.agreement(p, q, 3)
-        self.assertAlmostEqual(agr.kendallTau, -1.0)
-        self.assertEqual(agr.nConcordant, 0)
-        self.assertGreater(agr.nDiscordant, 0)
+        self.assertAlmostEqual(agr.kendall_tau, -1.0)
+        self.assertEqual(agr.n_concordant, 0)
+        self.assertGreater(agr.n_discordant, 0)
 
     def test_disjoint_posets(self) -> None:
         p = self._poset(4, [(0, 1)])
         q = self._poset(4, [(2, 3)])
         agr = Majorization.agreement(p, q, 4)
-        self.assertAlmostEqual(agr.hasseEditDistance, 1.0)
+        self.assertAlmostEqual(agr.hasse_edit_distance, 1.0)
 
     def test_no_pairs_in_common(self) -> None:
         p = self._poset(5, [])
         q = self._poset(5, [])
         agr = Majorization.agreement(p, q, 5)
-        self.assertEqual(agr.nComparableBoth, 0)
-        self.assertAlmostEqual(agr.kendallTau, 0.0)
-        self.assertAlmostEqual(agr.discordantFraction, 0.0)
-        self.assertAlmostEqual(agr.hasseEditDistance, 0.0)
+        self.assertEqual(agr.n_comparable_both, 0)
+        self.assertAlmostEqual(agr.kendall_tau, 0.0)
+        self.assertAlmostEqual(agr.discordant_fraction, 0.0)
+        self.assertAlmostEqual(agr.hasse_edit_distance, 0.0)
 
     def test_kendall_tau_in_range(self) -> None:
         p = self._poset(5, [(0, 1), (0, 2), (1, 3), (2, 4)])
         q = self._poset(5, [(0, 4), (4, 3), (3, 2), (2, 1)])
         agr = Majorization.agreement(p, q, 5)
-        self.assertGreaterEqual(agr.kendallTau, -1.0)
-        self.assertLessEqual(agr.kendallTau, 1.0)
-        self.assertGreaterEqual(agr.discordantFraction, 0.0)
-        self.assertLessEqual(agr.discordantFraction, 1.0)
+        self.assertGreaterEqual(agr.kendall_tau, -1.0)
+        self.assertLessEqual(agr.kendall_tau, 1.0)
+        self.assertGreaterEqual(agr.discordant_fraction, 0.0)
+        self.assertLessEqual(agr.discordant_fraction, 1.0)
 
 
 @unittest.skipUnless(HAVE_QUANTUM, "tessera built without TESSERA_QUANTUM=1")
 class TestCompareCausalOrders(unittest.TestCase):
-    """End-to-end pipeline tests through SchwingerQuench.compareCausalOrders."""
+    """End-to-end pipeline tests through SchwingerQuench.compare_causal_orders."""
 
     def test_pipeline_runs(self) -> None:
         cfg = _light_quark_config(N=8, T=0.4)
-        r = SchwingerQuench(cfg).compareCausalOrders(vLr=1.0)
+        r = SchwingerQuench(cfg).compare_causal_orders(v_lr=1.0)
 
         # 8(8+1)/2 - 1 = 35 cuts × 3 snapshots (t=0, t=0.2, t=0.4) = 105 labels.
-        self.assertEqual(r.nSnapshots, 3)
-        self.assertEqual(r.nLabels, 35 * 3)
-        self.assertAlmostEqual(r.vLr, 1.0)
+        self.assertEqual(r.n_snapshots, 3)
+        self.assertEqual(r.n_labels, 35 * 3)
+        self.assertAlmostEqual(r.v_lr, 1.0)
 
     def test_kendall_tau_in_range(self) -> None:
         cfg = _light_quark_config(N=8, T=0.4)
-        r = SchwingerQuench(cfg).compareCausalOrders(vLr=1.0)
-        for agr in (r.majVsLr, r.majVsCs, r.lrVsCs):
-            self.assertGreaterEqual(agr.kendallTau, -1.0)
-            self.assertLessEqual(agr.kendallTau, 1.0)
-            self.assertGreaterEqual(agr.discordantFraction, 0.0)
-            self.assertLessEqual(agr.discordantFraction, 1.0)
-            self.assertGreaterEqual(agr.hasseEditDistance, 0.0)
-            self.assertLessEqual(agr.hasseEditDistance, 1.0)
+        r = SchwingerQuench(cfg).compare_causal_orders(v_lr=1.0)
+        for agr in (r.maj_vs_lr, r.maj_vs_cs, r.lr_vs_cs):
+            self.assertGreaterEqual(agr.kendall_tau, -1.0)
+            self.assertLessEqual(agr.kendall_tau, 1.0)
+            self.assertGreaterEqual(agr.discordant_fraction, 0.0)
+            self.assertLessEqual(agr.discordant_fraction, 1.0)
+            self.assertGreaterEqual(agr.hasse_edit_distance, 0.0)
+            self.assertLessEqual(agr.hasse_edit_distance, 1.0)
 
     def test_lr_subset_of_cs(self) -> None:
         """≼_LR ⊂ ≼_cs by construction — τ(LR, cs) must be exactly 1.0."""
         cfg = _light_quark_config(N=8, T=0.4)
-        r = SchwingerQuench(cfg).compareCausalOrders(vLr=1.0)
-        self.assertAlmostEqual(r.lrVsCs.kendallTau, 1.0, places=12)
-        self.assertEqual(r.lrVsCs.nDiscordant, 0)
+        r = SchwingerQuench(cfg).compare_causal_orders(v_lr=1.0)
+        self.assertAlmostEqual(r.lr_vs_cs.kendall_tau, 1.0, places=12)
+        self.assertEqual(r.lr_vs_cs.n_discordant, 0)
 
     def test_v_LR_monotonicity(self) -> None:
         """Larger vLr ⇒ ≼_LR has at least as many transitive-closure
@@ -123,19 +123,19 @@ class TestCompareCausalOrders(unittest.TestCase):
         quench = SchwingerQuench(cfg)
         prev = -1
         for v in (0.5, 1.0, 2.0, 8.0):
-            r = quench.compareCausalOrders(vLr=v)
+            r = quench.compare_causal_orders(v_lr=v)
             self.assertGreaterEqual(
-                r.lrVsCs.nComparableBoth, prev,
+                r.lr_vs_cs.n_comparable_both, prev,
                 msg=f"comparability decreased going from vLr=prev to vLr={v}")
-            prev = r.lrVsCs.nComparableBoth
+            prev = r.lr_vs_cs.n_comparable_both
 
     def test_record_spectra_forced(self) -> None:
         """compareCausalOrders must force recordSpectra=True regardless of
         the input config."""
         cfg = _light_quark_config(N=6, T=0.2)
-        cfg.recordSpectra = False
-        r = SchwingerQuench(cfg).compareCausalOrders(vLr=1.0)
-        self.assertGreater(r.nLabels, 0)
+        cfg.record_spectra = False
+        r = SchwingerQuench(cfg).compare_causal_orders(v_lr=1.0)
+        self.assertGreater(r.n_labels, 0)
 
 
 @unittest.skipUnless(HAVE_QUANTUM, "tessera built without TESSERA_QUANTUM=1")
@@ -145,7 +145,7 @@ class TestPipelineWithRecordedSpectra(unittest.TestCase):
 
     def test_maj_has_cross_time_edges(self) -> None:
         cfg = _light_quark_config(N=8, T=0.4)
-        r = SchwingerQuench(cfg).compareCausalOrders(vLr=1.0)
+        r = SchwingerQuench(cfg).compare_causal_orders(v_lr=1.0)
         # majVsCs nonzero comparability proves maj has cross-time relations
         # (only cross-time pairs are comparable in ≼_cs).
-        self.assertGreater(r.majVsCs.nConcordant, 0)
+        self.assertGreater(r.maj_vs_cs.n_concordant, 0)

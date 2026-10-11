@@ -418,7 +418,7 @@ class Graph:
         for i, j in self.edges():
             rows.append(i)
             cols.append(j)
-        return tessera.SparseGraph.fromCOO(rows, cols, self.n_nodes)
+        return tessera.SparseGraph.from_coo(rows, cols, self.n_nodes)
 
     # --- structural queries -------------------------------------------
 
@@ -429,7 +429,7 @@ class Graph:
         no monochromatic edge -- equivalently, contains no odd cycle.
         Empty / zero-edge graphs are trivially bipartite.
 
-        Delegates to ``SparseGraph.isBipartite`` (BFS 2-coloring in C++).
+        Delegates to ``SparseGraph.is_bipartite`` (BFS 2-coloring in C++).
 
         Returns
         -------
@@ -437,7 +437,7 @@ class Graph:
         """
         if self.n_nodes == 0 or self._A.nnz == 0:
             return True
-        return self._sparse_graph().isBipartite()
+        return self._sparse_graph().is_bipartite()
 
     # --- spectral dimension -------------------------------------------
 
@@ -502,15 +502,15 @@ class Graph:
         # so the (small, large) pair is numerically identical.  ``rng``
         # seeds the start-vertex subsample for reproducibility.
         coo = self._A.tocoo()
-        sg = tessera.SparseGraph.fromCOO(
+        sg = tessera.SparseGraph.from_coo(
             coo.row.astype(np.uint32).tolist(),
             coo.col.astype(np.uint32).tolist(),
             int(self.n_nodes))
         seed = int(rng.integers(0, 2**63 - 1))
-        return sg.spectralDimension(
-            nWalks=int(n_diffusion_walks), maxSigma=float(max_sigma),
-            seed=seed, tailFraction=float(tail_fraction),
-            nTimes=int(n_times), tMin=float(t_min))
+        return sg.spectral_dimension(
+            n_walks=int(n_diffusion_walks), max_sigma=float(max_sigma),
+            seed=seed, tail_fraction=float(tail_fraction),
+            n_times=int(n_times), t_min=float(t_min))
 
     # --- modularity ---------------------------------------------------
 

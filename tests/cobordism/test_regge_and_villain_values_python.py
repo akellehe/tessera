@@ -40,9 +40,9 @@ CLOSED_FAN = [[0, 1, 2, 3], [0, 1, 3, 4], [0, 1, 2, 4]]
 
 
 def _mesh(dimension, cells, squared=1.0):
-    spacetime = T.Spacetime.fromVertexTuples(dimension, cells, 1.0, 0.0)
-    for edge in spacetime.getEdgeList().toVector():
-        edge.setLength(cmath.sqrt(complex(squared)))
+    spacetime = T.Spacetime.from_vertex_tuples(dimension, cells, 1.0, 0.0)
+    for edge in spacetime.get_edge_list().to_vector():
+        edge.set_length(cmath.sqrt(complex(squared)))
     return spacetime
 
 
@@ -135,20 +135,20 @@ def test_the_primal_gradient_matches_a_central_difference():
     `regge_term` in that squared length, step 1e-6, to 1e-8 relative."""
     rng = np.random.default_rng(7)
     spacetime = _mesh(3, CLOSED_FAN)
-    for edge in spacetime.getEdgeList().toVector():
-        edge.setLength(cmath.sqrt(1.0 + 0.05 * rng.normal()
+    for edge in spacetime.get_edge_list().to_vector():
+        edge.set_length(cmath.sqrt(1.0 + 0.05 * rng.normal()
                                   + 0.01j * rng.normal()))
     action = _geometric(spacetime, cob.ReggeHinges.All)
     exact = np.asarray(action.length_stationarity())
-    edges = spacetime.getEdgeList().toVector()
+    edges = spacetime.get_edge_list().to_vector()
     h = 1e-6
     for index, edge in enumerate(edges):
-        z = complex(edge.getLength()) ** 2
+        z = complex(edge.get_length()) ** 2
         values = []
         for step in (h, -h):
-            edge.setLength(cmath.sqrt(z + step))
+            edge.set_length(cmath.sqrt(z + step))
             values.append(complex(_geometric(spacetime).regge_term()))
-        edge.setLength(cmath.sqrt(z))
+        edge.set_length(cmath.sqrt(z))
         difference = (values[0] - values[1]) / (2 * h)
         assert abs(exact[index] - difference) <= 1e-8 * max(1.0,
                                                             abs(exact[index]))
@@ -272,10 +272,10 @@ def test_the_holonomy_term_is_gauge_invariant():
     value = complex(before.holonomy_term())
     faces = np.asarray(before.face_holonomies())
     chi = {v: 0.2 * v - 0.05j * v * v for v in range(12)}
-    for edge in spacetime.getEdgeList().toVector():
-        a, b = int(edge.getSource().getId()), int(edge.getTarget().getId())
+    for edge in spacetime.get_edge_list().to_vector():
+        a, b = int(edge.get_source().get_id()), int(edge.get_target().get_id())
         # U -> U e^{chi_a - chi_b}: phase phi -> phi - i (chi_a - chi_b)
-        edge.setPhase(edge.getPhase() - 1j * (chi[a] - chi[b]))
+        edge.set_phase(edge.get_phase() - 1j * (chi[a] - chi[b]))
     after = cob.JointAction(spacetime, bp.action_declaration(
         spacetime, 1.0, 1.3))
     assert np.max(np.abs(np.asarray(after.face_holonomies()) - faces)) < 1e-12

@@ -14,21 +14,21 @@ class TestMetric(unittest.TestCase):
         edge = Edge(v1, v2, complex(5.0, 0.0))  # spacelike length 5 (l^2 = 25)
 
         self.assertIsInstance(edge, Edge)
-        src = edge.getSource().getId()
-        tgt = edge.getTarget().getId()
-        self.assertIs(src, v1.getId())
-        self.assertIs(tgt, v2.getId())
+        src = edge.get_source().get_id()
+        tgt = edge.get_target().get_id()
+        self.assertIs(src, v1.get_id())
+        self.assertIs(tgt, v2.get_id())
 
         signature = Signature(4, SignatureType.Lorentzian)
-        self.assertEqual(signature.getDiagonal(), [-1, 1, 1, 1])
+        self.assertEqual(signature.get_diagonal(), [-1, 1, 1, 1])
         metric = Metric(True, signature)
         with self.assertRaisesRegex(RuntimeError, "You asked a coordinate free metric to compute the squared length of an edge"):
-            metric.getSquaredLength(v1.getCoordinates(), v2.getCoordinates())
+            metric.get_squared_length(v1.get_coordinates(), v2.get_coordinates())
 
         signature = Signature(4, SignatureType.Lorentzian)
-        self.assertEqual(signature.getDiagonal(), [-1, 1, 1, 1])
+        self.assertEqual(signature.get_diagonal(), [-1, 1, 1, 1])
         metric = Metric(False, signature)
-        self.assertEqual(metric.getSquaredLength(v1.getCoordinates(), v2.getCoordinates()), 1)
+        self.assertEqual(metric.get_squared_length(v1.get_coordinates(), v2.get_coordinates()), 1)
 
 
 if __name__ == '__main__':

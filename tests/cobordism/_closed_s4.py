@@ -22,8 +22,8 @@ def closed_s4(n_refine=20, seed=3):
     st = T.Spacetime(T.Metric(True, T.Signature(4, T.Lorentzian)), T.CDT, 1.0, 1.0,
                      T.PREFERRED, T.SimplexBoundarySphere(4))
     st.build()
-    for e in st.getEdgeList().toVector():
-        e.setLength(cmath.sqrt(complex(1.0)))
+    for e in st.get_edge_list().to_vector():
+        e.set_length(cmath.sqrt(complex(1.0)))
     applied = 0
     for s in range(seed, seed + n_refine * 4):
         mv = T.AddMove(st, s, False, T.PachnerMode.PreGeometric, False)
@@ -31,6 +31,6 @@ def closed_s4(n_refine=20, seed=3):
             applied += 1
         if applied >= n_refine:
             break
-    for i, e in enumerate(st.getEdgeList().toVector()):
-        e.setLength(cmath.sqrt(complex(1.0 + 0.01 * (i % 6))))
+    for i, e in enumerate(st.get_edge_list().to_vector()):
+        e.set_length(cmath.sqrt(complex(1.0 + 0.01 * (i % 6))))
     return st

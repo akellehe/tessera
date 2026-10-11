@@ -17,11 +17,11 @@ from tessera.drivers.bands.crystal import CrystalCell
 class TestGaugeQuanta:
     @pytest.fixture
     def response(self):
-        K = cob.ChainComplex.fromTopCells([[0, 1, 2, 3]])
+        K = cob.ChainComplex.from_top_cells([[0, 1, 2, 3]])
         # Squared length 8: the exact triplet of the edge operator sits at 5, the
         # coexact one at 10, so the particle-hole energy is 5.
         cov = ch.CovariantChainHodge(ch.ChainHodge(K, [8.0] * 6), ch.Connection.trivial(K))
-        edges = K.kSimplexVertices(1)
+        edges = K.k_simplex_vertices(1)
         gradient = np.array([[1.0 if e[1] == v else -1.0 if e[0] == v else 0.0 for e in edges]
                              for v in range(4)])
         return screening.GaugeResponse(cov, 1, occupied=[0, 1, 2]), gradient
@@ -54,7 +54,7 @@ class TestGaugeQuanta:
 
     def test_the_hessian_of_the_occupied_energy(self):
         """D - Pi(0) against finite differences of the sum of the occupied levels."""
-        K = cob.ChainComplex.fromTopCells([[0, 1, 2, 3]])
+        K = cob.ChainComplex.from_top_cells([[0, 1, 2, 3]])
         base = ch.ChainHodge(K, [8.0] * 6)
 
         def occupied_energy(phases):
@@ -118,9 +118,9 @@ class TestRandomPhaseAndQuasiparticles:
     def system(self):
         """Two tetrahedra glued on a face: five modes, two doubly filled, on a
         Hartree-Fock starting point."""
-        K = cob.ChainComplex.fromTopCells([[0, 1, 2, 3], [1, 2, 3, 4]])
+        K = cob.ChainComplex.from_top_cells([[0, 1, 2, 3], [1, 2, 3, 4]])
         rng = np.random.default_rng(0)
-        s = list(1.0 + 0.2 * rng.uniform(-1, 1, K.numSimplices(1)))
+        s = list(1.0 + 0.2 * rng.uniform(-1, 1, K.num_simplices(1)))
         pencil = ch.CovariantChainHodge(ch.ChainHodge(K, s), ch.Connection.trivial(K)).pencil(0)
         A, M = pencil.A.real, pencil.B.real
         levels, modes = scipy.linalg.eigh(A, M)

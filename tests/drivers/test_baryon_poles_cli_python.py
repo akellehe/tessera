@@ -654,7 +654,7 @@ def test_sector_poles_of_an_invariant_sector():
 
 
 def test_second_quantization_on_three_particles():
-    """dGamma(X) of a diagonal one-particle X on three particles is diagonal
+    """d_gamma(X) of a diagonal one-particle X on three particles is diagonal
     with the sums of the occupied entries; Lambda^3 of a map is its matrix of
     3 x 3 minors."""
     modes = 5
@@ -706,9 +706,9 @@ def test_the_pure_gauge_directions_leave_every_face_holonomy_unchanged():
     assert np.all(directions[:18] == 0)
     action = cob.JointAction(spacetime, bp.action_declaration(spacetime, 1, 1))
     before = np.asarray(action.face_holonomies())
-    edges = spacetime.getEdgeList().toVector()
+    edges = spacetime.get_edge_list().to_vector()
     for edge, step in zip(edges, 0.37 * directions[18:, 4]):
-        edge.setPhase(complex(edge.getPhase()) + step)
+        edge.set_phase(complex(edge.get_phase()) + step)
     after = np.asarray(cob.JointAction(spacetime, bp.action_declaration(
         spacetime, 1, 1)).face_holonomies())
     np.testing.assert_allclose(after, before, atol=1e-12)

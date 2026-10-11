@@ -21,10 +21,10 @@ void register_observables_effective_topology(py::module_ &m) {
   effectiveBettiNumber
       .def_readonly("degree", &EffectiveBettiNumber::degree)
       .def_readonly("rank", &EffectiveBettiNumber::rank)
-      .def_readonly("lastInside", &EffectiveBettiNumber::lastInside)
-      .def_readonly("firstOutside", &EffectiveBettiNumber::firstOutside)
+      .def_readonly("last_inside", &EffectiveBettiNumber::lastInside)
+      .def_readonly("first_outside", &EffectiveBettiNumber::firstOutside)
       .def_readonly("gap", &EffectiveBettiNumber::gap)
-      .def_readonly("minimumGap", &EffectiveBettiNumber::minimumGap)
+      .def_readonly("minimum_gap", &EffectiveBettiNumber::minimumGap)
       .def_readonly("method", &EffectiveBettiNumber::method)
       .def_readonly("converged", &EffectiveBettiNumber::converged)
       .def_readonly("separated", &EffectiveBettiNumber::separated)
@@ -40,13 +40,13 @@ are the coexact part. Frames are orthonormal bases of chains.)doc")
       .def_readonly("band", &EffectiveHodgeSplit::band)
       .def_readonly("exact", &EffectiveHodgeSplit::exact)
       .def_readonly("coexact", &EffectiveHodgeSplit::coexact)
-      .def_readonly("exactFrame", &EffectiveHodgeSplit::exactFrame)
-      .def_readonly("coexactFrame", &EffectiveHodgeSplit::coexactFrame)
-      .def_readonly("boundarySingularValues", &EffectiveHodgeSplit::boundarySingularValues)
-      .def_readonly("rankTolerance", &EffectiveHodgeSplit::rankTolerance)
-      .def_readonly("splitGap", &EffectiveHodgeSplit::splitGap)
+      .def_readonly("exact_frame", &EffectiveHodgeSplit::exactFrame)
+      .def_readonly("coexact_frame", &EffectiveHodgeSplit::coexactFrame)
+      .def_readonly("boundary_singular_values", &EffectiveHodgeSplit::boundarySingularValues)
+      .def_readonly("rank_tolerance", &EffectiveHodgeSplit::rankTolerance)
+      .def_readonly("split_gap", &EffectiveHodgeSplit::splitGap)
       .def_readonly("closure", &EffectiveHodgeSplit::closure)
-      .def_readonly("frameResidual", &EffectiveHodgeSplit::frameResidual)
+      .def_readonly("frame_residual", &EffectiveHodgeSplit::frameResidual)
       .def_readonly("certified", &EffectiveHodgeSplit::certified)
       .def_readonly("reason", &EffectiveHodgeSplit::reason);
 
@@ -63,8 +63,8 @@ are the coexact part. Frames are orthonormal bases of chains.)doc")
       "conditioning of the pivot rows, and the partition-of-unity defect of the committors.")
       .def_readonly("band", &EffectiveComponentPartition::band)
       .def_readonly("components", &EffectiveComponentPartition::components)
-      .def_readonly("pivotConditioning", &EffectiveComponentPartition::pivotConditioning)
-      .def_readonly("partitionDefect", &EffectiveComponentPartition::partitionDefect)
+      .def_readonly("pivot_conditioning", &EffectiveComponentPartition::pivotConditioning)
+      .def_readonly("partition_defect", &EffectiveComponentPartition::partitionDefect)
       .def_readonly("certified", &EffectiveComponentPartition::certified)
       .def_readonly("reason", &EffectiveComponentPartition::reason);
 
@@ -94,11 +94,11 @@ are the coexact part. Frames are orthonormal bases of chains.)doc")
       "which it reads no direction.")
       .def(py::init<>())
       .def_readwrite("tolerance", &AntiClusterOptions::tolerance)
-      .def_readwrite("minimumGap", &AntiClusterOptions::minimumGap)
-      .def_readwrite("minimumVoidContent", &AntiClusterOptions::minimumVoidContent)
-      .def_readwrite("interiorDegree", &AntiClusterOptions::interiorDegree)
-      .def_readwrite("coorientationReference", &AntiClusterOptions::coorientationReference)
-      .def_readwrite("coorientationTolerance", &AntiClusterOptions::coorientationTolerance);
+      .def_readwrite("minimum_gap", &AntiClusterOptions::minimumGap)
+      .def_readwrite("minimum_void_content", &AntiClusterOptions::minimumVoidContent)
+      .def_readwrite("interior_degree", &AntiClusterOptions::interiorDegree)
+      .def_readwrite("coorientation_reference", &AntiClusterOptions::coorientationReference)
+      .def_readwrite("coorientation_tolerance", &AntiClusterOptions::coorientationTolerance);
 
   py::class_<AntiClusterCertificate>(m, "AntiClusterCertificate",
       R"doc(The whitepaper's proposal that the support of a hole, an antiquark's occupation
@@ -112,28 +112,28 @@ restricted to the region, and interiorRank counts how much of it lies inside the
 region declared around a cavity has no cells of its own, since the cavity's cells are not
 in the complex.)doc")
       .def_readonly("region", &AntiClusterCertificate::region)
-      .def_readonly("interiorCells", &AntiClusterCertificate::interiorCells)
+      .def_readonly("interior_cells", &AntiClusterCertificate::interiorCells)
       .def_readonly("surface", &AntiClusterCertificate::surface)
-      .def_readonly("enclosingSurface", &AntiClusterCertificate::enclosingSurface)
+      .def_readonly("enclosing_surface", &AntiClusterCertificate::enclosingSurface)
       .def_readonly("band", &AntiClusterCertificate::band)
       .def_readonly("voids", &AntiClusterCertificate::voids)
-      .def_readonly("voidContent", &AntiClusterCertificate::voidContent)
-      .def_readonly("minimumVoidContent", &AntiClusterCertificate::minimumVoidContent)
-      .def_readonly("cycleResidual", &AntiClusterCertificate::cycleResidual)
-      .def_readonly("interiorDegree", &AntiClusterCertificate::interiorDegree)
-      .def_readonly("interiorSpectrum", &AntiClusterCertificate::interiorSpectrum)
-      .def_readonly("interiorRank", &AntiClusterCertificate::interiorRank)
-      .def_readonly("interiorFloor", &AntiClusterCertificate::interiorFloor)
-      .def_readonly("interiorEmpty", &AntiClusterCertificate::interiorEmpty)
+      .def_readonly("void_content", &AntiClusterCertificate::voidContent)
+      .def_readonly("minimum_void_content", &AntiClusterCertificate::minimumVoidContent)
+      .def_readonly("cycle_residual", &AntiClusterCertificate::cycleResidual)
+      .def_readonly("interior_degree", &AntiClusterCertificate::interiorDegree)
+      .def_readonly("interior_spectrum", &AntiClusterCertificate::interiorSpectrum)
+      .def_readonly("interior_rank", &AntiClusterCertificate::interiorRank)
+      .def_readonly("interior_floor", &AntiClusterCertificate::interiorFloor)
+      .def_readonly("interior_empty", &AntiClusterCertificate::interiorEmpty)
       .def_readonly("coorientation", &AntiClusterCertificate::coorientation)
-      .def_readonly("coorientationSource", &AntiClusterCertificate::coorientationSource)
-      .def_readonly("coorientationOverlap", &AntiClusterCertificate::coorientationOverlap)
+      .def_readonly("coorientation_source", &AntiClusterCertificate::coorientationSource)
+      .def_readonly("coorientation_overlap", &AntiClusterCertificate::coorientationOverlap)
       .def_readonly("certified", &AntiClusterCertificate::certified)
       .def_readonly("reason", &AntiClusterCertificate::reason);
 
   py::class_<EffectiveTopology> effectiveTopology(m, "EffectiveTopology",
       R"doc(What a declared operator sees at a scale, as opposed to what the complex is. The actual
-topology of a complex is its incidence (ChainComplex.bettiNumbers, built by the
+topology of a complex is its incidence (ChainComplex.betti_numbers, built by the
 spacetime Topology classes); the effective topology of an operator on it is
 beta_k^eff(epsilon) = rank P_[0, epsilon](h_k(s, U)), which depends on the squared
 lengths and the connection, certified by the gap between the enclosed band and the rest
@@ -159,7 +159,7 @@ consults the incidence ranks.)doc");
            py::arg("tolerance") = 1e-10, py::arg("minimum_gap") = kDefaultMinimumGap,
            "The effective components at scale epsilon: the supports of the degree-zero band, from the "
            "committors that the column-pivoted QR of the band recovers.")
-      .def_static("antiCluster", &EffectiveTopology::antiCluster, py::arg("operator"),
+      .def_static("anti_cluster", &EffectiveTopology::antiCluster, py::arg("operator"),
            py::arg("region_vertices"), py::arg("epsilon"), py::arg("options") = AntiClusterOptions{},
            "The anti-cluster certificate on a region declared by its vertices: the whitepaper's "
            "proposal that the support of a hole, an antiquark's occupation deficit relative to the "
@@ -182,8 +182,8 @@ consults the incidence ranks.)doc");
       .def_readonly("rank", &EffectivePlateau::rank)
       .def_readonly("first", &EffectivePlateau::first)
       .def_readonly("last", &EffectivePlateau::last)
-      .def_readonly("firstEpsilon", &EffectivePlateau::firstEpsilon)
-      .def_readonly("lastEpsilon", &EffectivePlateau::lastEpsilon)
+      .def_readonly("first_epsilon", &EffectivePlateau::firstEpsilon)
+      .def_readonly("last_epsilon", &EffectivePlateau::lastEpsilon)
       .def_readonly("gap", &EffectivePlateau::gap)
       .def("length", &EffectivePlateau::length);
 
@@ -199,7 +199,7 @@ degree persists when the whole sequence is one such run.)doc")
       .def("reads", &EffectivePersistence::reads)
       .def("dimension", &EffectivePersistence::dimension)
       .def("plateaus", &EffectivePersistence::plateaus, py::arg("degree"))
-      .def("persistentRank", &EffectivePersistence::persistentRank, py::arg("degree"),
+      .def("persistent_rank", &EffectivePersistence::persistentRank, py::arg("degree"),
            "The count that persists at the degree across every read, -1 when none does.")
       .def("betti", &EffectivePersistence::betti)
       .def("certified", &EffectivePersistence::certified);

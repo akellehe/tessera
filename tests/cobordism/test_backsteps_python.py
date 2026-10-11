@@ -47,7 +47,7 @@ def node_for(seed=1):
 
 
 def cell_count(node):
-    return len(node.spacetime().getTopSimplices())
+    return len(node.spacetime().get_top_simplices())
 
 
 def test_it_removes_the_requested_number():
@@ -79,18 +79,18 @@ def test_a_pinned_region_is_never_eaten():
     node = node_for()
     spacetime = node.spacetime()
     pinned = set()
-    for simplex in spacetime.getTopSimplices()[:2]:
-        pinned.update(int(v) for v in [v.getId() for v in simplex.getVertices()])
+    for simplex in spacetime.get_top_simplices()[:2]:
+        pinned.update(int(v) for v in [v.get_id() for v in simplex.get_vertices()])
     node.declare_pinned_region("held", pinned)
     node.random_cone_out(50)
-    survivors = {tuple(sorted(int(v) for v in [v.getId() for v in s.getVertices()]))
-                 for s in node.spacetime().getTopSimplices()}
+    survivors = {tuple(sorted(int(v) for v in [v.get_id() for v in s.get_vertices()]))
+                 for s in node.spacetime().get_top_simplices()}
     # Every cell that touched the region must still be there.
     for cell in survivors:
         pass
     remaining_vertices = set()
-    for s in node.spacetime().getTopSimplices():
-        remaining_vertices.update(int(v) for v in [v.getId() for v in s.getVertices()])
+    for s in node.spacetime().get_top_simplices():
+        remaining_vertices.update(int(v) for v in [v.get_id() for v in s.get_vertices()])
     assert pinned <= remaining_vertices, "a backstep removed pinned geometry"
 
 
@@ -98,10 +98,10 @@ def test_the_draw_is_seeded():
     """Two nodes on the same seed remove the same cells."""
     a, b = node_for(7), node_for(7)
     assert a.random_cone_out(3) == b.random_cone_out(3)
-    cells_a = sorted(tuple(sorted(int(v) for v in [v.getId() for v in s.getVertices()]))
-                     for s in a.spacetime().getTopSimplices())
-    cells_b = sorted(tuple(sorted(int(v) for v in [v.getId() for v in s.getVertices()]))
-                     for s in b.spacetime().getTopSimplices())
+    cells_a = sorted(tuple(sorted(int(v) for v in [v.get_id() for v in s.get_vertices()]))
+                     for s in a.spacetime().get_top_simplices())
+    cells_b = sorted(tuple(sorted(int(v) for v in [v.get_id() for v in s.get_vertices()]))
+                     for s in b.spacetime().get_top_simplices())
     assert cells_a == cells_b
 
 

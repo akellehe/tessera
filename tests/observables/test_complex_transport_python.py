@@ -164,7 +164,7 @@ def fiber(frame, cells, weights=None, accepted=True, degree=0,
         "weights_im": [float(w.imag) for w in weights],
         "certificate": certificate,
     }
-    return obs.SpectralFiber.fromRecord(record)
+    return obs.SpectralFiber.from_record(record)
 
 
 def cells(count, offset=0):
@@ -205,7 +205,7 @@ class TestFiberMap(unittest.TestCase):
         transfer = random_complex(generator, 5, 4)
         right = random_complex(generator, 4, 2)
         expected = dual.T @ transfer @ right
-        measured = np.asarray(CT.fiberMap(dual, transfer, right))
+        measured = np.asarray(CT.fiber_map(dual, transfer, right))
         self.assertLess(np.abs(measured - expected).max(), ROUNDOFF)
 
     def test_fiber_map_never_conjugates_the_dual_frame(self) -> None:
@@ -214,17 +214,17 @@ class TestFiberMap(unittest.TestCase):
         dual = 1j * np.eye(2, dtype=complex)
         transfer = np.eye(2, dtype=complex)
         right = np.eye(2, dtype=complex)
-        measured = np.asarray(CT.fiberMap(dual, transfer, right))
+        measured = np.asarray(CT.fiber_map(dual, transfer, right))
         self.assertLess(np.abs(measured - 1j * np.eye(2)).max(), ROUNDOFF)
 
     def test_shape_mismatch_is_refused(self) -> None:
         generator = rng()
         with self.assertRaises(ValueError):
-            CT.fiberMap(random_complex(generator, 5, 2),
+            CT.fiber_map(random_complex(generator, 5, 2),
                         random_complex(generator, 4, 4),
                         random_complex(generator, 4, 2))
         with self.assertRaises(ValueError):
-            CT.fiberMap(random_complex(generator, 5, 2),
+            CT.fiber_map(random_complex(generator, 5, 2),
                         random_complex(generator, 5, 4),
                         random_complex(generator, 3, 2))
 
@@ -235,7 +235,7 @@ class TestFiberMap(unittest.TestCase):
         frame_from = invertible(generator, 3)
         expected = np.linalg.inv(frame_to) @ transport @ frame_from
         measured = np.asarray(
-            CT.frameChanged(transport, frame_to, frame_from))
+            CT.frame_changed(transport, frame_to, frame_from))
         self.assertLess(np.abs(measured - expected).max(), INVERSE)
 
 
@@ -321,7 +321,7 @@ class TestTransportRead(unittest.TestCase):
         transfer = random_complex(generator, 6, 6)
         read = CT.transport(destination, source, transfer)
         self.assertFalse(read.accepted)
-        self.assertIn("leak", read.rejectionReason)
+        self.assertIn("leak", read.rejection_reason)
         self.assertFalse(read.certificate.holds())
         # The numbers survive the rejection.
         self.assertGreater(read.leakage, 0.0)
@@ -336,7 +336,7 @@ class TestTransportRead(unittest.TestCase):
                             @ transfer @ np.asarray(source.projector()))
         self.assertLess(abs(read.leakage - expected), INVERSE)
         scale = two_norm(transfer @ np.asarray(source.projector()))
-        self.assertLess(abs(read.relativeLeakage - expected / scale), INVERSE)
+        self.assertLess(abs(read.relative_leakage - expected / scale), INVERSE)
 
     def test_a_transfer_into_the_destination_band_is_accepted(self) -> None:
         generator = rng()
@@ -344,9 +344,9 @@ class TestTransportRead(unittest.TestCase):
         transfer = frame_to @ self.G @ frame_from.conj().T
         read = CT.transport(destination, source, transfer)
         self.assertLess(read.leakage, INVERSE)
-        self.assertLess(read.relativeLeakage, INVERSE)
+        self.assertLess(read.relative_leakage, INVERSE)
         self.assertTrue(read.invertible)
-        self.assertEqual(read.numericalRank, 2)
+        self.assertEqual(read.numerical_rank, 2)
 
     def test_the_endpoint_certificates_are_carried_through(self) -> None:
         generator = rng()
@@ -354,13 +354,13 @@ class TestTransportRead(unittest.TestCase):
         read = CT.transport(destination, source,
                             frame_to @ self.G @ frame_from.conj().T)
         # The fixture declares isolation 1 and projector norm 1 on both ends.
-        self.assertLess(abs(read.toIsolation - 1.0), ROUNDOFF)
-        self.assertLess(abs(read.toResolventBound - 1.0), ROUNDOFF)
-        self.assertLess(abs(read.fromResolventBound - 1.0), ROUNDOFF)
-        self.assertLess(abs(read.toRightFrameResidual - 1e-13), 1e-18)
-        self.assertLess(abs(read.toLeftFrameResidual - 2e-13), 1e-18)
-        self.assertLess(abs(read.fromRightFrameResidual - 1e-13), 1e-18)
-        self.assertLess(abs(read.fromLeftFrameResidual - 2e-13), 1e-18)
+        self.assertLess(abs(read.to_isolation - 1.0), ROUNDOFF)
+        self.assertLess(abs(read.to_resolvent_bound - 1.0), ROUNDOFF)
+        self.assertLess(abs(read.from_resolvent_bound - 1.0), ROUNDOFF)
+        self.assertLess(abs(read.to_right_frame_residual - 1e-13), 1e-18)
+        self.assertLess(abs(read.to_left_frame_residual - 2e-13), 1e-18)
+        self.assertLess(abs(read.from_right_frame_residual - 1e-13), 1e-18)
+        self.assertLess(abs(read.from_left_frame_residual - 2e-13), 1e-18)
 
     def test_an_uncertified_endpoint_band_is_refused(self) -> None:
         generator = rng()
@@ -371,7 +371,7 @@ class TestTransportRead(unittest.TestCase):
         read = CT.transport(destination, source,
                             projector_to @ random_complex(generator, 6, 6))
         self.assertFalse(read.accepted)
-        self.assertIn("uncertified", read.rejectionReason)
+        self.assertIn("uncertified", read.rejection_reason)
 
     def test_a_rank_mismatch_is_refused(self) -> None:
         generator = rng()
@@ -381,7 +381,7 @@ class TestTransportRead(unittest.TestCase):
         read = CT.transport(destination, source,
                             random_complex(generator, 6, 6))
         self.assertFalse(read.accepted)
-        self.assertIn("rank", read.rejectionReason)
+        self.assertIn("rank", read.rejection_reason)
 
     def test_a_transfer_of_the_wrong_shape_throws(self) -> None:
         generator = rng()
@@ -419,7 +419,7 @@ class TestCompositionAndReversal(unittest.TestCase):
     def test_reversal_is_the_transpose_not_the_adjoint(self) -> None:
         generator = rng()
         transfer = random_complex(generator, 4, 5)
-        reversed_transfer = np.asarray(CT.reversedTransfer(transfer))
+        reversed_transfer = np.asarray(CT.reversed_transfer(transfer))
         self.assertLess(np.abs(reversed_transfer - transfer.T).max(),
                         ROUNDOFF)
         # A complex transfer distinguishes the two reversals.
@@ -429,7 +429,7 @@ class TestCompositionAndReversal(unittest.TestCase):
     def test_the_dual_transport_inverts_the_determinant(self) -> None:
         generator = rng()
         transport = invertible(generator, 3)
-        dual = np.asarray(CT.dualTransport(transport))
+        dual = np.asarray(CT.dual_transport(transport))
         self.assertLess(np.abs(dual - np.linalg.inv(transport).T).max(),
                         INVERSE)
         self.assertLess(
@@ -440,12 +440,12 @@ class TestCompositionAndReversal(unittest.TestCase):
     def test_the_dual_transport_is_an_involution(self) -> None:
         generator = rng()
         transport = invertible(generator, 3)
-        twice = np.asarray(CT.dualTransport(CT.dualTransport(transport)))
+        twice = np.asarray(CT.dual_transport(CT.dual_transport(transport)))
         self.assertLess(np.abs(twice - transport).max(), INVERSE)
 
     def test_a_singular_map_has_no_dual_transport(self) -> None:
         with self.assertRaises(ValueError):
-            CT.dualTransport(np.diag([1.0, 0.0, 1.0]).astype(complex))
+            CT.dual_transport(np.diag([1.0, 0.0, 1.0]).astype(complex))
 
     def test_the_reversed_transfer_undoes_the_forward_one(self) -> None:
         """On a groupoid fixture -- a complex-orthogonal transfer, where
@@ -460,10 +460,10 @@ class TestCompositionAndReversal(unittest.TestCase):
         frame = invertible(generator, 6)
         band = fiber(frame, cells(6))
         forward = np.asarray(
-            CT.fiberMap(band.dualFrame(), transfer, band.rightFrame()))
+            CT.fiber_map(band.dual_frame(), transfer, band.right_frame()))
         backward = np.asarray(
-            CT.fiberMap(band.dualFrame(),
-                        CT.reversedTransfer(transfer), band.rightFrame()))
+            CT.fiber_map(band.dual_frame(),
+                        CT.reversed_transfer(transfer), band.right_frame()))
         self.assertLess(
             np.abs(np.asarray(CT.compose([forward, backward]))
                    - np.eye(6)).max(),
@@ -476,7 +476,7 @@ class TestCompositionAndReversal(unittest.TestCase):
         frame = invertible(generator, 3)
         # A frame change at the base point conjugates the holonomy; inserting
         # it on every link leaves the product conjugated once.
-        changed = [np.asarray(CT.frameChanged(link, frame, frame))
+        changed = [np.asarray(CT.frame_changed(link, frame, frame))
                    for link in links]
         moved = CT.holonomy(changed)
         for before, after in zip(base.power_traces, moved.power_traces):
@@ -497,7 +497,7 @@ class TestKatoTransport(unittest.TestCase):
         projector = orthogonal_projector(generator, 5, 2)
         rate = random_complex(generator, 5, 5)
         expected = rate @ projector - projector @ rate
-        measured = np.asarray(CT.katoGenerator(rate, projector))
+        measured = np.asarray(CT.kato_generator(rate, projector))
         self.assertLess(np.abs(measured - expected).max(), ROUNDOFF)
 
     def test_the_direct_rotation_intertwines_exactly_and_is_unitary(self) -> None:
@@ -505,7 +505,7 @@ class TestKatoTransport(unittest.TestCase):
         start = orthogonal_projector(generator, 6, 2)
         unitary = expm(1j * 0.3 * hermitian_direction(generator, 6))
         end = unitary @ start @ unitary.conj().T
-        step = np.asarray(CT.katoStep(start, end, KatoScheme.DirectRotation))
+        step = np.asarray(CT.kato_step(start, end, KatoScheme.DirectRotation))
         self.assertLess(np.abs(step @ start - end @ step).max(), INVERSE)
         self.assertLess(np.abs(step.conj().T @ step - np.eye(6)).max(),
                         INVERSE)
@@ -514,7 +514,7 @@ class TestKatoTransport(unittest.TestCase):
         generator = rng()
         start = oblique_idempotent(generator, 5, 2)
         end = oblique_idempotent(generator, 5, 2)
-        step = np.asarray(CT.katoStep(start, end, KatoScheme.Intertwiner))
+        step = np.asarray(CT.kato_step(start, end, KatoScheme.Intertwiner))
         expected = end @ start + (np.eye(5) - end) @ (np.eye(5) - start)
         self.assertLess(np.abs(step - expected).max(), ROUNDOFF)
         self.assertLess(np.abs(step @ start - end @ step).max(), INVERSE)
@@ -531,7 +531,7 @@ class TestKatoTransport(unittest.TestCase):
             unitary = expm(1j * scale * direction)
             end = unitary @ start @ unitary.conj().T
             step = np.asarray(
-                CT.katoStep(start, end, KatoScheme.ExponentialGenerator))
+                CT.kato_step(start, end, KatoScheme.ExponentialGenerator))
             residuals.append(two_norm(step @ start - end @ step))
         for coarse, fine in zip(residuals, residuals[1:]):
             self.assertGreater(coarse / fine, 5.0)   # third order: about 8
@@ -543,13 +543,13 @@ class TestKatoTransport(unittest.TestCase):
         angles = np.linspace(0.0, 2.0 * np.pi, 33)
         path = [expm(1j * 0.4 * np.sin(a) * direction) @ start
                 @ expm(-1j * 0.4 * np.sin(a) * direction) for a in angles]
-        read = CT.katoTransport(path, KatoScheme.DirectRotation)
+        read = CT.kato_transport(path, KatoScheme.DirectRotation)
         self.assertTrue(read.complete)
         self.assertEqual(read.steps, len(path) - 1)
         self.assertEqual(read.rank, 2)
-        self.assertLess(read.intertwiningResidual, INVERSE)
-        self.assertLess(read.composedIntertwiningResidual, INVERSE)
-        self.assertLess(read.idempotencyResidual, INVERSE)
+        self.assertLess(read.intertwining_residual, INVERSE)
+        self.assertLess(read.composed_intertwining_residual, INVERSE)
+        self.assertLess(read.idempotency_residual, INVERSE)
         self.assertTrue(read.certificate.holds())
         # A closed loop returns a transport of the band onto itself.
         transport = np.asarray(read.transport)
@@ -562,9 +562,9 @@ class TestKatoTransport(unittest.TestCase):
         direction = hermitian_direction(generator, 5)
         path = [expm(1j * s * direction) @ start @ expm(-1j * s * direction)
                 for s in (0.0, 0.05, 0.11, 0.16)]
-        read = CT.katoTransport(path, KatoScheme.Intertwiner)
+        read = CT.kato_transport(path, KatoScheme.Intertwiner)
         product = np.eye(5, dtype=complex)
-        for step in read.stepTransports:
+        for step in read.step_transports:
             product = np.asarray(step) @ product
         self.assertLess(np.abs(np.asarray(read.transport) - product).max(),
                         INVERSE)
@@ -575,9 +575,9 @@ class TestKatoTransport(unittest.TestCase):
         transport is invented."""
         start = np.diag([1.0, 0.0]).astype(complex)
         end = np.diag([0.0, 1.0]).astype(complex)
-        read = CT.katoTransport([start, end], KatoScheme.DirectRotation)
+        read = CT.kato_transport([start, end], KatoScheme.DirectRotation)
         self.assertFalse(read.complete)
-        self.assertIn("distance", read.invalidReason)
+        self.assertIn("distance", read.invalid_reason)
         self.assertEqual(np.asarray(read.transport).size, 0)
         self.assertFalse(read.certificate.holds())
 
@@ -587,20 +587,20 @@ class TestKatoTransport(unittest.TestCase):
         direction = hermitian_direction(generator, 6)
         path = [expm(1j * s * direction) @ start @ expm(-1j * s * direction)
                 for s in (0.0, 0.08, 0.16)]
-        read = CT.katoTransport(path)
+        read = CT.kato_transport(path)
         self.assertEqual(read.rank, 3)
-        self.assertLess(read.rankDefect, INVERSE)
-        self.assertGreater(read.maxProjectorStep, 0.0)
+        self.assertLess(read.rank_defect, INVERSE)
+        self.assertGreater(read.max_projector_step, 0.0)
 
     def test_fewer_than_two_projectors_throws(self) -> None:
         generator = rng()
         with self.assertRaises(ValueError):
-            CT.katoTransport([orthogonal_projector(generator, 4, 1)])
+            CT.kato_transport([orthogonal_projector(generator, 4, 1)])
 
     def test_a_ragged_projector_path_throws(self) -> None:
         generator = rng()
         with self.assertRaises(ValueError):
-            CT.katoTransport([orthogonal_projector(generator, 4, 1),
+            CT.kato_transport([orthogonal_projector(generator, 4, 1),
                               orthogonal_projector(generator, 5, 1)])
 
     def test_the_fibre_path_reads_its_projectors_from_the_bands(self) -> None:
@@ -609,10 +609,10 @@ class TestKatoTransport(unittest.TestCase):
         direction = hermitian_direction(generator, 6)
         loop = [fiber(expm(1j * s * direction) @ columns, cells(6))
                 for s in (0.0, 0.05, 0.1)]
-        read = CT.katoTransportOnFibers(loop, KatoScheme.Intertwiner)
+        read = CT.kato_transport_on_fibers(loop, KatoScheme.Intertwiner)
         self.assertTrue(read.complete)
         self.assertEqual(read.rank, 2)
-        self.assertLess(read.intertwiningResidual, INVERSE)
+        self.assertLess(read.intertwining_residual, INVERSE)
 
     def test_a_fibre_path_over_changing_cells_is_refused(self) -> None:
         generator = rng()
@@ -620,7 +620,7 @@ class TestKatoTransport(unittest.TestCase):
         loop = [fiber(columns, cells(6)),
                 fiber(columns, cells(6, offset=100))]
         with self.assertRaises(ValueError):
-            CT.katoTransportOnFibers(loop)
+            CT.kato_transport_on_fibers(loop)
 
     def test_the_band_transport_is_the_bilinear_pairing_of_the_kato_map(self) -> None:
         generator = rng()
@@ -628,12 +628,12 @@ class TestKatoTransport(unittest.TestCase):
         direction = hermitian_direction(generator, 6)
         start = fiber(columns, cells(6))
         end = fiber(expm(1j * 0.1 * direction) @ columns, cells(6))
-        read = CT.katoTransportOnFibers([start, end])
-        link = np.asarray(CT.bandTransport(read.transport, end.dualFrame(),
-                                           start.rightFrame()))
-        expected = (np.asarray(end.dualFrame()).T
+        read = CT.kato_transport_on_fibers([start, end])
+        link = np.asarray(CT.band_transport(read.transport, end.dual_frame(),
+                                           start.right_frame()))
+        expected = (np.asarray(end.dual_frame()).T
                     @ np.asarray(read.transport)
-                    @ np.asarray(start.rightFrame()))
+                    @ np.asarray(start.right_frame()))
         self.assertLess(np.abs(link - expected).max(), INVERSE)
         self.assertEqual(link.shape, (2, 2))
 
@@ -663,9 +663,9 @@ class TestExchangeCharacter(unittest.TestCase):
         within[:3, :3] = inner_a
         within[3:, 3:] = inner_b
         exchange = block_swap(3) @ within
-        read = CT.exchangeCharacter(exchange, within, 0.0)
+        read = CT.exchange_character(exchange, within, 0.0)
         self.assertLess(abs(read.character + 1.0), INVERSE)
-        self.assertLess(read.distanceToMinusOne, INVERSE)
+        self.assertLess(read.distance_to_minus_one, INVERSE)
         self.assertTrue(read.certificate.holds())
         # The independently computed determinant of the interchange.
         self.assertLess(
@@ -679,9 +679,9 @@ class TestExchangeCharacter(unittest.TestCase):
         within[:3, :3] = inner_a
         within[3:, 3:] = inner_b
         swap = block_swap(3)
-        read = CT.exchangeCharacter(swap @ swap @ within, within, 0.0)
+        read = CT.exchange_character(swap @ swap @ within, within, 0.0)
         self.assertLess(abs(read.character - 1.0), INVERSE)
-        self.assertLess(read.distanceToPlusOne, INVERSE)
+        self.assertLess(read.distance_to_plus_one, INVERSE)
         self.assertTrue(read.certificate.holds())
 
     def test_an_even_rank_frame_exchange_gives_plus_one(self) -> None:
@@ -691,7 +691,7 @@ class TestExchangeCharacter(unittest.TestCase):
         within = np.zeros((4, 4), complex)
         within[:2, :2] = invertible(generator, 2)
         within[2:, 2:] = invertible(generator, 2)
-        read = CT.exchangeCharacter(block_swap(2) @ within, within, 0.0)
+        read = CT.exchange_character(block_swap(2) @ within, within, 0.0)
         self.assertLess(abs(read.character - 1.0), INVERSE)
 
     def test_the_modulus_is_reported_and_never_required(self) -> None:
@@ -704,7 +704,7 @@ class TestExchangeCharacter(unittest.TestCase):
         within[:3, :3] = invertible(generator, 3)
         within[3:, 3:] = invertible(generator, 3)
         reference = 0.5 * within
-        read = CT.exchangeCharacter(block_swap(3) @ within, reference, 0.0)
+        read = CT.exchange_character(block_swap(3) @ within, reference, 0.0)
         expected = -1.0 / (0.5 ** 6)
         self.assertLess(abs(read.character - expected), INVERSE)
         self.assertLess(abs(read.modulus - abs(expected)), INVERSE)
@@ -715,10 +715,10 @@ class TestExchangeCharacter(unittest.TestCase):
         generator = rng()
         exchange = invertible(generator, 4)
         reference = invertible(generator, 4)
-        read = CT.exchangeCharacter(exchange, reference, 0.0)
-        self.assertLess(read.routeAgreementResidual, INVERSE)
+        read = CT.exchange_character(exchange, reference, 0.0)
+        self.assertLess(read.route_agreement_residual, INVERSE)
         self.assertLess(
-            abs(read.determinantRatio
+            abs(read.determinant_ratio
                 - complex(np.linalg.det(exchange))
                 / complex(np.linalg.det(reference))),
             INVERSE)
@@ -728,7 +728,7 @@ class TestExchangeCharacter(unittest.TestCase):
         within = np.zeros((6, 6), complex)
         within[:3, :3] = invertible(generator, 3)
         within[3:, 3:] = invertible(generator, 3)
-        read = CT.exchangeCharacter(block_swap(3) @ within, within, 1e-3)
+        read = CT.exchange_character(block_swap(3) @ within, within, 1e-3)
         self.assertLess(abs(read.character + 1.0), INVERSE)
         self.assertFalse(read.certificate.holds())
 
@@ -736,15 +736,15 @@ class TestExchangeCharacter(unittest.TestCase):
         generator = rng()
         singular = np.zeros((3, 3), complex)
         singular[0, 0] = 1.0
-        read = CT.exchangeCharacter(invertible(generator, 3), singular, 0.0)
-        self.assertFalse(read.referenceInvertible)
+        read = CT.exchange_character(invertible(generator, 3), singular, 0.0)
+        self.assertFalse(read.reference_invertible)
         self.assertFalse(read.certificate.holds())
         self.assertTrue(np.isnan(read.character.real))
 
     def test_a_rank_mismatch_throws(self) -> None:
         generator = rng()
         with self.assertRaises(ValueError):
-            CT.exchangeCharacter(invertible(generator, 3),
+            CT.exchange_character(invertible(generator, 3),
                                  invertible(generator, 4), 0.0)
 
     def test_the_character_of_two_declared_paths(self) -> None:
@@ -753,14 +753,14 @@ class TestExchangeCharacter(unittest.TestCase):
         within[:3, :3] = invertible(generator, 3)
         within[3:, 3:] = invertible(generator, 3)
         half = block_swap(3)
-        read = CT.exchangeCharacterOfPaths([within, half], [within], 0.0)
+        read = CT.exchange_character_of_paths([within, half], [within], 0.0)
         self.assertLess(abs(read.character + 1.0), INVERSE)
         self.assertEqual(read.rank, 6)
 
     def test_an_empty_path_throws(self) -> None:
         generator = rng()
         with self.assertRaises(ValueError):
-            CT.exchangeCharacterOfPaths([], [invertible(generator, 3)], 0.0)
+            CT.exchange_character_of_paths([], [invertible(generator, 3)], 0.0)
 
 
 # ─── the reported fields and the thresholds ─────────────────────────────────
@@ -778,29 +778,29 @@ class TestReportedFieldsAndThresholds(unittest.TestCase):
         read = CT.transport(destination, source,
                             frame_to @ self.G @ frame_from.conj().T)
         singular = np.linalg.svd(self.G, compute_uv=False)
-        self.assertAlmostEqual(read.conditionNumber,
+        self.assertAlmostEqual(read.condition_number,
                                singular[0] / singular[-1], places=10)
         # the synthetic fibres declare isolation one and orthonormal frames
-        self.assertAlmostEqual(read.fromIsolation, 1.0, places=12)
-        self.assertAlmostEqual(read.toIsolation, 1.0, places=12)
-        self.assertAlmostEqual(read.fromProjectorNorm, 1.0, places=10)
-        self.assertAlmostEqual(read.toProjectorNorm, 1.0, places=10)
+        self.assertAlmostEqual(read.from_isolation, 1.0, places=12)
+        self.assertAlmostEqual(read.to_isolation, 1.0, places=12)
+        self.assertAlmostEqual(read.from_projector_norm, 1.0, places=10)
+        self.assertAlmostEqual(read.to_projector_norm, 1.0, places=10)
 
     def test_the_config_defaults_are_readable_and_writable(self) -> None:
         config = obs.ComplexTransportConfig()
-        self.assertGreater(config.certificateTolerance, 0.0)
-        self.assertGreater(config.conditionNumberCap, 1.0)
-        self.assertGreaterEqual(config.isolationFloor, 0.0)
-        self.assertIsInstance(config.requireCertifiedFibers, bool)
-        config.conditionNumberCap = 7.5
-        self.assertEqual(config.conditionNumberCap, 7.5)
+        self.assertGreater(config.certificate_tolerance, 0.0)
+        self.assertGreater(config.condition_number_cap, 1.0)
+        self.assertGreaterEqual(config.isolation_floor, 0.0)
+        self.assertIsInstance(config.require_certified_fibers, bool)
+        config.condition_number_cap = 7.5
+        self.assertEqual(config.condition_number_cap, 7.5)
 
     def test_a_condition_number_cap_below_the_map_refuses_it(self) -> None:
         generator = rng()
         destination, source, frame_to, frame_from = band_pair(generator)
         transfer = frame_to @ self.G @ frame_from.conj().T
         config = obs.ComplexTransportConfig()
-        config.conditionNumberCap = 1.01
+        config.condition_number_cap = 1.01
         read = CT.transport(destination, source, transfer, config)
         self.assertFalse(read.accepted)
         self.assertLess(np.abs(np.asarray(read.map) - self.G).max(), INVERSE)
@@ -809,7 +809,7 @@ class TestReportedFieldsAndThresholds(unittest.TestCase):
         generator = rng()
         destination, source, frame_to, frame_from = band_pair(generator)
         config = obs.ComplexTransportConfig()
-        config.isolationFloor = 2.0
+        config.isolation_floor = 2.0
         read = CT.transport(destination, source,
                             frame_to @ self.G @ frame_from.conj().T, config)
         self.assertFalse(read.accepted)
@@ -821,10 +821,10 @@ class TestReportedFieldsAndThresholds(unittest.TestCase):
         source = fiber(columns[:, :2], cells(6), accepted=False)
         transfer = columns[:, 2:] @ self.G @ columns[:, :2].conj().T
         config = obs.ComplexTransportConfig()
-        config.requireCertifiedFibers = True
+        config.require_certified_fibers = True
         self.assertFalse(CT.transport(destination, source, transfer,
                                       config).accepted)
-        config.requireCertifiedFibers = False
+        config.require_certified_fibers = False
         self.assertTrue(CT.transport(destination, source, transfer,
                                      config).accepted)
 
@@ -836,7 +836,7 @@ class TestReportedFieldsAndThresholds(unittest.TestCase):
                 for s in np.linspace(0.0, 0.2, 5)]
         for scheme in (KatoScheme.DirectRotation, KatoScheme.Intertwiner,
                        KatoScheme.ExponentialGenerator):
-            self.assertEqual(CT.katoTransport(path, scheme).scheme, scheme)
+            self.assertEqual(CT.kato_transport(path, scheme).scheme, scheme)
 
     def test_the_exchange_read_reports_both_holonomies(self) -> None:
         generator = rng()
@@ -844,16 +844,16 @@ class TestReportedFieldsAndThresholds(unittest.TestCase):
         within[:3, :3] = invertible(generator, 3)
         within[3:, 3:] = invertible(generator, 3)
         exchange = block_swap(3) @ within
-        read = CT.exchangeCharacter(exchange, within, 2.5e-4)
-        self.assertLess(abs(read.exchangeDeterminant
+        read = CT.exchange_character(exchange, within, 2.5e-4)
+        self.assertLess(abs(read.exchange_determinant
                             - np.linalg.det(exchange)),
                         INVERSE * abs(np.linalg.det(exchange)))
-        self.assertLess(abs(read.referenceDeterminant
+        self.assertLess(abs(read.reference_determinant
                             - np.linalg.det(within)),
                         INVERSE * abs(np.linalg.det(within)))
-        self.assertAlmostEqual(read.referenceConditionNumber,
+        self.assertAlmostEqual(read.reference_condition_number,
                                np.linalg.cond(within), places=6)
-        self.assertEqual(read.pathLeakage, 2.5e-4)
+        self.assertEqual(read.path_leakage, 2.5e-4)
 
 
 if __name__ == "__main__":

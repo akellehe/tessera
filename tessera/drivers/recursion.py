@@ -292,18 +292,18 @@ def build_level(cells, squared_lengths, links, sheets=SHEETS):
     and ``links`` (dicts on ascending base edges) on corresponding edges."""
     count = 1 + max(max(c) for c in cells)
     tuples = [[v + t * count for v in c] for t in range(sheets) for c in cells]
-    spacetime = T.Spacetime.fromVertexTuples(3, tuples, 1.0, 0.0)
-    for edge in spacetime.getEdgeList().toVector():
-        a = int(edge.getSource().getId())
-        b = int(edge.getTarget().getId())
+    spacetime = T.Spacetime.from_vertex_tuples(3, tuples, 1.0, 0.0)
+    for edge in spacetime.get_edge_list().to_vector():
+        a = int(edge.get_source().get_id())
+        b = int(edge.get_target().get_id())
         sheet = a // count
         x, y = a - sheet * count, b - sheet * count
         key = (min(x, y), max(x, y))
         link = complex(links[key])
         if x > y:
             link = 1.0 / link
-        edge.setLength(cmath.sqrt(complex(squared_lengths[key])))
-        edge.setPhase(complex(-1j * cmath.log(link)))
+        edge.set_length(cmath.sqrt(complex(squared_lengths[key])))
+        edge.set_phase(complex(-1j * cmath.log(link)))
     return spacetime, count
 
 
@@ -321,15 +321,15 @@ def sheet_fields(spacetime, count, sheets=SHEETS):
     """Per sheet, the squared length and the link of every ascending base
     edge, read off the level's mesh."""
     fields = [({}, {}) for _ in range(sheets)]
-    for edge in spacetime.getEdgeList().toVector():
-        a = int(edge.getSource().getId())
-        b = int(edge.getTarget().getId())
+    for edge in spacetime.get_edge_list().to_vector():
+        a = int(edge.get_source().get_id())
+        b = int(edge.get_target().get_id())
         sheet = a // count
         x, y = a - sheet * count, b - sheet * count
-        link = cmath.exp(1j * complex(edge.getPhase()))
+        link = cmath.exp(1j * complex(edge.get_phase()))
         if x > y:
             x, y, link = y, x, 1.0 / link
-        fields[sheet][0][(x, y)] = complex(edge.getLength()) ** 2
+        fields[sheet][0][(x, y)] = complex(edge.get_length()) ** 2
         fields[sheet][1][(x, y)] = link
     return fields
 
@@ -343,8 +343,8 @@ def monopole_numbers(cells, links):
         c = sorted(cell)
         values = [links[(c[i], c[j])] for i, j in fixture.edges]
         support = obs.MonopoleSupport(4, fixture.edges, fixture.faces,
-                                      obs.MonopoleSupport.u1Part(values))
-        numbers.append(int(support.monopoleNumber().monopole_number))
+                                      obs.MonopoleSupport.u1_part(values))
+        numbers.append(int(support.monopole_number().monopole_number))
     return numbers
 
 
@@ -422,13 +422,13 @@ def cut_sectors(faces, number, count, sheets=SHEETS):
 
 def level_edge_classes(spacetime, count):
     """The shared base field of a level built by `build_level` (WP v17 §8):
-    for every edge in `getEdgeList()` order, the index of its ascending base
+    for every edge in `get_edge_list()` order, the index of its ascending base
     edge among the level's base edges, and the orientation of its stored link
     relative to the base edge (+1 when stored ascending, -1 otherwise)."""
     keys, classes, orientations = {}, [], []
-    for edge in spacetime.getEdgeList().toVector():
-        a = int(edge.getSource().getId())
-        b = int(edge.getTarget().getId())
+    for edge in spacetime.get_edge_list().to_vector():
+        a = int(edge.get_source().get_id())
+        b = int(edge.get_target().get_id())
         sheet = a // count
         x, y = a - sheet * count, b - sheet * count
         key = (min(x, y), max(x, y))
@@ -493,16 +493,16 @@ def base_operator(cells, z, links):
     """The Whitney complex of the base, its canonical edges and top simplices,
     the covariant chain-Hodge instance of sheet 0 and its h_1(z, U)."""
     tuples = [sorted(c) for c in cells]
-    complex_ = cob.ChainComplex.fromTopCells(tuples)
-    edges = [tuple(e) for e in complex_.kSimplexVertices(1)]
-    tops = [tuple(t) for t in complex_.kSimplexVertices(3)]
+    complex_ = cob.ChainComplex.from_top_cells(tuples)
+    edges = [tuple(e) for e in complex_.k_simplex_vertices(1)]
+    tops = [tuple(t) for t in complex_.k_simplex_vertices(3)]
     squared = [complex(z[e]) for e in edges]
     connection = ch.Connection(complex_, [complex(links[e]) for e in edges])
     hodge = ch.ChainHodge(complex_, squared)
     covariant = ch.CovariantChainHodge(hodge, connection)
     dual = ch.CovariantChainHodge(hodge, connection.inverse())
-    operator = np.asarray(covariant.covariantOperator(1))
-    dual_operator = np.asarray(dual.covariantOperator(1))
+    operator = np.asarray(covariant.covariant_operator(1))
+    dual_operator = np.asarray(dual.covariant_operator(1))
     pencil, dual_pencil = covariant.pencil(1), dual.pencil(1)
     return {"complex": complex_, "edges": edges, "tops": tops,
             "covariant": covariant, "operator": operator,
@@ -522,7 +522,7 @@ def recursion_turn(operator, config):
     bands.band_rank = config["band_rank"]
     declaration.bands = bands
     n = operator.shape[0]
-    recursion = cob.LevelRecursion.overPencil(list(operator.reshape(-1)), [],
+    recursion = cob.LevelRecursion.over_pencil(list(operator.reshape(-1)), [],
                                               n, declaration)
     recursion.advance()
     return recursion.level(0)
@@ -720,22 +720,22 @@ def inherited_pairing(frames, duals, transports, covariant, images=None):
     """The gauge-invariant inherited pairing of the grown-cell rule: the
     dual-connection frame of v paired with the image of the frame of w through
     G_1^U on the determinant line, divided by U_vw = det M_vw off the
-    diagonal (`GrownCellRule.gaugeInvariantPairing`). ``images`` are the
+    diagonal (`GrownCellRule.gauge_invariant_pairing`). ``images`` are the
     geometric images G_1^U Y when the caller already holds them exactly; they
     are solved for otherwise."""
     n = len(frames)
     if n == 0:
         return np.zeros((0, 0), dtype=complex)
     if images is None:
-        images = [np.asarray(covariant.applyG(1, Y)) for Y in frames]
+        images = [np.asarray(covariant.apply_g(1, Y)) for Y in frames]
     connection = np.ones((n, n), dtype=complex)
     for (v, w), block in transports.items():
         if v != w:
             connection[v, w] = (
-                complex(ch.GrownCellRule.transportConnection(block))
+                complex(ch.GrownCellRule.transport_connection(block))
                 if block.shape[0] == block.shape[1] and block.size else
                 complex("nan"))
-    return np.asarray(ch.GrownCellRule.gaugeInvariantPairing(
+    return np.asarray(ch.GrownCellRule.gauge_invariant_pairing(
         duals, images, connection))
 
 
@@ -748,13 +748,13 @@ def level_rule_shift(cells, z, links):
     a pure-gauge connection; with face holonomies it is the curvature-induced
     shift of the rule."""
     fixture_edges = list(itertools.combinations(range(4), 2))
-    single = cob.ChainComplex.fromTopCells([[0, 1, 2, 3]])
+    single = cob.ChainComplex.from_top_cells([[0, 1, 2, 3]])
     shifts = []
     for cell in cells:
         c = sorted(cell)
         s_local = [complex(z[(c[i], c[j])]) for i, j in fixture_edges]
         block = np.asarray(
-            ch.WhitneyMass.topSimplexBlocks(single, s_local, 1)[0].block)
+            ch.WhitneyMass.top_simplex_blocks(single, s_local, 1)[0].block)
         U = {}
         for (i, j) in fixture_edges:
             U[(i, j)] = complex(links[(c[i], c[j])])
@@ -780,22 +780,22 @@ def level_rule_shift(cells, z, links):
         images = np.linalg.solve(forward, frames)
         connection = np.array([[U[(v, w)] for w in range(4)]
                                for v in range(4)])
-        pairing = np.asarray(ch.GrownCellRule.gaugeInvariantPairing(
+        pairing = np.asarray(ch.GrownCellRule.gauge_invariant_pairing(
             [duals[:, [v]] for v in range(4)],
             [images[:, [v]] for v in range(4)], connection))
-        read = ch.GrownCellRule.invertVertexPairing(pairing)
-        rule = np.array(read.squaredLengths)
+        read = ch.GrownCellRule.invert_vertex_pairing(pairing)
+        rule = np.array(read.squared_lengths)
         shifts.append({"cell": c,
                        "relative_shift": float(np.max(np.abs(
                            rule / np.array(s_local) - 1.0))),
-                       "row_sum_defect": float(read.rowSumDefect)})
+                       "row_sum_defect": float(read.row_sum_defect)})
     return shifts
 
 
 def manifold_violation(cells):
     """None when the complex of ``cells`` is a manifold with boundary
     (`SurgicalCone.validate`); otherwise the violation it names."""
-    spacetime = T.Spacetime.fromVertexTuples(
+    spacetime = T.Spacetime.from_vertex_tuples(
         3, [[int(v) for v in c] for c in cells], 1.0, 0.0)
     ok, reason = cob.SurgicalCone(spacetime).validate()
     return None if ok else str(reason)
@@ -815,7 +815,7 @@ def grow(cells, pairing, transports):
         block = pairing[np.ix_(index, index)]
         entry = {"vertices": index, "pairing": block}
         try:
-            read = ch.GrownCellRule.invertVertexPairing(block)
+            read = ch.GrownCellRule.invert_vertex_pairing(block)
         except ValueError as error:
             entry["failed"] = str(error)
             reads.append(entry)
@@ -827,21 +827,21 @@ def grow(cells, pairing, transports):
             continue
         glued.append(index)
         entry.update({
-            "row_sum_defect": float(read.rowSumDefect),
+            "row_sum_defect": float(read.row_sum_defect),
             "asymmetry": float(read.asymmetry),
             "scale": complex(read.scale),
             "volume": complex(read.volume),
-            "squared_lengths": [complex(v) for v in read.squaredLengths],
-            "frame_invariant_ratios": np.asarray(read.frameInvariantRatios),
+            "squared_lengths": [complex(v) for v in read.squared_lengths],
+            "frame_invariant_ratios": np.asarray(read.frame_invariant_ratios),
         })
         for m, (i, j) in enumerate(itertools.combinations(range(4), 2)):
             per_edge_z.setdefault((index[i], index[j]), []).append(
-                complex(read.squaredLengths[m]))
+                complex(read.squared_lengths[m]))
         reads.append(entry)
     links, groupoid = {}, {}
     for (v, w) in per_edge_z:
-        forward = ch.GrownCellRule.transportConnection(transports[(v, w)])
-        backward = ch.GrownCellRule.transportConnection(transports[(w, v)])
+        forward = ch.GrownCellRule.transport_connection(transports[(v, w)])
+        backward = ch.GrownCellRule.transport_connection(transports[(w, v)])
         links[(v, w)] = complex(forward)
         groupoid[(v, w)] = float(abs(forward * backward - 1.0))
     z = {e: complex(np.mean(values)) for e, values in per_edge_z.items()}
@@ -1067,21 +1067,21 @@ def pachner_stage(cells, z, links, config):
         grow_boundaries=False, max_lookahead=depth, combinatorial_breadth=0)]
     record["objective_after"] = float(node.objective())
     moved = node.spacetime()
-    raw = [sorted(int(v.getId()) for v in cell.getVertices())
-           for cell in moved.getTopSimplices() if cell is not None]
+    raw = [sorted(int(v.get_id()) for v in cell.get_vertices())
+           for cell in moved.get_top_simplices() if cell is not None]
     used = sorted({v for c in raw for v in c})
     relabel = {v: i for i, v in enumerate(used)}
     cells_out = sorted([relabel[v] for v in c] for c in raw)
     z_out, links_out = {}, {}
-    for edge in moved.getEdgeList().toVector():
-        x = relabel[int(edge.getSource().getId())]
-        y = relabel[int(edge.getTarget().getId())]
+    for edge in moved.get_edge_list().to_vector():
+        x = relabel[int(edge.get_source().get_id())]
+        y = relabel[int(edge.get_target().get_id())]
         # the inverse of `build_level`'s writing of the fields
-        link = cmath.exp(1j * complex(edge.getPhase()))
+        link = cmath.exp(1j * complex(edge.get_phase()))
         if x > y:
             link = 1.0 / link
         key = (min(x, y), max(x, y))
-        z_out[key] = complex(edge.getLength()) ** 2
+        z_out[key] = complex(edge.get_length()) ** 2
         links_out[key] = link
     record["vertex_relabeling"] = {str(v): relabel[v] for v in used}
     record["after"] = {"vertices": len(used), "edges": len(z_out),

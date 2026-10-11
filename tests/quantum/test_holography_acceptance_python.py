@@ -45,9 +45,9 @@ class TestSpatialMIOnHandBuiltDensityMatrices(unittest.TestCase):
     def _mi(self, rho_AB: np.ndarray) -> float:
         rho_A = self._partial_trace_B(rho_AB)
         rho_B = self._partial_trace_A(rho_AB)
-        sA = MutualInformation.vonNeumannEntropy(rho_A)
-        sB = MutualInformation.vonNeumannEntropy(rho_B)
-        sAB = MutualInformation.vonNeumannEntropy(rho_AB)
+        sA = MutualInformation.von_neumann_entropy(rho_A)
+        sB = MutualInformation.von_neumann_entropy(rho_B)
+        sAB = MutualInformation.von_neumann_entropy(rho_AB)
         return sA + sB - sAB
 
     def test_bell_pair_mi_is_two_ln_two(self) -> None:
@@ -74,19 +74,19 @@ class TestSchwingerGroundStateMIDecay(unittest.TestCase):
     def test_mi_decays_with_distance(self) -> None:
         tdvp = TDVPConfig()
         tdvp.N = 8; tdvp.a = 1.0; tdvp.g = 1.0; tdvp.m = 5.0; tdvp.L0 = 0.0
-        tdvp.dmrgMaxBondDim = 64; tdvp.dmrgNSweeps = 12
-        tdvp.dmrgKrylovDim = 4;   tdvp.dmrgCutoff = 1e-12
-        tdvp.i0 = 1; tdvp.d = 1; tdvp.quenchEnforceParity = False
+        tdvp.dmrg_max_bond_dim = 64; tdvp.dmrg_n_sweeps = 12
+        tdvp.dmrg_krylov_dim = 4;   tdvp.dmrg_cutoff = 1e-12
+        tdvp.i0 = 1; tdvp.d = 1; tdvp.quench_enforce_parity = False
         tdvp.dt = 0.1; tdvp.T = 0.0
-        tdvp.snapshotEvery = 1
-        tdvp.maxBondDim = 64
-        tdvp.quiet = True; tdvp.conserveQns = True
-        tdvp.recordMutualInformation = True
+        tdvp.snapshot_every = 1
+        tdvp.max_bond_dim = 64
+        tdvp.quiet = True; tdvp.conserve_qns = True
+        tdvp.record_mutual_information = True
 
         quench = SchwingerQuench(tdvp).evolve()
         snap = quench.snapshots[0]
         N = tdvp.N
-        mi = np.array(snap.mutualInformation).reshape(N, N)
+        mi = np.array(snap.mutual_information).reshape(N, N)
 
         def mi_at_distance(k: int) -> float:
             vals = [mi[i, i + k] for i in range(N - k)]
@@ -114,10 +114,10 @@ class TestTemporalMIHeavyQuarkLimit(unittest.TestCase):
         p = SchwingerParams()
         p.N = 4; p.a = 1.0; p.g = 1.0; p.m = 200.0; p.L0 = 0.0
         s = ChoiTDVPSettings()
-        s.dt = 0.001; s.maxBondDim = 64; s.cutoff = 1e-12
-        s.krylovDim = 12; s.quiet = True
+        s.dt = 0.001; s.max_bond_dim = 64; s.cutoff = 1e-12
+        s.krylov_dim = 12; s.quiet = True
 
-        mi = ChoiPropagator.temporalMutualInformation(p, 0.005, s)
+        mi = ChoiPropagator.temporal_mutual_information(p, 0.005, s)
 
         diag = np.diag(mi)
         off  = mi - np.diag(diag)

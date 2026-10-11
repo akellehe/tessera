@@ -9,8 +9,8 @@ We measure:
       (0) post-build, (1) post-tune, (2) post-therm.
 
 The dual-graph diffusion + spectral-dimension extraction run in C++:
-``st.getDualGraph()`` returns a :class:`tessera.SparseGraph` whose
-``returnProbability`` / ``spectralDimensionCurve`` give the heat-kernel
+``st.get_dual_graph()`` returns a :class:`tessera.SparseGraph` whose
+``return_probability`` / ``spectral_dimension_curve`` give the heat-kernel
 return probability and D_S(sigma) curve.
 
 Run it small first to sanity-check, then larger.  Resource-friendly:
@@ -34,19 +34,19 @@ def dual_spectral_dimension(st, sigmas, n_walks, seed):
     aligned with ``sigmas`` (NaN where the return probability is
     non-positive), or ``(sg, None)`` for an empty / edgeless dual graph.
     """
-    sg = st.getDualGraph()
-    if sg.nNodes() == 0 or sg.nEdges() == 0:
+    sg = st.get_dual_graph()
+    if sg.n_nodes() == 0 or sg.n_edges() == 0:
         return sg, None
-    P = sg.returnProbability(list(sigmas), m=n_walks, seed=seed)
+    P = sg.return_probability(list(sigmas), m=n_walks, seed=seed)
     ds = np.asarray(
-        tessera.SparseGraph.spectralDimensionCurve(list(sigmas), list(P)))
+        tessera.SparseGraph.spectral_dimension_curve(list(sigmas), list(P)))
     return sg, ds
 
 
 def slice_widths(st):
     """Return the number of vertices at each time slice."""
-    times = list(st.getTimeSlices())
-    return {t: len(st.getVerticesAtTime(t)) for t in times}
+    times = list(st.get_time_slices())
+    return {t: len(st.get_vertices_at_time(t)) for t in times}
 
 
 def volume_profile(st):
@@ -60,14 +60,14 @@ def volume_profile(st):
     """
     vp = tessera.VolumeProfile()
     vp.compute(st)
-    return [c for c in vp.getProfile() if c > 0]
+    return [c for c in vp.get_profile() if c > 0]
 
 
 def report(label, st, max_sigma=200.0, n_walks=20, seed=0):
-    N = st.getTopSimplexCount()
-    n41 = st.getN41()
-    n32 = st.getN32()
-    nverts = st.getVertexCount()
+    N = st.get_top_simplex_count()
+    n41 = st.get_n41()
+    n32 = st.get_n32()
+    nverts = st.get_vertex_count()
     profile = volume_profile(st)
     widths = slice_widths(st)
 
@@ -76,7 +76,7 @@ def report(label, st, max_sigma=200.0, n_walks=20, seed=0):
     if ds is None:
         print(f"[{label}] empty triangulation")
         return
-    deg = np.array([sg.degree(i) for i in range(sg.nNodes())])
+    deg = np.array([sg.degree(i) for i in range(sg.n_nodes())])
     finite = ds[np.isfinite(ds)]
     if finite.size:
         n_head = max(1, len(finite) // 5)
@@ -133,9 +133,9 @@ def main():
     st = tessera.Spacetime(metric, tessera.CDT, 1.0, 1.0, tessera.PREFERRED,
                           tessera.Toroid())
     st.build(min(args.n_simplices, args.max_build))
-    target = st.getN41() if args.n_simplices <= args.max_build else args.n_simplices // 2
-    print(f"Initial build done.  N4={st.getTopSimplexCount()} "
-          f"N41={st.getN41()}  target N41={target}")
+    target = st.get_n41() if args.n_simplices <= args.max_build else args.n_simplices // 2
+    print(f"Initial build done.  N4={st.get_top_simplex_count()} "
+          f"N41={st.get_n41()}  target N41={target}")
     report("post-build", st, args.max_sigma, args.n_walks, args.seed)
 
     cdt = tessera.CDTSimulation(st, 2.2, 0.5, 0.6, 1.0 / target, target)
@@ -151,7 +151,7 @@ def main():
         cdt.sweep(batch)
         if (start // chunk) % 2 == 0:
             print(f"  therm progress: {start+batch}/{args.n_therm} sweeps; "
-                  f"N4={st.getTopSimplexCount()} N41={st.getN41()}  "
+                  f"N4={st.get_top_simplex_count()} N41={st.get_n41()}  "
                   f"elapsed={time.time()-t0:.1f}s")
     print(f"Thermalization done in {time.time()-t0:.1f}s")
     report("post-therm", st, args.max_sigma, args.n_walks, args.seed)

@@ -22,7 +22,7 @@ cob = tessera.cobordism
 
 
 def _seed():
-    return tessera.Spacetime.fromVertexTuples(4, [[0, 1, 2, 3, 4]], 1.0, 0.0)
+    return tessera.Spacetime.from_vertex_tuples(4, [[0, 1, 2, 3, 4]], 1.0, 0.0)
 
 
 def _node(seed=5):
@@ -30,7 +30,7 @@ def _node(seed=5):
 
 
 class RegionFingerprintTest(unittest.TestCase):
-    """`Fingerprint.fingerprintOf` names a set of identifiers at any size."""
+    """`Fingerprint.fingerprint_of` names a set of identifiers at any size."""
 
     def test_holds_sets_larger_than_an_instance_can(self):
         # A Fingerprint INSTANCE stores at most tessera::mesh::kMax = 8
@@ -38,19 +38,19 @@ class RegionFingerprintTest(unittest.TestCase):
         # first eight members would share a name. Block regions routinely
         # exceed that (a live-run complex carried 21 vertices), which is why
         # the region key calls the static instead of holding an instance.
-        name = tessera.mesh.Fingerprint.fingerprintOf
+        name = tessera.mesh.Fingerprint.fingerprint_of
         base = set(range(1, 9))
         names = {name(base | {tail}) for tail in range(9, 20)}
         self.assertEqual(len(names), 11)
         self.assertNotIn(name(base), names)
 
     def test_instance_and_static_are_one_implementation(self):
-        # `fingerprint()` delegates to `fingerprintOf`, so an instance and a
+        # `fingerprint()` delegates to `fingerprint_of`, so an instance and a
         # caller hashing the same identifiers cannot drift apart.
         fingerprint = tessera.mesh.Fingerprint
         for ids in ({1, 2, 3}, {7}, {11, 4, 9, 2}, set(range(1, 9))):
             self.assertEqual(fingerprint(sorted(ids)).fingerprint(),
-                             fingerprint.fingerprintOf(ids))
+                             fingerprint.fingerprint_of(ids))
 
     def test_instance_truncates_where_the_static_does_not(self):
         # Nine identifiers: the instance keeps kMax = 8 of them and its hash
@@ -59,12 +59,12 @@ class RegionFingerprintTest(unittest.TestCase):
         fingerprint = tessera.mesh.Fingerprint
         ids = set(range(1, 10))
         self.assertNotEqual(fingerprint(sorted(ids)).fingerprint(),
-                            fingerprint.fingerprintOf(ids))
+                            fingerprint.fingerprint_of(ids))
         self.assertEqual(fingerprint(sorted(ids)).fingerprint(),
-                         fingerprint.fingerprintOf(set(range(1, 9))))
+                         fingerprint.fingerprint_of(set(range(1, 9))))
 
     def test_names_the_set_not_the_order(self):
-        name = tessera.mesh.Fingerprint.fingerprintOf
+        name = tessera.mesh.Fingerprint.fingerprint_of
         self.assertEqual(name({1, 2, 3}), name({3, 2, 1}))
         self.assertNotEqual(name({1, 2, 3}), name({1, 2, 4}))
         self.assertNotEqual(name({1, 2, 3}), name({1, 2}))
@@ -98,9 +98,9 @@ class BlockBettiCacheTest(unittest.TestCase):
         node_a, node_b = _node(), _node()
         node_a.r_u(st_a)                       # warm the slots pre-scale
         for st in (st_a, st_b):
-            for e in st.getEdgeList().toVector():
-                e.setLength(e.getLength() * cmath.sqrt(2.0))
-            st.materializeFacets()
+            for e in st.get_edge_list().to_vector():
+                e.set_length(e.get_length() * cmath.sqrt(2.0))
+            st.materialize_facets()
         self.assertEqual(node_a.r_u(st_a), node_b.r_u(st_b))
 
     def test_structural_move_invalidates_and_stays_exact(self):

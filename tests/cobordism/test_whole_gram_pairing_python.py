@@ -51,8 +51,8 @@ def seeded(pairing):
 def swept(node):
     """The reading at four jitter amplitudes, lengths restored afterwards."""
     spacetime = node.spacetime()
-    edges = list(spacetime.getEdgeList().toVector())
-    original = [edge.getLength() for edge in edges]
+    edges = list(spacetime.get_edge_list().to_vector())
+    original = [edge.get_length() for edge in edges]
     target = np.eye(2, dtype=complex)
     values = []
     try:
@@ -60,11 +60,11 @@ def swept(node):
             generator = np.random.default_rng(7)
             for edge, length in zip(edges, original):
                 step = generator.standard_normal() + 1j * generator.standard_normal()
-                edge.setLength(length * (1.0 + amplitude * step))
+                edge.set_length(length * (1.0 + amplitude * step))
             values.append(node.whole_harmonic_residual(target))
     finally:
         for edge, length in zip(edges, original):
-            edge.setLength(length)
+            edge.set_length(length)
     return values
 
 

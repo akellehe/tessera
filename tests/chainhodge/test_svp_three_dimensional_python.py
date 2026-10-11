@@ -75,10 +75,10 @@ def test_tetrahedron_mass_matrices_have_the_integrated_values(name, signature, k
     points = TETRAHEDRA[name]
     metric = EUCLIDEAN_3 if signature == "euclidean" else MINKOWSKI_3
     s = squared_lengths(points, metric)
-    K = cob.ChainComplex.fromTopCells([[0, 1, 2, 3]])
+    K = cob.ChainComplex.from_top_cells([[0, 1, 2, 3]])
     code = WM.assemble(K, s, k, KS).toarray()
     integrated, faces = svp.simplex_mass_from_coordinates(points, metric, k)
-    cells = [tuple(int(v) for v in c) for c in K.kSimplexVertices(k)]
+    cells = [tuple(int(v) for v in c) for c in K.k_simplex_vertices(k)]
     order = [cells.index(f) for f in faces]
     factor = 1.0 if signature == "euclidean" else 1j
     expected = factor * integrated
@@ -100,13 +100,13 @@ def test_triangle_mass_matrices_have_the_integrated_values(signature, svp_record
     points = np.array([[0.0, 0.0], [1.2, 0.1], [-0.3, 0.9]])
     metric = np.eye(2) if signature == "euclidean" else np.diag([-1.0, 1.0])
     s = squared_lengths(points, metric)
-    K = cob.ChainComplex.fromTopCells([[0, 1, 2]])
+    K = cob.ChainComplex.from_top_cells([[0, 1, 2]])
     factor = 1.0 if signature == "euclidean" else 1j
     agreement = {}
     for k in (0, 1, 2):
         code = WM.assemble(K, s, k, KS).toarray()
         integrated, faces = svp.simplex_mass_from_coordinates(points, metric, k)
-        cells = [tuple(int(v) for v in c) for c in K.kSimplexVertices(k)]
+        cells = [tuple(int(v) for v in c) for c in K.k_simplex_vertices(k)]
         order = [cells.index(f) for f in faces]
         expected = factor * integrated
         agreement[f"M_{k}"] = float(np.linalg.norm(code[np.ix_(order, order)] - expected)
@@ -124,7 +124,7 @@ def test_the_dense_oracle_reproduces_every_degree_above_two_dimensions(name, cel
     dimension; at d = 3 and d = 4 it reproduces the library at every degree,
     which extends the d = 2 oracle comparison of the Whitney mass tests."""
     rng = np.random.default_rng(37)
-    K = cob.ChainComplex.fromTopCells(cells)
+    K = cob.ChainComplex.from_top_cells(cells)
     s = random_allowable(K, rng, 0.2)
     hodge = ch.ChainHodge(K, s, L2, KS)
     agreement = {}
@@ -174,7 +174,7 @@ class TestF7PrismFamilies:
                                        periods=periods)
         started = time.time()
         hodge = ch.ChainHodge(K, s, L2, KS)
-        reads = {k: hodge.harmonicChains(k) for k in range(4)}
+        reads = {k: hodge.harmonic_chains(k) for k in range(4)}
         angles = {1: list(svp.angles_deg(reads[1].images, W1)),
                   2: list(svp.angles_deg(reads[2].images, W2))}
         record = svp_records.instance(
@@ -182,7 +182,7 @@ class TestF7PrismFamilies:
                                   "signature": "lorentzian" if lorentz else "euclidean",
                                   "top_cells": tops},
             hodge, reads[1], started=started,
-            n3=K.numSimplices(3),
+            n3=K.num_simplices(3),
             nullities=[reads[k].nullity for k in range(4)],
             gaps=[reads[k].gap for k in range(4)],
             angles_deg=angles[1], angles_deg_degree_two=angles[2],
@@ -205,13 +205,13 @@ class TestF7PrismFamilies:
                                       periods=periods, height=1.0 / N)
         started = time.time()
         hodge = ch.ChainHodge(K, s, L2, KS)
-        reads = {k: hodge.harmonicChains(k) for k in range(4)}
+        reads = {k: hodge.harmonic_chains(k) for k in range(4)}
         angles = list(svp.angles_deg(reads[1].images, W1[:, 1].reshape(-1, 1)))
         record = svp_records.instance(
             "F7", "prism of F2", {"N": N, "L": L, "layers": 2, "jitter": 0.15, "seed": 2,
                                   "signature": "lorentzian" if lorentz else "euclidean",
                                   "top_cells": tops},
-            hodge, reads[1], started=started, n3=K.numSimplices(3),
+            hodge, reads[1], started=started, n3=K.num_simplices(3),
             nullities=[reads[k].nullity for k in range(4)],
             gaps=[reads[k].gap for k in range(4)], angles_deg=angles,
             criterion="b_k = (1, 1, 0, 0), dim H_k = b_k, and " + FLAT_CRITERION)

@@ -20,7 +20,7 @@ def _plane_wave_levels(grid, pencil, kappa):
     grid translations, so every lattice plane wave is an eigenvector of both
     matrices and its eigenvalue is its Rayleigh quotient."""
     n = grid.divisions()
-    frac = np.array([grid.fractionalCoordinates(v) for v in range(grid.vertexCount())])
+    frac = np.array([grid.fractional_coordinates(v) for v in range(grid.vertex_count())])
     levels, worst = [], 0.0
     for i in range(n[0]):
         for j in range(n[1]):
@@ -39,7 +39,7 @@ class TestAgainstTheDenseReference:
     def test_lowest_pairs_match_the_dense_spectrum(self, kappa, sigma):
         grid = cubic_grid(4)
         _, _, cov = covariant_torus(grid, kappa)
-        pencil = cov.sparsePencil()
+        pencil = cov.sparse_pencil()
         dense = cov.pencil(0)
         assert abs(pencil.A.toarray() - dense.A).max() < 1e-13 * abs(dense.A).max()
         assert abs(pencil.M.toarray() - dense.B).max() < 1e-13 * abs(dense.B).max()
@@ -57,18 +57,18 @@ class TestAgainstTheDenseReference:
         assert cert.regime == cob.CertificateRegime.PositiveSemidefinite
         assert cert.residual <= 1e-10 and max(read.residuals) == cert.residual
         assert 1.0 <= cert.conditioning < 1e8
-        assert read.shiftBelowSpectrum
-        assert read.hermitianDefectA < 1e-12 and read.hermitianDefectM < 1e-12
+        assert read.shift_below_spectrum
+        assert read.hermitian_defect_a < 1e-12 and read.hermitian_defect_m < 1e-12
         Z = read.vectors
         assert abs(Z.conj().T @ (pencil.M @ Z) - np.eye(count)).max() < 1e-10
-        assert read.orthonormalityDefect < 1e-10
+        assert read.orthonormality_defect < 1e-10
         assert np.abs(pencil.A @ Z - (pencil.M @ Z) * values.real).max() < 1e-8
 
     def test_the_tetrahedron_is_solved_completely(self):
-        K = cob.ChainComplex.fromTopCells([[0, 1, 2, 3]])
+        K = cob.ChainComplex.from_top_cells([[0, 1, 2, 3]])
         hodge = ch.ChainHodge(K, [1.0] * 6)
         cov = ch.CovariantChainHodge(hodge, ch.Connection.trivial(K))
-        pencil = cov.sparsePencil()
+        pencil = cov.sparse_pencil()
         read = ch.SparsePencilSolver.lowest(pencil.A, pencil.M, 4, -1.0)
         # The constant and the exact triplet at 40 / a^2.
         assert np.array(read.eigenvalues.values).real == pytest.approx([0, 40, 40, 40], abs=1e-10)
@@ -81,7 +81,7 @@ class TestOnTheGrid:
         must be returned."""
         grid = cubic_grid(6)
         _, _, cov = covariant_torus(grid, crossover=8)  # the dense path would refuse here
-        pencil = cov.sparsePencil()
+        pencil = cov.sparse_pencil()
         with pytest.raises(ValueError, match="crossover"):
             cov.pencil(0)
         exact = _plane_wave_levels(grid, pencil, (0, 0, 0))
@@ -110,7 +110,7 @@ class TestOnTheGrid:
         for n in sizes:
             grid = cubic_grid(n)
             _, _, cov = covariant_torus(grid, KAPPA, crossover=8)
-            pencil = cov.sparsePencil()
+            pencil = cov.sparse_pencil()
             read = ch.SparsePencilSolver.lowest(pencil.A, pencil.M, 4, 0.0)
             assert read.eigenvalues.certificate.holds()
             continuum = free_levels(grid, KAPPA, 4)
@@ -123,11 +123,11 @@ class TestOnTheGrid:
     def test_a_shift_inside_the_spectrum_returns_the_levels_above_it(self):
         grid = cubic_grid(5)
         _, _, cov = covariant_torus(grid, KAPPA, crossover=8)
-        pencil = cov.sparsePencil()
+        pencil = cov.sparse_pencil()
         exact = _plane_wave_levels(grid, pencil, KAPPA)
         sigma = 0.5 * (exact[5] + exact[6])
         read = ch.SparsePencilSolver.lowest(pencil.A, pencil.M, 5, sigma)
-        assert not read.shiftBelowSpectrum
+        assert not read.shift_below_spectrum
         assert read.eigenvalues.certificate.regime == cob.CertificateRegime.HermitianIndefinite
         assert read.eigenvalues.certificate.holds()
         assert np.array(read.eigenvalues.values).real == pytest.approx(exact[6:11], rel=1e-9)
@@ -136,7 +136,7 @@ class TestOnTheGrid:
 class TestRefusals:
     def _pencil(self):
         _, _, cov = covariant_torus(cubic_grid(3), KAPPA)
-        return cov.sparsePencil()
+        return cov.sparse_pencil()
 
     def test_a_pencil_that_is_not_hermitian_is_refused_by_name(self):
         p = self._pencil()
@@ -161,9 +161,9 @@ class TestRefusals:
             ch.SparsePencilSolver.lowest(p.A[:, :-1], p.M, 3, -1.0)
 
     def test_a_shift_on_an_eigenvalue_is_refused(self):
-        K = cob.ChainComplex.fromTopCells([[0, 1, 2, 3]])
+        K = cob.ChainComplex.from_top_cells([[0, 1, 2, 3]])
         cov = ch.CovariantChainHodge(ch.ChainHodge(K, [1.0] * 6), ch.Connection.trivial(K))
-        p = cov.sparsePencil()
+        p = cov.sparse_pencil()
         # The constant is an eigenvector at zero. A factorization that meets the
         # zero pivot refuses; one that rounds past it reports the conditioning.
         try:
@@ -179,12 +179,12 @@ class TestHermitianSpecialization:
         grid = cubic_grid(4)
         _, base, cov = covariant_torus(grid, KAPPA, measure_certificate=True)
         assert base.certificate().allowable and base.certificate().margin == pytest.approx(np.pi)
-        assert not base.certificate().continuationAmbiguous
-        assert cov.connection().isUnitary()
-        regime = cov.regimeCertificate(0)
+        assert not base.certificate().continuation_ambiguous
+        assert cov.connection().is_unitary()
+        regime = cov.regime_certificate(0)
         assert regime.regime == cob.CertificateRegime.ComplexSymmetricPencil
         P = cov.pencil(0)
         assert np.linalg.norm(P.A - P.A.conj().T) < 1e-12 * np.linalg.norm(P.A)
         assert np.linalg.norm(P.B - P.B.conj().T) < 1e-12 * np.linalg.norm(P.B)
         np.linalg.cholesky(P.B)
-        assert cov.certificate().covarianceMetric < 1e-12
+        assert cov.certificate().covariance_metric < 1e-12

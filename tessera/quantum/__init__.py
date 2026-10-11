@@ -80,8 +80,8 @@ Compute the ground state at the spec parameters::
     >>> cfg.a = 1.0; cfg.g = 1.0
     >>> cfg.m = 0.0
     >>> cfg.L0 = 0.0
-    >>> cfg.maxBondDim = 100
-    >>> cfg.nSweeps = 12
+    >>> cfg.max_bond_dim = 100
+    >>> cfg.n_sweeps = 12
     >>> result = SchwingerModel(cfg).solve()
     >>> result.energy < 0
     True
@@ -98,13 +98,13 @@ diagram is the transitive reduction of the strict-majorization graph.
 Construct a poset directly from a list of spectra::
 
     >>> from tessera.quantum import Majorization, StandardMajorization
-    >>> p = Majorization.posetOf([[1/3]*3, [0.5, 0.5], [1.0]])
-    >>> p.getNodeCount, sorted(p.covers)
+    >>> p = Majorization.poset_of([[1/3]*3, [0.5, 0.5], [1.0]])
+    >>> p.get_node_count, sorted(p.covers)
     (3, [(1, 0), (2, 1)])
 
 Or run the full DMRG → Schmidt → poset pipeline in one call::
 
-    >>> r = SchwingerModel(cfg).solveWithMajorization()
+    >>> r = SchwingerModel(cfg).solve_with_majorization()
     >>> r.spectra.N
     20
 
@@ -128,15 +128,15 @@ Parity constraint: i0 odd + d odd. Example::
     >>> cfg = TDVPConfig()
     >>> cfg.N = 14; cfg.m = 20.0; cfg.g = 1.0
     >>> cfg.i0 = 5; cfg.d = 5
-    >>> cfg.dt = 0.05; cfg.T = 5.0; cfg.snapshotEvery = 5
+    >>> cfg.dt = 0.05; cfg.T = 5.0; cfg.snapshot_every = 5
     >>> r = SchwingerQuench(cfg).evolve()
-    >>> r.snapshots[0].lProfile[:3]
+    >>> r.snapshots[0].l_profile[:3]
     [-1.0, -0.0, -0.0]
 
 Causal-order comparison
 -----------------------
 
-:meth:`SchwingerQuench.compareCausalOrders` ties the ground-state,
+:meth:`SchwingerQuench.compare_causal_orders` ties the ground-state,
 Schmidt, and TDVP pipelines together:
 DMRG ground state → q-qbar quench → TDVP loop → build three partial
 orders on (cut, time) labels → compare. The orders are:
@@ -151,9 +151,9 @@ graph edit distance. Example::
     >>> cfg = TDVPConfig()
     >>> cfg.N = 10; cfg.m = 0.5; cfg.g = 1.0
     >>> cfg.i0 = 3; cfg.d = 3
-    >>> cfg.dt = 0.1; cfg.T = 1.0; cfg.snapshotEvery = 1
-    >>> r = SchwingerQuench(cfg).compareCausalOrders(vLr=1.0)
-    >>> r.lrVsCs.kendallTau
+    >>> cfg.dt = 0.1; cfg.T = 1.0; cfg.snapshot_every = 1
+    >>> r = SchwingerQuench(cfg).compare_causal_orders(vLr=1.0)
+    >>> r.lr_vs_cs.kendall_tau
     1.0
 
 The ≼_LR ⊂ ≼_cs invariant gives the strongest sanity check: τ = 1.0
@@ -223,10 +223,10 @@ _EXPORTS = (
     "MeanFieldStepRead",
     # KI + QuantumSimplex (Van Raamsdonk-metric simplex factory)
     "QuantumSimplex", "QuantumSimplexPosition", "QuantumVertex",
-    "createQuantumVertex",
+    "create_quantum_vertex",
     "KoashiImotoResult", "KoashiImotoBlock", "KoashiImotoTolerances",
-    "koashiImotoDecompose", "partialTraceA", "partialTraceB",
-    "mutualInformation", "partialTrace", "randomCorrelatedState",
+    "koashi_imoto_decompose", "partial_trace_a", "partial_trace_b",
+    "mutual_information", "partial_trace", "random_correlated_state",
 )
 
 _UNAVAILABLE_MESSAGE = (

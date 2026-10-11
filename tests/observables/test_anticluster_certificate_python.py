@@ -50,8 +50,8 @@ def weighted_cycle(length=12, weak=(4, 11), bridge=WEAK):
     and the heavy-endpoint modes, where the band is the two arcs and nothing
     else."""
     cells = [[j, (j + 1) % length] for j in range(length)]
-    K = cob.ChainComplex.fromTopCells(cells)
-    edges = [tuple(e) for e in K.kSimplexVertices(1)]
+    K = cob.ChainComplex.from_top_cells(cells)
+    edges = [tuple(e) for e in K.k_simplex_vertices(1)]
     weak_edges = {tuple(sorted(((j + 1) % length, j))) for j in weak}
     s = [bridge if e in weak_edges else 1.0 for e in edges]
     return K, edges, _operator(K, s)
@@ -61,11 +61,11 @@ def blind_modularity(K):
     """Newman-Girvan modularity on the combinatorial one-skeleton of `K`: every
     edge of unit weight, which is the metric-blind proposer the whitepaper
     names."""
-    edges = K.kSimplexVertices(1)
+    edges = K.k_simplex_vertices(1)
     src = [int(e[0]) for e in edges]
     tgt = [int(e[1]) for e in edges]
-    cells = [int(v[0]) for v in K.kSimplexVertices(0)]
-    return obs.PersistentModularity.fromWeightedEdges(src, tgt, [1.0] * len(edges), cells)
+    cells = [int(v[0]) for v in K.k_simplex_vertices(0)]
+    return obs.PersistentModularity.from_weighted_edges(src, tgt, [1.0] * len(edges), cells)
 
 
 class TestTheAntiClusterCertificate:
@@ -79,29 +79,29 @@ class TestTheAntiClusterCertificate:
         wall is closed and lies in the certified coexact part of the degree-two
         band, and no mode of the operator lives inside."""
         K, cov = kuhn_block(3, hollow=True)
-        certificate = obs.EffectiveTopology.antiCluster(cov, cavity_corners(), VOID_SCALE)
+        certificate = obs.EffectiveTopology.anti_cluster(cov, cavity_corners(), VOID_SCALE)
         assert certificate.region == cavity_corners()
         # The cavity's own cells are not in the complex, so the region holds
         # none; its enclosing surface is the part of the complex's own boundary
         # that its faces carry.
-        assert list(certificate.interiorCells) == []
+        assert list(certificate.interior_cells) == []
         assert len(certificate.surface) == 12
-        assert np.count_nonzero(np.abs(np.array(certificate.enclosingSurface)) > 1e-12) == 12
+        assert np.count_nonzero(np.abs(np.array(certificate.enclosing_surface)) > 1e-12) == 12
         # The first clause: a certified coexact near-cycle of L_2.
         assert certificate.band.degree == 2 and certificate.band.certified
         assert certificate.voids == 1
-        assert certificate.cycleResidual < 1e-10
-        assert certificate.voidContent > certificate.minimumVoidContent
-        assert certificate.minimumVoidContent == 0.1
+        assert certificate.cycle_residual < 1e-10
+        assert certificate.void_content > certificate.minimum_void_content
+        assert certificate.minimum_void_content == 0.1
         # The second clause: the interior spectrum is nearly empty. The eight
         # corners carry a Dirichlet spectrum, and none of it is in the window.
-        assert certificate.interiorDegree == 0
-        assert len(certificate.interiorSpectrum) == 8
-        assert certificate.interiorRank == 0 and certificate.interiorEmpty
-        assert certificate.interiorFloor > VOID_SCALE
+        assert certificate.interior_degree == 0
+        assert len(certificate.interior_spectrum) == 8
+        assert certificate.interior_rank == 0 and certificate.interior_empty
+        assert certificate.interior_floor > VOID_SCALE
         # The third clause: the enclosing coorientation is inward.
         assert certificate.coorientation == obs.EnclosingCoorientation.Inward
-        assert certificate.coorientationSource == obs.CoorientationSource.InteriorSpectrum
+        assert certificate.coorientation_source == obs.CoorientationSource.InteriorSpectrum
         assert certificate.certified and certificate.reason == ""
 
     def test_the_filled_block_has_no_anti_cluster(self):
@@ -109,15 +109,15 @@ class TestTheAntiClusterCertificate:
         Its enclosing surface is their boundary, which is exact and reaches no
         coexact near-cycle, so the certificate fails and says so."""
         K, cov = kuhn_block(3)
-        certificate = obs.EffectiveTopology.antiCluster(cov, cavity_corners(), VOID_SCALE)
-        assert len(certificate.interiorCells) == 6
+        certificate = obs.EffectiveTopology.anti_cluster(cov, cavity_corners(), VOID_SCALE)
+        assert len(certificate.interior_cells) == 6
         assert len(certificate.surface) == 12
-        assert certificate.cycleResidual < 1e-10
-        assert certificate.voids == 0 and certificate.voidContent == pytest.approx(0.0, abs=1e-12)
+        assert certificate.cycle_residual < 1e-10
+        assert certificate.voids == 0 and certificate.void_content == pytest.approx(0.0, abs=1e-12)
         assert not certificate.certified
         assert "coexact near-cycle of L_2" in certificate.reason
         # Every other clause still holds: the failure is the void alone.
-        assert certificate.interiorEmpty
+        assert certificate.interior_empty
         assert certificate.coorientation == obs.EnclosingCoorientation.Inward
 
     def test_a_region_that_holds_a_mode_is_a_blob(self):
@@ -126,12 +126,12 @@ class TestTheAntiClusterCertificate:
         region's own lowest Dirichlet level, the cavity's corners hold a mode
         of the operator and their surface is cooriented outward."""
         _, cov = kuhn_block(3, hollow=True)
-        bubble = obs.EffectiveTopology.antiCluster(cov, cavity_corners(), VOID_SCALE)
+        bubble = obs.EffectiveTopology.anti_cluster(cov, cavity_corners(), VOID_SCALE)
         options = obs.AntiClusterOptions()
-        options.minimumGap = 1.0
-        blob = obs.EffectiveTopology.antiCluster(cov, cavity_corners(),
-                                                 1.01 * bubble.interiorFloor, options)
-        assert blob.interiorRank >= 1 and not blob.interiorEmpty
+        options.minimum_gap = 1.0
+        blob = obs.EffectiveTopology.anti_cluster(cov, cavity_corners(),
+                                                 1.01 * bubble.interior_floor, options)
+        assert blob.interior_rank >= 1 and not blob.interior_empty
         assert blob.coorientation == obs.EnclosingCoorientation.Outward
         assert not blob.certified
         assert "interior spectrum is not nearly empty" in blob.reason
@@ -144,17 +144,17 @@ class TestTheAntiClusterCertificate:
         it as a chain, and the certificate compares the two directly."""
         _, cov = kuhn_block(3, hollow=True)
         outward = np.array(
-            obs.EffectiveTopology.antiCluster(cov, cavity_corners(), VOID_SCALE).enclosingSurface)
+            obs.EffectiveTopology.anti_cluster(cov, cavity_corners(), VOID_SCALE).enclosing_surface)
         options = obs.AntiClusterOptions()
-        options.coorientationReference = outward
-        along = obs.EffectiveTopology.antiCluster(cov, cavity_corners(), VOID_SCALE, options)
-        assert along.coorientationSource == obs.CoorientationSource.Reference
-        assert along.coorientationOverlap == pytest.approx(1.0, rel=1e-9)
+        options.coorientation_reference = outward
+        along = obs.EffectiveTopology.anti_cluster(cov, cavity_corners(), VOID_SCALE, options)
+        assert along.coorientation_source == obs.CoorientationSource.Reference
+        assert along.coorientation_overlap == pytest.approx(1.0, rel=1e-9)
         assert along.coorientation == obs.EnclosingCoorientation.Outward
         assert not along.certified
-        options.coorientationReference = -outward
-        against = obs.EffectiveTopology.antiCluster(cov, cavity_corners(), VOID_SCALE, options)
-        assert against.coorientationOverlap == pytest.approx(-1.0, rel=1e-9)
+        options.coorientation_reference = -outward
+        against = obs.EffectiveTopology.anti_cluster(cov, cavity_corners(), VOID_SCALE, options)
+        assert against.coorientation_overlap == pytest.approx(-1.0, rel=1e-9)
         assert against.coorientation == obs.EnclosingCoorientation.Inward
         assert against.certified
         # A reference orthogonal to the enclosing surface reads no direction.
@@ -163,8 +163,8 @@ class TestTheAntiClusterCertificate:
         elsewhere = np.zeros_like(outward)
         elsewhere[int(np.argmin(np.abs(outward)))] = 1.0
         assert np.abs(np.vdot(elsewhere, outward)) == 0.0
-        options.coorientationReference = elsewhere
-        orthogonal = obs.EffectiveTopology.antiCluster(cov, cavity_corners(), VOID_SCALE, options)
+        options.coorientation_reference = elsewhere
+        orthogonal = obs.EffectiveTopology.anti_cluster(cov, cavity_corners(), VOID_SCALE, options)
         assert orthogonal.coorientation == obs.EnclosingCoorientation.Undeclared
         assert not orthogonal.certified
 
@@ -174,15 +174,15 @@ class TestTheAntiClusterCertificate:
         that reads outward at the default tolerance reads undeclared when the
         tolerance is raised above its overlap of modulus one."""
         _, cov = kuhn_block(3, hollow=True)
-        outward = np.array(obs.EffectiveTopology.antiCluster(
-            cov, cavity_corners(), VOID_SCALE).enclosingSurface)
+        outward = np.array(obs.EffectiveTopology.anti_cluster(
+            cov, cavity_corners(), VOID_SCALE).enclosing_surface)
         options = obs.AntiClusterOptions()
-        assert options.coorientationTolerance == pytest.approx(1e-12)
-        options.coorientationReference = outward
-        options.coorientationTolerance = 2.0
-        read = obs.EffectiveTopology.antiCluster(cov, cavity_corners(),
+        assert options.coorientation_tolerance == pytest.approx(1e-12)
+        options.coorientation_reference = outward
+        options.coorientation_tolerance = 2.0
+        read = obs.EffectiveTopology.anti_cluster(cov, cavity_corners(),
                                                  VOID_SCALE, options)
-        assert read.coorientationOverlap == pytest.approx(1.0, rel=1e-9)
+        assert read.coorientation_overlap == pytest.approx(1.0, rel=1e-9)
         assert read.coorientation == obs.EnclosingCoorientation.Undeclared
         assert not read.certified
 
@@ -194,28 +194,28 @@ class TestTheAntiClusterCertificate:
         _, cov = kuhn_block(3, hollow=True)
         options = obs.AntiClusterOptions()
         for degree in (1, 2):
-            options.interiorDegree = degree
-            certificate = obs.EffectiveTopology.antiCluster(cov, cavity_corners(), VOID_SCALE, options)
-            assert certificate.interiorDegree == degree
-            assert len(certificate.interiorSpectrum) > 0
-            assert certificate.interiorRank == 0 and certificate.certified
+            options.interior_degree = degree
+            certificate = obs.EffectiveTopology.anti_cluster(cov, cavity_corners(), VOID_SCALE, options)
+            assert certificate.interior_degree == degree
+            assert len(certificate.interior_spectrum) > 0
+            assert certificate.interior_rank == 0 and certificate.certified
 
     def test_refusals(self):
         _, cov = kuhn_block(3, hollow=True)
         with pytest.raises(ValueError, match="dimension three"):
-            obs.EffectiveTopology.antiCluster(weighted_cycle()[2], [0, 1], VOID_SCALE)
+            obs.EffectiveTopology.anti_cluster(weighted_cycle()[2], [0, 1], VOID_SCALE)
         with pytest.raises(ValueError, match="which the complex does not have"):
-            obs.EffectiveTopology.antiCluster(cov, [10 ** 6], VOID_SCALE)
+            obs.EffectiveTopology.anti_cluster(cov, [10 ** 6], VOID_SCALE)
         with pytest.raises(ValueError, match="epsilon must be positive"):
-            obs.EffectiveTopology.antiCluster(cov, cavity_corners(), 0.0)
+            obs.EffectiveTopology.anti_cluster(cov, cavity_corners(), 0.0)
         options = obs.AntiClusterOptions()
-        options.coorientationReference = np.ones(3, dtype=complex)
+        options.coorientation_reference = np.ones(3, dtype=complex)
         with pytest.raises(ValueError, match="coorientation reference"):
-            obs.EffectiveTopology.antiCluster(cov, cavity_corners(), VOID_SCALE, options)
+            obs.EffectiveTopology.anti_cluster(cov, cavity_corners(), VOID_SCALE, options)
         options = obs.AntiClusterOptions()
-        options.interiorDegree = 4
+        options.interior_degree = 4
         with pytest.raises(ValueError, match="outside"):
-            obs.EffectiveTopology.antiCluster(cov, cavity_corners(), VOID_SCALE, options)
+            obs.EffectiveTopology.anti_cluster(cov, cavity_corners(), VOID_SCALE, options)
 
 
 class TestFalsifierNine:
@@ -233,8 +233,8 @@ class TestFalsifierNine:
         """The cooriented cut a lineage of the declared sign carries over its
         support: the region's enclosing surface, cooriented out of the region
         for a cluster (+1) and into it for an anti-cluster (-1)."""
-        read = obs.EffectiveTopology.antiCluster(cov, support, VOID_SCALE)
-        return sign * np.array(read.enclosingSurface)
+        read = obs.EffectiveTopology.anti_cluster(cov, support, VOID_SCALE)
+        return sign * np.array(read.enclosing_surface)
 
     def test_a_certified_anti_lineage_carries_a_certified_void(self):
         """The falsifier does not fire on the cavity: the anti-lineage's support
@@ -242,10 +242,10 @@ class TestFalsifierNine:
         coorientation agrees with the anti-lineage's cut."""
         _, cov = kuhn_block(3, hollow=True)
         options = obs.AntiClusterOptions()
-        options.coorientationReference = self._cut(cov, cavity_corners(), -1)
-        certificate = obs.EffectiveTopology.antiCluster(cov, cavity_corners(), VOID_SCALE, options)
-        assert certificate.voids == 1 and certificate.voidContent > certificate.minimumVoidContent
-        assert certificate.coorientationSource == obs.CoorientationSource.Reference
+        options.coorientation_reference = self._cut(cov, cavity_corners(), -1)
+        certificate = obs.EffectiveTopology.anti_cluster(cov, cavity_corners(), VOID_SCALE, options)
+        assert certificate.voids == 1 and certificate.void_content > certificate.minimum_void_content
+        assert certificate.coorientation_source == obs.CoorientationSource.Reference
         assert certificate.coorientation == obs.EnclosingCoorientation.Inward
         assert certificate.certified
 
@@ -256,10 +256,10 @@ class TestFalsifierNine:
         its kinematics left."""
         _, cov = kuhn_block(3)
         options = obs.AntiClusterOptions()
-        options.coorientationReference = self._cut(cov, cavity_corners(), -1)
-        certificate = obs.EffectiveTopology.antiCluster(cov, cavity_corners(), VOID_SCALE, options)
+        options.coorientation_reference = self._cut(cov, cavity_corners(), -1)
+        certificate = obs.EffectiveTopology.anti_cluster(cov, cavity_corners(), VOID_SCALE, options)
         assert certificate.coorientation == obs.EnclosingCoorientation.Inward
-        assert certificate.voids == 0 and certificate.voidContent < certificate.minimumVoidContent
+        assert certificate.voids == 0 and certificate.void_content < certificate.minimum_void_content
         assert not certificate.certified
         assert "coexact near-cycle of L_2" in certificate.reason
 
@@ -272,15 +272,15 @@ class TestFalsifierNine:
         _, cov = kuhn_block(3, hollow=True)
         corners = cavity_corners()
         anti = obs.AntiClusterOptions()
-        anti.coorientationReference = self._cut(cov, corners, -1)
+        anti.coorientation_reference = self._cut(cov, corners, -1)
         cluster = obs.AntiClusterOptions()
-        cluster.coorientationReference = self._cut(cov, corners, +1)
-        bubble = obs.EffectiveTopology.antiCluster(cov, corners, VOID_SCALE, anti)
-        blob = obs.EffectiveTopology.antiCluster(cov, corners, VOID_SCALE, cluster)
+        cluster.coorientation_reference = self._cut(cov, corners, +1)
+        bubble = obs.EffectiveTopology.anti_cluster(cov, corners, VOID_SCALE, anti)
+        blob = obs.EffectiveTopology.anti_cluster(cov, corners, VOID_SCALE, cluster)
         # One wall, two lineages, opposite coorientations summing to zero.
-        assert np.allclose(np.array(anti.coorientationReference)
-                           + np.array(cluster.coorientationReference), 0.0)
-        assert bubble.coorientationOverlap == pytest.approx(-blob.coorientationOverlap, rel=1e-9)
+        assert np.allclose(np.array(anti.coorientation_reference)
+                           + np.array(cluster.coorientation_reference), 0.0)
+        assert bubble.coorientation_overlap == pytest.approx(-blob.coorientation_overlap, rel=1e-9)
         assert bubble.coorientation == obs.EnclosingCoorientation.Inward
         assert blob.coorientation == obs.EnclosingCoorientation.Outward
         # The anti-lineage's side is the void; the cluster's side is not.
@@ -307,20 +307,20 @@ class TestTheBandProposesSupports:
         settings = obs.PersistentModularityConfig()
         settings.resolutions = [1.0]
         communities = blind_modularity(K).discover(1.0, settings).components
-        proposals = obs.ParticleClusters.proposeSupports(communities, band)
+        proposals = obs.ParticleClusters.propose_supports(communities, band)
         offered = [list(p.support) for p in proposals]
         assert [list(c.support) for c in communities] == offered[:len(communities)]
         band_only = [p for p in proposals if p.band and not p.modularity]
         assert [list(p.support) for p in band_only] == [[0, 1, 2, 3, 4],
                                                         [5, 6, 7, 8, 9, 10, 11]]
         for proposal in band_only:
-            assert proposal.modularityIndex == obs.ClusterSupportProposal.NO_PROPOSER
-            assert proposal.bandIndex != obs.ClusterSupportProposal.NO_PROPOSER
+            assert proposal.modularity_index == obs.ClusterSupportProposal.NO_PROPOSER
+            assert proposal.band_index != obs.ClusterSupportProposal.NO_PROPOSER
             # The band's own certificate accepts the support modularity never
             # proposed: the separation and the gap of the degree-zero band.
-            assert band.components[proposal.bandIndex].support == proposal.support
-            assert band.band.certified and band.band.gap >= band.band.minimumGap
-            assert 0.0 < proposal.crossProposerOverlap < 1.0
+            assert band.components[proposal.band_index].support == proposal.support
+            assert band.band.certified and band.band.gap >= band.band.minimum_gap
+            assert 0.0 < proposal.cross_proposer_overlap < 1.0
 
     def test_a_support_both_proposers_offer_is_one_proposal(self):
         """Two hexagonal rings joined by one long edge are two communities of
@@ -334,10 +334,10 @@ class TestTheBandProposesSupports:
         rings = [list(range(6)), list(range(6, 12))]
         assert sorted(list(c.support) for c in communities) == rings
         assert sorted(list(c.support) for c in band.components) == rings
-        proposals = obs.ParticleClusters.proposeSupports(communities, band)
+        proposals = obs.ParticleClusters.propose_supports(communities, band)
         assert len(proposals) == 2
         for index, proposal in enumerate(proposals):
             assert proposal.modularity and proposal.band
-            assert proposal.modularityIndex == index
-            assert list(band.components[proposal.bandIndex].support) == list(proposal.support)
-            assert proposal.crossProposerOverlap == pytest.approx(1.0)
+            assert proposal.modularity_index == index
+            assert list(band.components[proposal.band_index].support) == list(proposal.support)
+            assert proposal.cross_proposer_overlap == pytest.approx(1.0)

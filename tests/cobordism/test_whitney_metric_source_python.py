@@ -24,12 +24,12 @@ THREE_COMPLEX = [[0, 1, 2, 3], [1, 2, 3, 4], [0, 1, 2, 4]]
 
 
 def _spacetime(cells, dim, rng, scale=0.2, phases=False):
-    st = tessera.Spacetime.fromVertexTuples(dim, cells, 1.0, 0.0)
-    for i, e in enumerate(st.getEdgeList().toVector()):
+    st = tessera.Spacetime.from_vertex_tuples(dim, cells, 1.0, 0.0)
+    for i, e in enumerate(st.get_edge_list().to_vector()):
         s = complex(1.0 + scale * rng.normal(), scale * rng.normal())
-        e.setLength(cmath.sqrt(s))
+        e.set_length(cmath.sqrt(s))
         if phases:
-            e.setPhase(complex(0.4 * rng.normal(), 0.1 * rng.normal()))
+            e.set_phase(complex(0.4 * rng.normal(), 0.1 * rng.normal()))
     return st
 
 
@@ -39,25 +39,25 @@ def _flat(v, n):
 
 class TestDefaults:
     def test_one_process_wide_knob_read_at_call_time(self):
-        """Every operator follows HodgeLaplacian.defaultMetricSource() at
+        """Every operator follows HodgeLaplacian.default_metric_source() at
         construction (read at call time, never captured at import), which is
         the Whitney pencil (#1185), and an explicit metric_source overrides it."""
-        assert HL.defaultMetricSource() == Whitney
-        st = tessera.Spacetime.fromVertexTuples(2, TWO_COMPLEX, 1.0, 0.0)
-        assert HL(st).metricSource() == Whitney
-        assert MC(st, [], [], [1]).metricSource() == Whitney
-        assert MC(st, [], [], [1], metric_source=Diagonal).metricSource() == Diagonal
-        assert cob.EigenstateSynthesis(st, 1).metricSource() == Whitney
-        assert cob.EigenstateSynthesis(st, 1, Diagonal).metricSource() == Diagonal
-        HL.setDefaultMetricSource(Diagonal)
+        assert HL.default_metric_source() == Whitney
+        st = tessera.Spacetime.from_vertex_tuples(2, TWO_COMPLEX, 1.0, 0.0)
+        assert HL(st).metric_source() == Whitney
+        assert MC(st, [], [], [1]).metric_source() == Whitney
+        assert MC(st, [], [], [1], metric_source=Diagonal).metric_source() == Diagonal
+        assert cob.EigenstateSynthesis(st, 1).metric_source() == Whitney
+        assert cob.EigenstateSynthesis(st, 1, Diagonal).metric_source() == Diagonal
+        HL.set_default_metric_source(Diagonal)
         try:
-            assert HL(st).metricSource() == Diagonal
-            assert MC(st, [], [], [1]).metricSource() == Diagonal
-            assert cob.EigenstateSynthesis(st, 1).metricSource() == Diagonal
-            assert MC(st, [], [], [1], metric_source=Whitney).metricSource() == Whitney
+            assert HL(st).metric_source() == Diagonal
+            assert MC(st, [], [], [1]).metric_source() == Diagonal
+            assert cob.EigenstateSynthesis(st, 1).metric_source() == Diagonal
+            assert MC(st, [], [], [1], metric_source=Whitney).metric_source() == Whitney
         finally:
-            HL.setDefaultMetricSource(Whitney)
-        assert MC(st, [], [], [1]).metricSource() == Whitney
+            HL.set_default_metric_source(Whitney)
+        assert MC(st, [], [], [1]).metric_source() == Whitney
 
 
 class TestOperatorEqualsChainHodge:
@@ -65,41 +65,41 @@ class TestOperatorEqualsChainHodge:
     def test_laplacian_is_the_covariant_pencil_operator(self, cells, dim):
         rng = np.random.default_rng(3)
         st = _spacetime(cells, dim, rng, phases=True)
-        K = ch.WhitneyMass.complexOf(st)
-        s = ch.WhitneyMass.squaredLengthsOf(st, K)
+        K = ch.WhitneyMass.complex_of(st)
+        s = ch.WhitneyMass.squared_lengths_of(st, K)
         base = ch.ChainHodge(K, s)
-        cov = ch.CovariantChainHodge(base, ch.Connection.fromSpacetime(st, K))
-        hl = HL(st, HL.defaultWeightConvention(), Whitney)
+        cov = ch.CovariantChainHodge(base, ch.Connection.from_spacetime(st, K))
+        hl = HL(st, HL.default_weight_convention(), Whitney)
         for k in range(dim + 1):
-            n = K.numSimplices(k)
+            n = K.num_simplices(k)
             L = _flat(hl.laplacian(k, True), n)
             # the operator on geometric images: L_z = (M^U)^{-1} h M^U (#931)
             M = cov.dressed(k).toarray()
-            expected = np.linalg.solve(M, cov.covariantOperator(k) @ M)
+            expected = np.linalg.solve(M, cov.covariant_operator(k) @ M)
             np.testing.assert_allclose(L, expected, atol=1e-11 * max(1.0, np.abs(L).max()))
-            np.testing.assert_allclose(np.sort_complex(np.linalg.eigvals(L)), np.sort_complex(np.linalg.eigvals(cov.covariantOperator(k))),
+            np.testing.assert_allclose(np.sort_complex(np.linalg.eigvals(L)), np.sort_complex(np.linalg.eigvals(cov.covariant_operator(k))),
                                        atol=1e-8 * max(1.0, np.abs(L).max()))
         # trivial phases: the undressed image-space operator M^{-1} L_chain M
         st0 = _spacetime(cells, dim, np.random.default_rng(3), phases=False)
-        hl0 = HL(st0, HL.defaultWeightConvention(), Whitney)
-        base0 = ch.ChainHodge(K, ch.WhitneyMass.squaredLengthsOf(st0, K))
+        hl0 = HL(st0, HL.default_weight_convention(), Whitney)
+        base0 = ch.ChainHodge(K, ch.WhitneyMass.squared_lengths_of(st0, K))
         for k in range(dim + 1):
-            n = K.numSimplices(k)
-            M0 = base0.Minv(k).toarray()
-            np.testing.assert_allclose(_flat(hl0.laplacian(k, True), n), np.linalg.solve(M0, base0.hodgeOperator(k) @ M0), atol=1e-11)
+            n = K.num_simplices(k)
+            M0 = base0.m_inv(k).toarray()
+            np.testing.assert_allclose(_flat(hl0.laplacian(k, True), n), np.linalg.solve(M0, base0.hodge_operator(k) @ M0), atol=1e-11)
 
     def test_combinatorial_operator_is_metric_free(self):
         rng = np.random.default_rng(5)
         st = _spacetime(TWO_COMPLEX, 2, rng)
-        a = HL(st, HL.defaultWeightConvention(), Whitney).laplacian(1, False)
-        b = HL(st, HL.defaultWeightConvention(), Diagonal).laplacian(1, False)
+        a = HL(st, HL.default_weight_convention(), Whitney).laplacian(1, False)
+        b = HL(st, HL.default_weight_convention(), Diagonal).laplacian(1, False)
         np.testing.assert_allclose(a, b, atol=0)
 
     def test_default_path_is_the_pencil_bit_identical(self):
         rng = np.random.default_rng(7)
         st = _spacetime(TWO_COMPLEX, 2, rng, phases=True)
         default = HL(st).laplacian(1, True)
-        explicit = HL(st, HL.defaultWeightConvention(), Whitney).laplacian(1, True)
+        explicit = HL(st, HL.default_weight_convention(), Whitney).laplacian(1, True)
         assert list(default) == list(explicit)
 
 
@@ -111,17 +111,17 @@ class TestAnalyticDerivatives:
         the diagonal V^2 path, so every Euler identity downstream is unchanged)."""
         rng = np.random.default_rng(11)
         st = _spacetime(cells, dim, rng, phases=True)
-        hl = HL(st, HL.defaultWeightConvention(), Whitney)
-        K = ch.WhitneyMass.complexOf(st)
-        edges = st.getEdgeList().toVector()
+        hl = HL(st, HL.default_weight_convention(), Whitney)
+        K = ch.WhitneyMass.complex_of(st)
+        edges = st.get_edge_list().to_vector()
         for k in range(dim + 1):
-            n = K.numSimplices(k)
+            n = K.num_simplices(k)
             L = _flat(hl.laplacian(k, True), n)
             total = np.zeros_like(L)
             for e in edges:
-                a, b = e.getSource().getId(), e.getTarget().getId()
-                s = e.getLength() ** 2
-                total += s * _flat(hl.laplacianGradient(k, a, b), n)
+                a, b = e.get_source().get_id(), e.get_target().get_id()
+                s = e.get_length() ** 2
+                total += s * _flat(hl.laplacian_gradient(k, a, b), n)
             np.testing.assert_allclose(total, -L, atol=1e-11 * max(1.0, np.abs(L).max()))
 
     @pytest.mark.parametrize("cells,dim", [(TWO_COMPLEX, 2), (THREE_COMPLEX, 3)])
@@ -131,18 +131,18 @@ class TestAnalyticDerivatives:
         satisfies this exactly (no finite differences)."""
         rng = np.random.default_rng(13)
         st = _spacetime(cells, dim, rng, phases=True)
-        hl = HL(st, HL.defaultWeightConvention(), Whitney)
-        K = ch.WhitneyMass.complexOf(st)
-        chi = {int(v[0]): rng.normal() for v in K.kSimplexVertices(0)}
+        hl = HL(st, HL.default_weight_convention(), Whitney)
+        K = ch.WhitneyMass.complex_of(st)
+        chi = {int(v[0]): rng.normal() for v in K.k_simplex_vertices(0)}
         for k in range(dim + 1):
-            n = K.numSimplices(k)
+            n = K.num_simplices(k)
             h = _flat(hl.laplacian(k, True), n)
             total = np.zeros_like(h)
-            for e in st.getEdgeList().toVector():
-                a, b = e.getSource().getId(), e.getTarget().getId()
+            for e in st.get_edge_list().to_vector():
+                a, b = e.get_source().get_id(), e.get_target().get_id()
                 x, y = min(a, b), max(a, b)
-                total += (chi[y] - chi[x]) * _flat(hl.laplacianPhaseGradient(k, a, b), n)
-            base = np.array([chi[min(int(v) for v in c)] for c in K.kSimplexVertices(k)])
+                total += (chi[y] - chi[x]) * _flat(hl.laplacian_phase_gradient(k, a, b), n)
+            base = np.array([chi[min(int(v) for v in c)] for c in K.k_simplex_vertices(k)])
             D = np.diag(base)
             expected = -1j * (D @ h - h @ D)
             np.testing.assert_allclose(total, expected, atol=1e-11 * max(1.0, np.abs(h).max()))
@@ -150,9 +150,9 @@ class TestAnalyticDerivatives:
     def test_diagonal_path_has_no_phase_gradient_above_degree_zero(self):
         rng = np.random.default_rng(17)
         st = _spacetime(TWO_COMPLEX, 2, rng, phases=True)
-        hl = HL(st, HL.defaultWeightConvention(), Diagonal)
-        e = st.getEdgeList().toVector()[0]
-        g = hl.laplacianPhaseGradient(1, e.getSource().getId(), e.getTarget().getId())
+        hl = HL(st, HL.default_weight_convention(), Diagonal)
+        e = st.get_edge_list().to_vector()[0]
+        g = hl.laplacian_phase_gradient(1, e.get_source().get_id(), e.get_target().get_id())
         assert np.max(np.abs(g)) == 0.0
 
 
@@ -168,18 +168,18 @@ class TestRegisterResidualUnderThePencil:
         st, _es, holes, _P = holed_surface()
         rng = np.random.default_rng(19)
         by_pair = {}
-        for e in st.getEdgeList().toVector():
-            a, b = e.getSource().getId(), e.getTarget().getId()
+        for e in st.get_edge_list().to_vector():
+            a, b = e.get_source().get_id(), e.get_target().get_id()
             by_pair[(min(a, b), max(a, b))] = e
-        K = ch.WhitneyMass.complexOf(st)
-        cedges = [tuple(int(v) for v in x) for x in K.kSimplexVertices(1)]
+        K = ch.WhitneyMass.complex_of(st)
+        cedges = [tuple(int(v) for v in x) for x in K.k_simplex_vertices(1)]
         l2 = np.array([1.0 + 0.1 * rng.normal() for _ in cedges])
         for p, v in zip(cedges, l2):
-            by_pair[p].setLength(cmath.sqrt(complex(v, 0.0)))
+            by_pair[p].set_length(cmath.sqrt(complex(v, 0.0)))
         syn = cob.EigenstateSynthesis(st, 1, source)
         target = [complex(1.0, 0.3)] * len(holes)
-        rU = syn.residualForPeriods(holes, target)
-        grad = np.asarray(syn.residualForPeriodsGradient(holes, target))
+        rU = syn.residual_for_periods(holes, target)
+        grad = np.asarray(syn.residual_for_periods_gradient(holes, target))
         assert rU > 1e-3
         assert float(l2 @ grad) == pytest.approx(-2.0 * rU, rel=1e-10)
 
@@ -188,27 +188,27 @@ class TestAdmissibility:
     def test_margin_and_admissibility(self):
         rng = np.random.default_rng(23)
         st = _spacetime(TWO_COMPLEX, 2, rng, scale=0.1)
-        assert HL.kontsevichSegalMargin(st) > 0.0
+        assert HL.kontsevich_segal_margin(st) > 0.0
         mc = MC(st, [], [], [1], metric_source=Whitney)
-        assert mc.geometryAdmissible(st)
+        assert mc.geometry_admissible(st)
         # The specification's non-allowable instance (§10): a curved Lorentzian
         # torus with a complex conformal factor, argument sum >= pi.
         from tests.chainhodge._fixtures import conformal_torus, edges as cedges_of
         Kt, st_lengths, _W = conformal_torus(6, 0.3 + 0.2j, 0.15, True, seed=1)
-        bad = tessera.Spacetime.fromVertexTuples(2, [list(t) for t in Kt.orientedTopSimplices()], 1.0, 0.0)
+        bad = tessera.Spacetime.from_vertex_tuples(2, [list(t) for t in Kt.oriented_top_simplices()], 1.0, 0.0)
         table = dict(zip(cedges_of(Kt), st_lengths))
-        for e in bad.getEdgeList().toVector():
-            a, b = e.getSource().getId(), e.getTarget().getId()
-            e.setLength(cmath.sqrt(table[(min(a, b), max(a, b))]))
-        assert HL.kontsevichSegalMargin(bad) < 0.0
-        assert not mc.geometryAdmissible(bad)
-        assert MC(st, [], [], [1], metric_source=Diagonal).geometryAdmissible(bad)
+        for e in bad.get_edge_list().to_vector():
+            a, b = e.get_source().get_id(), e.get_target().get_id()
+            e.set_length(cmath.sqrt(table[(min(a, b), max(a, b))]))
+        assert HL.kontsevich_segal_margin(bad) < 0.0
+        assert not mc.geometry_admissible(bad)
+        assert MC(st, [], [], [1], metric_source=Diagonal).geometry_admissible(bad)
         # The real Lorentzian boundary (margin exactly zero) is admitted.
-        lor = tessera.Spacetime.fromVertexTuples(2, TWO_COMPLEX, 1.0, 0.0)
-        for i, e in enumerate(lor.getEdgeList().toVector()):
-            e.setLength(cmath.sqrt(complex(1.0 if i % 3 else -0.5)))
-        assert HL.kontsevichSegalMargin(lor) == pytest.approx(0.0, abs=1e-12)
-        assert mc.geometryAdmissible(lor)
+        lor = tessera.Spacetime.from_vertex_tuples(2, TWO_COMPLEX, 1.0, 0.0)
+        for i, e in enumerate(lor.get_edge_list().to_vector()):
+            e.set_length(cmath.sqrt(complex(1.0 if i % 3 else -0.5)))
+        assert HL.kontsevich_segal_margin(lor) == pytest.approx(0.0, abs=1e-12)
+        assert mc.geometry_admissible(lor)
 
 
 class TestObjectiveRuns:
@@ -235,24 +235,24 @@ class TestStoredOrientations:
         node.build_step(BA.GROW, max_steps=25, n_candidate_moves=6)
         node.directed_cone_out(HP.ADJACENT_HOLES_LAST)
         st = node.st
-        K_stored = cob.ChainComplex.fromSpacetime(st)
-        signs = K_stored.orientationSigns()
+        K_stored = cob.ChainComplex.from_spacetime(st)
+        signs = K_stored.orientation_signs()
         flipped = sum(s == -1 for sk in signs for s in sk)
-        K = ch.WhitneyMass.complexOf(st)
-        s = ch.WhitneyMass.squaredLengthsOf(st, K)
-        cov = ch.CovariantChainHodge(ch.ChainHodge(K, s), ch.Connection.fromSpacetime(st, K))
-        hl = HL(st, HL.defaultWeightConvention(), Whitney)
+        K = ch.WhitneyMass.complex_of(st)
+        s = ch.WhitneyMass.squared_lengths_of(st, K)
+        cov = ch.CovariantChainHodge(ch.ChainHodge(K, s), ch.Connection.from_spacetime(st, K))
+        hl = HL(st, HL.default_weight_convention(), Whitney)
         for k in range(K.dimension() + 1):
-            n = K.numSimplices(k)
+            n = K.num_simplices(k)
             D = np.diag(np.array(signs[k], dtype=float))
             L = _flat(hl.laplacian(k, True), n)
             M = cov.dressed(k).toarray()
-            expected = D @ np.linalg.solve(M, cov.covariantOperator(k) @ M) @ D
+            expected = D @ np.linalg.solve(M, cov.covariant_operator(k) @ M) @ D
             np.testing.assert_allclose(L, expected, atol=1e-11 * max(1.0, np.abs(L).max()))
         # the register residual still evaluates and the node still scores
         assert np.isfinite(node.r_u(st))
         # A reference-oriented complex has every sign +1 exactly.
-        assert all(s == 1 for sk in ch.WhitneyMass.complexOf(st).orientationSigns() for s in sk)
+        assert all(s == 1 for sk in ch.WhitneyMass.complex_of(st).orientation_signs() for s in sk)
         # The surgery fixture is expected to carry flipped cells (the case that
         # aborted before the signs were derived); report if it does not.
         assert flipped >= 0

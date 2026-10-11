@@ -72,7 +72,7 @@ Typical usage::
     st = tessera.Spacetime(metric, tessera.CDT, 1.0, 1.0, tessera.PREFERRED,
                          tessera.Toroid())
     st.build(500)
-    cdt = tessera.CDTSimulation(st, 2.2, 0.5, 0.6, 0.02, st.getN41())
+    cdt = tessera.CDTSimulation(st, 2.2, 0.5, 0.6, 0.02, st.get_n41())
     cdt.tune()
     cdt.sweep(100)
 
@@ -129,12 +129,12 @@ References:
 Nodes are integers ``0 .. getNodeCount - 1``. ``covers`` lists the cover
 edges: each entry ``(a, b)`` means ``a`` strictly precedes ``b`` with no
 intermediate node. The full strict order is the transitive closure of
-the covers; see :func:`compareOrders` for pairwise statistics derived
+the covers; see :func:`compare_orders` for pairwise statistics derived
 from that closure.
 
-Construct empty (``Poset()``) and resize via the ``getNodeCount``
+Construct empty (``Poset()``) and resize via the ``get_node_count``
 setter, or pass an integer to pre-populate node count
-(``Poset(4)``). Mutate via :meth:`addCover` (single edge) or the
+(``Poset(4)``). Mutate via :meth:`add_cover` (single edge) or the
 ``covers`` setter (whole list). The class makes no internal
 consistency checks; callers are responsible for transitivity and
 acyclicity.
@@ -142,23 +142,23 @@ acyclicity.
 See ``docs/source/causal_sets.md`` for the conceptual background.
 )doc")
       .def(py::init<>())
-      .def(py::init<int>(), py::arg("nodeCount"),
-          "Construct with the node count pre-set to ``nodeCount``.")
-      .def("addCover", &Poset::addCover, py::arg("a"), py::arg("b"),
+      .def(py::init<int>(), py::arg("node_count"),
+          "Construct with the node count pre-set to ``node_count``.")
+      .def("add_cover", &Poset::addCover, py::arg("a"), py::arg("b"),
           R"doc(Add the cover edge ``a -> b`` (a strictly precedes b, no intermediate).
 
 Both endpoints must already exist (call the int constructor or the
-``getNodeCount`` setter first). No deduplication is performed — adding
+``get_node_count`` setter first). No deduplication is performed — adding
 the same cover twice creates two parallel edges. Covers normally come
 from a transitive reduction, where duplicates cannot arise.
 )doc")
-      .def_property("getNodeCount",
+      .def_property("get_node_count",
           [](Poset const& p) { return p.getNodeCount(); },
           [](Poset& p, int n) { p.setNodeCount(n); },
           "Number of nodes. Setting grows the node set; nodes are not "
           "removed if you set a smaller value, and cover edges are "
           "preserved across resizes.")
-      .def("getCoverCount", &Poset::getCoverCount,
+      .def("get_cover_count", &Poset::getCoverCount,
           "Number of cover edges currently registered.")
       .def_property("covers",
           [](Poset const& p) { return p.covers(); },
@@ -167,11 +167,11 @@ from a transitive reduction, where duplicates cannot arise.
           },
           "Cover edges as a list of ``(a, b)`` pairs. Setting replaces "
           "the entire cover list in one pass.")
-      .def("toDot", &Poset::toDot,
+      .def("to_dot", &Poset::toDot,
           "Graphviz DOT representation of the Hasse diagram. "
           "Nodes labelled by their integer id; one directed edge per "
           "cover. Suitable for ``dot -Tsvg`` rendering.")
-      .def_static("fromSpacetime",
+      .def_static("from_spacetime",
           [](py::object spacetime_obj) {
               auto const* st = spacetime_obj.cast<tessera::spacetime::Spacetime const*>();
               return tessera::Poset::fromSpacetime(*st);
@@ -199,17 +199,17 @@ Counted over unordered pairs (i, j) with i < j:
 
 Build via :meth:`Majorization.agreement(a, b, n_labels)`.
 )doc")
-      .def_readonly("kendallTau",         &OrderAgreement::kendallTau)
-      .def_readonly("discordantFraction", &OrderAgreement::discordantFraction)
-      .def_readonly("hasseEditDistance",  &OrderAgreement::hasseEditDistance)
-      .def_readonly("nConcordant",        &OrderAgreement::nConcordant)
-      .def_readonly("nDiscordant",        &OrderAgreement::nDiscordant)
-      .def_readonly("nComparableBoth",    &OrderAgreement::nComparableBoth)
-      .def_readonly("nOnlyA",             &OrderAgreement::nOnlyA)
-      .def_readonly("nOnlyB",             &OrderAgreement::nOnlyB);
+      .def_readonly("kendall_tau",         &OrderAgreement::kendallTau)
+      .def_readonly("discordant_fraction", &OrderAgreement::discordantFraction)
+      .def_readonly("hasse_edit_distance",  &OrderAgreement::hasseEditDistance)
+      .def_readonly("n_concordant",        &OrderAgreement::nConcordant)
+      .def_readonly("n_discordant",        &OrderAgreement::nDiscordant)
+      .def_readonly("n_comparable_both",    &OrderAgreement::nComparableBoth)
+      .def_readonly("n_only_a",             &OrderAgreement::nOnlyA)
+      .def_readonly("n_only_b",             &OrderAgreement::nOnlyB);
 
-  m.def("compareOrders", &tessera::compareOrders,
-      py::arg("a"), py::arg("b"), py::arg("nLabels"),
+  m.def("compare_orders", &tessera::compareOrders,
+      py::arg("a"), py::arg("b"), py::arg("n_labels"),
       R"doc(Pairwise agreement statistics between two posets on a shared label set.
 
 Counts unordered pairs (i, j) with i < j in five disjoint buckets via
@@ -221,8 +221,8 @@ Floyd–Warshall transitive closures of `a` and `b`:
 * only-b       — `b` relates the pair, `a` does not
 * neither      — neither order relates the pair
 
-Returns an :class:`OrderAgreement` with ``kendallTau``,
-``discordantFraction``, ``hasseEditDistance``, and the five counts.
+Returns an :class:`OrderAgreement` with ``kendall_tau``,
+``discordant_fraction``, ``hasse_edit_distance``, and the five counts.
 
 Complexity: O(nLabels^3) for the transitive closure, O(nLabels^2) for
 the pair counts. Practical up to a few thousand labels.
@@ -235,17 +235,17 @@ See ``docs/source/causal_sets.md`` for the methodology context.
   // ========================================
   py::class_<ForceLayout>(m, "ForceLayout",
         "Fruchterman-Reingold spring-electrical graph layout.")
-      .def_static("layout3D", &ForceLayout::layout3D,
+      .def_static("layout_3d", &ForceLayout::layout3D,
         py::arg("n"),
         py::arg("edges"),
-        py::arg("centerIdx") = -1,
-        py::arg("initPos") = std::vector<double>{},
-        py::arg("restLengths") = std::vector<double>{},
-        py::arg("springK") = 0.01,
-        py::arg("repulsionK") = 0.5,
+        py::arg("center_idx") = -1,
+        py::arg("init_pos") = std::vector<double>{},
+        py::arg("rest_lengths") = std::vector<double>{},
+        py::arg("spring_k") = 0.01,
+        py::arg("repulsion_k") = 0.5,
         py::arg("iters") = 300,
         py::arg("cooling") = 0.995,
-        py::arg("repulsionCap") = 200,
+        py::arg("repulsion_cap") = 200,
         py::arg("seed") = 42,
         R"doc(Spring-electrical force-directed layout in 3D.
 
@@ -264,20 +264,20 @@ Args:
     cooling: Step-size decay per iteration (default 0.995).
     repulsionCap: Max nodes for O(n^2) repulsion (default 200).
     seed: Random seed (default 42).)doc")
-      .def_static("layout2D", &ForceLayout::layout2D,
+      .def_static("layout_2d", &ForceLayout::layout2D,
         py::arg("n"),
         py::arg("edges"),
-        py::arg("targetRadii") = std::vector<double>{},
+        py::arg("target_radii") = std::vector<double>{},
         py::arg("groups") = std::vector<int>{},
-        py::arg("centerIdx") = -1,
-        py::arg("initPos") = std::vector<double>{},
-        py::arg("restLengths") = std::vector<double>{},
-        py::arg("springK") = 0.02,
-        py::arg("repulsionK") = 0.3,
+        py::arg("center_idx") = -1,
+        py::arg("init_pos") = std::vector<double>{},
+        py::arg("rest_lengths") = std::vector<double>{},
+        py::arg("spring_k") = 0.02,
+        py::arg("repulsion_k") = 0.3,
         py::arg("iters") = 200,
         py::arg("cooling") = 0.995,
-        py::arg("repulsionCap") = 200,
-        py::arg("initialStep") = 0.5,
+        py::arg("repulsion_cap") = 200,
+        py::arg("initial_step") = 0.5,
         py::arg("seed") = 42,
         R"doc(Spring-electrical force-directed layout in 2D.
 
@@ -285,7 +285,7 @@ Returns a flat list of n*2 floats (row-major x,y positions).
 Reshape to (n, 2) with numpy: ``np.array(result).reshape(n, 2)``.
 
 Two optional constraints (independent, may be combined):
-  * targetRadii (length n) pins each node's radius — only the angle is
+  * target_radii (length n) pins each node's radius — only the angle is
     solved (tangential forces, radii re-snapped each step).
   * groups (length n) scopes repulsion to nodes sharing a group id;
     when empty, repulsion is global (capped).
