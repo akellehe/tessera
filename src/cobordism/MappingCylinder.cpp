@@ -24,6 +24,31 @@ bool contains(const Cell &whole, const Cell &part) {
   return std::includes(whole.begin(), whole.end(), part.begin(), part.end());
 }
 
+// The cells through each vertex.
+using Star = std::map<std::uint64_t, std::vector<const Cell *>>;
+
+void addToStar(Star &star, const std::vector<Cell> &cells) {
+  for (const Cell &cell : cells)
+    for (const std::uint64_t vertex : cell) star[vertex].push_back(&cell);
+}
+
+// How many cells of `star` contain `part`. Every one of them passes through
+// each vertex of `part`, so only the cells through its least-shared vertex
+// are read.
+std::size_t carriers(const Star &star, const Cell &part) {
+  const std::vector<const Cell *> *fewest = nullptr;
+  for (const std::uint64_t vertex : part) {
+    const auto entry = star.find(vertex);
+    if (entry == star.end()) return 0;
+    if (fewest == nullptr || entry->second.size() < fewest->size())
+      fewest = &entry->second;
+  }
+  std::size_t count = 0;
+  for (const Cell *cell : *fewest)
+    if (contains(*cell, part)) ++count;
+  return count;
+}
+
 }  // namespace
 
 MappingCylinder::MappingCylinder(MappingCylinderDeclaration declaration)
@@ -111,9 +136,13 @@ MappingCylinder::MappingCylinder(MappingCylinderDeclaration declaration)
   read_.outgoingDimension =
       outgoingWidth == 0 ? -1 : static_cast<int>(outgoingWidth) - 1;
 
-  // The staircase triangulation of each prism, with the degenerate simplices
-  // dropped.
+  // The staircase triangulation of each prism. A staircase simplex whose
+  // response vertices repeat is degenerate and is read in its non-degenerate
+  // form, the repeats removed. Within one prism the form of step i lies in
+  // that of step i + 1 exactly when r_i recurs among the later images, so
+  // only a form whose own image does not recur can lie in no other cell.
   std::set<Cell> cylinder;
+  std::set<Cell> collapsedCandidates;
   std::set<Cell> imageCandidates;
   for (const Cell &cell : incoming) {
     Cell images;
@@ -122,23 +151,33 @@ MappingCylinder::MappingCylinder(MappingCylinderDeclaration declaration)
       images.push_back(declaration_.reductionMap.at(vertex));
     imageCandidates.insert(sortedUnique(images));
     for (std::size_t step = 0; step < cell.size(); ++step) {
+      const auto later = images.begin() + static_cast<std::ptrdiff_t>(step);
       Cell simplex(cell.begin(),
                    cell.begin() + static_cast<std::ptrdiff_t>(step) + 1);
-      bool degenerate = false;
-      std::set<std::uint64_t> seen;
-      for (std::size_t later = step; later < cell.size(); ++later) {
-        if (!seen.insert(images[later]).second) {
-          degenerate = true;
-          break;
-        }
-        simplex.push_back(images[later]);
-      }
-      if (degenerate) continue;
-      std::sort(simplex.begin(), simplex.end());
-      cylinder.insert(std::move(simplex));
+      simplex.insert(simplex.end(), later, images.end());
+      const std::size_t staircaseWidth = simplex.size();
+      simplex = sortedUnique(std::move(simplex));
+      if (simplex.size() == staircaseWidth)
+        cylinder.insert(std::move(simplex));
+      else if (std::find(later + 1, images.end(), *later) == images.end())
+        collapsedCandidates.insert(std::move(simplex));
     }
   }
   read_.cylinderTopCells.assign(cylinder.begin(), cylinder.end());
+
+  // A candidate is a collapsed cell when no top cell and no other candidate
+  // contains it; with the top cells these are the maximal cells of the
+  // cylinder.
+  if (!collapsedCandidates.empty()) {
+    const std::vector<Cell> candidates(collapsedCandidates.begin(),
+                                       collapsedCandidates.end());
+    Star star;
+    addToStar(star, read_.cylinderTopCells);
+    addToStar(star, candidates);
+    for (const Cell &candidate : candidates)
+      if (carriers(star, candidate) == 1)
+        read_.cylinderCollapsedCells.push_back(candidate);
+  }
 
   // The maximal image cells: the images of the incoming top cells, with any
   // cell contained in another removed.
@@ -157,16 +196,19 @@ MappingCylinder::MappingCylinder(MappingCylinderDeclaration declaration)
                                   declaration_.reductionMap.at(vertex));
 
   std::set<std::pair<std::uint64_t, std::uint64_t>> cross;
-  for (const Cell &simplex : read_.cylinderTopCells)
-    for (const std::uint64_t first : simplex)
-      for (const std::uint64_t second : simplex) {
-        if (incomingVertexSet.count(first) == 0) continue;
-        if (responseVertexSet.count(second) == 0) continue;
-        cross.emplace(first, second);
-      }
+  for (const auto *cells :
+       {&read_.cylinderTopCells, &read_.cylinderCollapsedCells})
+    for (const Cell &simplex : *cells)
+      for (const std::uint64_t first : simplex)
+        for (const std::uint64_t second : simplex) {
+          if (incomingVertexSet.count(first) == 0) continue;
+          if (responseVertexSet.count(second) == 0) continue;
+          cross.emplace(first, second);
+        }
   read_.crossEdges.assign(cross.begin(), cross.end());
 
   // The facets of the cylinder carried by exactly one top cell, split by end.
+  // A collapsed cell lies below the top dimension and carries none.
   std::map<Cell, int> cofaces;
   for (const Cell &simplex : read_.cylinderTopCells)
     for (std::size_t omitted = 0; omitted < simplex.size(); ++omitted) {

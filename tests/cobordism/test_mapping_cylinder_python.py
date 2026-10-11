@@ -17,10 +17,18 @@ of any level.
 
 THE CYLINDER IS THE STAIRCASE TRIANGULATION OF THE PRISM. Over an incoming top
 cell with images r_i, the top cells of W^l are the simplices [v_0..v_i,
-r_i..r_d], with the degenerate ones dropped. A reduction map that is injective on
-a cell gives d + 1 of them, and one that collapses the cell to a single response
+r_i..r_d] whose vertices are distinct. A reduction map that is injective on a
+cell gives d + 1 of them, and one that collapses the cell to a single response
 vertex gives exactly one, the cone, which is the mapping cylinder of a constant
 map.
+
+A DEGENERATE STAIRCASE SIMPLEX KEEPS ITS CELL. One whose response vertices repeat
+is read with the repeats removed, and where no other cell of the cylinder
+contains that form it is a maximal cell below the top dimension, a collapsed
+cell. A triangle carried to (a, b, b) has the top cell [v_0, v_1, v_2, b] and the
+collapsed cell [v_0, a, b], which alone carries the fiber edge (v_0, a) and the
+image edge [a, b]. A collapsed cell lies below the top dimension, so it carries
+no facet of the cylinder and leaves the boundary checks as they were.
 
 ITS BOUNDARY IS THE DISJOINT UNION OF THE TWO ENDS. On a closed level every
 facet of W^l that is not at an end is shared by two of its top cells, so the free
@@ -64,8 +72,41 @@ def _shift(vertices, offset=100):
     return {vertex: vertex + offset for vertex in vertices}
 
 
+def _cells(cells):
+    return sorted(tuple(cell) for cell in cells)
+
+
+def _a(vertex):
+    """Response vertex a, b, c, ... is 100, 101, 102, ..."""
+    return 100 + "abcdefgh".index(vertex)
+
+
+def _r(images):
+    """The reduction map carrying vertex i to the i-th named response vertex."""
+    return {vertex: _a(image) for vertex, image in enumerate(images)}
+
+
+def _cluster_lineage_maximal_cells(incoming, reduction):
+    """The maximal cells of ClusterLineage's cylinder over the same input,
+    with no outgoing cell declared and its outgoing vertices renamed to the
+    response identifiers. Every response vertex must be an image."""
+    obs = T.observables
+    vertices = 1 + max(vertex for cell in incoming for vertex in cell)
+    responses = sorted(set(reduction.values()))
+    W = obs.ClusterLineage.mapping_cylinder(
+        obs.LevelComplex([list(cell) for cell in incoming], vertices),
+        [responses.index(reduction[vertex]) for vertex in range(vertices)],
+        obs.LevelComplex([], len(responses)))
+    cells = {frozenset(cell) for cell in W.cells}
+    maximal = [cell for cell in cells if not any(cell < other for other in cells)]
+    return sorted(
+        tuple(sorted(vertex if vertex < vertices
+                     else responses[vertex - vertices] for vertex in cell))
+        for cell in maximal)
+
+
 class TheCylinderIsTheStaircaseTriangulationTest(unittest.TestCase):
-    """The prism over each incoming top cell, degenerate simplices dropped."""
+    """The prism over each incoming top cell, degenerate simplices aside."""
 
     def test_an_injective_map_gives_one_simplex_per_staircase_step(self):
         """A tetrahedron carried to four distinct response vertices.
@@ -116,6 +157,158 @@ class TheCylinderIsTheStaircaseTriangulationTest(unittest.TestCase):
         self.assertTrue(complex_.boundary_composes_to_zero())
         self.assertEqual(complex_.dimension(), 4)
         self.assertEqual(list(complex_.betti_numbers()), [1, 0, 0, 1, 0])
+
+
+class ADegenerateStaircaseSimplexKeepsItsCellTest(unittest.TestCase):
+    """A reduction map neither injective nor constant on a cell leaves cells
+    below the top dimension, and the cylinder keeps them."""
+
+    def _read(self, incoming, images, outgoing=()):
+        return cob.MappingCylinder(
+            _declaration(incoming, _r(images), outgoing)).read()
+
+    def _assert_every_fiber_edge_lies_on_a_cell(self, read):
+        cells = [set(cell) for cell in read.cylinder_top_cells] + \
+            [set(cell) for cell in read.cylinder_collapsed_cells]
+        for vertex, image in read.fiber_edges:
+            self.assertTrue(any({vertex, image} <= cell for cell in cells),
+                            (vertex, image))
+
+    def test_a_triangle_carried_to_a_b_b_keeps_the_cell_through_v0_a(self):
+        """[v0, a, b, b] is degenerate and its form [v0, a, b] lies in no
+        other cell; without it the fiber edge (v0, a), the response vertex a
+        and the image edge [a, b] are not in the cylinder at all."""
+        read = self._read([[0, 1, 2]], "abb")
+        a, b = _a("a"), _a("b")
+        self.assertEqual(_cells(read.cylinder_top_cells), [(0, 1, 2, b)])
+        self.assertEqual(_cells(read.cylinder_collapsed_cells), [(0, a, b)])
+        self._assert_every_fiber_edge_lies_on_a_cell(read)
+        self.assertIn((0, a), {tuple(edge) for edge in read.cross_edges})
+        complex_ = cob.ChainComplex.from_cells(
+            [list(cell) for cell in read.cylinder_top_cells] +
+            [list(cell) for cell in read.cylinder_collapsed_cells])
+        self.assertEqual(complex_.num_simplices(0),
+                         len(read.incoming_vertices) +
+                         len(read.response_vertices))
+        self.assertTrue(complex_.boundary_composes_to_zero())
+        # The mapping cylinder retracts onto the image edge, a point up to
+        # homotopy.
+        self.assertEqual(list(complex_.betti_numbers()), [1, 0, 0, 0])
+
+    def test_a_tetrahedron_with_a_two_to_one_collapse(self):
+        """(a, b, c, c): the forms of steps 0 and 1 each keep a response
+        vertex no later step reaches, so both are collapsed cells; the form
+        of step 2 lies in the top cell of step 3."""
+        read = self._read(TETRAHEDRON, "abcc")
+        a, b, c = _a("a"), _a("b"), _a("c")
+        self.assertEqual(_cells(read.cylinder_top_cells), [(0, 1, 2, 3, c)])
+        self.assertEqual(_cells(read.cylinder_collapsed_cells),
+                         [(0, 1, b, c), (0, a, b, c)])
+        for cell in read.cylinder_collapsed_cells:
+            self.assertEqual(len(set(cell)), len(cell))
+            self.assertLess(len(cell), read.cylinder_dimension + 1)
+        self._assert_every_fiber_edge_lies_on_a_cell(read)
+
+    def test_a_tetrahedron_with_a_three_to_one_collapse(self):
+        """(a, b, b, b): one collapsed cell, two dimensions below the top."""
+        read = self._read(TETRAHEDRON, "abbb")
+        a, b = _a("a"), _a("b")
+        self.assertEqual(_cells(read.cylinder_top_cells), [(0, 1, 2, 3, b)])
+        self.assertEqual(_cells(read.cylinder_collapsed_cells), [(0, a, b)])
+        self._assert_every_fiber_edge_lies_on_a_cell(read)
+
+    def test_a_collapse_onto_the_lowest_vertices_leaves_no_collapsed_cell(self):
+        """(a, a, b, c) and (a, a, a, b): every degenerate form lies in the
+        next step's top cell."""
+        for images in ("aabc", "aaab"):
+            read = self._read(TETRAHEDRON, images)
+            self.assertEqual(list(read.cylinder_collapsed_cells), [], images)
+            self._assert_every_fiber_edge_lies_on_a_cell(read)
+
+    def test_the_constant_map_and_an_injective_map_are_unchanged(self):
+        """The cone is the one top cell of the constant map and carries every
+        degenerate form; an injective map has no degenerate form."""
+        cone = self._read(TETRAHEDRON, "aaaa", [[_a("a")]])
+        self.assertEqual(_cells(cone.cylinder_top_cells),
+                         [(0, 1, 2, 3, _a("a"))])
+        self.assertEqual(list(cone.cylinder_collapsed_cells), [])
+        prism = self._read(TETRAHEDRON, "abcd")
+        self.assertEqual(
+            _cells(prism.cylinder_top_cells),
+            [(0, 1, 2, 3, 103), (0, 1, 2, 102, 103),
+             (0, 1, 101, 102, 103), (0, 100, 101, 102, 103)])
+        self.assertEqual(list(prism.cylinder_collapsed_cells), [])
+
+    def test_a_form_a_neighbouring_cell_carries_is_not_reported(self):
+        """Two tetrahedra share the triangle (v0, v1, v2), whose edge
+        (v1, v2) collapses onto b. The first, carried to (a, b, b, b), leaves
+        the form [v0, a, b]; the second, carried to (a, b, b, d), leaves the
+        collapsed cell [v0, a, b, d], which contains it. Two triangles where
+        (v0, v1, v2) goes to (a, b, b) and (v0, v2, v3) to (a, b, c) leave
+        none: the second prism's top cell [v0, a, b, c] contains [v0, a, b]."""
+        a, b, c, d = _a("a"), _a("b"), _a("c"), _a("d")
+        pair = self._read([[0, 1, 2, 3], [0, 1, 2, 4]], "abbbd")
+        self.assertEqual(_cells(pair.cylinder_top_cells),
+                         [(0, 1, 2, 3, b), (0, 1, 2, 4, d), (0, 1, 2, b, d)])
+        self.assertEqual(_cells(pair.cylinder_collapsed_cells),
+                         [(0, a, b, d)])
+        self._assert_every_fiber_edge_lies_on_a_cell(pair)
+        triangles = self._read([[0, 1, 2], [0, 2, 3]], "abbc")
+        self.assertIn((0, a, b, c), _cells(triangles.cylinder_top_cells))
+        self.assertEqual(list(triangles.cylinder_collapsed_cells), [])
+        self._assert_every_fiber_edge_lies_on_a_cell(triangles)
+
+    def test_the_maximal_cells_agree_with_cluster_lineage(self):
+        """ClusterLineage builds the same staircase and keeps every form; the
+        maximal cells of its cylinder are the top and collapsed cells here."""
+        cases = [
+            ([[0, 1, 2]], "abb"),
+            (TETRAHEDRON, "abcc"),
+            (TETRAHEDRON, "abbc"),
+            (TETRAHEDRON, "abbb"),
+            (TETRAHEDRON, "aaaa"),
+            (TETRAHEDRON, "abcd"),
+            ([[0, 1, 2, 3], [0, 1, 2, 4]], "abbbd"),
+            ([[0, 1, 2], [1, 2, 3]], "abbc"),
+            ([[0, 1, 2], [0, 2, 3]], "abbc"),
+            ([[0, 1, 2], [0, 1, 3], [0, 2, 3], [1, 2, 3]], "abbc"),
+            ([[0, 1, 2], [0, 1, 3], [0, 2, 3], [1, 2, 3]], "abbb"),
+        ]
+        for incoming, images in cases:
+            read = self._read(incoming, images)
+            self.assertEqual(
+                sorted(_cells(read.cylinder_top_cells) +
+                       _cells(read.cylinder_collapsed_cells)),
+                _cluster_lineage_maximal_cells(incoming, _r(images)),
+                (incoming, images))
+
+    def test_the_boundary_checks_read_the_top_cells_alone(self):
+        """The closed sphere carried to (a, b, b, b): the top cells are the
+        cone over the sphere with apex b, and the collapsed cell [v0, a, b]
+        alone carries (v0, a). The sphere has no boundary, so there is no side
+        wall, and the free facets are the sphere's triangles. Over the
+        triangle carried to (a, b, b) the free facets are the top cell's."""
+        a, b = _a("a"), _a("b")
+        sphere = [list(cell) for cell in itertools.combinations(range(4), 3)]
+        read = self._read(sphere, "abbb", [[a, b]])
+        self.assertEqual(
+            _cells(read.cylinder_top_cells),
+            [(0, 1, 2, b), (0, 1, 3, b), (0, 2, 3, b), (1, 2, 3, b)])
+        self.assertEqual(_cells(read.cylinder_collapsed_cells), [(0, a, b)])
+        self._assert_every_fiber_edge_lies_on_a_cell(read)
+        self.assertEqual(_cells(read.incoming_free_facets), _cells(sphere))
+        self.assertEqual(list(read.outgoing_free_facets), [])
+        self.assertEqual(list(read.side_free_facets), [])
+        self.assertTrue(read.incoming_boundary_is_the_incoming_complex)
+        self.assertTrue(read.outgoing_complex_contains_the_image)
+        self.assertTrue(read.has_no_side_wall)
+        self.assertTrue(read.boundary_is_the_disjoint_union)
+        self.assertEqual(read.boundary_residual, 0.0)
+        triangle = self._read([[0, 1, 2]], "abb", [[a, b]])
+        self.assertEqual(_cells(triangle.incoming_free_facets), [(0, 1, 2)])
+        self.assertEqual(list(triangle.outgoing_free_facets), [])
+        self.assertEqual(_cells(triangle.side_free_facets),
+                         [(0, 1, b), (0, 2, b), (1, 2, b)])
 
 
 class TheBoundaryIsTheDisjointUnionOfTheTwoEndsTest(unittest.TestCase):
