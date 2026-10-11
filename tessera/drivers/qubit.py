@@ -2281,7 +2281,7 @@ def _block_geometry(node, inputs, index):
         "coefficients": [complex(z) for z in inputs.coefficients_in[index]],
         "tau_in": inputs.tau_in[index],
     }
-    surface = MC.block_surface_subcomplex(node.inputs[index], node.spacetime())
+    surface = node.inputs[index].own_surface_complex(node.spacetime())
     if surface is None:
         # A torn surface carries no state and no geometry; say so rather
         # than write a complex that is not the torus.

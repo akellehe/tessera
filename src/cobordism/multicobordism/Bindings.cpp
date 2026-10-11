@@ -121,7 +121,19 @@ void register_cobordism_multicobordism(py::module_ &m) {
                                return block.marking;
                              },
                              "The block's marking with its input coefficients (BlockMarking, spec "
-                             "D2/D3 as revised), set by set_input_marking, or None.");
+                             "D2/D3 as revised), set by set_input_marking, or None.")
+      .def("derive_frame", &multicobordism::BoundaryBlock::deriveFrame, py::arg("spacetime"),
+           py::call_guard<py::gil_scoped_release>(),
+           "The live frame of a marked block on `spacetime` (DerivedFrame); read-only on the geometry.")
+      .def("own_surface", &multicobordism::BoundaryBlock::ownSurface, py::arg("spacetime"),
+           "The block's own surface: its (d-1)-faces (registered ones and facets of top cells "
+           "inside the block) and its edges inside its vertex set, as sorted vertex tuples.")
+      .def("own_surface_complex", &multicobordism::BoundaryBlock::ownSurfaceComplex, py::arg("spacetime"),
+           "A surface block's OWN complex with the host's geometry: BoundaryBlock.own_surface's faces as "
+           "the top cells of a fresh (d-1)-dimensional Spacetime keeping the host's vertex ids, every "
+           "edge with the host's current length and phase. Its Laplacian is the block's own Laplacian: "
+           "the block's fiber residual is read in its zero mode and the residual's gradient is taken on "
+           "it (mapped back to the host's edges by vertex pair). None when the block has no face.");
   py::class_<multicobordism::TwoBodyTarget>(multicobordismModule, "TwoBodyTarget",
       "chi on the pair of attached frames and the reading flag.")
       .def(py::init<>())
@@ -411,7 +423,7 @@ void register_cobordism_multicobordism(py::module_ &m) {
            "Score blocks carrying a fiber-form target by the fiber residual (least-squares leak of the "
            "target images in the band read on the block's own pencil, restricted to the fiber's cells) "
            "instead of the period residual; folded into r_U so both stages descend it. A surface block "
-           "(seed_inputs by region) is read on its own surface (block_surface_subcomplex) in the ZERO MODE "
+           "(seed_inputs by region) is read on its own surface (BoundaryBlock.own_surface_complex) in the ZERO MODE "
            "of that pencil, whatever contour its fiber stores; an ordinary block on its sub-complex at the "
            "fiber's contour (default: the lowest band above the zero mode). Off by default.")
       .def("uses_fiber_residuals", &MultiCobordism::usesFiberResiduals)
@@ -496,9 +508,6 @@ void register_cobordism_multicobordism(py::module_ &m) {
            py::arg("index"), "The marking of input block `index` (BlockMarking), or None.")
       .def("clear_input_marking", &MultiCobordism::clearInputMarking, py::arg("index"),
            "Drop the marking of input block `index`: its scoring and transfer return to what they were.")
-      .def_static("derive_frame", &MultiCobordism::deriveFrame, py::arg("block"), py::arg("spacetime"),
-           py::call_guard<py::gil_scoped_release>(),
-           "The live frame of a marked block on `spacetime` (DerivedFrame); read-only on the geometry.")
       .def("derive_input_frame", &MultiCobordism::deriveInputFrame, py::arg("index"),
            py::call_guard<py::gil_scoped_release>(),
            "derive_frame of input block `index` on the live complex.")
@@ -550,7 +559,7 @@ void register_cobordism_multicobordism(py::module_ &m) {
            "empty at degree 1.")
       .def("input_frame_dual", &MultiCobordism::inputFrameDual, py::arg("index"), py::arg("images"),
            "dual_frame of `images` on input block `index`'s OWN pencil - its own complex with the live "
-           "lengths (block_surface_subcomplex for a surface block, the sub-complex for an ordinary one) "
+           "lengths (BoundaryBlock.own_surface_complex for a surface block, the sub-complex for an ordinary one) "
            "on its attached fiber cells at the fiber's degree. Call it at attachment.")
       .def("set_two_body_target", &MultiCobordism::setTwoBodyTarget, py::arg("chi"),
            py::arg("choi_decomposed") = true,
@@ -653,16 +662,6 @@ void register_cobordism_multicobordism(py::module_ &m) {
            },
            py::arg("contour") = std::nullopt, py::arg("kappa") = 10.0,
            "The fiber the whole complex carries on the target's cells: what a downstream node is piped.")
-      .def_static("block_surface", &MultiCobordism::blockSurface, py::arg("block"), py::arg("spacetime"),
-           "The block's own surface: its (d-1)-faces (registered ones and facets of top cells "
-           "inside the block) and its edges inside its vertex set, as sorted vertex tuples.")
-      .def_static("block_surface_subcomplex", &MultiCobordism::blockSurfaceWithGeometry, py::arg("block"),
-           py::arg("spacetime"),
-           "A surface block's OWN complex with the host's geometry: block_surface's faces as "
-           "the top cells of a fresh (d-1)-dimensional Spacetime keeping the host's vertex ids, every "
-           "edge with the host's current length and phase. Its Laplacian is the block's own Laplacian: "
-           "the block's fiber residual is read in its zero mode and the residual's gradient is taken on "
-           "it (mapped back to the host's edges by vertex pair). None when the block has no face.")
       .def("set_input_fiber", &MultiCobordism::setInputFiber, py::arg("index"), py::arg("fiber"),
            "Attach the fiber form of an input block's target.")
       .def("set_output_fiber", &MultiCobordism::setOutputFiber, py::arg("index"), py::arg("fiber"))

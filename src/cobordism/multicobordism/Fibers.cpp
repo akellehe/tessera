@@ -20,41 +20,11 @@ double MultiCobordism::fiberResidualOn(const std::shared_ptr<Spacetime> &spaceti
   return PencilLayer::fiberResidual(spacetime, target, band);
 }
 
-std::shared_ptr<Spacetime> MultiCobordism::blockSubcomplexWithGeometry(
-    const BoundaryBlock &block, const std::shared_ptr<Spacetime> &spacetime) {
-  auto sub = spacetime->getRegion(block.vertices);
-  if (!sub) return nullptr;
-  sub->materializeFacets();
-  return sub;
-}
-
-std::shared_ptr<Spacetime> MultiCobordism::blockSurfaceWithGeometry(
-    const BoundaryBlock &block, const std::shared_ptr<Spacetime> &spacetime) {
-  if (!spacetime) return nullptr;
-  const BlockSurface surface = blockSurface(block, *spacetime);
-  if (surface.faces.empty()) return nullptr;
-  // The surface's own (d-1)-simplices as the top cells of a (d-1)-dimensional
-  // complex on the host's vertex ids; fromVertexTuples auto-wires their edges, which
-  // then take the host's live lengths and phases by vertex pair. The bulk's
-  // cells never enter: this is the block's own Laplacian, not a restriction
-  // of the whole's.
-  auto own = Spacetime::fromVertexTuples(spacetime->getDimensions() - 1, surface.faces, 1.0, complexd(0.0, 0.0));
-  if (!own->copyEdgeGeometryFrom(*spacetime)) return nullptr;  // a torn surface carries nothing
-  own->materializeFacets();
-  return own;
-}
-
-std::shared_ptr<Spacetime> MultiCobordism::blockComplexWithGeometry(
-    const BoundaryBlock &block, const std::shared_ptr<Spacetime> &spacetime) {
-  return block.surface ? blockSurfaceWithGeometry(block, spacetime)
-                       : blockSubcomplexWithGeometry(block, spacetime);
-}
-
 double MultiCobordism::fiberResidualForBoundaryBlock(
     const BoundaryBlock &boundaryBlock, const std::shared_ptr<Spacetime> &spacetime) const {
   if (!boundaryBlock.fiber || boundaryBlock.fiber->images.cols() == 0)
     throw std::logic_error("MultiCobordism::fiberResidualForBoundaryBlock: the block carries no fiber target");
-  return fiberResidualOn(blockComplexWithGeometry(boundaryBlock, spacetime), *boundaryBlock.fiber,
+  return fiberResidualOn(boundaryBlock.fiberComplex(spacetime), *boundaryBlock.fiber,
                          fiberBandFor(boundaryBlock));
 }
 
@@ -155,7 +125,7 @@ Eigen::MatrixXcd MultiCobordism::inputFrameDual(std::size_t index, const Eigen::
   if (!block.fiber || block.fiber->images.cols() == 0)
     throw std::logic_error("MultiCobordism::inputFrameDual: input block " + std::to_string(index) +
                            " carries no attached fiber");
-  const auto own = blockComplexWithGeometry(block, spacetime_);
+  const auto own = block.fiberComplex(spacetime_);
   if (!own)
     throw std::logic_error("MultiCobordism::inputFrameDual: input block " + std::to_string(index) +
                            " has no own complex to pair on");

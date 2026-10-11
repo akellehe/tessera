@@ -6,7 +6,7 @@ Each input torus of the collar keeps representing its input state through the
 zero mode of its OWN Laplacian while its cells and lengths move (spec R3, R7,
 D2). For a surface block (``seed_inputs`` by region) the block's own complex is
 its surface — the 2-complex of its own triangles inside its vertex set with
-the host's live lengths and phases (``MultiCobordism.block_surface_subcomplex``)
+the host's live lengths and phases (``BoundaryBlock.own_surface_complex``)
 — and the block's fiber residual and its analytic gradient are read on that
 complex in the ZERO MODE of its own pencil (the harmonic contour of the
 block's own assembled pencil), never band 1 and never a contour copied from the
@@ -187,10 +187,10 @@ def residuals(node):
 
 
 def surface_is_the_torus(node, st, q, ids, index):
-    surface = MC.block_surface(node.inputs[index], st)
+    surface = node.inputs[index].own_surface(st)
     assert sorted(tuple(f) for f in surface.faces) == mapped_faces(q, ids)
     assert sorted(tuple(e) for e in surface.edges) == mapped_edges(q, ids)
-    own = MC.block_surface_subcomplex(node.inputs[index], st)
+    own = node.inputs[index].own_surface_complex(st)
     assert tops(own) == mapped_faces(q, ids)
     host = edge_geometry(st)
     geometry = edge_geometry(own)

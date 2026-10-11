@@ -14,7 +14,7 @@ common base point -- the first vertex of A's walk on B's, the
 ``SimplicialQubit.base_vertex`` rule). The engine DERIVES the block's frame at
 every read (``derive_input_frame``): the zero mode of the block's own
 covariant Whitney pencil on its live surface (lengths and phases,
-``block_surface_subcomplex``), normalized to transported periods (1, 0) and
+``BoundaryBlock.own_surface_complex``), normalized to transported periods (1, 0) and
 (0, 1) over the cycles from the base point (``Connection.transported_period``),
 with dual images from the DUAL kernel (the same zero mode under the inverse
 links) so that ``F^vee.T @ M_1^U @ F == I`` on the block's own pencil -- T3's
@@ -199,7 +199,7 @@ def frame_through_ids(q, ids, cells):
 
 
 def own_mass_matrix(node, index, cells):
-    own = MC.block_surface_subcomplex(node.inputs[index], node.spacetime())
+    own = node.inputs[index].own_surface_complex(node.spacetime())
     assembled = cob.PencilLayer.assemble([own])
     idx = cob.PencilLayer.indices_of(assembled, 1, [list(c) for c in cells])
     return np.asarray(cob.PencilLayer.pencil(assembled, 1).B)[np.ix_(idx, idx)]
@@ -332,7 +332,7 @@ def test_derived_frame_equals_the_period_frame_on_the_seed(n, whitney_default):
         print(f"\n[T2-bis] {n}x{n} block {index}: frame vs period_frame {agreement:.2e}, dual contract {contract:.2e}, "
               f"dual vs T3 {np.abs(Fd - t3).max():.2e}, base vertex {marking.base_vertex}")
     # the static form on the block reads the same frame
-    static = MC.derive_frame(node.inputs[0], node.spacetime())
+    static = node.inputs[0].derive_frame(node.spacetime())
     assert np.array_equal(np.asarray(static.frame.images), np.asarray(node.derive_input_frame(0).frame.images))
 
 

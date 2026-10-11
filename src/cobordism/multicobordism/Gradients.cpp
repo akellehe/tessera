@@ -144,10 +144,10 @@ std::vector<multicobordism::ResidualGradient> MultiCobordism::inputStateResidual
   for (std::size_t b = 0; b < blocks.size(); ++b) {
     const BoundaryBlock &block = *blocks[b];
     const BlockMarking &marking = *block.marking;
-    const DerivedFrame derived = deriveFrame(block, spacetime);
+    const DerivedFrame derived = block.deriveFrame(spacetime);
     if (!derived.derived()) continue;  // the full leak has no direction
     BlockTerms &term = terms[b];
-    const BoundaryFiber target = stateTargetOf(marking, derived.frame);
+    const BoundaryFiber target = marking.stateTarget(derived.frame);
     term.idx = PencilLayer::indicesOf(assembled, 1, target.cells);
     Eigen::MatrixXcd ZT(static_cast<Eigen::Index>(term.idx.size()), riesz.rank());
     for (std::size_t i = 0; i < term.idx.size(); ++i)
@@ -161,7 +161,7 @@ std::vector<multicobordism::ResidualGradient> MultiCobordism::inputStateResidual
     // column per own edge (the frame's rows, the target's rows), mapped to the
     // parent's edges by vertex pair (a surface's edges are host edges); zero
     // on every bulk edge.
-    const auto own = blockComplexWithGeometry(block, spacetime);
+    const auto own = block.fiberComplex(spacetime);
     const AssembledPencil ownAssembled = PencilLayer::assemble({own});
     const chainhodge::Contour ownContour = PencilLayer::harmonicContour(ownAssembled, 1);
     const chainhodge::Band ownBand = ownAssembled.op->band(1, ownContour);
@@ -644,7 +644,7 @@ multicobordism::ResidualGradient MultiCobordism::fiberModeAscent() const {
   for (const auto &block : inputBlocks_) {
     if (block.marking) continue;
     if (!block.fiber || block.fiber->images.cols() == 0) continue;
-    auto sub = blockComplexWithGeometry(block, spacetime_);
+    auto sub = block.fiberComplex(spacetime_);
     if (!sub) continue;
     try {
       accumulate(fiberResidualGradientOn(sub, *block.fiber, fiberBandFor(block)), *sub, inputResidualWeight_);

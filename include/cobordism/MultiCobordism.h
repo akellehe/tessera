@@ -707,7 +707,7 @@ class MultiCobordism {
     return block.surface ? FiberBand::ZeroMode : FiberBand::AsStored;
   }
   /// The fiber residual of one block on \p spacetime (see `useFiberResiduals`):
-  /// read on the block's own complex (`blockComplexWithGeometry` — a surface
+  /// read on the block's own complex (`BoundaryBlock::fiberComplex` — a surface
   /// block's own surface, an ordinary block's sub-complex) in the band
   /// `fiberBandFor` names. Full leak (1) when the block has no own complex,
   /// when a fiber cell is outside it, or when the band is empty.
@@ -737,28 +737,6 @@ class MultiCobordism {
   [[nodiscard]] BoundaryFiber readWholeComplexFiber(const chainhodge::Contour *contour = nullptr,
                                                     double kappa = 10.0) const;
 
-  /// The own surface of \p block within \p spacetime.
-  [[nodiscard]] static multicobordism::BlockSurface blockSurface(const multicobordism::BoundaryBlock &block,
-                                                const Spacetime &spacetime);
-  /// A surface block's own complex with the host's geometry: `blockSurface`'s
-  /// faces as the top cells of a fresh \f$ (d-1) \f$-dimensional `Spacetime`
-  /// (`Spacetime::fromVertexTuples`, keeping the host's vertex ids), every edge
-  /// carrying the host's current length and phase, matched by vertex pair.
-  ///
-  /// Its Laplacian is the block's own Laplacian: the torus's own triangles with
-  /// the live lengths and nothing of the bulk, so its degree-1 zero mode is the
-  /// torus's harmonic space. That is the band the block's fiber residual is
-  /// read in (`fiberResidualForBoundaryBlock`) and the complex its gradient is
-  /// taken on (`fiberModeAscent`). The host is read, never changed, and nothing
-  /// is pinned. It differs from `blockSubcomplexWithGeometry`, which takes the
-  /// host's top cells inside the vertex set — a surface block of a
-  /// \f$ d \f$-complex contains none of those.
-  ///
-  /// Null when the block has no face inside its vertex set, or when the host no
-  /// longer holds an edge of one of its faces. The block then scores the full
-  /// leak, so no move that tears a surface survives the ΔF acceptance.
-  [[nodiscard]] static std::shared_ptr<Spacetime> blockSurfaceWithGeometry(
-      const multicobordism::BoundaryBlock &block, const std::shared_ptr<Spacetime> &spacetime);
 
   // ---- the derived frame and the state at a block ----
 
@@ -830,11 +808,6 @@ class MultiCobordism {
   /// return to what they were before `setInputMarking`.
   /// @throws std::out_of_range
   void clearInputMarking(std::size_t index);
-  /// The live frame of a marked \p block on \p spacetime (`DerivedFrame`):
-  /// read-only on the geometry.
-  /// @throws std::logic_error when the block carries no marking.
-  [[nodiscard]] static multicobordism::DerivedFrame deriveFrame(const multicobordism::BoundaryBlock &block,
-                                               const std::shared_ptr<Spacetime> &spacetime);
   /// `deriveFrame` of input block \p index on the live complex.
   /// @throws std::out_of_range on the index; std::logic_error without a marking.
   [[nodiscard]] multicobordism::DerivedFrame deriveInputFrame(std::size_t index) const;
@@ -855,29 +828,12 @@ class MultiCobordism {
   /// @throws std::out_of_range
   /// @throws std::logic_error without a marking or off the Whitney pencil.
   [[nodiscard]] multicobordism::InputStateRead readInputState(std::size_t index) const;
-  /// The block's live surface read as a simplicial qubit over the block's
-  /// marking: the surface of `blockSurfaceWithGeometry`, the marking's cycles
-  /// as (edge index, sign) steps in the surface's edge order, and the
-  /// orientation fixed by the marking. A `Spacetime` stores no orientation, so
-  /// the read is taken in the one with \f$ A \cdot B = +1 \f$
-  /// (`observables::SimplicialQubit::intersectionNumber`), under which the flat
-  /// torus that seeded the block reads \f$ \tau_{in} \f$. The whole qubit is
-  /// read rather than a kernel, because the state a torus represents on its own
-  /// is its holomorphic form, which the kernel alone does not determine.
-  /// @throws std::logic_error without a marking; std::invalid_argument when
-  ///   the marking does not have two cycles or the surface refuses the
-  ///   qubit's validation; std::runtime_error when the block has no surface,
-  ///   a marking edge is not an edge of the live surface, or the qubit's
-  ///   construction is refused (a branch that cannot be continued, a
-  ///   degenerate complex structure).
-  [[nodiscard]] static observables::SimplicialQubit blockQubit(const multicobordism::BoundaryBlock &block,
-                                                                const std::shared_ptr<Spacetime> &spacetime);
-  /// `blockQubit` of input block \p index on the live complex.
+  /// `BoundaryBlock::qubit` of input block \p index on the live complex.
   /// @throws std::out_of_range
   [[nodiscard]] observables::SimplicialQubit blockQubit(std::size_t index) const;
   /// The block residual on \p spacetime: with
   /// \f$ (P_A, P_B) \f$ the transported periods of the holomorphic form of
-  /// the block's own Laplacian on its live surface (`blockQubit`) over the
+  /// the block's own Laplacian on its live surface (`BoundaryBlock::qubit`) over the
   /// marking's cycles and \f$ (a, b) \f$ the block's input coefficients,
   /// \f$ r = 1 - |\langle (a,b) | (P_A, P_B)\rangle|^2 / (\|(a,b)\|^2
   /// \|(P_A,P_B)\|^2) = 1 - |\langle\psi(\tau_{in})|\psi(\hat\tau)\rangle|^2 \f$
@@ -900,7 +856,7 @@ class MultiCobordism {
   [[nodiscard]] static double ownStateLeakOf(std::complex<double> periodA, std::complex<double> periodB,
                                              const Eigen::VectorXcd &coefficients);
   /// `PencilLayer::dualFrame` of \p images on input block \p index's own pencil — its own
-  /// complex with the live lengths (`blockComplexWithGeometry`: a surface
+  /// complex with the live lengths (`BoundaryBlock::fiberComplex`: a surface
   /// block's surface, an ordinary block's sub-complex) on its attached fiber
   /// cells at the fiber's degree. Call it at attachment, when the block's
   /// lengths are the surface's own.
@@ -2019,9 +1975,6 @@ class MultiCobordism {
   /// The transfer operand of \p block on \p spacetime.
   [[nodiscard]] TransferOperand transferOperand(const multicobordism::BoundaryBlock &block,
                                                 const std::shared_ptr<Spacetime> &spacetime) const;
-  /// The target edge values of a marked block through a frame: a degree-1
-  /// fiber on the frame's cells with images \f$ F\,(a, b)^T \f$.
-  [[nodiscard]] static BoundaryFiber stateTargetOf(const multicobordism::BlockMarking &marking, const multicobordism::BlockFrame &frame);
   /// The transfer between two paired frames: each side's blocks stacked into one
   /// frame, with cells concatenated and images block-diagonal.
   ///
@@ -2076,16 +2029,6 @@ class MultiCobordism {
   [[nodiscard]] double fiberResidualOn(const std::shared_ptr<Spacetime> &spacetime,
                                        const BoundaryFiber &fiber,
                                        FiberBand band = FiberBand::AsStored) const;
-  /// The block's region of \p spacetime (`Spacetime::getRegion`), which carries
-  /// the parent's edge lengths and phases, with its facets materialized for the
-  /// fiber reads. Null when the region holds no top cell.
-  [[nodiscard]] static std::shared_ptr<Spacetime> blockSubcomplexWithGeometry(
-      const multicobordism::BoundaryBlock &block, const std::shared_ptr<Spacetime> &spacetime);
-  /// The complex a block's fiber is read on: a surface block's own surface
-  /// (`blockSurfaceWithGeometry`), an ordinary block's sub-complex
-  /// (`blockSubcomplexWithGeometry`). Null when there is nothing to read.
-  [[nodiscard]] static std::shared_ptr<Spacetime> blockComplexWithGeometry(
-      const multicobordism::BoundaryBlock &block, const std::shared_ptr<Spacetime> &spacetime);
   /// An input region stops growing once its residual drops below this, i.e.
   /// once it carries its state.
   double inputCarriedTolerance_ = 1e-12;

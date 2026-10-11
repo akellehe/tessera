@@ -11,50 +11,6 @@
 
 namespace tessera::cobordism {
 
-multicobordism::BlockSurface MultiCobordism::blockSurface(const BoundaryBlock &block,
-                                                          const Spacetime &spacetime) {
-  const std::size_t faceSize = static_cast<std::size_t>(std::max(0, spacetime.getDimensions()));
-  const auto inside = [&](const std::vector<std::uint64_t> &ids) {
-    for (const std::uint64_t v : ids)
-      if (!block.vertices.count(v)) return false;
-    return true;
-  };
-  // The faces the block carries (a surface block's own triangles as seeded),
-  // sorted so a tuple compares with the host's canonical ones.
-  std::set<std::vector<std::uint64_t>> faces;
-  for (auto face : block.faces) {
-    std::sort(face.begin(), face.end());
-    if (face.size() == faceSize && inside(face)) faces.insert(std::move(face));
-  }
-  // The host's registered (d-1)-simplices inside the block: the surface's own
-  // triangles, whether or not a top cell has reached them yet.
-  for (const auto &simplex : spacetime.getSimplices()) {
-    if (simplex == nullptr || simplex->isStale() || simplex->size() != faceSize) continue;
-    auto ids = simplex->topTuple();
-    if (inside(ids)) faces.insert(std::move(ids));
-  }
-  // The facets of the top cells inside the block: a covered surface face that
-  // no read has materialized yet is still a face of the surface.
-  for (const auto &topSimplex : spacetime.getTopSimplices()) {
-    const auto cell = topSimplex->topTuple();
-    for (std::size_t omit = 0; omit < cell.size(); ++omit) {
-      std::vector<std::uint64_t> facet;
-      for (std::size_t i = 0; i < cell.size(); ++i)
-        if (i != omit) facet.push_back(cell[i]);
-      if (facet.size() == faceSize && inside(facet)) faces.insert(std::move(facet));
-    }
-  }
-  std::set<std::vector<std::uint64_t>> edges;
-  for (const auto *edge : spacetime.getEdgeList()->toVector()) {
-    if (edge == nullptr || edge->getSource() == nullptr || edge->getTarget() == nullptr) continue;
-    const auto key = edgeKey(edge);
-    if (block.vertices.count(key.first) && block.vertices.count(key.second))
-      edges.insert({key.first, key.second});
-  }
-  return {std::vector<std::vector<std::uint64_t>>(faces.begin(), faces.end()),
-          std::vector<std::vector<std::uint64_t>>(edges.begin(), edges.end())};
-}
-
 bool MultiCobordism::hasFixedBoundary() const noexcept {
   // A surface block only. Its own triangles are a component of the boundary,
   // declared by the caller, which is what makes dW a stated fact rather than
@@ -86,7 +42,7 @@ MultiCobordism::SurfaceInventory MultiCobordism::surfaceInventoryOf(
   for (std::size_t index = 0; index < inputBlocks_.size(); ++index) {
     const auto &block = inputBlocks_[index];
     if (!block.surface) continue;
-    const BlockSurface surface = blockSurface(block, spacetime);
+    const BlockSurface surface = block.ownSurface(spacetime);
     std::set<std::vector<std::uint64_t>> faces(surface.faces.begin(), surface.faces.end());
     // Every non-empty subset of a face is a simplex of the surface: the parts
     // a bridge may take from this block.

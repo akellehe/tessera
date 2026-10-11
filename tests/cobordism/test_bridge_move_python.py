@@ -174,7 +174,7 @@ def test_seed_from_surfaces_holds_the_tori():
     for block, q, ids in zip(node.inputs, (qa, qb), (ids_a, ids_b)):
         assert block.surface
         assert sorted(block.vertices) == sorted(ids.values())
-        surface = MC.block_surface(block, st)
+        surface = block.own_surface(st)
         assert sorted(tuple(f) for f in surface.faces) == mapped_faces(q, ids)
         assert sorted(tuple(e) for e in surface.edges) == mapped_edges(q, ids)
     assert len(node.uncovered_input_faces()) == 18 + 32
@@ -307,7 +307,7 @@ def test_collar_seed_is_the_manifold_between_the_tori(n, whitney_default):
     assert node.bridge_phase_complete()
     assert node.uncovered_input_faces() == []
     for block, q, ids in zip(node.inputs, (qa, qb), (ids_a, ids_b)):
-        surface = MC.block_surface(block, st)
+        surface = block.own_surface(st)
         assert sorted(tuple(f) for f in surface.faces) == mapped_faces(q, ids), "no chord face"
         assert sorted(tuple(e) for e in surface.edges) == mapped_edges(q, ids), "no chord edge"
         assert not any(set(cell) <= set(block.vertices) for cell in tops(st))
@@ -422,7 +422,7 @@ def test_bridge_on_the_collar(whitney_default):
     node.run_stage1(max_steps=2, n_candidate_moves=6)
     st2 = node.spacetime()
     for block, q, ids in zip(node.inputs, (qa, qb), (ids_a, ids_b)):
-        assert sorted(tuple(e) for e in MC.block_surface(block, st2).edges) == mapped_edges(q, ids)
+        assert sorted(tuple(e) for e in block.own_surface(st2).edges) == mapped_edges(q, ids)
     # ... and a cone-out dent reopens the phase: the dented torus face leaves W
     # and its edges persist; rolling the dent back restores completion. The
     # gate decides which cells may be dented (removing a cell can pinch a
@@ -440,7 +440,7 @@ def test_bridge_on_the_collar(whitney_default):
             refusals.append(reason)
             continue
         assert not node.bridge_phase_complete()
-        assert sorted(tuple(e) for e in MC.block_surface(node.inputs[0], st).edges) == mapped_edges(qa, ids_a)
+        assert sorted(tuple(e) for e in node.inputs[0].own_surface(st).edges) == mapped_edges(qa, ids_a)
         assert sc.rollback()
         assert node.bridge_phase_complete() == complete_before
         break
@@ -471,7 +471,7 @@ def test_ordinary_nodes_are_untouched_and_rebuilds_keep_the_tori(whitney_default
     face = mapped_faces(qa, ids_a)[0]
     ok, reason = cob.SurgicalCone(node.spacetime()).bridge(list(face) + [ids_b[0]])
     assert ok, reason
-    faces = [sorted(tuple(f) for f in MC.block_surface(b, node.spacetime()).faces) for b in node.inputs]
+    faces = [sorted(tuple(f) for f in b.own_surface(node.spacetime()).faces) for b in node.inputs]
     assert faces == [mapped_faces(qa, ids_a), mapped_faces(qb, ids_b)]
     uncovered = sorted(tuple(f) for f in node.uncovered_input_faces())
     assert len(uncovered) == 50 - 1
@@ -487,4 +487,4 @@ def test_ordinary_nodes_are_untouched_and_rebuilds_keep_the_tori(whitney_default
     assert len(tops(st)) == 2 and len(vertex_ids(st)) == 26
     assert sorted(tuple(f) for f in node.uncovered_input_faces()) == uncovered
     assert set(uncovered) <= set(registered(st, 3)), "the uncovered torus faces are registered cells of the rebuilt host"
-    assert [sorted(tuple(f) for f in MC.block_surface(b, st).faces) for b in node.inputs] == faces
+    assert [sorted(tuple(f) for f in b.own_surface(st).faces) for b in node.inputs] == faces

@@ -163,7 +163,7 @@ def surface_cycles(marking, surface):
 def qubit_read(node, index, st, marking):
     """The qubit read of block ``index``'s live surface: its own faces with the
     host's live lengths and phases (spec S6)."""
-    own = MC.block_surface_subcomplex(node.inputs[index], st)
+    own = node.inputs[index].own_surface_complex(st)
     cycles = surface_cycles(marking, own)
     return quiet(lambda: obs.SimplicialQubit(own, cycles[0], cycles[1]))
 
@@ -172,7 +172,7 @@ def leak_without_phases(node, index, st):
     """What the block's residual would be if the rebuild dropped the phases:
     the block's fiber (the TWISTED zero mode) read on its own surface with
     every phase zeroed."""
-    own = MC.block_surface_subcomplex(node.inputs[index], st)
+    own = node.inputs[index].own_surface_complex(st)
     for e in own.get_edge_list().to_vector():
         e.set_phase(0j)
     fiber = node.inputs[index].fiber

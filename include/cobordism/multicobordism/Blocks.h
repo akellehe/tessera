@@ -7,6 +7,7 @@
 #ifndef TESSERA_COBORDISM_MULTICOBORDISM_BLOCKS_H
 #define TESSERA_COBORDISM_MULTICOBORDISM_BLOCKS_H
 
+#include <memory>
 #include <complex>
 #include <cstdint>
 #include <optional>
@@ -18,7 +19,12 @@
 
 #include "cobordism/PencilLayer.h"
 
+namespace tessera::observables { class SimplicialQubit; }
+
 namespace tessera::cobordism::multicobordism {
+
+struct DerivedFrame;
+struct BlockSurface;
 
 /// A frame on a block's attached cells: the coordinates the two-body transfer
 /// is read in. The transfer is
@@ -54,7 +60,7 @@ struct BlockFrame {
 ///
 /// The engine uses a marking in two ways. It scores the block's own state
 /// against the coefficients: the block's live surface is read as the
-/// simplicial qubit over the marking (`blockQubit`), and the transported
+/// simplicial qubit over the marking (`qubit`), and the transported
 /// periods of its holomorphic form over \f$ (A, B) \f$ must equal the
 /// coefficients as a point of \f$ \mathbb{CP}^1 \f$ (`ownStateResidualOn`).
 /// It also derives the block's frame at every read (`deriveFrame`), in which
@@ -76,6 +82,9 @@ struct BlockMarking {
   /// `observables::SimplicialQubit::baseVertex` rule).
   std::uint64_t baseVertex{0};
   [[nodiscard]] int rank() const noexcept { return static_cast<int>(cycles.size()); }
+  /// The target edge values of a marked block through a frame: a degree-1
+  /// fiber on the frame's cells with images \f$ F\,(a, b)^T \f$.
+  [[nodiscard]] BoundaryFiber stateTarget(const BlockFrame &frame) const;
 };
 
 /// A boundary block of the cobordism, either an input or an output. A block
@@ -104,7 +113,7 @@ struct BoundaryBlock {
   /// A surface block's own faces (sorted vertex-id tuples): the input
   /// surface's \f$ (d-1) \f$-simplices, recorded when the block is seeded
   /// and carried by the block thereafter, so that the block's own complex
-  /// (`blockSurface`, `blockSurfaceWithGeometry`) is the surface whatever the
+  /// (`ownSurface`, `ownSurfaceComplex`) is the surface whatever the
   /// host currently registers. The host registers a surface face only while a
   /// top cell covers it or a read has materialized it — a cone-out dent
   /// uncovers a face and the host's orphan prune then drops it — whereas the
@@ -123,6 +132,54 @@ struct BoundaryBlock {
   /// The block's marking with its input coefficients, set by
   /// `setInputMarking`. Absent on an unmarked block.
   std::optional<BlockMarking> marking;
+  /// The own surface of this block within \p spacetime.
+  [[nodiscard]] BlockSurface ownSurface(const Spacetime &spacetime) const;
+  /// A surface block's own complex with the host's geometry: `ownSurface`'s
+  /// faces as the top cells of a fresh \f$ (d-1) \f$-dimensional `Spacetime`
+  /// (`Spacetime::fromVertexTuples`, keeping the host's vertex ids), every edge
+  /// carrying the host's current length and phase, matched by vertex pair.
+  ///
+  /// Its Laplacian is the block's own Laplacian: the torus's own triangles with
+  /// the live lengths and nothing of the bulk, so its degree-1 zero mode is the
+  /// torus's harmonic space. That is the band the block's fiber residual is
+  /// read in (`fiberResidualForBoundaryBlock`) and the complex its gradient is
+  /// taken on (`fiberModeAscent`). The host is read, never changed, and nothing
+  /// is pinned. It differs from `region`, which takes the
+  /// host's top cells inside the vertex set — a surface block of a
+  /// \f$ d \f$-complex contains none of those.
+  ///
+  /// Null when the block has no face inside its vertex set, or when the host no
+  /// longer holds an edge of one of its faces. The block then scores the full
+  /// leak, so no move that tears a surface survives the ΔF acceptance.
+  [[nodiscard]] std::shared_ptr<Spacetime> ownSurfaceComplex(const std::shared_ptr<Spacetime> &spacetime) const;
+  /// The block's region of \p spacetime (`Spacetime::getRegion`), which carries
+  /// the parent's edge lengths and phases, with its facets materialized for the
+  /// fiber reads. Null when the region holds no top cell.
+  [[nodiscard]] std::shared_ptr<Spacetime> region(const std::shared_ptr<Spacetime> &spacetime) const;
+  /// The complex a block's fiber is read on: a surface block's own surface
+  /// (`ownSurfaceComplex`), an ordinary block's sub-complex
+  /// (`region`). Null when there is nothing to read.
+  [[nodiscard]] std::shared_ptr<Spacetime> fiberComplex(const std::shared_ptr<Spacetime> &spacetime) const;
+  /// The live frame of a marked this block on \p spacetime (`DerivedFrame`):
+  /// read-only on the geometry.
+  /// @throws std::logic_error when the block carries no marking.
+  [[nodiscard]] DerivedFrame deriveFrame(const std::shared_ptr<Spacetime> &spacetime) const;
+  /// The block's live surface read as a simplicial qubit over the block's
+  /// marking: the surface of `ownSurfaceComplex`, the marking's cycles
+  /// as (edge index, sign) steps in the surface's edge order, and the
+  /// orientation fixed by the marking. A `Spacetime` stores no orientation, so
+  /// the read is taken in the one with \f$ A \cdot B = +1 \f$
+  /// (`observables::SimplicialQubit::intersectionNumber`), under which the flat
+  /// torus that seeded the block reads \f$ \tau_{in} \f$. The whole qubit is
+  /// read rather than a kernel, because the state a torus represents on its own
+  /// is its holomorphic form, which the kernel alone does not determine.
+  /// @throws std::logic_error without a marking; std::invalid_argument when
+  ///   the marking does not have two cycles or the surface refuses the
+  ///   qubit's validation; std::runtime_error when the block has no surface,
+  ///   a marking edge is not an edge of the live surface, or the qubit's
+  ///   construction is refused (a branch that cannot be continued, a
+  ///   degenerate complex structure).
+  [[nodiscard]] observables::SimplicialQubit qubit(const std::shared_ptr<Spacetime> &spacetime) const;
 };
 
 /// The frame derived for a marked block from its live own complex.
@@ -130,7 +187,7 @@ struct BoundaryBlock {
 /// `frame.cells` are the block's own edges, in the own pencil's canonical
 /// order. `frame.images` is \f$ F = Z\,\Pi^{-1} \f$, with \f$ Z \f$ the
 /// images of the zero mode of the block's own covariant Whitney pencil
-/// (`PencilLayer::harmonicContour` on `blockSurfaceWithGeometry`) and
+/// (`PencilLayer::harmonicContour` on `ownSurfaceComplex`) and
 /// \f$ \Pi_{ca} = \oint_c z_a \f$ its transported periods over the marking's
 /// cycles from the common base point
 /// (`chainhodge::Connection::transportedPeriod`), so column \f$ b \f$ has

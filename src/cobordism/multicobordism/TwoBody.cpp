@@ -406,7 +406,7 @@ MultiCobordism::TransferOperand MultiCobordism::transferOperand(const BoundaryBl
                                                                 const std::shared_ptr<Spacetime> &spacetime) const {
   TransferOperand operand;
   if (block.marking) {
-    DerivedFrame derived = deriveFrame(block, spacetime);
+    DerivedFrame derived = block.deriveFrame(spacetime);
     if (!derived.derived())
       throw std::runtime_error("MultiCobordism: the frame of a marked block could not be derived: " +
                                derived.obstruction);
@@ -600,7 +600,7 @@ double MultiCobordism::wholeHarmonicResidualOn(
       // The block's live frame, on the host's edges. Its columns are the
       // probes f_c; the pairing is f_c^T M_1 Z_a, the transpose pairing the
       // harmonic Gram Z^T M_1 Z already uses.
-      const DerivedFrame derived = deriveFrame(block, spacetime);
+      const DerivedFrame derived = block.deriveFrame(spacetime);
       if (!derived.derived())
         return refuse("the gram pairing needs the block's live frame: " + derived.obstruction);
       const auto width = static_cast<Eigen::Index>(derived.frame.rank());

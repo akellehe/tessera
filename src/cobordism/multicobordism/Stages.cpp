@@ -241,7 +241,7 @@ void MultiCobordism::seedBlockRegions(
     // `BoundaryBlock::faces`): the surface's simplices inside its vertex set
     // as the host holds them at seeding — registered on a bare-surface host,
     // facets of the collar's cells on a collar.
-    if (surface) block.faces = blockSurface(block, *spacetime_).faces;
+    if (surface) block.faces = block.ownSurface(*spacetime_).faces;
     destinationBlocks.push_back(std::move(block));
   }
 }

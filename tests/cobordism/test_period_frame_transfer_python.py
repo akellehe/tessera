@@ -219,7 +219,7 @@ def set_frames(node, qa, qb):
 
 def own_mass_matrix(node, index):
     """The Whitney mass matrix M_1 of the block's OWN surface on its fiber cells."""
-    own = MC.block_surface_subcomplex(node.inputs[index], node.spacetime())
+    own = node.inputs[index].own_surface_complex(node.spacetime())
     assembled = cob.PencilLayer.assemble([own])
     idx = cob.PencilLayer.indices_of(assembled, 1, node.inputs[index].fiber.cells)
     return np.asarray(cob.PencilLayer.pencil(assembled, 1).B)[np.ix_(idx, idx)]
