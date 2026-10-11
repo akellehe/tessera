@@ -29,6 +29,8 @@ internal interface as well, edit the Doxyfile and comment out its exclusions.
 ```
 ```{doxygenfile} Foliation.h
 ```
+```{doxygenfile} Staircase.h
+```
 
 ## Simplicial complex
 
