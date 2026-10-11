@@ -461,13 +461,8 @@ multicobordism::ResidualGradient MultiCobordism::twoBodyResidualGradientOn(
   // so dr = 2 Re(dF · dcoord) with
   //   dF = -( <T,chi> <chi,dT> |T|^2 - |<T,chi>|^2 <T,dT> ) / (|T|^4 |chi|^2).
   const auto sensitivity = [&](const Eigen::MatrixXcd &dA) {
-    // `quantum::projectiveLeakSensitivity` written out: through the helper the
-    // complex products here vectorize differently and the last bit moves under
-    // -march=native.
     const Eigen::MatrixXcd dT = block(dA);
-    const complexd s1 = (target.chi.conjugate().cwiseProduct(dT)).sum();  // <chi, dT>
-    const complexd s2 = (T.conjugate().cwiseProduct(dT)).sum();           // <T, dT>
-    return -(overlap * s1 * tt - std::norm(overlap) * s2) / (tt * tt * cc);
+    return quantum::projectiveLeakSensitivity(T, target.chi, dT, overlap, tt, cc);
   };
   // Two phases. The expensive half is the dense operator derivative per edge,
   // which parallelizes. `sensitivity` is the cheap half and the FP-sensitive

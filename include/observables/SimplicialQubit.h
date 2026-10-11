@@ -17,6 +17,8 @@
 
 #include <Eigen/Core>
 
+#include "mesh/VertexIdPair.h"
+
 // === tessera subsystem ns fwd-decls ===
 namespace tessera::spacetime { class Spacetime; }
 namespace tessera::chainhodge { class Connection; }
@@ -200,7 +202,7 @@ class SimplicialQubit {
   public:
     using Complex = std::complex<double>;
     /// An edge \f$ (i, j) \f$ with \f$ i < j \f$, oriented \f$ i \to j \f$.
-    using EdgePair = std::pair<std::uint64_t, std::uint64_t>;
+    using EdgePair = mesh::VertexIdPair;
     /// A face \f$ (i, j, k) \f$ in its counterclockwise order.
     using Face = std::array<std::uint64_t, 3>;
     /// One step of a marked cycle: (edge index into `edges()`, sign \f$ \pm 1 \f$)

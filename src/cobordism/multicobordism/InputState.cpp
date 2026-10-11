@@ -121,12 +121,8 @@ double MultiCobordism::ownStateLeakOf(std::complex<double> periodA, std::complex
     throw std::invalid_argument("MultiCobordism::ownStateLeakOf: a qubit state has two coefficients");
   const Eigen::Vector2cd p(periodA, periodB);
   const Eigen::Vector2cd c(coefficients(0), coefficients(1));
-  const double pp = p.squaredNorm(), cc = c.squaredNorm();
-  if (!(pp > 0.0) || !(cc > 0.0)) return 1.0;
-  const std::complex<double> overlap = c.dot(p);  // c^H p: Eigen's dot conjugates its first argument
-  // The leak of `quantum::projectiveLeak` in its symmetric form, which rounds
-  // differently from the helper's, so the two are not interchanged.
-  return std::max(0.0, 1.0 - std::norm(overlap) / (cc * pp));
+  if (!(c.squaredNorm() > 0.0)) return 1.0;
+  return quantum::projectiveLeak(p, c);  // the periods read against the state wanted; 1.0 when p vanishes
 }
 
 double MultiCobordism::ownStateResidualOn(const BoundaryBlock &block,
@@ -206,12 +202,12 @@ multicobordism::ResidualGradient MultiCobordism::ownStateResidualGradientOn(
   std::vector<std::uint64_t> ids;
   for (const auto *vertex : read->spacetime()->getVertexList()->liveVector()) ids.push_back(vertex->getId());
   std::sort(ids.begin(), ids.end());
-  std::map<std::pair<std::uint64_t, std::uint64_t>, std::size_t> parentIndex;
+  std::map<VertexIdPair, std::size_t> parentIndex;
   for (std::size_t e = 0; e < parentEdges.size(); ++e) parentIndex[parentEdges[e]->ascendingIds()] = e;
   const auto &edges = read->edges();
   for (std::size_t e = 0; e < edges.size(); ++e) {
     const std::uint64_t u = ids.at(edges[e].first), v = ids.at(edges[e].second);
-    const auto found = parentIndex.find({std::min(u, v), std::max(u, v)});
+    const auto found = parentIndex.find(ascendingIds(u, v));
     if (found == parentIndex.end())
       throw std::logic_error("MultiCobordism::ownStateResidualGradientOn: an edge of the block's own surface is not "
                              "an edge of the parent complex");

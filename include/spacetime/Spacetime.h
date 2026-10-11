@@ -22,6 +22,7 @@
 #include "mesh/EdgeList.h"
 #include "Foliation.h"
 #include "mesh/VertexList.h"
+#include "mesh/VertexIdPair.h"
 #include "spacetime/Metric.h"
 #include "mesh/Simplex.h"
 #include "mesh/FlatHashMap.h"
@@ -365,7 +366,7 @@ class Spacetime {
       /// fewer vertices than a top cell is registered as the lower simplex it is.
       std::vector<std::vector<std::uint64_t>> cells;
       /// Every edge's geometry, keyed by ascending vertex pair.
-      std::map<std::pair<std::uint64_t, std::uint64_t>, EdgeGeometry> edges;
+      std::map<mesh::VertexIdPair, EdgeGeometry> edges;
       /// Vertex times by vertex id; may be empty.
       std::map<std::uint64_t, double> vertexTimes;
     };

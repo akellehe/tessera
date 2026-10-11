@@ -44,6 +44,7 @@ using cd = std::complex<double>;
 namespace {
 
 using Face = std::vector<std::uint64_t>;  // sorted vertex ids
+using ::tessera::mesh::ascendingIds;
 using ::tessera::mesh::VertexIdPair;
 
 // Sorted vertex ids of a simplex — the homological reference ordering. Distinct
@@ -183,7 +184,7 @@ public:
     // needed.
     if (degree_ < 0 || degreeSize_ == 0)
       return result;
-    const VertexIdPair edge{std::min(edgeA, edgeB), std::max(edgeA, edgeB)};
+    const VertexIdPair edge = ascendingIds(edgeA, edgeB);
 
     if (const auto *entries = derivativesFor(degreeWeights_, edge)) {
       for (const auto &[index, derivative] : *entries) {
@@ -270,7 +271,7 @@ public:
     Eigen::MatrixXcd result = Eigen::MatrixXcd::Zero(degreeSize_, degreeSize_);
     if (degree_ < 0 || degreeSize_ == 0)
       return result;
-    const VertexIdPair edge{std::min(edgeA, edgeB), std::max(edgeA, edgeB)};
+    const VertexIdPair edge = ascendingIds(edgeA, edgeB);
 
     if (const auto *entries = derivativesFor(degreeWeights_, edge)) {
       const auto *second = secondFor(data.degreeSecond, edge);
@@ -1465,15 +1466,13 @@ HodgeLaplacian::spectralEntropyGradientDirectionalDerivative(
   if (!st_)
     return velocityOfGradient;
   // The direction, keyed the way the simplices key their own gradients.
-  std::map<std::pair<std::uint64_t, std::uint64_t>, cd> keyedDirection;
+  std::map<VertexIdPair, cd> keyedDirection;
   for (std::size_t edgeIndex = 0; edgeIndex < edges.size(); ++edgeIndex) {
     const auto *edge = edges[edgeIndex];
     if (edge == nullptr || edge->getSource() == nullptr ||
         edge->getTarget() == nullptr)
       continue;
-    const std::uint64_t a = edge->getSource()->getId();
-    const std::uint64_t b = edge->getTarget()->getId();
-    keyedDirection[{std::min(a, b), std::max(a, b)}] += direction[edgeIndex];
+    keyedDirection[edge->ascendingIds()] += direction[edgeIndex];
   }
 
   // The operator of this instance's metric source, its per-edge derivative
@@ -1720,8 +1719,7 @@ std::vector<std::complex<double>> HodgeLaplacian::spectralMomentStiffnessHessian
   for (std::size_t e = 0; e < edges.size(); ++e) {
     const auto *edge = edges[e];
     if (edge == nullptr || edge->getSource() == nullptr || edge->getTarget() == nullptr) continue;
-    const std::uint64_t a = edge->getSource()->getId(), b = edge->getTarget()->getId();
-    keyedDirection[{std::min(a, b), std::max(a, b)}] += direction[e];
+    keyedDirection[edge->ascendingIds()] += direction[e];
   }
   DerivativeSource derivatives(*this, k);
   const Eigen::MatrixXcd &L = derivatives.laplacian();

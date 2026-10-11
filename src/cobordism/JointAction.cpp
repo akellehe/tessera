@@ -33,17 +33,12 @@
 namespace tessera::cobordism {
 
 using ::tessera::matter::MatterConfiguration;
+using ::tessera::mesh::ascendingIds;
 using ::tessera::mesh::VertexIdPair;
 using ::tessera::simulations::ReggeSolver;
 using complexd = std::complex<double>;
 
 namespace {
-
-/// The unordered vertex pair of an edge, as the key both the canonical cell
-/// list and the mesh's edge list are indexed by.
-VertexIdPair pairKey(std::uint64_t a, std::uint64_t b) {
-  return a <= b ? std::make_pair(a, b) : std::make_pair(b, a);
-}
 
 /// A flat row-major matrix lifted into Eigen. An empty input gives a 0x0
 /// matrix, which every consumer below treats as "no cell of this degree".
@@ -471,10 +466,10 @@ ActionWorkspace::ActionWorkspace(const std::shared_ptr<Spacetime> &spacetime,
   if (spacetime->getEdgeList()) edges = spacetime->getEdgeList()->toVector();
 
   const auto canonicalEdges = complex.kSimplexVertices(1);
-  std::map<std::pair<std::uint64_t, std::uint64_t>, std::size_t> indexOfPair;
+  std::map<VertexIdPair, std::size_t> indexOfPair;
   for (std::size_t index = 0; index < canonicalEdges.size(); ++index)
     if (canonicalEdges[index].size() == 2)
-      indexOfPair[pairKey(canonicalEdges[index][0], canonicalEdges[index][1])] =
+      indexOfPair[ascendingIds(canonicalEdges[index][0], canonicalEdges[index][1])] =
           index;
 
   canonicalOfEdge.assign(edges.size(), -1);
@@ -487,7 +482,7 @@ ActionWorkspace::ActionWorkspace(const std::shared_ptr<Spacetime> &spacetime,
     const std::uint64_t source = edge->getSource()->getId();
     const std::uint64_t target = edge->getTarget()->getId();
     storedSign[edgeIndex] = source < target ? 1.0 : -1.0;
-    const auto found = indexOfPair.find(pairKey(source, target));
+    const auto found = indexOfPair.find(ascendingIds(source, target));
     if (found != indexOfPair.end())
       canonicalOfEdge[edgeIndex] = static_cast<long long>(found->second);
   }
@@ -669,8 +664,7 @@ JointAction::JointAction(std::shared_ptr<Spacetime> spacetime,
           edge->getTarget() == nullptr)
         continue;
       const complexd length = edge->getLength();
-      reggeStart_[pairKey(edge->getSource()->getId(),
-                          edge->getTarget()->getId())] =
+      reggeStart_[edge->ascendingIds()] =
           declared.empty() ? length * length : declared[index];
     }
   }
@@ -957,7 +951,7 @@ std::vector<complexd> cayleyMenger(const std::vector<std::uint64_t> &ids,
   }
   for (int i = 0; i < m; ++i)
     for (int j = i + 1; j < m; ++j) {
-      const complexd z = along(from, to, pairKey(ids[i], ids[j]), t);
+      const complexd z = along(from, to, ascendingIds(ids[i], ids[j]), t);
       B[static_cast<std::size_t>(i + 1) * n + (j + 1)] = z;
       B[static_cast<std::size_t>(j + 1) * n + (i + 1)] = z;
     }
@@ -973,7 +967,7 @@ complexd gramDeterminant(const std::vector<std::uint64_t> &ids,
   if (d < 1) return {1.0, 0.0};
   auto z = [&](int a, int b) -> complexd {
     return a == b ? complexd{0.0, 0.0}
-                  : along(from, to, pairKey(ids[a], ids[b]), t);
+                  : along(from, to, ascendingIds(ids[a], ids[b]), t);
   };
   std::vector<complexd> G(static_cast<std::size_t>(d) * d);
   for (int i = 0; i < d; ++i)
@@ -1109,7 +1103,7 @@ JointAction::ReggeSheets JointAction::reggeSheets() const {
         edge->getTarget() == nullptr)
       continue;
     const complexd length = edge->getLength();
-    now[pairKey(edge->getSource()->getId(), edge->getTarget()->getId())] =
+    now[edge->ascendingIds()] =
         length * length;
   }
   for (const auto &[key, value] : now)
@@ -1420,14 +1414,13 @@ void JointAction::stationarityPart(StationarityPart part,
     // both factors from the per-hinge analytic gradients. No Schlaefli
     // identity is invoked, because under the interior-hinge rule the sum over
     // a cell's hinges is incomplete and that identity does not apply.
-    std::map<std::pair<std::uint64_t, std::uint64_t>, std::size_t> indexOfEdge;
+    std::map<VertexIdPair, std::size_t> indexOfEdge;
     for (std::size_t edgeIndex = 0; edgeIndex < edges; ++edgeIndex) {
       const auto *edge = workspace.edges[edgeIndex];
       if (edge == nullptr || edge->getSource() == nullptr ||
           edge->getTarget() == nullptr)
         continue;
-      indexOfEdge[pairKey(edge->getSource()->getId(),
-                          edge->getTarget()->getId())] = edgeIndex;
+      indexOfEdge[edge->ascendingIds()] = edgeIndex;
     }
     // Every root and inverse cosine on its declared sheet (ReggeBranch): the
     // content root through its sign, the angles through their sheets.
@@ -1437,14 +1430,14 @@ void JointAction::stationarityPart(StationarityPart part,
       const complexd content = sign * ReggeSolver::hingeContent(hinge);
       const complexd deficit = hinge->deficitAngle(entry.angles);
       for (const auto &[key, derivative] : hinge->volumeGradient()) {
-        const auto found = indexOfEdge.find(pairKey(key.first, key.second));
+        const auto found = indexOfEdge.find(ascendingIds(key.first, key.second));
         if (found != indexOfEdge.end())
           (*lengths)[found->second] +=
               declaration_.gravitationalWeight * sign * derivative * deficit;
       }
       for (const auto &[key, derivative] :
            hinge->deficitAngleGradient(entry.angles)) {
-        const auto found = indexOfEdge.find(pairKey(key.first, key.second));
+        const auto found = indexOfEdge.find(ascendingIds(key.first, key.second));
         if (found != indexOfEdge.end())
           (*lengths)[found->second] +=
               declaration_.gravitationalWeight * content * derivative;

@@ -3,6 +3,8 @@
 
 #include "chainhodge/FaceAnchor.h"
 
+#include "mesh/VertexIdPair.h"
+
 #include <algorithm>
 #include <limits>
 #include <map>
@@ -97,12 +99,11 @@ FaceBlock FaceAnchor::grassmannFaceBlock(const cobordism::ChainComplex &K, const
   if (s.size() != K.numSimplices(1))
     throw std::invalid_argument("FaceAnchor: one squared length per edge is required");
   const auto cells = K.kSimplexVertices(1);
-  std::map<std::pair<std::uint64_t, std::uint64_t>, Complex> S;
+  std::map<::tessera::mesh::VertexIdPair, Complex> S;
   for (std::size_t j = 0; j < cells.size(); ++j) S[{cells[j][0], cells[j][1]}] = s[j];
   auto Sof = [&](std::uint64_t a, std::uint64_t b) -> Complex {
     if (a == b) return Complex(0.0, 0.0);
-    if (a > b) std::swap(a, b);
-    return S.at({a, b});
+    return S.at(::tessera::mesh::ascendingIds(a, b));
   };
   // <u_e, u_f> for u_(a,b) = x_b - x_a by polarization: 1/2 (S(b,c) + S(a,d) - S(b,d) - S(a,c)).
   auto dot = [&](const std::vector<std::uint64_t> &e, const std::vector<std::uint64_t> &f) -> Complex {

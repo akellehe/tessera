@@ -23,6 +23,7 @@
 #include "chainhodge/WhitneyMass.h"
 #include "cobordism/Certificate.h"
 #include "cobordism/ChainComplex.h"
+#include "mesh/VertexIdPair.h"
 
 // === tessera subsystem ns fwd-decls ===
 namespace tessera::spacetime { class Spacetime; }
@@ -158,8 +159,8 @@ class Connection {
   std::vector<Complex> links_;
   // The canonical edges (x < y) by index; the connection owns everything it
   // needs and never refers back to the complex it was built over.
-  std::map<std::pair<std::uint64_t, std::uint64_t>, int> index_;
-  std::vector<std::pair<std::uint64_t, std::uint64_t>> edges_;
+  std::map<mesh::VertexIdPair, int> index_;
+  std::vector<mesh::VertexIdPair> edges_;
   Connection() = default;
   // Checks that a walk is non-empty, chains, closes, and steps along edges;
   // returns the canonical index and sign of every step.

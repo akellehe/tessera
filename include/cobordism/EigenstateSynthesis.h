@@ -17,6 +17,7 @@
 
 #include "cobordism/HodgeLaplacian.h"
 #include "mesh/Edge.h"
+#include "mesh/VertexIdPair.h"
 
 // === tessera subsystem ns fwd-decls ===
 namespace tessera::mesh { class Edge; class Vertex; class Simplex; }
@@ -346,12 +347,12 @@ class EigenstateSynthesis {
     /// The boundary tunable edges as sorted \f$ (\min\text{id},\max\text{id}) \f$
     /// endpoint pairs — the fixed \f$ \partial W \f$ edge set, for asserting it is
     /// untouched through an interior fill / growth sweep.
-    [[nodiscard]] std::vector<std::pair<std::uint64_t, std::uint64_t>>
+    [[nodiscard]] std::vector<::tessera::mesh::VertexIdPair>
     boundaryEdges() const;
 
     /// The interior tunable edges as sorted \f$ (\min\text{id},\max\text{id}) \f$
     /// endpoint pairs (the complement of `boundaryEdges()`).
-    [[nodiscard]] std::vector<std::pair<std::uint64_t, std::uint64_t>>
+    [[nodiscard]] std::vector<::tessera::mesh::VertexIdPair>
     interiorEdges() const;
 
     /// Cone a fresh interior vertex into a top cell via the boundary-fixed
@@ -952,26 +953,18 @@ class EigenstateSynthesis {
       Eigen::MatrixXcd d2m;    ///< the n1 x n2 boundary matrix, as complex
       Eigen::MatrixXcd K1;     ///< d1^T d1
       Eigen::MatrixXcd K2;     ///< d2 W2^-1 d2^T
-      /// 1-cell (sorted endpoint pair) -> its operator index.
-      std::map<std::pair<std::uint64_t, std::uint64_t>, std::size_t> cidx1;
+      /// 1-cell (ascending endpoint ids) -> its operator index.
+      std::map<::tessera::mesh::VertexIdPair, std::size_t> cidx1;
       /// 1-cell -> its squared length.
-      std::map<std::pair<std::uint64_t, std::uint64_t>,
-               std::complex<double>> l2map;
+      std::map<::tessera::mesh::VertexIdPair, std::complex<double>> l2map;
       /// 1-cell -> the 2-cells carrying it.
-      std::map<std::pair<std::uint64_t, std::uint64_t>,
-               std::vector<std::size_t>> trisOf;
-
-      /// The canonical sorted key for an endpoint pair.
-      [[nodiscard]] static std::pair<std::uint64_t, std::uint64_t>
-      key(std::uint64_t a, std::uint64_t b) {
-        return {std::min(a, b), std::max(a, b)};
-      }
+      std::map<::tessera::mesh::VertexIdPair, std::vector<std::size_t>> trisOf;
 
       /// The squared length of the 1-cell on (a, b); zero when absent.
       [[nodiscard]] std::complex<double> l2(std::uint64_t a,
                                             std::uint64_t b) const {
         if (a == b) return {0.0, 0.0};
-        const auto it = l2map.find(key(a, b));
+        const auto it = l2map.find(::tessera::mesh::ascendingIds(a, b));
         return it == l2map.end() ? std::complex<double>(0.0, 0.0) : it->second;
       }
     };

@@ -43,6 +43,8 @@
 namespace tessera::cobordism {
 
 using cd = std::complex<double>;
+using ::tessera::mesh::ascendingIds;
+using ::tessera::mesh::VertexIdPair;
 
 // === Charge sector: the E/B split of the field strength F ∈ Ω² ===
 
@@ -115,12 +117,8 @@ EigenstateSynthesis::FieldStrengthSplit EigenstateSynthesis::fieldStrengthSplit(
   // definite argument). Such a cell lands in `magnetic` rather than being
   // reported as indefinite. Widening the split is out of scope here; the gap is
   // recorded so it is not mistaken for a measurement.
-  std::map<std::pair<std::uint64_t, std::uint64_t>, ::tessera::mesh::Edge *> em;
-  for (auto *e : edges_) {
-    const std::uint64_t a = e->getSource()->getId();
-    const std::uint64_t b = e->getTarget()->getId();
-    em[{std::min(a, b), std::max(a, b)}] = e;
-  }
+  std::map<VertexIdPair, ::tessera::mesh::Edge *> em;
+  for (auto *e : edges_) em[e->ascendingIds()] = e;
 
   FieldStrengthSplit split;
   split.electric.assign(order_, cd(0.0, 0.0));
@@ -477,16 +475,14 @@ EigenstateSynthesis::periodGradientContext() const {
 
   // ---- index maps: cell -> index, edge -> l^2, edge -> incident triangles ----
   for (std::size_t i = 0; i < n1; ++i)
-    ctx.cidx1[PeriodGradientContext::key(cells1[i][0], cells1[i][1])] = i;
+    ctx.cidx1[ascendingIds(cells1[i][0], cells1[i][1])] = i;
   for (auto *e : edges_)
-    ctx.l2map[PeriodGradientContext::key(e->getSource()->getId(),
-                                         e->getTarget()->getId())] =
+    ctx.l2map[e->ascendingIds()] =
         (e->getLength() * e->getLength());
   for (std::size_t ti = 0; ti < n2; ++ti)
     for (int i = 0; i < 3; ++i)
       for (int j = i + 1; j < 3; ++j)
-        ctx.trisOf[PeriodGradientContext::key(ctx.tris[ti][i],
-                                              ctx.tris[ti][j])].push_back(ti);
+        ctx.trisOf[ascendingIds(ctx.tris[ti][i], ctx.tris[ti][j])].push_back(ti);
   return ctx;
 }
 
@@ -531,9 +527,6 @@ std::vector<double> EigenstateSynthesis::periodGradientOverLoops(
   const std::vector<std::vector<std::uint64_t>> &cells1 = cellSimplices();
   const auto &cidx1 = ctx.cidx1;
   const auto &trisOf = ctx.trisOf;
-  const auto key = [](std::uint64_t a, std::uint64_t b) {
-    return PeriodGradientContext::key(a, b);
-  };
   const auto L2 = [&ctx](std::uint64_t a, std::uint64_t b) {
     return ctx.l2(a, b);
   };
@@ -551,10 +544,10 @@ std::vector<double> EigenstateSynthesis::periodGradientOverLoops(
           "EigenstateSynthesis::periodGradientOverLoops: loop " +
           std::to_string(q) + " is empty");
     const Edge &fe = loop.front();
-    leakCol[q] = cidx1.at(key(fe.getSource()->getId(), fe.getTarget()->getId()));
+    leakCol[q] = cidx1.at(fe.ascendingIds());
     Edge::walkLoop(loop, [&](std::uint64_t a, std::uint64_t b, double s) {
       Q(static_cast<Index>(q),
-        static_cast<Index>(cidx1.at(key(a, b)))) += s;
+        static_cast<Index>(cidx1.at(ascendingIds(a, b)))) += s;
     });
   }
 
@@ -605,7 +598,7 @@ std::vector<double> EigenstateSynthesis::periodGradientOverLoops(
   // ---- per-edge analytic gradient d r_U / d l^2 (low-rank dM + perturbation) ----
   for (std::size_t je = 0; je < n1; ++je) {
     const Index j = static_cast<Index>(je);
-    const auto ek = key(cells1[je][0], cells1[je][1]);
+    const auto ek = ascendingIds(cells1[je][0], cells1[je][1]);
     // dM for the signed operator M = W1^-1 K1 + K2 W1 (K2 = d2 W2^-1 d2^T),
     // under the V^2 weights (the HodgeLaplacian default): W1_j = l^2_j exactly,
     // so dW1_j/dl^2_j = 1 and, every piece rank one,
@@ -651,7 +644,7 @@ std::vector<double> EigenstateSynthesis::periodGradientOverLoops(
             std::abs(detG) < 1e-12)
           continue;
         auto ind = [&](int pp, int qq) -> double {
-          return (pp != qq && key(t[pp], t[qq]) == ek) ? 1.0 : 0.0;
+          return (pp != qq && ascendingIds(t[pp], t[qq]) == ek) ? 1.0 : 0.0;
         };
         Eigen::Matrix2cd dG;
         for (int i = 0; i < 2; ++i)
@@ -979,15 +972,12 @@ std::vector<double> EigenstateSynthesis::periodGradientDegreeZero(
   const MatrixXcd ApAdjAp = Aplus.adjoint() * Aplus;   // m x m
 
   // ---- per-edge index/value lookups ----
-  std::map<std::pair<std::uint64_t, std::uint64_t>, const Edge *> edgeOf;
-  for (const auto *e : edges_)
-    edgeOf[{std::min(e->getSource()->getId(), e->getTarget()->getId()),
-            std::max(e->getSource()->getId(), e->getTarget()->getId())}] = e;
+  std::map<VertexIdPair, const Edge *> edgeOf;
+  for (const auto *e : edges_) edgeOf[e->ascendingIds()] = e;
 
   // ---- per-edge analytic gradient: the four-entry dL^U(1), dense perturbation ----
   for (std::size_t je = 0; je < edges1.size(); ++je) {
-    const auto eIt = edgeOf.find({std::min(edges1[je][0], edges1[je][1]),
-                                  std::max(edges1[je][0], edges1[je][1])});
+    const auto eIt = edgeOf.find(ascendingIds(edges1[je][0], edges1[je][1]));
     if (eIt == edgeOf.end()) continue;  // no live edge carries this 1-cell
     const Edge *edge = eIt->second;
     const auto srcIt = col.find({edge->getSource()->getId()});
@@ -1104,9 +1094,6 @@ std::vector<cd> EigenstateSynthesis::periodGapForLoopsGradient(
   const std::vector<std::vector<std::uint64_t>> &cells1 = cellSimplices();
   const auto &cidx1 = ctx.cidx1;
   const auto &trisOf = ctx.trisOf;
-  const auto key = [](std::uint64_t a, std::uint64_t b) {
-    return PeriodGradientContext::key(a, b);
-  };
   const auto L2 = [&ctx](std::uint64_t a, std::uint64_t b) {
     return ctx.l2(a, b);
   };
@@ -1119,7 +1106,7 @@ std::vector<cd> EigenstateSynthesis::periodGapForLoopsGradient(
           "EigenstateSynthesis::periodGapForLoopsGradient: loop " +
           std::to_string(q) + " is empty");
     Edge::walkLoop(loops[q], [&](std::uint64_t a, std::uint64_t b, double s) {
-      Q(static_cast<Index>(q), static_cast<Index>(cidx1.at(key(a, b)))) += s;
+      Q(static_cast<Index>(q), static_cast<Index>(cidx1.at(ascendingIds(a, b)))) += s;
     });
   }
 
@@ -1166,7 +1153,7 @@ std::vector<cd> EigenstateSynthesis::periodGapForLoopsGradient(
   // ---- per-edge analytic gradient d r_psi / d l^2 (low-rank dM + perturbation) ----
   for (std::size_t je = 0; je < n1; ++je) {
     const Index j = static_cast<Index>(je);
-    const auto ek = key(cells1[je][0], cells1[je][1]);
+    const auto ek = ascendingIds(cells1[je][0], cells1[je][1]);
     // dM for the signed operator M = W1^-1 K1 + K2 W1 (K2 = d2 W2^-1 d2^T),
     // under the V^2 weights (the HodgeLaplacian default): W1_j = l^2_j exactly,
     // so dW1_j/dl^2_j = 1 and, every piece rank one,
@@ -1198,7 +1185,7 @@ std::vector<cd> EigenstateSynthesis::periodGapForLoopsGradient(
           std::abs(detG) < 1e-12)
         continue;
       auto ind = [&](int pp, int qq) -> double {
-        return (pp != qq && key(t[pp], t[qq]) == ek) ? 1.0 : 0.0;
+        return (pp != qq && ascendingIds(t[pp], t[qq]) == ek) ? 1.0 : 0.0;
       };
       Eigen::Matrix2cd dG;
       for (int i = 0; i < 2; ++i)
