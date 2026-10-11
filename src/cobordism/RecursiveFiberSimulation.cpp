@@ -53,6 +53,8 @@ using multicobordism::RefinementDecision;
 using multicobordism::RefinementIndicators;
 using multicobordism::SimulationMode;
 
+using ::tessera::mesh::ascendingIds;
+using ::tessera::mesh::VertexIdPair;
 using ::tessera::observables::ColorAnchor;
 using ::tessera::observables::ComponentRead;
 using ::tessera::observables::PersistentModularity;
@@ -881,14 +883,12 @@ std::string MultiCobordism::rawComplexJson(
   // recorded: the length is orientation-free, while the connection phase is
   // not, so the canonical min->max direction phase (`Spacetime::edgeGeometryOf`) is what
   // keeps the document orientation-independent.
-  std::map<std::pair<std::uint64_t, std::uint64_t>, Spacetime::EdgeGeometry> edgesByEndpoints;
+  std::map<VertexIdPair, Spacetime::EdgeGeometry> edgesByEndpoints;
   for (const auto *edge : spacetime->getEdgeList()->toVector()) {
     if (edge == nullptr || edge->getSource() == nullptr ||
         edge->getTarget() == nullptr)
       continue;
-    const auto a = edge->getSource()->getId();
-    const auto b = edge->getTarget()->getId();
-    edgesByEndpoints[{std::min(a, b), std::max(a, b)}] = Spacetime::edgeGeometryOf(*edge);
+    edgesByEndpoints[edge->ascendingIds()] = Spacetime::edgeGeometryOf(*edge);
   }
   std::string edgeText = "[";
   bool firstEdge = true;
@@ -956,14 +956,12 @@ void MultiCobordism::runRecursiveAnalysisOn(
   std::set<std::vector<std::uint64_t>> cellSet;
   for (const auto &topSimplex : spacetime->getTopSimplices())
     cellSet.insert(topSimplex->topTuple());
-  std::map<std::pair<std::uint64_t, std::uint64_t>, complexd> edgeLengths;
+  std::map<VertexIdPair, complexd> edgeLengths;
   for (const auto *edge : spacetime->getEdgeList()->toVector()) {
     if (edge == nullptr || edge->getSource() == nullptr ||
         edge->getTarget() == nullptr)
       continue;
-    const auto a = edge->getSource()->getId();
-    const auto b = edge->getTarget()->getId();
-    edgeLengths[{std::min(a, b), std::max(a, b)}] = edge->getLength();
+    edgeLengths[edge->ascendingIds()] = edge->getLength();
   }
   TouchedStar star;
   std::vector<std::uint64_t> touchedCells;
@@ -1822,7 +1820,7 @@ std::string MultiCobordism::replayCheckpoint(const std::string &checkpoint) {
     if (phaseParts.size() == 2)
       geometry.phase = complexd{Json::asNumber(phaseParts[0]),
                                 Json::asNumber(phaseParts[1])};
-    recorded.edges[{std::min(a, b), std::max(a, b)}] = geometry;
+    recorded.edges[ascendingIds(a, b)] = geometry;
   }
   auto spacetime = Spacetime::fromRecord(
       recorded, Spacetime::MissingEdgeGeometry::KeepDefault);

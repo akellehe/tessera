@@ -332,7 +332,7 @@ std::shared_ptr<Spacetime> Spacetime::fromSimplices(
   // shared edge is recognised as one edge. Two cells sharing an edge must agree
   // on it; a disagreement means the caller handed us two different geometries
   // for the same edge, which no choice of winner would make correct.
-  std::map<std::pair<std::uint64_t, std::uint64_t>, EdgeGeometry> geometry;
+  std::map<VertexIdPair, EdgeGeometry> geometry;
   std::vector<std::vector<std::uint64_t>> tuples;
   tuples.reserve(cells.size());
 
@@ -341,9 +341,7 @@ std::shared_ptr<Spacetime> Spacetime::fromSimplices(
       throw std::invalid_argument("Spacetime::fromSimplices: null cell");
     tuples.push_back(cell->topTuple());
     for (const auto &edge : cell->getEdges()) {
-      const auto a = edge->getSource()->getId();
-      const auto b = edge->getTarget()->getId();
-      const auto key = std::make_pair(std::min(a, b), std::max(a, b));
+      const VertexIdPair key = edge->ascendingIds();
       // The U(1) phase is orientation-dependent: normalize it to the ascending
       // orientation here and hand it back on the new edge's own orientation
       // below, so a cell that stores an edge the other way round does not flip
@@ -363,9 +361,7 @@ std::shared_ptr<Spacetime> Spacetime::fromSimplices(
 
   // Transfer what the cells carried, then apply any override.
   for (const auto &edge : st->getEdgeList()->toVector()) {
-    const auto a = edge->getSource()->getId();
-    const auto b = edge->getTarget()->getId();
-    const auto it = geometry.find({std::min(a, b), std::max(a, b)});
+    const auto it = geometry.find(edge->ascendingIds());
     // An edge the cells did not carry cannot happen for a well-formed cell set,
     // since every edge of the new complex is an edge of some cell.
     if (it == geometry.end()) continue;
@@ -552,16 +548,11 @@ std::vector<std::vector<std::uint64_t>> Spacetime::getHoles(int degree) const {
 }
 
 bool Spacetime::copyEdgeGeometryFrom(const Spacetime &source) {
-  std::map<std::pair<std::uint64_t, std::uint64_t>, const Edge *> sourceEdges;
-  for (const auto *edge : source.getEdgeList()->toVector()) {
-    const auto a = edge->getSource()->getId();
-    const auto b = edge->getTarget()->getId();
-    sourceEdges.emplace(std::make_pair(std::min(a, b), std::max(a, b)), edge);
-  }
+  std::map<VertexIdPair, const Edge *> sourceEdges;
+  for (const auto *edge : source.getEdgeList()->toVector())
+    sourceEdges.emplace(edge->ascendingIds(), edge);
   for (auto *edge : getEdgeList()->toVector()) {
-    const auto a = edge->getSource()->getId();
-    const auto b = edge->getTarget()->getId();
-    const auto found = sourceEdges.find({std::min(a, b), std::max(a, b)});
+    const auto found = sourceEdges.find(edge->ascendingIds());
     if (found == sourceEdges.end()) return false;
     setEdgeGeometry(*edge, edgeGeometryOf(*found->second));
   }
@@ -596,11 +587,8 @@ Spacetime::Record Spacetime::record() const {
     }
     out.cells.push_back(std::move(ids));
   }
-  for (const auto *edge : getEdgeList()->toVector()) {
-    const auto a = edge->getSource()->getId();
-    const auto b = edge->getTarget()->getId();
-    out.edges[{std::min(a, b), std::max(a, b)}] = edgeGeometryOf(*edge);
-  }
+  for (const auto *edge : getEdgeList()->toVector())
+    out.edges[edge->ascendingIds()] = edgeGeometryOf(*edge);
   return out;
 }
 
@@ -616,15 +604,14 @@ std::shared_ptr<Spacetime> Spacetime::fromRecord(const Record &record,
       vertexList->get(id)->setTime(time);
   }
   for (auto *edge : st->getEdgeList()->toVector()) {
-    const auto a = edge->getSource()->getId();
-    const auto b = edge->getTarget()->getId();
-    const auto found = record.edges.find({std::min(a, b), std::max(a, b)});
+    const VertexIdPair ids = edge->ascendingIds();
+    const auto found = record.edges.find(ids);
     if (found != record.edges.end()) {
       setEdgeGeometry(*edge, found->second);
     } else if (missing == MissingEdgeGeometry::Throw) {
       throw std::out_of_range(
-          "Spacetime::fromRecord: edge (" + std::to_string(std::min(a, b)) +
-          ", " + std::to_string(std::max(a, b)) +
+          "Spacetime::fromRecord: edge (" + std::to_string(ids.first) +
+          ", " + std::to_string(ids.second) +
           ") of the rebuilt complex has no recorded geometry; a partial record "
           "is never silently defaulted");
     }
@@ -665,7 +652,7 @@ Spacetime::Relabeled Spacetime::relabeled(std::uint64_t seed) const {
     const std::uint64_t b = permutation.at(pair.second);
     // The phase is held on the ascending orientation of the original pair;
     // when the permutation reverses that orientation the link is the inverse.
-    permuted.edges[{std::min(a, b), std::max(a, b)}] =
+    permuted.edges[ascendingIds(a, b)] =
         a < b ? geometry
               : EdgeGeometry{geometry.length,
                              std::complex<double>{0.0, 0.0} - geometry.phase};

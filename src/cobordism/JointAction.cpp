@@ -33,6 +33,7 @@
 namespace tessera::cobordism {
 
 using ::tessera::matter::MatterConfiguration;
+using ::tessera::mesh::VertexIdPair;
 using ::tessera::simulations::ReggeSolver;
 using complexd = std::complex<double>;
 
@@ -40,8 +41,7 @@ namespace {
 
 /// The unordered vertex pair of an edge, as the key both the canonical cell
 /// list and the mesh's edge list are indexed by.
-std::pair<std::uint64_t, std::uint64_t> pairKey(std::uint64_t a,
-                                                std::uint64_t b) {
+VertexIdPair pairKey(std::uint64_t a, std::uint64_t b) {
   return a <= b ? std::make_pair(a, b) : std::make_pair(b, a);
 }
 
@@ -904,8 +904,7 @@ using ::tessera::mesh::principalArcCosine;
 using ::tessera::mesh::principalSquareRoot;
 using ::tessera::mesh::SheetedAcos;
 using ::tessera::mesh::SheetedSqrt;
-using EdgeKey = std::pair<std::uint64_t, std::uint64_t>;
-using SquaredLengthField = std::map<EdgeKey, complexd>;
+using SquaredLengthField = std::map<VertexIdPair, complexd>;
 
 /// The largest turn about its branch point a root may make in one step of a
 /// walk, and the largest distance an angle may move. Both are well inside the
@@ -938,7 +937,7 @@ complexd pinnedCosine(complexd Cij, complexd rootProduct) {
 /// The squared length of \p key at parameter \p t on the straight segment from
 /// \p from to \p to.
 complexd along(const SquaredLengthField &from, const SquaredLengthField &to,
-               const EdgeKey &key, double t) {
+               const VertexIdPair &key, double t) {
   const complexd a = from.at(key);
   const complexd b = to.at(key);
   return a + t * (b - a);

@@ -42,12 +42,8 @@ using Cell = std::vector<std::uint64_t>;
 
 namespace {
 
-// An edge's endpoints as an ascending vertex-id pair.
-std::pair<std::uint64_t, std::uint64_t> edgeKey(const ::tessera::mesh::Edge *edge) {
-  const auto a = edge->getSource()->getId();
-  const auto b = edge->getTarget()->getId();
-  return {std::min(a, b), std::max(a, b)};
-}
+using ::tessera::mesh::ascendingIds;
+using ::tessera::mesh::VertexIdPair;
 
 // Whether the edge between a and b is held fixed: some one region contains
 // both endpoints. An edge spanning two distinct regions is bulk.
@@ -185,13 +181,11 @@ BoundaryStateEvaluation evaluateBoundaryStates(
     HodgeLaplacian::MetricSource metricSource) {
   auto boundary = Spacetime::fromVertexTuples(spacetime->getDimensions() - 1,
                                        component.facets, 1.0, 0.0);
-  std::map<std::pair<std::uint64_t, std::uint64_t>,
-           ::tessera::mesh::Edge *>
-      parentEdges;
+  std::map<VertexIdPair, ::tessera::mesh::Edge *> parentEdges;
   for (auto *edge : spacetime->getEdgeList()->toVector())
-    parentEdges.emplace(edgeKey(edge), edge);
+    parentEdges.emplace(edge->ascendingIds(), edge);
   for (auto *edge : boundary->getEdgeList()->toVector()) {
-    const auto parent = parentEdges.find(edgeKey(edge));
+    const auto parent = parentEdges.find(edge->ascendingIds());
     if (parent == parentEdges.end())
       throw std::logic_error(
           "EigenstateSynthesis::relaxBoundaryStatePairs: boundary edge is absent "
@@ -280,7 +274,7 @@ FixedCochainOptimization optimizeFixedCochainTargets(
 
   std::vector<::tessera::mesh::Edge *> freeEdges;
   for (auto *edge : spacetime->getEdgeList()->toVector()) {
-    const auto [a, b] = edgeKey(edge);
+    const auto [a, b] = edge->ascendingIds();
     if (edgeIsFree(a, b)) freeEdges.push_back(edge);
   }
 
@@ -682,12 +676,12 @@ EigenstateSynthesis::relaxFixedBoundaryEigenstate(
   int growthSteps = 0;
   for (int pass = 0;; ++pass) {
     const auto interiorEdges = synthesis.interiorEdges();
-    const std::set<std::pair<std::uint64_t, std::uint64_t>> freeEdgeKeys(
+    const std::set<VertexIdPair> freeEdgeKeys(
         interiorEdges.begin(), interiorEdges.end());
     best = optimizeFixedCochainTargets(
         spacetime, synthesis, {pinnedByCell},
         [&freeEdgeKeys](std::uint64_t a, std::uint64_t b) {
-          return freeEdgeKeys.count({std::min(a, b), std::max(a, b)}) != 0;
+          return freeEdgeKeys.count(ascendingIds(a, b)) != 0;
         },
         false, epsilon, restarts, seed + static_cast<std::uint64_t>(pass),
         maxIterations);
@@ -865,9 +859,9 @@ EigenstateSynthesis::relaxBoundaryStatePairs(
                    "pinned region");
 
   using Geometry = std::pair<complexd, complexd>;
-  std::map<std::pair<std::uint64_t, std::uint64_t>, Geometry> pinnedGeometry;
+  std::map<VertexIdPair, Geometry> pinnedGeometry;
   for (auto *edge : spacetime->getEdgeList()->toVector()) {
-    const auto key = edgeKey(edge);
+    const auto key = edge->ascendingIds();
     if (edgeIsHeld(pinnedRegions, key.first, key.second))
       pinnedGeometry.emplace(
           key, Geometry{edge->getLength(), edge->getPhase()});
@@ -905,10 +899,9 @@ EigenstateSynthesis::relaxBoundaryStatePairs(
     ++growthSteps;
   }
 
-  std::map<std::pair<std::uint64_t, std::uint64_t>, Geometry>
-      finalPinnedGeometry;
+  std::map<VertexIdPair, Geometry> finalPinnedGeometry;
   for (auto *edge : spacetime->getEdgeList()->toVector()) {
-    const auto key = edgeKey(edge);
+    const auto key = edge->ascendingIds();
     if (edgeIsHeld(pinnedRegions, key.first, key.second))
       finalPinnedGeometry.emplace(
           key, Geometry{edge->getLength(), edge->getPhase()});
@@ -1146,9 +1139,9 @@ EigenstateSynthesis::relaxWholeComplexReadoutTargets(
                    "pinned region");
 
   using Geometry = std::pair<complexd, complexd>;
-  std::map<std::pair<std::uint64_t, std::uint64_t>, Geometry> pinnedGeometry;
+  std::map<VertexIdPair, Geometry> pinnedGeometry;
   for (auto *edge : spacetime->getEdgeList()->toVector()) {
-    const auto key = edgeKey(edge);
+    const auto key = edge->ascendingIds();
     if (edgeIsHeld(pinnedRegions, key.first, key.second))
       pinnedGeometry.emplace(key,
                              Geometry{edge->getLength(), edge->getPhase()});
@@ -1191,10 +1184,9 @@ EigenstateSynthesis::relaxWholeComplexReadoutTargets(
     ++growthSteps;
   }
 
-  std::map<std::pair<std::uint64_t, std::uint64_t>, Geometry>
-      finalPinnedGeometry;
+  std::map<VertexIdPair, Geometry> finalPinnedGeometry;
   for (auto *edge : spacetime->getEdgeList()->toVector()) {
-    const auto key = edgeKey(edge);
+    const auto key = edge->ascendingIds();
     if (edgeIsHeld(pinnedRegions, key.first, key.second))
       finalPinnedGeometry.emplace(
           key, Geometry{edge->getLength(), edge->getPhase()});

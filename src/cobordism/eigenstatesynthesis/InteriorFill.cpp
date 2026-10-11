@@ -87,9 +87,7 @@ EigenstateSynthesis::boundaryEdges() const {
   std::vector<std::pair<std::uint64_t, std::uint64_t>> out;
   out.reserve(boundaryEdgeIdx_.size());
   for (const auto i : boundaryEdgeIdx_) {
-    const std::uint64_t a = edges_[i]->getSource()->getId();
-    const std::uint64_t b = edges_[i]->getTarget()->getId();
-    out.emplace_back(std::min(a, b), std::max(a, b));
+    out.push_back(edges_[i]->ascendingIds());
   }
   return out;
 }
@@ -99,9 +97,7 @@ EigenstateSynthesis::interiorEdges() const {
   std::vector<std::pair<std::uint64_t, std::uint64_t>> out;
   out.reserve(interiorEdgeIdx_.size());
   for (const auto i : interiorEdgeIdx_) {
-    const std::uint64_t a = edges_[i]->getSource()->getId();
-    const std::uint64_t b = edges_[i]->getTarget()->getId();
-    out.emplace_back(std::min(a, b), std::max(a, b));
+    out.push_back(edges_[i]->ascendingIds());
   }
   return out;
 }

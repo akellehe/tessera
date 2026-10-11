@@ -230,7 +230,7 @@ ReggeSolver::affectedEdgesOfCells(
     const int topSize =
         spacetime_->getMetric()->getSignature()->getDimensions() + 1;
 
-    std::set<std::pair<std::uint64_t, std::uint64_t>> E;
+    std::set<VertexIdPair> E;
     for (const auto &ht : hingeFacesOfCells(cells)) {
         const auto v0 = vidx.find(ht[0]);
         if (v0 == vidx.end()) continue;
@@ -243,10 +243,8 @@ ReggeSolver::affectedEdgesOfCells(
                 continue;
             const auto &tv = sigma->getVertices();
             for (std::size_t i = 0; i < tv.size(); ++i)
-                for (std::size_t j = i + 1; j < tv.size(); ++j) {
-                    const std::uint64_t a = tv[i]->getId(), b = tv[j]->getId();
-                    E.insert({std::min(a, b), std::max(a, b)});
-                }
+                for (std::size_t j = i + 1; j < tv.size(); ++j)
+                    E.insert(ascendingIds(tv[i]->getId(), tv[j]->getId()));
         }
     }
     return {E.begin(), E.end()};
@@ -258,9 +256,9 @@ double ReggeSolver::gradientNorm2OverEdges(
     for (const auto &v : spacetime_->getVertexList()->toVector())
         if (v != nullptr) vidx.emplace(v->getId(), v);
 
-    std::set<std::pair<std::uint64_t, std::uint64_t>> E;
+    std::set<VertexIdPair> E;
     for (const auto &e : edges)
-        E.insert({std::min(e.first, e.second), std::max(e.first, e.second)});
+        E.insert(ascendingIds(e.first, e.second));
 
     // Every hinge that contributes to a query edge: the (d-2)-faces of the top cells
     // containing that edge. The top cells are reached through an edge endpoint's
@@ -300,7 +298,7 @@ double ReggeSolver::gradientNorm2OverEdges(
 
     // ∂S/∂ℓ²_e = Σ_h [∂|★h|·ε_h + |★h|·∂ε_h], restricted to the query edges (the
     // full per-edge gradient for every e in E, since E's hinges are all in `hinges`).
-    std::map<std::pair<std::uint64_t, std::uint64_t>, std::complex<double>> g;
+    std::map<VertexIdPair, std::complex<double>> g;
     for (const auto &ht : hinges) {
         VertexPtrs vp;
         vp.reserve(ht.size());
@@ -316,13 +314,11 @@ double ReggeSolver::gradientNorm2OverEdges(
         const std::complex<double> eps = h->deficitAngle();
         const std::complex<double> dv = h->dualVolume();
         for (const auto &[ed, dEps] : h->deficitAngleGradient()) {
-            const std::pair<std::uint64_t, std::uint64_t> k{
-                std::min(ed.first, ed.second), std::max(ed.first, ed.second)};
+            const VertexIdPair k = ascendingIds(ed.first, ed.second);
             if (E.count(k)) g[k] += dv * dEps;
         }
         for (const auto &[ed, dDv] : h->dualVolumeGradient()) {
-            const std::pair<std::uint64_t, std::uint64_t> k{
-                std::min(ed.first, ed.second), std::max(ed.first, ed.second)};
+            const VertexIdPair k = ascendingIds(ed.first, ed.second);
             if (E.count(k)) g[k] += dDv * eps;
         }
     }
@@ -396,12 +392,8 @@ std::vector<std::complex<double>> ReggeSolver::actionGradientExact() const {
     using cd = std::complex<double>;
     const auto edges = spacetime_->getEdgeList()->toVector();
     const std::size_t E = edges.size();
-    std::map<std::pair<std::uint64_t, std::uint64_t>, std::size_t> eidx;
-    for (std::size_t i = 0; i < E; ++i) {
-        const std::uint64_t a = edges[i]->getSource()->getId();
-        const std::uint64_t b = edges[i]->getTarget()->getId();
-        eidx[{std::min(a, b), std::max(a, b)}] = i;
-    }
+    std::map<VertexIdPair, std::size_t> eidx;
+    for (std::size_t i = 0; i < E; ++i) eidx[edges[i]->ascendingIds()] = i;
 
     // dS/dl^2_e = sum_h [ d|*h|/dl^2_e * eps_h + |*h| * d eps_h/dl^2_e ].
     //
@@ -471,12 +463,8 @@ std::vector<std::vector<std::complex<double>>>
 ReggeSolver::actionHessianExact() const {
     using cd = std::complex<double>;
     const auto edges = spacetime_->getEdgeList()->toVector();
-    std::map<std::pair<std::uint64_t, std::uint64_t>, std::size_t> eidx;
-    for (std::size_t i = 0; i < edges.size(); ++i) {
-        const std::uint64_t a = edges[i]->getSource()->getId();
-        const std::uint64_t b = edges[i]->getTarget()->getId();
-        eidx[{std::min(a, b), std::max(a, b)}] = i;
-    }
+    std::map<VertexIdPair, std::size_t> eidx;
+    for (std::size_t i = 0; i < edges.size(); ++i) eidx[edges[i]->ascendingIds()] = i;
     const std::size_t E = edges.size();
     // d^2 S/dl^2_e dl^2_f = sum_h [ d2V_ef*eps + dV_e*dEps_f + dV_f*dEps_e
     //                              + V*d2Eps_ef ]. Independent per hinge, so the
@@ -574,12 +562,8 @@ ReggeSolver::actionHessianExactSparse() const {
     using Trip = Eigen::Triplet<cd>;
     const auto edges = spacetime_->getEdgeList()->toVector();
     const std::size_t E = edges.size();
-    std::map<std::pair<std::uint64_t, std::uint64_t>, std::size_t> eidx;
-    for (std::size_t i = 0; i < E; ++i) {
-        const std::uint64_t a = edges[i]->getSource()->getId();
-        const std::uint64_t b = edges[i]->getTarget()->getId();
-        eidx[{std::min(a, b), std::max(a, b)}] = i;
-    }
+    std::map<VertexIdPair, std::size_t> eidx;
+    for (std::size_t i = 0; i < E; ++i) eidx[edges[i]->ascendingIds()] = i;
     // ∂²S/∂ℓ²_e∂ℓ²_f is nonzero only for edge pairs that share a hinge (local
     // coupling), so the assembled Hessian is sparse. Emit each hinge's
     // contributions (hingeHessianEntries) as (e,f) triplets; setFromTriplets

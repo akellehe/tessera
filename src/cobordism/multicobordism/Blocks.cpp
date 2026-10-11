@@ -45,7 +45,7 @@ BlockSurface BoundaryBlock::ownSurface(const Spacetime &spacetime) const {
   std::set<std::vector<std::uint64_t>> edges;
   for (const auto *edge : spacetime.getEdgeList()->toVector()) {
     if (edge == nullptr || edge->getSource() == nullptr || edge->getTarget() == nullptr) continue;
-    const auto key = edgeKey(edge);
+    const auto key = edge->ascendingIds();
     if (block.vertices.count(key.first) && block.vertices.count(key.second))
       edges.insert({key.first, key.second});
   }
@@ -172,14 +172,14 @@ observables::SimplicialQubit BoundaryBlock::qubit(const std::shared_ptr<Spacetim
   std::sort(ids.begin(), ids.end());
   std::map<std::uint64_t, std::uint64_t> indexOfId;
   for (std::size_t n = 0; n < ids.size(); ++n) indexOfId[ids[n]] = n;
-  std::vector<std::pair<std::uint64_t, std::uint64_t>> pairs;
+  std::vector<VertexIdPair> pairs;
   for (const mesh::Edge *edge : surface->getEdgeList()->toVector()) {
     const std::uint64_t a = indexOfId.at(edge->getSource()->getId());
     const std::uint64_t b = indexOfId.at(edge->getTarget()->getId());
-    pairs.emplace_back(std::min(a, b), std::max(a, b));
+    pairs.push_back(ascendingIds(a, b));
   }
   std::sort(pairs.begin(), pairs.end());
-  std::map<std::pair<std::uint64_t, std::uint64_t>, std::size_t> indexOfPair;
+  std::map<VertexIdPair, std::size_t> indexOfPair;
   for (std::size_t n = 0; n < pairs.size(); ++n) indexOfPair[pairs[n]] = n;
   auto cycleOf = [&](const std::vector<std::pair<std::uint64_t, std::uint64_t>> &steps, const char *name) {
     observables::SimplicialQubit::Cycle cycle;
@@ -189,7 +189,7 @@ observables::SimplicialQubit BoundaryBlock::qubit(const std::shared_ptr<Spacetim
         throw std::runtime_error(std::string("BoundaryBlock::qubit: a step of cycle ") + name + " (" +
                                  std::to_string(u) + " -> " + std::to_string(v) +
                                  ") leaves the block's live surface");
-      const auto found = indexOfPair.find({std::min(iu->second, iv->second), std::max(iu->second, iv->second)});
+      const auto found = indexOfPair.find(ascendingIds(iu->second, iv->second));
       if (found == indexOfPair.end())
         throw std::runtime_error(std::string("BoundaryBlock::qubit: the marking edge (") + std::to_string(u) +
                                  ", " + std::to_string(v) + ") of cycle " + name +

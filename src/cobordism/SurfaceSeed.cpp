@@ -25,17 +25,8 @@
 namespace tessera::cobordism {
 
 using complexd = std::complex<double>;
-
-namespace {
-
-// An edge's endpoints as an ascending vertex-id pair.
-std::pair<std::uint64_t, std::uint64_t> edgeKey(const ::tessera::mesh::Edge *edge) {
-  const auto a = edge->getSource()->getId();
-  const auto b = edge->getTarget()->getId();
-  return {std::min(a, b), std::max(a, b)};
-}
-
-}  // namespace
+using ::tessera::mesh::ascendingIds;
+using ::tessera::mesh::VertexIdPair;
 
 SurfaceSeed SurfaceSeed::fromSurfaces(
     const std::vector<std::shared_ptr<Spacetime>> &surfaces) {
@@ -57,7 +48,7 @@ SurfaceSeed SurfaceSeed::fromSurfaces(
   // the surface's lengths (verbatim) with zero phases.
   SurfaceSeed seed;
   std::vector<std::vector<std::uint64_t>> cells;
-  std::map<std::pair<std::uint64_t, std::uint64_t>, complexd> lengths;
+  std::map<VertexIdPair, complexd> lengths;
   std::uint64_t nextId = 0;
   for (const auto &surface : surfaces) {
     std::vector<std::uint64_t> ids;
@@ -75,13 +66,13 @@ SurfaceSeed SurfaceSeed::fromSurfaces(
       if (edge == nullptr || edge->getSource() == nullptr || edge->getTarget() == nullptr) continue;
       const std::uint64_t u = hostId.at(edge->getSource()->getId());
       const std::uint64_t v = hostId.at(edge->getTarget()->getId());
-      lengths[{std::min(u, v), std::max(u, v)}] = edge->getLength();
+      lengths[ascendingIds(u, v)] = edge->getLength();
     }
     seed.vertexIds.push_back(std::move(hostId));
   }
   seed.host = Spacetime::fromVertexTuples(surfaceDimension + 1, cells, 1.0, complexd(0.0, 0.0));
   for (auto *edge : seed.host->getEdgeList()->toVector()) {
-    const auto found = lengths.find(edgeKey(edge));
+    const auto found = lengths.find(edge->ascendingIds());
     if (found == lengths.end())
       throw std::logic_error("SurfaceSeed::fromSurfaces: a host edge belongs to no surface");
     edge->setLength(found->second);
@@ -197,7 +188,7 @@ SurfaceSeed SurfaceSeed::joinedCollars(
   seed.host = Spacetime::fromVertexTuples(surfaces.front()->getDimensions() + 1, joined, 1.0, complexd(0.0, 0.0));
   // Each surface's own lengths verbatim on its edges, the auto-wired length
   // everywhere else, zero phases throughout -- collar's convention.
-  std::map<std::pair<std::uint64_t, std::uint64_t>, complexd> lengths;
+  std::map<VertexIdPair, complexd> lengths;
   for (std::size_t index = 0; index < surfaces.size(); ++index)
     for (const auto *edge : surfaces[index]->getEdgeList()->toVector()) {
       if (edge == nullptr || edge->getSource() == nullptr || edge->getTarget() == nullptr) continue;
@@ -205,12 +196,12 @@ SurfaceSeed SurfaceSeed::joinedCollars(
       const auto source = ids.find(edge->getSource()->getId());
       const auto target = ids.find(edge->getTarget()->getId());
       if (source == ids.end() || target == ids.end()) continue;
-      lengths[{std::min(source->second, target->second), std::max(source->second, target->second)}] =
+      lengths[ascendingIds(source->second, target->second)] =
           edge->getLength();
     }
   const complexd interior = seed.host->autoWiredLength(/*crossSlice=*/false);
   for (auto *edge : seed.host->getEdgeList()->toVector()) {
-    const auto found = lengths.find(edgeKey(edge));
+    const auto found = lengths.find(edge->ascendingIds());
     edge->setLength(found != lengths.end() ? found->second : interior);
     edge->setPhase(complexd(0.0, 0.0));
   }
@@ -294,13 +285,13 @@ SurfaceSeed SurfaceSeed::tubedCollars(
   const auto hostIdOf = [&](std::uint64_t prismVertex) {
     return rings[static_cast<std::size_t>(prismVertex / 3)][static_cast<std::size_t>(prismVertex % 3)];
   };
-  std::set<std::pair<std::uint64_t, std::uint64_t>> tubeEdges;
+  std::set<VertexIdPair> tubeEdges;
   for (const auto &cell : prism) {
     std::vector<std::uint64_t> mapped;
     for (const auto vertex : cell) mapped.push_back(hostIdOf(vertex));
     for (std::size_t a = 0; a < mapped.size(); ++a)
       for (std::size_t b = a + 1; b < mapped.size(); ++b)
-        tubeEdges.insert({std::min(mapped[a], mapped[b]), std::max(mapped[a], mapped[b])});
+        tubeEdges.insert(ascendingIds(mapped[a], mapped[b]));
     std::sort(mapped.begin(), mapped.end());
     joined.push_back(std::move(mapped));
   }
@@ -313,7 +304,7 @@ SurfaceSeed SurfaceSeed::tubedCollars(
   seed.host = Spacetime::fromVertexTuples(dimension, joined, 1.0, complexd(0.0, 0.0));
   // Each surface's own lengths verbatim on its edges, the auto-wired length
   // everywhere else, zero phases throughout -- collar's convention.
-  std::map<std::pair<std::uint64_t, std::uint64_t>, complexd> lengths;
+  std::map<VertexIdPair, complexd> lengths;
   for (std::size_t index = 0; index < surfaces.size(); ++index)
     for (const auto *edge : surfaces[index]->getEdgeList()->toVector()) {
       if (edge == nullptr || edge->getSource() == nullptr || edge->getTarget() == nullptr) continue;
@@ -321,7 +312,7 @@ SurfaceSeed SurfaceSeed::tubedCollars(
       const auto source = ids.find(edge->getSource()->getId());
       const auto target = ids.find(edge->getTarget()->getId());
       if (source == ids.end() || target == ids.end()) continue;
-      lengths[{std::min(source->second, target->second), std::max(source->second, target->second)}] =
+      lengths[ascendingIds(source->second, target->second)] =
           edge->getLength();
     }
   // The tube's Euclidean geometry: the two attachment faces laid out in the
@@ -333,7 +324,7 @@ SurfaceSeed SurfaceSeed::tubedCollars(
   // set above.
   const auto layoutOf = [&](const std::array<std::uint64_t, 3> &end) {
     const auto lengthOf = [&](std::uint64_t u, std::uint64_t v) {
-      const auto found = lengths.find({std::min(u, v), std::max(u, v)});
+      const auto found = lengths.find(ascendingIds(u, v));
       if (found == lengths.end())
         throw std::logic_error("SurfaceSeed::tubedCollars: an attachment face edge has no surface length");
       return found->second.real();
@@ -377,7 +368,7 @@ SurfaceSeed SurfaceSeed::tubedCollars(
   }
   const complexd interior = seed.host->autoWiredLength(/*crossSlice=*/false);
   for (auto *edge : seed.host->getEdgeList()->toVector()) {
-    const auto found = lengths.find(edgeKey(edge));
+    const auto found = lengths.find(edge->ascendingIds());
     edge->setLength(found != lengths.end() ? found->second : interior);
     edge->setPhase(complexd(0.0, 0.0));
   }
@@ -480,20 +471,20 @@ SurfaceSeed SurfaceSeed::collar(const std::shared_ptr<Spacetime> &surfaceA,
   for (const auto &[id, index] : indexB) hostIdB[id] = offsetB + index;
   // The surfaces' own lengths verbatim on their edges, the auto-wired length
   // on every other edge, zero phases throughout.
-  std::map<std::pair<std::uint64_t, std::uint64_t>, complexd> lengths;
+  std::map<VertexIdPair, complexd> lengths;
   const auto collect = [&](const Spacetime &surface, const std::map<std::uint64_t, std::uint64_t> &hostId) {
     for (const auto *edge : surface.getEdgeList()->toVector()) {
       if (edge == nullptr || edge->getSource() == nullptr || edge->getTarget() == nullptr) continue;
       const std::uint64_t u = hostId.at(edge->getSource()->getId());
       const std::uint64_t v = hostId.at(edge->getTarget()->getId());
-      lengths[{std::min(u, v), std::max(u, v)}] = edge->getLength();
+      lengths[ascendingIds(u, v)] = edge->getLength();
     }
   };
   collect(*surfaceA, hostIdA);
   collect(*surfaceB, hostIdB);
   const complexd interior = seed.host->autoWiredLength(/*crossSlice=*/false);
   for (auto *edge : seed.host->getEdgeList()->toVector()) {
-    const auto found = lengths.find(edgeKey(edge));
+    const auto found = lengths.find(edge->ascendingIds());
     edge->setLength(found != lengths.end() ? found->second : interior);
     edge->setPhase(complexd(0.0, 0.0));
   }
