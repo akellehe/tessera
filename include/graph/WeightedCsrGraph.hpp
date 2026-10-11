@@ -4,9 +4,11 @@
 #ifndef TESSERA_GRAPH_WEIGHTEDCSRGRAPH_HPP
 #define TESSERA_GRAPH_WEIGHTEDCSRGRAPH_HPP
 
+#include "graph/CSRBuilder.hpp"
 #include "graph/SpectralGraph.hpp"
 
 #include <cstddef>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -23,8 +25,8 @@ namespace tessera::graph {
 /// `indptr[v] .. indptr[v+1]` indexes into `indices` and `weights` for the
 /// neighbours of \f$ v \f$. The adjacency is symmetric: each undirected edge
 /// appears once per endpoint. `degrees[v]` is \f$ \sum_w W_{vw} \f$, held
-/// separately rather than summed per call because the callers build it while
-/// assembling the adjacency.
+/// separately rather than summed per call because it is built with the
+/// adjacency.
 ///
 /// This carries the storage and the matrix-vector product; the Krylov sweep and
 /// the spectral dimension come from `SpectralGraph`. Derive from it when a
@@ -44,6 +46,28 @@ public:
         indices_(std::move(indices)),
         weights_(std::move(weights)),
         degrees_(std::move(degrees)) {}
+
+    /// The graph on vertices \f$ 0 \dots n-1 \f$ of an undirected edge list,
+    /// each edge \f$ (u, v, w) \f$ listed once with \f$ u \ne v \f$: both
+    /// directions go into the adjacency, \f$ u \to v \f$ before
+    /// \f$ v \to u \f$, through buildFromCOO. The endpoints are not checked.
+    [[nodiscard]] static WeightedCsrGraph
+    fromWeightedEdges(int n,
+                      std::vector<std::tuple<int, int, double>> const& edges) {
+        std::vector<int>    rows;
+        std::vector<int>    cols;
+        std::vector<double> weights;
+        rows.reserve(edges.size() * 2);
+        cols.reserve(edges.size() * 2);
+        weights.reserve(edges.size() * 2);
+        for (auto const& [u, v, w] : edges) {
+            rows.push_back(u); cols.push_back(v); weights.push_back(w);
+            rows.push_back(v); cols.push_back(u); weights.push_back(w);
+        }
+        WeightedCsrGraph g;
+        g.buildFromCOO(n, rows, cols, weights);
+        return g;
+    }
 
     [[nodiscard]] int nVertices() const noexcept override { return n_; }
 
@@ -67,6 +91,30 @@ public:
     }
 
 protected:
+    /// Fill the graph from a symmetric COO, each undirected edge listed once
+    /// per endpoint: the adjacency by graph::buildCSRFromCOO, and each degree
+    /// as its row's weights summed in CSR order.
+    void buildFromCOO(int n,
+                      std::vector<int> const& rows,
+                      std::vector<int> const& cols,
+                      std::vector<double> const& weights) {
+        n_ = n;
+        buildCSRFromCOO<int, double, int>(
+            static_cast<std::size_t>(n_), rows, cols, weights,
+            indptr_, indices_, weights_);
+
+        degrees_.assign(static_cast<std::size_t>(n_), 0.0);
+        for (int v = 0; v < n_; ++v) {
+            const int lo = indptr_[static_cast<std::size_t>(v)];
+            const int hi = indptr_[static_cast<std::size_t>(v) + 1];
+            double d = 0.0;
+            for (int k = lo; k < hi; ++k) {
+                d += weights_[static_cast<std::size_t>(k)];
+            }
+            degrees_[static_cast<std::size_t>(v)] = d;
+        }
+    }
+
     int n_{0};
     std::vector<int>    indptr_;
     std::vector<int>    indices_;

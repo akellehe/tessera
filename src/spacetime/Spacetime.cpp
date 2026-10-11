@@ -1505,14 +1505,6 @@ void Spacetime::updateOrientationCounters(const SimplexPtr &simplex, int delta) 
   return ::tessera::observables::SparseGraph::fromCOO(rows, cols, n);
 }
 
-namespace {
-
-// Private SpectralGraph subclass used only by
-// Spacetime::getSpectralDimensionOnSkeleton — holds the CSR of the
-// weighted 1-skeleton of filtered top simplices and supplies the
-
-}  // anonymous namespace
-
 std::vector<double>
 Spacetime::getSpectralDimensionOnSkeleton(
     std::vector<double> const& sigmas,
@@ -1563,35 +1555,8 @@ Spacetime::getSpectralDimensionOnSkeleton(
     return std::vector<double>(sigmas.size(), 0.0);
   }
 
-  // Build CSR (each undirected edge listed twice).
-  const int n = static_cast<int>(idx.size());
-  std::vector<int>    rows, cols;
-  std::vector<double> ws;
-  rows.reserve(edgeList.size() * 2);
-  cols.reserve(edgeList.size() * 2);
-  ws.reserve(edgeList.size() * 2);
-  for (auto const& [u, v, w] : edgeList) {
-    rows.push_back(u); cols.push_back(v); ws.push_back(w);
-    rows.push_back(v); cols.push_back(u); ws.push_back(w);
-  }
-  std::vector<int>    indptr, indices;
-  std::vector<double> weights;
-  ::tessera::graph::buildCSRFromCOO<int, double, int>(
-      static_cast<std::size_t>(n), rows, cols, ws,
-      indptr, indices, weights);
-
-  std::vector<double> degrees(static_cast<std::size_t>(n), 0.0);
-  for (int v = 0; v < n; ++v) {
-    const int lo = indptr[static_cast<std::size_t>(v)];
-    const int hi = indptr[static_cast<std::size_t>(v) + 1];
-    for (int k = lo; k < hi; ++k) {
-      degrees[static_cast<std::size_t>(v)] +=
-          weights[static_cast<std::size_t>(k)];
-    }
-  }
-
-  ::tessera::graph::WeightedCsrGraph view(n, std::move(indptr), std::move(indices),
-                              std::move(weights), std::move(degrees));
+  const auto view = ::tessera::graph::WeightedCsrGraph::fromWeightedEdges(
+      static_cast<int>(idx.size()), edgeList);
   const std::vector<double> p = view.returnProbability(sigmas, krylovDim);
   return SpectralGraph::spectralDimension(sigmas, p);
 }
